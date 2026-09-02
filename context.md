@@ -1,241 +1,105 @@
-# AI Agent Hunting — Project Context
+# AI Agent Hunting — Project Context (v3)
 
-> File này tổng hợp toàn bộ context của project từ FINAL-ARCHITECTURE.md và EXECUTION-PLAN.md, giúp bất kỳ AI agent nào (Claude, GPT, Gemini...) hiểu rõ project để hỗ trợ coding và research.
+Use `01_FINAL-ARCHITECTURE.md` for WHAT, `02_METHOD-AND-IMPLEMENTATION-PLAN.md`
+for HOW/contracts/tasks, `03_LITERATURE-AND-TRACEABILITY.md` for sources, and
+`04-IMPLEMENTATION-CHECKLIST.md` for executable work. This file is a concise
+operational context, not a fourth contract.
 
----
+## Objective
 
-## 1. Project là gì?
+Build an evidence-grounded, human-in-the-loop threat investigation agent. It
+produces an auditable account with claim-to-observation links, preserves
+competing explanations, never treats an empty query as real-world absence, and
+reports residual uncertainty and blind spots. Raw log text is untrusted and
+never enters an LLM prompt.
 
-Xây dựng một **Threat Investigation Agent** — agent AI điều tra mối đe dọa an ninh mạng, trong đó:
-- **LLM chỉ đề xuất giải thích (abduction) và dịch truy vấn** — tất cả phần còn lại là **deterministic**
-- Mọi bằng chứng, trích xuất field, gán nhãn taint, constraint checking, action ordering, stopping, escalation — đều **không dùng LLM**
-- Mục tiêu: **8–16 LLM calls mỗi cuộc điều tra**
-- Agent hỗ trợ **Human-in-the-Loop**: analyst con người luôn có quyền can thiệp
+## Current status
 
----
+The previous family-centric contract has been replaced. The core is ready only
+for a **limited CDB/mock vertical slice after Phase 0 contract tests pass**. It
+is not production-ready for Splunk/EDR/IDS until real-provider completeness and
+scope tests pass.
 
-## 2. Kiến trúc 5 Module (FROZEN)
+Five modules remain: M1 Observation Ledger, M2 Abduction Engine, M3 Constraint
+Checker, M4 Controller, and M5 Adapter/Reporter. M2/M5 may use an LLM; all state,
+retrieval, constraints, coverage and disposition remain deterministic.
 
-```
-ALERT → SCOPE FRONTIER
-          ↓
-        [M1] OBSERVATION LEDGER      deterministic
-          ↓ unattributed observations
-        [M2] ABDUCTION ENGINE        LLM (REQUIRED)
-          ↓ proposed explanations
-        [M3] CONSTRAINT CHECKER      deterministic (C1,C2,C5 in v1)
-          ↓ validated state
-        [M4] CONTROLLER              deterministic
-          ↓ action
-        [M5] ADAPTER / REPORTER      templates + LLM fallback
-          ↓
-        ANALYST ← escalation + coverage bound
-```
+## Core vocabulary
 
-### M1 — Evidence Ledger (deterministic, injection boundary)
-- Trích xuất fields từ raw logs (parser, không LLM)
-- Gán nhãn taint: `ATTACKER_INFLUENCED` vs `STRUCTURAL` per-field
-- Epistemic typing: `OBSERVED` vs `TESTIMONY`
-- Outcome typing: `ROWS` / `VALID_NEGATIVE` / `UNKNOWN`
-- **Reachability accounting**: theo dõi sources đã/chưa query, entity-connected fraction, windows chưa covered
-- Parse failure → `PARSE_FAILED`, không bao giờ drop silently
+| Concept | Meaning |
+|---|---|
+| `ProviderScope` | native addressable data partition with provider, retention, coverage and gaps |
+| `ProviderOperation` | executable provider function/query with schema, pagination and completeness contract |
+| `Cell` | `(ProviderScope, entity/ANY, time_bucket)` coverage unit |
+| `EvidenceRequirement` | versioned question-side evidence shape, not a vendor event catalogue |
+| `native_type` | original provider record/relationship type, preserved |
+| `semantic_type` | optional post-hoc mapping; may be `None` |
+| `EventFamily` | optional reporting label only; never a Cell axis or query restriction |
 
-### M2 — Abduction Engine (LLM — REQUIRED)
-- Prompt luôn là *"what could account for these observations?"* — không bao giờ *"does X hold?"*
-- Input: extracted fields + taint labels — **KHÔNG BAO GIỜ raw log text**
-- Output: `Explanation{id, label, class: BENIGN|MALICIOUS|UNKNOWN, attributions[], expectations[], assumptions[]}`
-- Bắt buộc diversity: ≥1 BENIGN + ≥1 MALICIOUS nếu cả hai đều hợp lý
-- Explosion control: cap 7 live explanations, merge nếu >80% overlap
+If a record belongs to no semantic family, keep it as an observation with native
+fields and `semantic_type=None` (`UNMAPPED`). Never route it to `OTHER` or drop
+it. If a known scope has no operation, mark `UNQUERYABLE` and count it in the
+coverage denominator. A source outside the catalog is `UNKNOWN_SOURCE`: report
+it as a blind spot, but do not pretend it is enumerable.
 
-### M3 — Constraint Checker (deterministic)
-- C1: Schema well-formedness → reject
-- C2: Cited observation phải tồn tại → reject attribution
-- C3: Relation re-derivation (v2) → `MISATTRIBUTED`
-- C4: Taint gate (v2; label in v1) → `TAINTED`, không đủ carry disposition
-- C5: Contradiction vs expectations → `WEAKENED` + conflict
-- C6: Arbitrariness count (v2) → ranking input
+## Cells and coverage
 
-### M4 — Controller (deterministic)
-Thứ tự mỗi turn:
-1. Stop predicate → terminal
-2. Escalation trigger → `ASK_HUMAN`
-3. Untested expectation → `QUERY(expectation)`
-4. Pending negative → `CONTROL_QUERY`
-5. Unattributed observations → `ABDUCE`
-6. Else → `EXPAND_SCOPE` (adaptive rule)
-
-### M5 — Translate / Report (LLM fallback)
-- 7 intent templates: `ProcessLineage`, `LogonHistory`, `NetworkConnections`, `PersistenceArtifacts`, `FileWrites`, `DNSQueries`, `AnyEventControl`
-- Templates là deterministic, LLM chỉ dùng cho novel intents (<30%)
-- Reporter nhận extracted fields + observation IDs, **không bao giờ raw log text**
-
----
-
-## 3. Data Contracts (Key Types)
-
-```python
-Observation    = {id, source, scope_id, timestamp,
-                  epistemic_type: OBSERVED|TESTIMONY,
-                  fields{}, taint{field: STRUCTURAL|ATTACKER_INFLUENCED},
-                  provenance{query_id, collector, ingest_time},
-                  attributed_by[], demanding?: bool}
-
-Explanation    = {id, label, class: BENIGN|MALICIOUS|UNKNOWN,
-                  status: LIVE|WEAKENED|REJECTED,
-                  origin: LLM|HUMAN,
-                  attributions[{observation_id, cause, status}],
-                  expectations[Expectation],
-                  arbitrariness?: int, rejection_reason?}
-
-Expectation    = {id, description, scope,
-                  test_status: UNTESTED|CONFIRMED|REFUTED|UNTESTABLE}
-
-QueryResult    = {query_id, outcome: ROWS|VALID_NEGATIVE|UNKNOWN,
-                  diagnostic?, control_query_id?, rows?}
-
-FinalAccount   = {disposition: MALICIOUS|BENIGN|UNKNOWN|
-                                INSUFFICIENT_EVIDENCE|CONFLICTED,
-                  terminal_state: STOP_RESOLVED|STOP_BOUNDED,
-                  chain[{claim, observation_ids[]}],
-                  coverage_bound, residual, human_confirmed: bool}
+```text
+Cell = (provider_scope, entity | ANY, time_bucket)
 ```
 
----
+Wildcard Cells come from known provider scopes and permit an entity-free alert
+to bootstrap through `BroadSweep`. Instance Cells are added from alert or
+observed entities, regardless of semantic mapping. A complete targeted query
+does not make a scope explored; only a complete scope-level scan does.
 
-## 4. Kết quả thực nghiệm quan trọng (Đã đo)
+States are `EXPLORED`, `PARTIAL`, `UNEXPLORED`, `UNQUERYABLE` and
+`UNREACHABLE`. `PARTIAL` is split/paginated and never re-issued indefinitely.
+Coverage reports scope coverage separately from requirement coverage and counts
+unmapped observations.
 
-| Thí nghiệm | Kết quả | Hệ quả |
-|---|---|---|
-| **E1b** | Gold-prose baselines leak (8.5× vocabulary leakage) | B-04 hidden-target guard bắt buộc |
-| **E3** | Coverage alarm: precision 0.050, fires 85% cases | **KILLED** — thay bằng coverage-bound reporting |
-| **E4** | Content-free mean-IDF ranking 0.662 trên MAIN-69 | MAIN-69 INVALID cho retrieval-policy questions |
-| **E5** | IDF-null lift: DiagChain 2.23× vs CDB 0.68–1.08× | Artifact là construction-specific |
-| **E6** | Entity pivot reachability: mean **0.272**, worst **0.006** | Ceiling là reachable set, không phải policy |
-| **E6** | Policy spread 0.046 ≪ reachability gap 0.165 | Action-selection KHÔNG phải bottleneck |
-| **E6** | OF dưới random trên entity-free alerts | Pure observation-first **KILLED** as default |
+## Query flow
 
----
+```text
+alert
+  → configured/discovered ProviderScopes
+  → EvidenceRequirement
+  → CapabilityMatcher(CapabilityDescriptor)
+  → CapabilityBinding
+  → allow-listed ProviderOperation
+  → native query/result (complete or partial)
+  → Observation (native preserved, semantic optional)
+  → expansion/sampling/assessment
+```
 
-## 5. Stopping Rules
+Investigation workflows: `ProcessLineage`, `LogonHistory`,
+`NetworkConnections`, `PersistenceArtifacts`, `FileWrites`, `DNSQueries`,
+`BroadSweep`.
 
-**`STOP_RESOLVED`** — tất cả 5 điều kiện:
-1. Mọi demanding observation được attributed bởi LIVE explanation
-2. Mọi expectation đã CONFIRMED hoặc REFUTED (không UNTESTED)
-3. Không có cross-class rival sống sót
-4. dark_sources empty cho mọi source mà live expectation cần
-5. coverage_bound không có unqueried source hay uncovered window
+Negative evidence has three controls: `ScopeHealthControl`, `AnyRecordInScope`,
+and `PredicateObservabilityControl`. Controls never mint observations. A zero
+row targeted result is `VALID_NEGATIVE` only when the target is complete and all
+three controls pass.
 
-**`STOP_BOUNDED`** — điều kiện nới lỏng + dark required source / budget exhausted / pivot pool exhausted / no executable action. **Bắt buộc emit coverage bound.**
+An unsupported requirement is recorded as `UNSUPPORTED_REQUIREMENT`; the agent
+does not invent a query. An LLM may propose native query text only inside the
+adapter's validated operation/field/predicate allowlist.
 
----
+## Implementation order
 
-## 6. Human-in-the-Loop (6 Escalation Triggers)
+1. Phase 0 contracts, validators and invariant tests.
+2. Phase 1 manifest, CDB scope/operation and normalization.
+3. M1 ledger, native observation preservation and coverage accounting.
+4. M3 constraints, M4 controller, frontier and deterministic sampling.
+5. M5 CDB adapter, seven workflows and three controls.
+6. Stubbed abduction with zero LLM calls and replayable audit log.
+7. Real abduction, human loop and reporter.
+8. Real SIEM/EDR/IDS adapters only after native scope/completeness tests.
 
-1. Unattributed observations persist sau một round abduction
-2. Source dark cho window mà expectation cần
-3. Hai OBSERVED sources conflict không hòa giải được
-4. `STOP_BOUNDED` reached
-5. Disposition chỉ dựa trên TAINTED attributions
-6. `entity_connected_fraction` dưới threshold (từ E6)
+## Non-negotiable security assertions
 
-**Rules:** Human input = TESTIMONY, không overwrite observation. Human explanations qua cùng constraints. Disagreement = conflict, không phải overwrite. Human KHÔNG THỂ force `STOP_RESOLVED` khi blocking conditions còn.
-
----
-
-## 7. LLM Boundary (Nghiêm ngặt)
-
-| Stage | Verdict | Calls |
-|---|---|---|
-| Field extraction, taint | **FORBIDDEN** | 0 |
-| Retrieval, scope expansion | **FORBIDDEN** | 0 |
-| Abduction | **REQUIRED** | 3–6 |
-| All constraints | **FORBIDDEN** | 0 |
-| Action selection, control queries, stop | **FORBIDDEN** | 0 |
-| Query generation (templated) | **FORBIDDEN** | 0 |
-| Query generation (novel) | REQUIRED | 3–8 |
-| Final account | REQUIRED | 1 |
-| **Total** | | **8–16** |
-
----
-
-## 8. Security Constraints
-
-- **B-04**: Hard-block gold prose (`attack_step`, `step_description`, tactic/technique labels, `causal_edges`, support mapping) khỏi query/prompt
-- **E-02**: Prompt input filter — extracted fields + taint labels only, NEVER raw log text
-- **M-02**: Assert LLM never receives raw `content` field (static + runtime check)
-- **C-03/C-04**: Taint gate — attribution dựa solely trên attacker-influenced fields → TAINTED
-- Injection corpus S1–S4 từ [REF-INJECT-01]
-
----
-
-## 9. Datasets & Benchmarks
-
-| Dataset | Valid for | Invalid for |
-|---|---|---|
-| **CDB** (155,350 events) | Retrieval, evidence-acquisition, EXP-01/02/04/06/08 | Benign-attribution claims |
-| **DiagChain MAIN-69** | Evidence-use, grounding, attribution, EXP-05/07 | **Retrieval-policy selection** (IDF null 0.662) |
-| **ExCyTIn** | End-to-end reward, EXP-07 alt | Fine-grained stage attribution |
-
----
-
-## 10. Implementation Priority & Timeline
-
-### Critical Path
-`A-01 → A-02 → B-01 → C-01 → D-01 → E-01 → F-01 → G-01 → H-01 → first end-to-end run`
-
-### Build Order
-1. **M1** (Evidence Ledger) — injection boundary, mọi module phụ thuộc
-2. **M3** (Constraints) — gates trước khi LLM code tồn tại
-3. **M4** (Controller) — test full loop với stubbed abduction, ZERO LLM calls
-4. **M5** (Adapter) — templates trước LLM fallback
-5. **M2** (Abduction) — build cuối cùng, vì gates/controller/adapters đã constrain nó
-
-### MVP (Week 9)
-Alert → observation → stubbed abduction → expectation → query → observation → update → stop. **Zero LLM calls.** Chứng minh deterministic core chạy standalone.
-
-### Key Experiments
-1. **EXP-02** (P1): Retrieval tại scale, n≥100 — xác nhận/kill §10
-2. **EXP-01** (P2): LLM-hypothesis confound — n≥30×3
-3. **EXP-04** (P3): Control query epistemic matrix
-4. **EXP-07** (P4): Abduction recovery
-
----
-
-## 11. Known Limitations (MUST STATE)
-
-1. **Hypothesis completeness unsolved**: reachability ceiling 0.272 mean, 0.006 worst
-2. **Coverage alarm doesn't work**: precision 0.050
-3. **Baseline poisoning**: no in-band detection
-4. **VALID_NEGATIVE defeated by log deletion**: control query passes on tampered data
-5. **Injection reduced, not eliminated**: 11.8% residual under strongest defense
-6. **n=3 on decisive experiment**: direction and magnitude only
-
----
-
-## 12. Architecture Status Tags
-
-- **LOCKED**: 5 modules, observation ledger, LLM abduction, C1/C2/C5, deterministic controller, template-first queries, escalation, 2 terminal states, 3-valued outcome typing, no probabilistic core, no RL/POMDP
-- **PROVISIONAL**: entity-driven scope expansion, expectation-driven ordering, control query, C4, C6, retrieval policy details
-- **REJECTED** (cần evidence mới để re-enter): gold-prose baselines, pure observation-first as default, coverage alarm as primary signal, POMDP/RL/MCTS/multi-agent
-- **UNSUPPORTED** (không được claim validated): control query, C3, coverage-bound mechanism, taint-gate effectiveness, escalation triggers
-- **FUNDAMENTALLY UNRESOLVED**: complete hypothesis coverage, evidence outside reachable scope, baseline poisoning, deleted-evidence detection, LLM creative-abduction reliability
-
----
-
-## 13. Tech Stack & Environment
-
-- **Language**: Python 3.10+, typed, CI, lint
-- **Deterministic seeding**: git SHA, config hash, seed → run manifest
-- **LLM client**: cache + call/token counter
-- **Benchmarks**: CDB (Gymnasium), DiagChain (evidence cards), ExCyTIn (HuggingFace)
-- **Testing**: unit (every deterministic component) + integration (full loop) + security (S1–S4 injection)
-
----
-
-## 14. Contributions (Thực sự)
-
-1. **Benchmark-validity finding**: IDF null 0.662 trên MAIN-69 — retrieval experiments cần null baselines
-2. **Reachability ceiling**: mean 0.272 — constraint là reachable set, không phải policy (pending EXP-02)
-3. **Epistemic layer cho negative evidence**: control query (original, unproven until EXP-04)
-4. **Coverage-bound reporting**: thay thế coverage alarm precision 0.050 (negative-result-driven)
-5. **Architecture composition**: 5 modules từ DiagChain + incomplete-DB + medical thresholds + argumentation + taint (defensible, not novel)
+- raw log content never appears in LLM prompts;
+- M2 cannot mutate observations, attribution or statuses;
+- no LLM output can select controls, stop, or compute disposition;
+- tainted entities are rate-limited and deferred entities are counted;
+- unknown records are retained; incomplete/stale/unqueryable results cannot license negatives.

@@ -1,0 +1,22 @@
+# CDB mock registry — all 7 event families, standard Windows Security telemetry
+sources:
+  - id: winsec
+    backend: cdb_sqlite
+    event_families:
+      - process_creation
+      - logon
+      - network_bind
+      - file_write
+      - registry
+      - dns
+      - scheduled_task
+    indexed_entity_types:
+      - host
+      - account
+      - process
+      - ip
+      - file
+    retention_days: 90
+    coverage_start: "2026-01-01T00:00:00Z"
+    coverage_end: null
+    known_gaps: []

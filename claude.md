@@ -1,164 +1,63 @@
 # CLAUDE.md
 
-Behavioral guidelines cho AI agent khi làm việc với project này. Dựa trên [Andrej Karpathy's observations](https://x.com/karpathy/status/2015883857489522876) về LLM coding pitfalls, được adapt cho project Threat Investigation Agent.
+Working rules for AI agents in this repository. Read `context.md` first, then
+use `01` for architecture, `02` for implementation contracts, and `04` for
+the checklist.
 
-**Tradeoff:** Các guidelines này thiên về cẩn thận hơn là nhanh. Với task đơn giản (typo, one-liner), dùng phán đoán — không cần full rigor cho mọi thay đổi.
+## Think before coding
 
----
+- State assumptions when they affect scope or correctness.
+- Treat `01`/`02` as the active v3 contracts; report conflicts instead of
+  silently inventing a fourth design.
+- Keep parameters provisional unless an experiment establishes them.
+- Prefer the smallest change that closes a tested gap.
 
-## 1. Think Before Coding
+## Project-specific architecture rules
 
-**Đừng giả định. Đừng giấu confusion. Surface tradeoffs.**
+- Five modules only: M1 ledger, M2 abduction, M3 constraints, M4 controller,
+  M5 adapter/reporter.
+- `Cell` is `(ProviderScope, entity/ANY, time_bucket)`. Never add
+  `event_family` to Cell or use it as the coverage denominator.
+- `ProviderScope` (native data partition) and `ProviderOperation` (query
+  function) are separate contracts.
+- `EvidenceRequirement` describes the question; provider operations answer it.
+  Unsupported requirements are explicit, not fabricated.
+- Preserve `native_type`; `semantic_type=None` is valid. Never drop an unknown
+  event or force it into `OTHER`.
+- `UNQUERYABLE` is counted in coverage; `UNKNOWN_SOURCE` is reported outside
+  the denominator. Scope and requirement coverage are separate.
+- A complete targeted query does not mean the whole scope is explored.
 
-Trước khi implement:
-- State assumptions explicitly. Nếu không chắc, **hỏi thay vì đoán**.
-- Nếu nhiều cách hiểu tồn tại, **trình bày tất cả** — đừng chọn im lặng.
-- Nếu có cách đơn giản hơn, nói ra. Push back khi cần.
-- Nếu không rõ, **dừng lại**. Nêu rõ điều gì gây confusion. Hỏi.
+## Determinism and security
 
-### Project-Specific
-- Kiến trúc đã **FROZEN** — không redesign, chỉ implement.
-- Nếu phát hiện conflict giữa design document và thực tế implementation, **báo cáo conflict**, không tự ý sửa architecture.
-- Phân biệt rõ giữa LOCKED / PROVISIONAL / UNSUPPORTED / REJECTED (xem context.md §12).
+- Field/entity extraction, taint, retrieval, coverage, controls, action
+  selection, stopping and disposition are deterministic.
+- LLM input contains structured extracted fields and taint only; raw log
+  content never enters a prompt.
+- M2 cannot mutate observations, attribution or statuses. No LLM output can
+  select a control, stop the run, or compute disposition.
+- Tainted entities may generate leads within a budget; deferred entities are
+  counted, never silently discarded.
+- Queries are template/allowlist-first. Validate provider, scope, fields,
+  predicates, time bounds, pagination and limits before execution.
 
----
+## Evidence and provenance
 
-## 2. Simplicity First
+- Every claim cites observation/query IDs and a coverage bound.
+- Keep `INHERITED`, `ADAPTED`, `COMPOSED`, `ORIGINAL`, `ENGINEERING` and
+  experimental status labels honest.
+- Do not cite `UNVERIFIED` references as established evidence.
+- Do not use null-baseline results or benchmark outcomes beyond their measured
+  scope.
+- Audit logs are append-only.
 
-**Code tối thiểu giải quyết vấn đề. Không gì speculative.**
+## Testing standards
 
-- Không features vượt yêu cầu.
-- Không abstractions cho single-use code.
-- Không "flexibility" hay "configurability" chưa được yêu cầu.
-- Không error handling cho impossible scenarios.
-- Nếu viết 200 dòng mà có thể 50, viết lại.
-
-Tự hỏi: *"Senior engineer sẽ nói code này overcomplicated?"* Nếu có, simplify.
-
-### Project-Specific
-- LLM calls target: **8–16 per investigation**. Mọi thiết kế phải giữ hoặc giảm con số này.
-- Mọi thứ có thể deterministic **PHẢI** deterministic — xem LLM Boundary table trong context.md §7.
-- Không thêm probabilistic/Bayesian/RL/POMDP machinery — đã bị **REJECTED**.
-
----
-
-## 3. Surgical Changes
-
-**Chỉ đụng vào cái cần đụng. Chỉ dọn mess mình tạo ra.**
-
-Khi sửa code existing:
-- Đừng "improve" adjacent code, comments, hay formatting.
-- Đừng refactor thứ chưa hỏng.
-- Match existing style, dù bạn sẽ làm khác.
-- Nếu thấy unrelated dead code, **mention nó** — đừng xóa.
-
-Khi thay đổi tạo orphans:
-- Remove imports/variables/functions mà **THAY ĐỔI CỦA BẠN** làm unused.
-- Đừng remove pre-existing dead code trừ khi được yêu cầu.
-
-**Test: Mọi dòng thay đổi phải trace trực tiếp về request của user.**
-
-### Project-Specific
-- **KHÔNG BAO GIỜ** remove hay modify existing comments/docstrings trừ khi trực tiếp liên quan đến code change.
-- Giữ nguyên tất cả provenance annotations (`[MEASURED]`, `[LIT]`, `[UNTESTED]`, `[KILLED]`).
-- Append-only cho audit logs — không delete hay overwrite mid-investigation data.
-
----
-
-## 4. Goal-Driven Execution
-
-**Định nghĩa success criteria. Loop cho đến khi verified.**
-
-Transform tasks thành verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-Cho multi-step tasks, state brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria cho phép loop independently. Weak criteria ("make it work") đòi hỏi constant clarification.
-
-### Project-Specific
-- Mỗi module có **Definition of Done** rõ ràng trong EXECUTION-PLAN.md §3.
-- MVP gate: **full loop chạy end-to-end với ZERO LLM calls** trước khi thêm M2.
-- Mỗi experiment có **kill criterion** — nếu trigger, phải thay đổi architecture tương ứng.
-
----
-
-## 5. Security-First Development
-
-> Project-specific principle — **critical vì đây là security tool xử lý adversarial data**.
-
-### Hard Rules (Non-Negotiable)
-- **LLM KHÔNG BAO GIỜ nhận raw log `content` field** — static + runtime check (M-02)
-- **B-04 hidden-target guard**: hard-block `attack_step`, `step_description`, tactic/technique labels, `causal_edges`, support mapping khỏi mọi query/prompt
-- **Taint labelling (C-03)**: mọi field phải được label `ATTACKER_INFLUENCED` hoặc `STRUCTURAL`
-- **Prompt input filter (E-02)**: chỉ extracted fields + taint labels vào prompt
-- **Attribution bookkeeping**: `attributed_by` KHÔNG BAO GIỜ writable bởi M2 output
-- **`STOP_RESOLVED`**: KHÔNG BAO GIỜ reachable qua bất kỳ LLM output path nào
-
-### Injection Defense
-- Taint gate: attribution resting solely trên attacker-influenced fields → `TAINTED`
-- Template-first queries: common intents dùng hand-written templates, không LLM
-- Reporter nhận observation IDs, không raw logs
-
----
-
-## 6. Evidence & Provenance Discipline
-
-> Project-specific principle — **mọi claim phải traceable**.
-
-### Rules
-- Mọi design decision phải tagged: `[MEASURED]`, `[LIT]`, `[UNTESTED]`, `[KILLED]`
-- Không cite reference đang ở status `UNVERIFIED`
-- Provenance classes: `INHERITED`, `ADAPTED`, `COMPOSED`, `ORIGINAL`, `EXPERIMENTALLY-DERIVED`, `ENGINEERING`
-- **Null baselines bắt buộc** trong mọi retrieval experiment (IDF null, length null, random)
-- Nếu một mechanism bị `KILLED` bởi experiment, nó **KHÔNG ĐƯỢC re-enter** mà không có evidence mới
-
-### Claim Status Discipline
-- `ESTABLISHED`: đã measured, replicated, hoặc multiply supported
-- `PROVISIONAL`: measured nhưng n nhỏ hoặc chưa replicated — **không overclaim**
-- `UNSUPPORTED`: design hợp lý nhưng chưa measured — **không claim validated**
-- `FUNDAMENTALLY UNRESOLVED`: thesis phải state explicitly
-
----
-
-## 7. Testing Standards
-
-### Mỗi component phải có:
-- **Unit tests**: known-answer fixtures, state-machine transitions
-- **Integration tests**: full loop trên synthetic incident + CDB chain
-- **Security tests** (trước khi LLM chạm real logs):
-  - S1–S4 injection payloads trong command lines, URLs, DNS, usernames, filenames
-  - Assert raw `content` never in any prompt
-  - Assert `attributed_by` never writable by M2
-  - Assert `STOP_RESOLVED` unreachable via LLM output path
-  - Assert B-04 guard raises trên mọi withheld field
-- **Regression tests**: một test per historical failure (E1b leakage, E4 IDF-null, E6 OF-below-random, E3 trigger precision)
-
----
-
-## 8. Code Style & Conventions
-
-- Python 3.10+, fully typed
-- CI green trước merge
-- Deterministic seeding: mọi run phải reproducible (git SHA + config hash + seed)
-- LLM client: tất cả calls qua cached client với call/token counter
-- Append-only audit log: mọi state transition (actor, precondition, delta)
-
----
-
-## How to Know Guidelines Are Working
-
-Các guidelines đang hoạt động nếu:
-- ✅ Fewer unnecessary changes in diffs — chỉ requested changes xuất hiện
-- ✅ Fewer rewrites do overcomplication — code đơn giản lần đầu
-- ✅ Clarifying questions đến **trước** implementation — không phải sau mistakes
-- ✅ Clean, minimal PRs — không drive-by refactoring
-- ✅ Security boundaries respected — không raw logs trong prompts
-- ✅ Evidence status maintained — claims properly tagged
+- Every contract and state transition has a known-answer unit test.
+- Integration tests cover entity-bearing and entity-free alerts, unknown native
+  records, partial results, stale scopes, unqueryable scopes and unsupported
+  requirements.
+- Security tests cover command lines, URLs, DNS names, usernames and filenames;
+  assert raw-content isolation, hidden-target blocking and LLM mutation guards.
+- MVP means a replayable CDB/mock vertical slice with zero LLM calls. Real
+  SIEM/EDR/IDS production claims require real adapter execution evidence.
