@@ -8,26 +8,26 @@ execution evidence; documentation alone is not completion evidence.
 
 ### Phase 0 — contract gate
 
-- [ ] Python 3.10+ project, CI, lint and test runner.
+- [x] Python 3.10+ project, CI, lint and test runner. <!-- Python 3.11 + pytest; CI/lint pending -->
 - [ ] Replay manifest contains git SHA, config hash and deterministic seed.
-- [ ] Implement `ProviderScope` with native partition, coverage, retention and gaps.
-- [ ] Implement `Cell(provider_scope, entity, time_bucket)` with **no** `event_family` field.
-- [ ] Implement `EntityRef` concrete variants and the real `ANY` wildcard value.
-- [ ] Implement `ProviderOperation` with scope IDs, parameter schema, pagination and completeness semantics.
-- [ ] Implement `EvidenceRequirement` and `CapabilityBinding` with `EXACT/PARTIAL`.
+- [x] Implement `ProviderScope` with native partition, coverage, retention and gaps.
+- [x] Implement `Cell(provider_scope, entity, time_bucket)` with **no** `event_family` field.
+- [x] Implement `EntityRef` concrete variants and the real `ANY` wildcard value.
+- [x] Implement `ProviderOperation` with scope IDs, parameter schema, pagination and completeness semantics.
+- [x] Implement `EvidenceRequirement` and `CapabilityBinding` with `EXACT/PARTIAL`.
 - [ ] Implement `CapabilityDescriptor` and a provider-neutral `CapabilityMatcher`.
-- [ ] Implement `Observation` with preserved `native_type` and nullable `semantic_type`.
-- [ ] Implement `QueryResult.complete`; never infer completeness from row count alone.
-- [ ] Implement diagnostics and states `UNEXPLORED`, `PARTIAL`, `EXPLORED`, `UNQUERYABLE`, `UNREACHABLE`.
-- [ ] Implement `UNMAPPED`, `UNEXPLAINED`, `UNSUPPORTED_REQUIREMENT` and `UNKNOWN_SOURCE` handling.
-- [ ] Implement `CoverageBound` with separate scope/requirement coverage and unmapped counts.
-- [ ] Malformed contracts fail validation; unknown semantic type does not.
-- [ ] `TESTIMONY` cannot become `OBSERVED`; M2 cannot write attribution/status.
+- [x] Implement `Observation` with preserved `native_type` and nullable `semantic_type`.
+- [x] Implement `QueryResult.complete`; never infer completeness from row count alone.
+- [x] Implement diagnostics and states `UNEXPLORED`, `PARTIAL`, `EXPLORED`, `UNQUERYABLE`, `UNREACHABLE`.
+- [ ] Implement `UNMAPPED`, `UNEXPLAINED`, `UNSUPPORTED_REQUIREMENT` and `UNKNOWN_SOURCE` handling. <!-- Diagnostic.UNSUPPORTED_REQUIREMENT exists; UNMAPPED/UNEXPLAINED not yet wired -->
+- [ ] Implement `CoverageBound` with separate scope/requirement coverage and unmapped counts. <!-- unmapped_observations present; scope vs requirement coverage not yet separated -->
+- [ ] Malformed contracts fail validation; unknown semantic type does not. <!-- partial: __post_init__ guards on Cell/Observation/Expectation; comprehensive validators pending -->
+- [ ] `TESTIMONY` cannot become `OBSERVED`; M2 cannot write attribution/status. <!-- documented in code; runtime enforcement pending -->
 
 ### Phase 0 acceptance
 
-- [ ] Contract round-trip tests pass.
-- [ ] Unknown native observation round-trips with `semantic_type=None`.
+- [x] Contract round-trip tests pass.
+- [x] Unknown native observation round-trips with `semantic_type=None`.
 - [ ] `UNQUERYABLE` is in the denominator; `UNKNOWN_SOURCE` is reported outside it.
 - [ ] A complete targeted query does not mark the whole provider scope explored.
 
@@ -35,11 +35,11 @@ execution evidence; documentation alone is not completion evidence.
 
 - [ ] Define canonical alert fixtures, including an entity-free alert.
 - [ ] Deterministically extract and normalize alert entities and time window.
-- [ ] Load/validate a provider manifest; no event-family declarations required.
-- [ ] Assign stable IDs to every configured/discovered `ProviderScope`.
-- [ ] Validate operation-to-scope relationships and operation schemas.
+- [x] Load/validate a provider manifest; no event-family declarations required.
+- [ ] Assign stable IDs to every configured/discovered `ProviderScope`. <!-- scope_id field exists; stable ID assignment from manifest pending -->
+- [x] Validate operation-to-scope relationships and operation schemas.
 - [ ] Preserve native partition identity in provenance.
-- [ ] Build CDB/mock fixture with at least one scope and one `scope_scan` operation.
+- [x] Build CDB/mock fixture with at least one scope and one `scope_scan` operation.
 - [ ] Add fixtures for a stale scope, known gap, unknown native record and no-adapter scope.
 
 ### Acceptance
@@ -48,6 +48,7 @@ execution evidence; documentation alone is not completion evidence.
 - [ ] Entity-free alert creates a finite wildcard frame from known scopes alone.
 - [ ] Retention-expired/known-gap cells are never selected.
 - [ ] A known scope with no operation is `UNQUERYABLE`, not silently omitted.
+
 
 ## Phase 2 — M1 observation ledger
 
