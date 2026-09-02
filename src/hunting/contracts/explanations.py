@@ -4,6 +4,7 @@ Only M3 (Constraint Checker) may change explanation or attribution status.
 Rejected explanations are kept in the record — never deleted.
 """
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
 

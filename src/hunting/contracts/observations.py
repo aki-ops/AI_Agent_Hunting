@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any
 
 from hunting.contracts.cells import ProviderScope
-from hunting.contracts.entities import EntityRef, AnyEntity
+from hunting.contracts.entities import AnyEntity, EntityRef
 
 
 class EpistemicType(str, Enum):

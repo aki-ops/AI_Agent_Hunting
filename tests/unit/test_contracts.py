@@ -1,10 +1,12 @@
 import pytest
 
+from hunting.contracts.capabilities import CapabilityDescriptor, CapabilityMatcher
 from hunting.contracts.cells import Cell, CellState, ProviderScope
+from hunting.contracts.coverage import CoverageBound
 from hunting.contracts.entities import ANY, AnyEntity, EntityKind, Host
 from hunting.contracts.expectations import EvidenceRequirement, Expectation
 from hunting.contracts.manifest import ReplayManifest, create_replay_manifest
-from hunting.contracts.observations import EpistemicType, Observation, SemanticType, Provenance
+from hunting.contracts.observations import EpistemicType, Observation, SemanticType
 from hunting.contracts.queries import (
     CONTROL_INTENTS,
     INVESTIGATION_INTENTS,
@@ -16,15 +18,10 @@ from hunting.contracts.queries import (
     QueryOutcome,
     QueryResult,
 )
-from hunting.contracts.capabilities import CapabilityDescriptor, CapabilityMatcher
-from hunting.contracts.coverage import CoverageBound, RequirementCoverage
 from hunting.contracts.validators import (
-    validate_cell,
-    validate_observation,
-    validate_expectation,
-    validate_provider_scope,
     assert_epistemic_transition,
     assert_m2_cannot_mutate_attribution,
+    validate_observation,
 )
 
 

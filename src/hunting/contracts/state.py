@@ -4,17 +4,18 @@ InvestigationState is the single mutable object passed through the entire loop.
 FinalAccount is the immutable output emitted at every terminal state.
 """
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from hunting.contracts.entities import EntityRef
-from hunting.contracts.observations import Observation
-from hunting.contracts.explanations import Explanation
-from hunting.contracts.expectations import Expectation
-from hunting.contracts.queries import Query, QueryResult, ControlResult
 from hunting.contracts.conflicts import Conflict, HumanInput
 from hunting.contracts.coverage import CoverageBound
+from hunting.contracts.entities import EntityRef
+from hunting.contracts.expectations import Expectation
+from hunting.contracts.explanations import Explanation
+from hunting.contracts.observations import Observation
+from hunting.contracts.queries import ControlResult, Query, QueryResult
 
 
 @dataclass

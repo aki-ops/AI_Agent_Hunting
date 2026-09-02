@@ -12,9 +12,8 @@ Normalizes entities and timestamps into canonical contracts:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping
+from typing import Mapping
 
-from hunting.contracts.cells import ProviderScope
 from hunting.contracts.entities import (
     Account,
     Domain,
@@ -40,16 +39,14 @@ def normalize_host(name: str) -> Host:
 def normalize_account(user: str, domain: str = "") -> Account:
     """Normalize user account."""
     cleaned = user.strip()
-    dom = domain.strip()
     if "\\" in cleaned:
         parts = cleaned.split("\\", 1)
-        dom = parts[0]
         cleaned = parts[1]
     elif "@" in cleaned:
         parts = cleaned.split("@", 1)
         cleaned = parts[0]
-        dom = parts[1]
     return Account(username=cleaned)
+
 
 
 def normalize_domain(fqdn: str) -> Domain:

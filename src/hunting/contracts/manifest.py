@@ -6,8 +6,8 @@ Captures git commit SHA, configuration hash, and deterministic seed.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
 import subprocess
+from dataclasses import dataclass, field
 from typing import Any
 
 

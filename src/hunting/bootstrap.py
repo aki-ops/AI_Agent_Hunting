@@ -10,11 +10,11 @@ Implements:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from hunting.contracts.cells import Cell, CellState, ProviderScope
-from hunting.contracts.entities import ANY, EntityRef
+from hunting.contracts.entities import ANY
 from hunting.contracts.state import Alert, Seed, TimeWindow
 from hunting.normalization import (
     assign_stable_scope_id,
@@ -65,12 +65,24 @@ def is_window_in_gap(window_start: datetime, window_end: datetime, gap_start_iso
     return not (window_end <= gap_start or window_start >= gap_end)
 
 
-def determine_cell_state(scope_reg: RegistryScope, has_operation: bool, time_bucket: str) -> CellState:
+def determine_cell_state(
+    scope_reg: RegistryScope,
+    has_operation: bool,
+    time_bucket: str,
+    as_of: datetime | None = None,
+) -> CellState:
     """Evaluate scope configuration against window to determine initial cell state."""
     if not has_operation:
         return CellState.UNQUERYABLE
 
     window_start, window_end = parse_interval(time_bucket)
+
+    # Check retention: if the query window has rolled off backend retention relative to as_of
+    ref_time = as_of or datetime.now(timezone.utc)
+    if scope_reg.retention_days and scope_reg.retention_days > 0:
+        retention_cutoff = ref_time - timedelta(days=scope_reg.retention_days)
+        if window_end <= retention_cutoff:
+            return CellState.UNREACHABLE
 
     # Check coverage_end (if set)
     if scope_reg.coverage_end:
@@ -96,6 +108,7 @@ def bootstrap_investigation(
     alert: Alert,
     registry: Registry,
     seed_radius_seconds: int = 7200,
+    as_of: datetime | None = None,
 ) -> BootstrapResult:
     """Bootstrap investigation from an alert and deployment registry."""
     entities = extract_alert_entities(alert)
@@ -129,7 +142,7 @@ def bootstrap_investigation(
 
         for scope_reg in source.scopes:
             has_op = scope_reg.id in supported_scope_ids
-            scope_state = determine_cell_state(scope_reg, has_op, window_str)
+            scope_state = determine_cell_state(scope_reg, has_op, window_str, as_of=as_of)
 
             stable_id = assign_stable_scope_id(source.id, scope_reg.native_partition, scope_reg.id)
             provider_scope = ProviderScope(

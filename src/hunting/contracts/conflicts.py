@@ -1,5 +1,6 @@
 """Conflicts and human input — irreconcilable disagreements and analyst interaction."""
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
 

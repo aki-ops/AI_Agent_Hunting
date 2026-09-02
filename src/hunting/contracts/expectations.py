@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from hunting.contracts.entities import EntityRef, AnyEntity
+from hunting.contracts.entities import AnyEntity, EntityRef
 
 
 class EvidenceRequirement(str, Enum):

@@ -1,7 +1,6 @@
 """Unit and integration tests for Phase 1 (Discovery, input, normalization and bootstrapping)."""
 import json
 from pathlib import Path
-import pytest
 
 from hunting.bootstrap import bootstrap_investigation
 from hunting.contracts.cells import CellState
@@ -10,7 +9,6 @@ from hunting.contracts.observations import EpistemicType, Observation, Provenanc
 from hunting.contracts.state import Alert
 from hunting.normalization import (
     assign_stable_scope_id,
-    extract_alert_entities,
     normalize_account,
     normalize_domain,
     normalize_file,
@@ -120,7 +118,7 @@ def test_entity_free_alert_creates_finite_wildcard_frame_alone():
 # Acceptance Criterion 3: Retention-expired / known-gap cells are never selected
 # ---------------------------------------------------------------------------
 
-def test_retention_expired_cells_are_unreachable_and_never_selectable():
+def test_coverage_end_in_past_makes_cells_unreachable():
     alert = load_alert_fixture("alert_entity_bearing.json")
     # stale_scope coverage_end is in 2025; alert is in 2026
     stale_registry = load_registry(FIXTURES / "fixture_stale_scope.yaml")
@@ -132,6 +130,32 @@ def test_retention_expired_cells_are_unreachable_and_never_selectable():
 
     # Selectable cells must exclude UNREACHABLE
     assert len(result.selectable_cells) == 0
+
+
+def test_retention_days_expiration_with_null_coverage_end():
+    """Verify that retention_days actually prunes rolling logs even when coverage_end is null."""
+    alert = load_alert_fixture("alert_entity_bearing.json")  # Alert is at 2026-09-01T10:15:00Z
+    retention_registry = load_registry(FIXTURES / "fixture_retention_expired.yaml")  # retention_days = 10, coverage_end = null
+
+    from datetime import datetime, timezone
+
+    # Case 1: Investigation run 34 days later (2026-10-05) -> retention cutoff is 2026-09-25.
+    # Alert window (2026-09-01) has rolled off retention -> UNREACHABLE.
+    as_of_expired = datetime(2026, 10, 5, 12, 0, 0, tzinfo=timezone.utc)
+    result_expired = bootstrap_investigation(alert, retention_registry, as_of=as_of_expired)
+
+    for cell in result_expired.all_cells:
+        assert cell.state is CellState.UNREACHABLE
+    assert len(result_expired.selectable_cells) == 0
+
+    # Case 2: Investigation run 2 days later (2026-09-03) -> retention cutoff is 2026-08-24.
+    # Alert window (2026-09-01) is safely inside retention -> UNEXPLORED and selectable!
+    as_of_fresh = datetime(2026, 9, 3, 12, 0, 0, tzinfo=timezone.utc)
+    result_fresh = bootstrap_investigation(alert, retention_registry, as_of=as_of_fresh)
+
+    for cell in result_fresh.all_cells:
+        assert cell.state is CellState.UNEXPLORED
+    assert len(result_fresh.selectable_cells) > 0
 
 
 def test_known_gap_cells_are_unreachable_and_never_selectable():

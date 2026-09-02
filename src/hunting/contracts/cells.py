@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Mapping
 
-from hunting.contracts.entities import EntityRef, AnyEntity
+from hunting.contracts.entities import AnyEntity, EntityRef
 
 
 @dataclass(frozen=True)

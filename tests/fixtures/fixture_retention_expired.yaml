@@ -1,0 +1,20 @@
+# Scope with 10 days retention and coverage_end = null.
+# Any investigation where the alert window is older than 10 days relative to as_of
+# must mark this scope UNREACHABLE because logs have been pruned.
+providers:
+  - id: retention_provider
+    backend: cdb_sqlite
+    scopes:
+      - id: short_retention_scope
+        native_partition:
+          table: quick_prune_events
+        retention_days: 10
+        coverage_start: "2020-01-01T00:00:00Z"
+        coverage_end: null
+        known_gaps: []
+    operations:
+      - id: scan_quick
+        scope_ids: [short_retention_scope]
+        params_schema: {window: interval}
+        pagination: none
+        limit_semantics: complete

@@ -8,10 +8,8 @@ Enforces:
 """
 from __future__ import annotations
 
-from typing import Any
-
 from hunting.contracts.cells import Cell, ProviderScope
-from hunting.contracts.entities import AnyEntity, EntityRef
+from hunting.contracts.entities import AnyEntity
 from hunting.contracts.expectations import Expectation
 from hunting.contracts.observations import EpistemicType, Observation
 
