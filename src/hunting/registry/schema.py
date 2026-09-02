@@ -1,68 +1,68 @@
-"""Capability registry schema — deployment configuration.
-
-This is DEPLOYMENT CONFIG: immutable within an investigation.
-Set once by the operator; the agent cannot modify it at runtime.
-Runtime health observations (source_health, family_collection, field_presence)
-live in InvestigationState, NOT here.
-"""
+"""Provider-scope deployment manifest contracts."""
 from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
 class KnownGap:
-    """A declared gap in a source's data collection.
-
-    family=None means the gap affects all families.
-    host=None means the gap affects all hosts.
-    """
     window_start: str
     window_end: str
-    family: str | None = None
-    host: str | None = None
+    scope_id: str | None = None
+    entity: str | None = None
 
 
 @dataclass(frozen=True)
-class RegistrySource:
-    """Configuration for one telemetry source.
-
-    A source absent from the registry does not silently exist —
-    the agent treats unknown sources as UNKNOWN-TO-AGENT.
-    """
+class RegistryScope:
     id: str
-    backend: str                                      # cdb_sqlite | kql | spl | esql | edr_api
-    event_families: tuple[str, ...]                   # families this source can serve
-    indexed_entity_types: tuple[str, ...]             # entity types indexed by this source
+    native_partition: dict[str, str]
     retention_days: int
-    coverage_start: str                               # ISO 8601; earliest queryable timestamp
-    coverage_end: str | None = None                   # ISO 8601 or None (= +∞)
+    coverage_start: str
+    coverage_end: str | None = None
     known_gaps: tuple[KnownGap, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
-class Registry:
-    """The complete capability registry for this deployment.
+class RegistryOperation:
+    id: str
+    scope_ids: tuple[str, ...]
+    params_schema: dict[str, Any] = field(default_factory=dict)
+    pagination: str = "none"
+    limit_semantics: str = "provider-defined"
 
-    Loaded once at startup — hard failure if malformed or incomplete.
-    Immutable within an investigation.
-    """
+
+@dataclass(frozen=True)
+class RegistrySource:
+    id: str
+    backend: str
+    scopes: tuple[RegistryScope, ...]
+    operations: tuple[RegistryOperation, ...]
+
+
+@dataclass(frozen=True)
+class Registry:
     sources: tuple[RegistrySource, ...]
 
     def source_by_id(self, source_id: str) -> RegistrySource | None:
-        for s in self.sources:
-            if s.id == source_id:
-                return s
+        return next((source for source in self.sources if source.id == source_id), None)
+
+    def scope_by_id(self, scope_id: str) -> RegistryScope | None:
+        for source in self.sources:
+            for scope in source.scopes:
+                if scope.id == scope_id:
+                    return scope
         return None
 
-    def supports_family(self, source_id: str, family: str) -> bool:
-        """True if source exists and declares this event family."""
-        s = self.source_by_id(source_id)
-        return s is not None and family in s.event_families
-
-    def indexes_entity_type(self, source_id: str, entity_type: str) -> bool:
-        """True if source exists and indexes this entity type."""
-        s = self.source_by_id(source_id)
-        return s is not None and entity_type in s.indexed_entity_types
+    def operation_by_id(self, operation_id: str) -> RegistryOperation | None:
+        for source in self.sources:
+            for operation in source.operations:
+                if operation.id == operation_id:
+                    return operation
+        return None
 
     def all_source_ids(self) -> list[str]:
-        return [s.id for s in self.sources]
+        return [source.id for source in self.sources]
+
+    def all_scope_ids(self) -> list[str]:
+        return [scope.id for source in self.sources for scope in source.scopes]

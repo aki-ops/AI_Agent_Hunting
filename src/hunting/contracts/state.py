@@ -127,10 +127,11 @@ class InvestigationState:
     abduced_over: list[str] = field(default_factory=list)   # observation IDs already abduced over
     human_inputs: list[HumanInput] = field(default_factory=list)
     # Runtime health — mutable, NOT in registry
-    source_health: dict[str, bool] = field(default_factory=dict)
-    family_collection: dict[str, bool] = field(default_factory=dict)
-    field_presence: dict[str, dict[str, bool]] = field(default_factory=dict)
-    degraded_families: list[tuple[str, str, float]] = field(default_factory=list)
+    provider_health: dict[str, bool] = field(default_factory=dict)
+    operation_health: dict[str, bool] = field(default_factory=dict)
+    observed_fields: dict[str, set[str]] = field(default_factory=dict)
+    unmapped_observations: list[str] = field(default_factory=list)
+    scope_gaps: list[tuple[str, str]] = field(default_factory=list)
     coverage_bound: CoverageBound = field(default_factory=CoverageBound)
     stop: TerminalState | None = None
     turn: int = 0

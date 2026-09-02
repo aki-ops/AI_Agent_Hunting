@@ -1,22 +1,22 @@
-# CDB mock registry — all 7 event families, standard Windows Security telemetry
-sources:
-  - id: winsec
+# CDB provider manifest: native fixture partition and executable operations.
+providers:
+  - id: cdb
     backend: cdb_sqlite
-    event_families:
-      - process_creation
-      - logon
-      - network_bind
-      - file_write
-      - registry
-      - dns
-      - scheduled_task
-    indexed_entity_types:
-      - host
-      - account
-      - process
-      - ip
-      - file
-    retention_days: 90
-    coverage_start: "2026-01-01T00:00:00Z"
-    coverage_end: null
-    known_gaps: []
+    scopes:
+      - id: cdb_security
+        native_partition:
+          database: cdb.sqlite
+          table: events
+        retention_days: 90
+        coverage_start: "2026-01-01T00:00:00Z"
+        coverage_end: null
+        known_gaps: []
+    operations:
+      - id: cdb_scope_scan
+        scope_ids: [cdb_security]
+        params_schema:
+          window: interval
+          entity: entity_or_any
+          limit: integer
+        pagination: offset
+        limit_semantics: "complete only when EOF is established"

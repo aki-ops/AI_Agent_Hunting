@@ -1,126 +1,129 @@
-"""Queries — the 7 investigation intents + 2 control operations, and their results.
-
-Investigation intents  → mint Observations (evidence)
-Control operations     → NEVER mint Observations (used to license VALID_NEGATIVE)
-"""
+"""Provider-neutral query and result contracts."""
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 from hunting.contracts.entities import EntityRef
-from hunting.contracts.cells import EventFamily
+from hunting.contracts.expectations import EvidenceRequirement
 
 
 class QueryOutcome(str, Enum):
-    ROWS = "rows"                      # matching events found
-    VALID_NEGATIVE = "valid_negative"  # confirmed absence — requires 3-stage control
-    UNKNOWN = "unknown"                # cannot determine (source dead, truncated, etc.)
+    ROWS = "rows"
+    VALID_NEGATIVE = "valid_negative"
+    UNKNOWN = "unknown"
 
 
 class DiagnosticClass(str, Enum):
-    RETRYABLE = "retryable"   # cell stays UNEXPLORED, retry up to 2 times
-    PERMANENT = "permanent"   # cell → UNREACHABLE
+    RETRYABLE = "retryable"
+    PERMANENT = "permanent"
 
 
 class Diagnostic(str, Enum):
-    # Retryable diagnostics
     QUERY_FAILED = "query_failed"
     SOURCE_UNHEALTHY = "source_unhealthy"
     PARTIAL_RESULT = "partial_result"
-    # Permanent diagnostics
     RETENTION_EXPIRED = "retention_expired"
     OUT_OF_WINDOW = "out_of_window"
     SOURCE_UNAVAILABLE = "source_unavailable"
+    UNQUERYABLE = "unqueryable"
+    UNSUPPORTED_REQUIREMENT = "unsupported_requirement"
     PARSE_FAILED = "parse_failed"
 
     @property
     def diagnostic_class(self) -> DiagnosticClass:
-        _retryable = {
+        retryable = {
             Diagnostic.QUERY_FAILED,
             Diagnostic.SOURCE_UNHEALTHY,
             Diagnostic.PARTIAL_RESULT,
         }
-        return DiagnosticClass.RETRYABLE if self in _retryable else DiagnosticClass.PERMANENT
+        return DiagnosticClass.RETRYABLE if self in retryable else DiagnosticClass.PERMANENT
 
 
 class QueryIntent(str, Enum):
-    """The 9 query operations: 7 investigation intents + 2 control operations.
-
-    Investigation intents mint Observations.
-    Control operations NEVER mint Observations — they only return metadata
-    (counts, field presence) to license VALID_NEGATIVE outcomes.
-    """
-    # --- Investigation intents (mint Observations) ---
     PROCESS_LINEAGE = "ProcessLineage"
     LOGON_HISTORY = "LogonHistory"
     NETWORK_CONNECTIONS = "NetworkConnections"
     PERSISTENCE_ARTIFACTS = "PersistenceArtifacts"
     FILE_WRITES = "FileWrites"
     DNS_QUERIES = "DNSQueries"
-    BROAD_SWEEP = "BroadSweep"          # wildcard sweep; only intent that allows ANY entity
+    BROAD_SWEEP = "BroadSweep"
+    SCOPE_HEALTH_CONTROL = "ScopeHealthControl"
+    ANY_RECORD_IN_SCOPE = "AnyRecordInScope"
+    PREDICATE_OBSERVABILITY_CONTROL = "PredicateObservabilityControl"
 
-    # --- Control operations (never mint Observations) ---
-    ANY_EVENT_CONTROL = "AnyEventControl"       # is source alive for host+window?
-    ANY_EVENT_OF_FAMILY = "AnyEventOfFamily"    # is family collected? is field present?
 
-
-CONTROL_INTENTS = {QueryIntent.ANY_EVENT_CONTROL, QueryIntent.ANY_EVENT_OF_FAMILY}
+CONTROL_INTENTS = {
+    QueryIntent.SCOPE_HEALTH_CONTROL,
+    QueryIntent.ANY_RECORD_IN_SCOPE,
+    QueryIntent.PREDICATE_OBSERVABILITY_CONTROL,
+}
 INVESTIGATION_INTENTS = set(QueryIntent) - CONTROL_INTENTS
 
 
 class QueryGenerator(str, Enum):
-    TEMPLATE = "template"  # cost = 1
-    LLM = "llm"            # cost = 2 — fallback for novel intents only (<30% target)
+    TEMPLATE = "template"
+    LLM = "llm"
+
+
+@dataclass(frozen=True)
+class ProviderOperation:
+    id: str
+    provider_id: str
+    scope_ids: tuple[str, ...]
+    params_schema: dict[str, Any] = field(default_factory=dict)
+    pagination: str = "none"
+    limit_semantics: str = "provider-defined"
+    rate_limit: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class CapabilityBinding:
+    evidence_requirement: EvidenceRequirement
+    provider_id: str
+    operation_id: str
+    parameter_mapping: dict[str, str] = field(default_factory=dict)
+    confidence: str = "EXACT"
 
 
 @dataclass(frozen=True)
 class Query:
-    """A single query issued to a backend source."""
     id: str
     intent: QueryIntent
-    entity: EntityRef        # ANY allowed ONLY for BroadSweep
-    source: str
-    event_family: EventFamily
-    window: str              # ISO 8601 interval "start/end"
+    entity: EntityRef
+    provider_scope_id: str
+    operation_id: str
+    evidence_requirement: EvidenceRequirement | None
+    window: str
     backend: str
     generated_by: QueryGenerator
-    cost: int                # 1 = template, 2 = LLM fallback
+    cost: int
     limit: int | None = None
 
 
 @dataclass
 class QueryResult:
-    """Result of an investigation query.
-
-    CRITICAL: complete=True ONLY when EOF is established
-    (via limit+1 trick, or backend has_more=False).
-    complete=False (PARTIAL) means:
-      - MAY yield CONFIRMED if a match is found
-      - NEVER yields REFUTED or VALID_NEGATIVE
-      - cell transitions to PARTIAL state, then bucket split
-    """
     query_id: str
     outcome: QueryOutcome
     executed_ok: bool
-    complete: bool                             # True ONLY when EOF established
+    complete: bool
     diagnostic: Diagnostic | None = None
     diagnostic_class: DiagnosticClass | None = None
     control_query_ids: list[str] = field(default_factory=list)
-    rows: list[dict[str, Any]] | None = None  # raw rows — NEVER forwarded to LLM
+    rows: list[dict[str, Any]] | None = None
+    observed_fields: list[str] = field(default_factory=list)
+    native_types: list[str] = field(default_factory=list)
+    cursor: str | None = None
     truncation_reason: str | None = None
 
 
 @dataclass
 class ControlResult:
-    """Result of a control operation (AnyEventControl or AnyEventOfFamily).
-
-    Controls return metadata only — no evidence rows, no Observations minted.
-    If controls minted observations they would pollute unattributed and inflate T1.
-    """
     query_id: str
-    operation: QueryIntent   # must be ANY_EVENT_CONTROL or ANY_EVENT_OF_FAMILY
+    operation: QueryIntent
     executed_ok: bool
-    count: int               # event count; 0 = source dead or family not collected
-    field_present: dict[str, bool] | None = None  # only for AnyEventOfFamily
+    count: int | None = None
+    field_present: dict[str, bool] | None = None
+    predicate_observable: bool | None = None
     diagnostic: Diagnostic | None = None

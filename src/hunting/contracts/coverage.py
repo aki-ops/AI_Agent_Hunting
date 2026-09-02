@@ -39,6 +39,7 @@ class CoverageBound:
     partial_cells_wildcard: int = 0
     frontier_cells_wildcard: int = 0
     unexplored_cells_wildcard: int = 0
+    unqueryable_cells_wildcard: int = 0
     unreachable_cells_wildcard: int = 0
 
     # --- Instance cells ---
@@ -47,10 +48,14 @@ class CoverageBound:
     partial_cells_instance: int = 0
     frontier_cells_instance: int = 0
     unexplored_cells_instance: int = 0
+    unqueryable_cells_instance: int = 0
     unreachable_cells_instance: int = 0
 
     # --- Additional context ---
-    sources_never_queried: list[str] = field(default_factory=list)
+    scopes_never_queried: list[str] = field(default_factory=list)
+    unknown_sources: list[str] = field(default_factory=list)  # reported, outside denominator
+    unmapped_observations: int = 0
+    unsupported_requirements: list[str] = field(default_factory=list)
     windows_never_covered: list[str] = field(default_factory=list)
     deferred_taint_entities: int = 0   # entities capped by N_taint, deferred not discarded
     truncated_queries: int = 0
