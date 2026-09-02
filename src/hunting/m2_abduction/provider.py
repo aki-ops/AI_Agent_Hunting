@@ -6,6 +6,8 @@ Local model inference is out of scope for the current deployment.
 from __future__ import annotations
 
 import json
+import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
@@ -115,20 +117,78 @@ class StubAbductionProvider(LLMProvider):
 
 
 class ApiLLMProvider(LLMProvider):
-    """External API LLM provider for live deployment."""
+
+    """External API LLM provider executing real HTTP requests to an LLM API endpoint.
+
+    Compatible with standard OpenAI / Anthropic / Gemini / vLLM / Ollama REST endpoints.
+    """
 
     def __init__(self, config: ApiLLMConfig) -> None:
         self.config = config
 
     def generate(self, prompt_context: dict[str, Any]) -> str:
-        """Call external LLM API. (Can be hooked to requests/httpx)."""
+        """Execute real HTTP POST request to external LLM API and return structured JSON string."""
         # Strictly structured input: verify no raw text entered context
         if "raw_log" in prompt_context or "raw_payload" in prompt_context:
             raise ValueError("Security violation: raw log content cannot be sent to external LLM API")
 
-        # For production execution, external HTTP calls occur here.
-        # Fallback to structured response if in test environment without network
-        return StubAbductionProvider().generate(prompt_context)
+        system_instruction = (
+            "You are an expert Threat Hunting Abduction Engine (M2). "
+            "Propose diverse hypotheses (benign, malicious, unknown) and concrete testable expectations "
+            "using EvidenceRequirements (process_ancestry, authentication_activity, network_connection, "
+            "persistence_change, file_modification, dns_activity, scope_records). "
+            "Output strictly valid JSON with keys 'explanations' and 'expectations'. Do not include markdown fences."
+        )
+
+        payload = {
+            "model": self.config.model,
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": json.dumps(prompt_context, indent=2)},
+            ],
+            "temperature": 0.0,
+            "max_tokens": self.config.max_tokens,
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.config.api_key}",
+            "User-Agent": "AI-Agent-Hunting/1.0",
+        }
+
+        req = urllib.request.Request(
+            self.config.endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
+                resp_bytes = resp.read()
+                resp_json = json.loads(resp_bytes.decode("utf-8"))
+
+                choices = resp_json.get("choices", [])
+                if not choices:
+                    raise ValueError(f"LLM API returned no choices: {resp_json}")
+
+                content = str(choices[0].get("message", {}).get("content", "")).strip()
+
+                # Strip markdown code fences if model enclosed JSON in ```json ... ```
+                if content.startswith("```json"):
+                    content = content[7:]
+                elif content.startswith("```"):
+                    content = content[3:]
+                if content.endswith("```"):
+                    content = content[:-3]
+
+                return content.strip()
+        except urllib.error.HTTPError as http_err:
+            error_body = http_err.read().decode("utf-8", errors="replace")
+            raise ConnectionError(f"LLM API HTTP {http_err.code} error: {error_body}") from http_err
+        except urllib.error.URLError as url_err:
+            raise ConnectionError(f"LLM API network connection failed: {url_err.reason}") from url_err
+
 
 
 __all__ = [

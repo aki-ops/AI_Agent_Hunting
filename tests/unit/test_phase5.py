@@ -1,5 +1,6 @@
 """Unit and integration tests for Phase 5 (M2 API Abduction, Human Loop, and Reporter)."""
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -47,8 +48,8 @@ def test_stubbed_abduction_and_diversity():
         assert isinstance(exp.evidence_requirement, EvidenceRequirement)
         assert not hasattr(exp, "event_family")
 
-
 def test_api_llm_config_secrets_separated_from_state():
+
     # Secrets/credentials reside in ApiLLMConfig outside InvestigationState
     config = ApiLLMConfig(
         endpoint="https://api.openai.com/v1/chat/completions",
@@ -64,9 +65,34 @@ def test_api_llm_config_secrets_separated_from_state():
     assert not hasattr(state, "api_key")
     assert not hasattr(state, "endpoint")
 
-    # Clean generation succeeds
-    resp = provider.generate({"observations": [{"id": "obs-01"}]})
-    assert isinstance(resp, str)
+    # Verify real HTTP request execution and response parsing
+    mock_response_body = json.dumps({
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({"explanations": [], "expectations": []})
+                }
+            }
+        ]
+    }).encode("utf-8")
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = mock_response_body
+    mock_resp.__enter__.return_value = mock_resp
+
+    with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+        resp = provider.generate({"observations": [{"id": "obs-01"}]})
+        assert isinstance(resp, str)
+        assert mock_urlopen.called
+
+        # Verify request parameters sent over HTTP
+        req_arg = mock_urlopen.call_args[0][0]
+        assert req_arg.full_url == "https://api.openai.com/v1/chat/completions"
+        assert req_arg.headers["Authorization"] == "Bearer sk-proj-secret-key"
+        sent_body = json.loads(req_arg.data.decode("utf-8"))
+        assert sent_body["model"] == "gpt-4o"
+        assert sent_body["max_tokens"] == 3000
+
 
 
 def test_security_prompt_injection_boundary_and_hidden_fields():
