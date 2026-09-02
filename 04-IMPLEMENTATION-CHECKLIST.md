@@ -52,23 +52,23 @@ execution evidence; documentation alone is not completion evidence.
 
 ## Phase 2 — M1 observation ledger
 
-- [ ] Implement raw event loaders and protected raw references.
-- [ ] Preserve provider-native records and native type, including unknown types.
-- [ ] Extract stable envelope fields and provider-specific fields without assuming a universal schema.
-- [ ] Apply per-field taint and provenance deterministically.
-- [ ] Store append-only observations and query outcomes.
-- [ ] Record `observed_fields[(provider_scope, native_type)]`.
-- [ ] Maintain unattributed observations independent of semantic mapping.
-- [ ] Keep `UNMAPPED` observations available to abduction and reporting.
-- [ ] Track wildcard and instance cells separately.
-- [ ] Store partial parents as audit-only split records; exclude them from active coverage.
+- [x] Implement raw event loaders and protected raw references.
+- [x] Preserve provider-native records and native type, including unknown types.
+- [x] Extract stable envelope fields and provider-specific fields without assuming a universal schema.
+- [x] Apply per-field taint and provenance deterministically.
+- [x] Store append-only observations and query outcomes.
+- [x] Record `observed_fields[(provider_scope, native_type)]`.
+- [x] Maintain unattributed observations independent of semantic mapping.
+- [x] Keep `UNMAPPED` observations available to abduction and reporting.
+- [x] Track wildcard and instance cells separately.
+- [x] Store partial parents as audit-only split records; exclude them from active coverage.
 
 ### Acceptance
 
-- [ ] Parse failures become typed diagnostics; no silent drops.
-- [ ] Every observation has scope, provenance, raw reference and field taint.
-- [ ] Unknown event without event code remains a valid observation.
-- [ ] Complete scope scan can mark scope coverage; targeted evidence query cannot.
+- [x] Parse failures become typed diagnostics; no silent drops.
+- [x] Every observation has scope, provenance, raw reference and field taint.
+- [x] Unknown event without event code remains a valid observation.
+- [x] Complete scope scan can mark scope coverage; targeted evidence query cannot.
 
 ## Phase 3 — M3 constraints and M4 controller
 
