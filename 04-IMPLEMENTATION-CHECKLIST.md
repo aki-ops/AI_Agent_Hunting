@@ -74,26 +74,26 @@ execution evidence; documentation alone is not completion evidence.
 
 ### Planning, frontier and sampling
 
-- [ ] Compile `EvidenceRequirement → CapabilityBinding → ProviderOperation`.
-- [ ] Select bindings from adapter descriptors; no provider-specific branches in the core planner.
-- [ ] Record unsupported requirements without fabricating a query.
-- [ ] Build wildcard cells per known `ProviderScope`.
-- [ ] Add instance cells from alert/observed entities regardless of semantic mapping.
-- [ ] Restrict wildcard selection to `SAMPLE`; restrict entity expansion to `EXPAND`.
-- [ ] Implement provider-scope-stratified deterministic sampling with seed and budget ledger.
-- [ ] Implement cursor pagination and time-split fallback for `PARTIAL` results.
-- [ ] Bound split depth with `min_bucket`; never re-issue the same truncated query forever.
+- [x] Compile `EvidenceRequirement → CapabilityBinding → ProviderOperation`.
+- [x] Select bindings from adapter descriptors; no provider-specific branches in the core planner.
+- [x] Record unsupported requirements without fabricating a query.
+- [x] Build wildcard cells per known `ProviderScope`.
+- [x] Add instance cells from alert/observed entities regardless of semantic mapping.
+- [x] Restrict wildcard selection to `SAMPLE`; restrict entity expansion to `EXPAND`.
+- [x] Implement provider-scope-stratified deterministic sampling with seed and budget ledger.
+- [x] Implement cursor pagination and time-split fallback for `PARTIAL` results.
+- [x] Bound split depth with `min_bucket`; never re-issue the same truncated query forever.
 
 ### Constraints and stopping
 
-- [ ] Schema and cited-observation integrity checks.
-- [ ] Contradiction handling and preserved rejection reasons.
-- [ ] Fixed action order and lexicographic selection.
-- [ ] Retryable/permanent diagnostic partition.
-- [ ] Turn/query budgets and tainted-entity budget; deferred entities counted.
-- [ ] `STOP_RESOLVED` requires a surviving explanation and no blocking uncertainty.
-- [ ] `STOP_BOUNDED` requires residuals and coverage bound.
-- [ ] Every terminal path emits separate scope and requirement coverage.
+- [x] Schema and cited-observation integrity checks.
+- [x] Contradiction handling and preserved rejection reasons.
+- [x] Fixed action order and lexicographic selection.
+- [x] Retryable/permanent diagnostic partition.
+- [x] Turn/query budgets and tainted-entity budget; deferred entities counted.
+- [x] `STOP_RESOLVED` requires a surviving explanation and no blocking uncertainty.
+- [x] `STOP_BOUNDED` requires residuals and coverage bound.
+- [x] Every terminal path emits separate scope and requirement coverage.
 
 ## Phase 4 — M5 adapter and controls
 

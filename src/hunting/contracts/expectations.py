@@ -22,6 +22,7 @@ class EvidenceRequirement(str, Enum):
 
 
 class TestStatus(str, Enum):
+    __test__ = False
     UNTESTED = "untested"
     CONFIRMED = "confirmed"
     REFUTED = "refuted"
