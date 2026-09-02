@@ -1,0 +1,16 @@
+{
+  "provider_id": "ids",
+  "native_partition": {
+    "stream": "eve.json",
+    "sensor": "sensor-west-01"
+  },
+  "raw_ref": "raw-log-line-884920",
+  "timestamp": "2026-09-01T10:14:32Z",
+  "native_type": "quic_unparsed_flow_frame",
+  "fields": {
+    "connection_id": "0x4a9b2c",
+    "packet_length": 1420,
+    "crypto_version": "draft-29",
+    "flow_id": 984021
+  }
+}

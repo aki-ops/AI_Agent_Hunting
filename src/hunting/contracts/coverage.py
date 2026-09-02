@@ -6,8 +6,10 @@ claiming complete visibility.
 
 All integer fields must be reported with denominators — never as bare fractions.
 Wildcard and instance cells are always counted separately.
+Scope coverage and requirement coverage are reported separately.
 """
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 
@@ -24,6 +26,23 @@ class SamplingStats:
 
 
 @dataclass
+class RequirementCoverage:
+    """Accounting of evidence requirements queried during investigation."""
+    attempted_requirements: list[str] = field(default_factory=list)
+    satisfied_requirements: list[str] = field(default_factory=list)
+    partial_requirements: list[str] = field(default_factory=list)
+    unsupported_requirements: list[str] = field(default_factory=list)
+
+    @property
+    def total_attempted(self) -> int:
+        return len(self.attempted_requirements)
+
+    @property
+    def total_satisfied(self) -> int:
+        return len(self.satisfied_requirements)
+
+
+@dataclass
 class CoverageBound:
     """Accounting of what the agent searched and what it could not reach.
 
@@ -32,6 +51,8 @@ class CoverageBound:
 
     Split parents are counted in partial_cells_* but excluded from active denominators.
     KNOWN_inst grows as entities are discovered — fractions may decrease (non-monotonic).
+    UNQUERYABLE cells are explicitly included in the coverage denominator.
+    UNKNOWN_SOURCE is outside the denominator and reported separately.
     """
     # --- Wildcard cells ---
     known_cells_wildcard: int = 0
@@ -53,7 +74,7 @@ class CoverageBound:
 
     # --- Additional context ---
     scopes_never_queried: list[str] = field(default_factory=list)
-    unknown_sources: list[str] = field(default_factory=list)  # reported, outside denominator
+    unknown_sources: list[str] = field(default_factory=list)  # reported, strictly outside denominator
     unmapped_observations: int = 0
     unsupported_requirements: list[str] = field(default_factory=list)
     windows_never_covered: list[str] = field(default_factory=list)
@@ -62,3 +83,30 @@ class CoverageBound:
     wildcard_window: str = ""          # the wildcard_window parameter used this investigation
 
     sampling: SamplingStats = field(default_factory=SamplingStats)
+    requirement_coverage: RequirementCoverage = field(default_factory=RequirementCoverage)
+
+    @property
+    def scope_coverage_denominator(self) -> int:
+        """Active denominator for scope coverage.
+
+        Includes UNQUERYABLE and UNREACHABLE.
+        Excludes UNKNOWN_SOURCE (which is outside the denominator).
+        """
+        wildcard_active = (
+            self.explored_cells_wildcard
+            + self.partial_cells_wildcard
+            + self.unexplored_cells_wildcard
+            + self.unqueryable_cells_wildcard
+            + self.unreachable_cells_wildcard
+        )
+        instance_active = (
+            self.explored_cells_instance
+            + self.partial_cells_instance
+            + self.unexplored_cells_instance
+            + self.unqueryable_cells_instance
+            + self.unreachable_cells_instance
+        )
+        return wildcard_active + instance_active
+
+
+__all__ = ["SamplingStats", "RequirementCoverage", "CoverageBound"]

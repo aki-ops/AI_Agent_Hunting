@@ -1,0 +1,22 @@
+# Provider has two scopes, but operation only covers one.
+# The second scope has no adapter/operation and is therefore UNQUERYABLE.
+providers:
+  - id: hybrid_provider
+    backend: cdb_sqlite
+    scopes:
+      - id: covered_scope
+        native_partition:
+          table: covered_events
+        retention_days: 90
+        coverage_start: "2026-01-01T00:00:00Z"
+      - id: unqueryable_scope
+        native_partition:
+          table: unadaptered_proprietary_events
+        retention_days: 90
+        coverage_start: "2026-01-01T00:00:00Z"
+    operations:
+      - id: scan_covered
+        scope_ids: [covered_scope]
+        params_schema: {window: interval}
+        pagination: none
+        limit_semantics: complete

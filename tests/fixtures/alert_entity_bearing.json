@@ -1,0 +1,15 @@
+{
+  "id": "alert-bearing-001",
+  "source": "cdb",
+  "received_at": "2026-09-01T10:15:00Z",
+  "raw": "Suspicious PowerShell invocation on DESKTOP-VICTIM1 by user CORP\\alice",
+  "fields": {
+    "host": "DESKTOP-VICTIM1",
+    "user": "CORP\\alice",
+    "process_pid": 4820,
+    "process_image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "timestamp": "2026-09-01T10:14:30Z",
+    "ip": "192.168.1.50",
+    "domain": "evil-c2.corp.internal."
+  }
+}

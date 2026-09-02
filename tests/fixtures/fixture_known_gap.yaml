@@ -1,0 +1,22 @@
+# Known gap fixture: collector outage during the alert window
+providers:
+  - id: cdb_outage
+    backend: cdb_sqlite
+    scopes:
+      - id: gap_scope
+        native_partition:
+          database: cdb.sqlite
+          table: events
+        retention_days: 90
+        coverage_start: "2026-01-01T00:00:00Z"
+        coverage_end: null
+        known_gaps:
+          - window_start: "2026-09-01T10:00:00Z"
+            window_end: "2026-09-01T12:00:00Z"
+            entity: null
+    operations:
+      - id: scan_gap
+        scope_ids: [gap_scope]
+        params_schema: {window: interval}
+        pagination: none
+        limit_semantics: complete

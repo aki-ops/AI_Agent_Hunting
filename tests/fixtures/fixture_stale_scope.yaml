@@ -1,0 +1,19 @@
+# Stale scope fixture: coverage_end is in the past
+providers:
+  - id: cdb_archive
+    backend: cdb_sqlite
+    scopes:
+      - id: stale_archive_scope
+        native_partition:
+          database: archive.sqlite
+          table: old_events
+        retention_days: 10
+        coverage_start: "2025-01-01T00:00:00Z"
+        coverage_end: "2025-06-01T00:00:00Z"
+        known_gaps: []
+    operations:
+      - id: scan_archive
+        scope_ids: [stale_archive_scope]
+        params_schema: {window: interval}
+        pagination: none
+        limit_semantics: complete

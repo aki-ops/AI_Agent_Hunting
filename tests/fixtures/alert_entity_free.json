@@ -1,0 +1,11 @@
+{
+  "id": "alert-free-002",
+  "source": "cdb",
+  "received_at": "2026-09-01T12:00:00Z",
+  "raw": "Anomaly detected: Aggregate spike in failed authentication volume across network segment",
+  "fields": {
+    "timestamp": "2026-09-01T11:55:00Z",
+    "alert_name": "MassAuthenticationSpike",
+    "severity": "high"
+  }
+}

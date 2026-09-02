@@ -8,46 +8,46 @@ execution evidence; documentation alone is not completion evidence.
 
 ### Phase 0 — contract gate
 
-- [x] Python 3.10+ project, CI, lint and test runner. <!-- Python 3.11 + pytest; CI/lint pending -->
-- [ ] Replay manifest contains git SHA, config hash and deterministic seed.
+- [x] Python 3.10+ project, CI, lint and test runner.
+- [x] Replay manifest contains git SHA, config hash and deterministic seed.
 - [x] Implement `ProviderScope` with native partition, coverage, retention and gaps.
 - [x] Implement `Cell(provider_scope, entity, time_bucket)` with **no** `event_family` field.
 - [x] Implement `EntityRef` concrete variants and the real `ANY` wildcard value.
 - [x] Implement `ProviderOperation` with scope IDs, parameter schema, pagination and completeness semantics.
 - [x] Implement `EvidenceRequirement` and `CapabilityBinding` with `EXACT/PARTIAL`.
-- [ ] Implement `CapabilityDescriptor` and a provider-neutral `CapabilityMatcher`.
+- [x] Implement `CapabilityDescriptor` and a provider-neutral `CapabilityMatcher`.
 - [x] Implement `Observation` with preserved `native_type` and nullable `semantic_type`.
 - [x] Implement `QueryResult.complete`; never infer completeness from row count alone.
 - [x] Implement diagnostics and states `UNEXPLORED`, `PARTIAL`, `EXPLORED`, `UNQUERYABLE`, `UNREACHABLE`.
-- [ ] Implement `UNMAPPED`, `UNEXPLAINED`, `UNSUPPORTED_REQUIREMENT` and `UNKNOWN_SOURCE` handling. <!-- Diagnostic.UNSUPPORTED_REQUIREMENT exists; UNMAPPED/UNEXPLAINED not yet wired -->
-- [ ] Implement `CoverageBound` with separate scope/requirement coverage and unmapped counts. <!-- unmapped_observations present; scope vs requirement coverage not yet separated -->
-- [ ] Malformed contracts fail validation; unknown semantic type does not. <!-- partial: __post_init__ guards on Cell/Observation/Expectation; comprehensive validators pending -->
-- [ ] `TESTIMONY` cannot become `OBSERVED`; M2 cannot write attribution/status. <!-- documented in code; runtime enforcement pending -->
+- [x] Implement `UNMAPPED`, `UNEXPLAINED`, `UNSUPPORTED_REQUIREMENT` and `UNKNOWN_SOURCE` handling.
+- [x] Implement `CoverageBound` with separate scope/requirement coverage and unmapped counts.
+- [x] Malformed contracts fail validation; unknown semantic type does not.
+- [x] `TESTIMONY` cannot become `OBSERVED`; M2 cannot write attribution/status.
 
 ### Phase 0 acceptance
 
 - [x] Contract round-trip tests pass.
 - [x] Unknown native observation round-trips with `semantic_type=None`.
-- [ ] `UNQUERYABLE` is in the denominator; `UNKNOWN_SOURCE` is reported outside it.
-- [ ] A complete targeted query does not mark the whole provider scope explored.
+- [x] `UNQUERYABLE` is in the denominator; `UNKNOWN_SOURCE` is reported outside it.
+- [x] A complete targeted query does not mark the whole provider scope explored.
 
 ## Phase 1 — discovery, input and normalization
 
-- [ ] Define canonical alert fixtures, including an entity-free alert.
-- [ ] Deterministically extract and normalize alert entities and time window.
+- [x] Define canonical alert fixtures, including an entity-free alert.
+- [x] Deterministically extract and normalize alert entities and time window.
 - [x] Load/validate a provider manifest; no event-family declarations required.
-- [ ] Assign stable IDs to every configured/discovered `ProviderScope`. <!-- scope_id field exists; stable ID assignment from manifest pending -->
+- [x] Assign stable IDs to every configured/discovered `ProviderScope`.
 - [x] Validate operation-to-scope relationships and operation schemas.
-- [ ] Preserve native partition identity in provenance.
+- [x] Preserve native partition identity in provenance.
 - [x] Build CDB/mock fixture with at least one scope and one `scope_scan` operation.
-- [ ] Add fixtures for a stale scope, known gap, unknown native record and no-adapter scope.
+- [x] Add fixtures for a stale scope, known gap, unknown native record and no-adapter scope.
 
 ### Acceptance
 
-- [ ] Entity-bearing alert creates instance candidates.
-- [ ] Entity-free alert creates a finite wildcard frame from known scopes alone.
-- [ ] Retention-expired/known-gap cells are never selected.
-- [ ] A known scope with no operation is `UNQUERYABLE`, not silently omitted.
+- [x] Entity-bearing alert creates instance candidates.
+- [x] Entity-free alert creates a finite wildcard frame from known scopes alone.
+- [x] Retention-expired/known-gap cells are never selected.
+- [x] A known scope with no operation is `UNQUERYABLE`, not silently omitted.
 
 
 ## Phase 2 — M1 observation ledger
