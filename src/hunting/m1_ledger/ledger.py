@@ -162,8 +162,14 @@ class ObservationLedger:
             return
 
         if result.complete:
-            # Query finished completely
-            cell.state = CellState.EXPLORED
+            # Rule: Complete scope scan (BroadSweep) can mark scope coverage (EXPLORED).
+            # Targeted query (e.g. DNS_QUERIES, ProcessLineage) CANNOT mark a wildcard cell as EXPLORED.
+            if cell.is_wildcard:
+                if query_intent == QueryIntent.BROAD_SWEEP:
+                    cell.state = CellState.EXPLORED
+                # Targeted query on wildcard cell leaves it un-explored at scope level
+            else:
+                cell.state = CellState.EXPLORED
         else:
             # Query was truncated / partial
             cell.state = CellState.PARTIAL
@@ -183,17 +189,21 @@ class ObservationLedger:
         w_counts = self._count_cell_states(list(self._wildcard_cells.values()))
         i_counts = self._count_cell_states(list(self._instance_cells.values()))
 
+        # Separate split parents by wildcard vs instance
+        w_split_parents = sum(1 for p in self._split_parents if p.is_wildcard)
+        i_split_parents = sum(1 for p in self._split_parents if not p.is_wildcard)
+
         return CoverageBound(
             known_cells_wildcard=len(self._wildcard_cells),
             explored_cells_wildcard=w_counts.get(CellState.EXPLORED, 0),
-            partial_cells_wildcard=w_counts.get(CellState.PARTIAL, 0) + len(self._split_parents),
+            partial_cells_wildcard=w_counts.get(CellState.PARTIAL, 0) + w_split_parents,
             unexplored_cells_wildcard=w_counts.get(CellState.UNEXPLORED, 0),
             unqueryable_cells_wildcard=w_counts.get(CellState.UNQUERYABLE, 0),
             unreachable_cells_wildcard=w_counts.get(CellState.UNREACHABLE, 0),
 
             known_cells_instance=len(self._instance_cells),
             explored_cells_instance=i_counts.get(CellState.EXPLORED, 0),
-            partial_cells_instance=i_counts.get(CellState.PARTIAL, 0),
+            partial_cells_instance=i_counts.get(CellState.PARTIAL, 0) + i_split_parents,
             unexplored_cells_instance=i_counts.get(CellState.UNEXPLORED, 0),
             unqueryable_cells_instance=i_counts.get(CellState.UNQUERYABLE, 0),
             unreachable_cells_instance=i_counts.get(CellState.UNREACHABLE, 0),
@@ -201,6 +211,7 @@ class ObservationLedger:
             unknown_sources=list(unknown_sources or []),
             unmapped_observations=len(self._unmapped_ids),
         )
+
 
     def _count_cell_states(self, cells: list[Cell]) -> dict[CellState, int]:
         counts: dict[CellState, int] = {}

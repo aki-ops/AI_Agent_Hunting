@@ -240,3 +240,72 @@ def test_complete_scope_scan_vs_targeted_query_coverage():
 
     # Acceptance: Complete scope scan marks scope coverage explored
     assert wildcard_cell.state is CellState.EXPLORED
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for coverage edge cases
+# ---------------------------------------------------------------------------
+
+def test_targeted_intent_on_wildcard_cell_cannot_mark_it_explored():
+    """Regression 1: Targeted query (e.g. DNS_QUERIES) on a wildcard cell MUST NOT mark it EXPLORED."""
+    ledger = ObservationLedger()
+    scope = ProviderScope("cdb", {"table": "events"}, "cdb_sec")
+
+    wildcard_cell = Cell(scope, ANY, "window")
+    ledger.register_cell(wildcard_cell)
+
+    # Issue targeted query (DNS_QUERIES) with complete=True against wildcard cell
+    res_targeted = QueryResult(
+        query_id="q-dns-wildcard",
+        outcome=QueryOutcome.ROWS,
+        executed_ok=True,
+        complete=True,
+    )
+    ledger.record_query_outcome(QueryIntent.DNS_QUERIES, wildcard_cell, res_targeted)
+
+    # Contract invariant: Wildcard cell CANNOT become EXPLORED via a targeted intent!
+    assert wildcard_cell.state is CellState.UNEXPLORED
+
+    # Now issue BroadSweep (complete scope scan) with complete=True
+    res_sweep = QueryResult(
+        query_id="q-broad-sweep",
+        outcome=QueryOutcome.ROWS,
+        executed_ok=True,
+        complete=True,
+    )
+    ledger.record_query_outcome(QueryIntent.BROAD_SWEEP, wildcard_cell, res_sweep)
+
+    # BroadSweep successfully explores the scope
+    assert wildcard_cell.state is CellState.EXPLORED
+
+
+def test_instance_split_parents_counted_in_instance_partial_not_wildcard():
+    """Regression 2: Split parents must be partitioned by wildcard vs instance in CoverageBound."""
+    ledger = ObservationLedger()
+    scope = ProviderScope("cdb", {"table": "events"}, "cdb_sec")
+
+    # Instance cell split
+    instance_cell = Cell(scope, Host(name="HOST-01"), "2026-09-01T10:00:00Z/2026-09-01T12:00:00Z")
+    ledger.register_cell(instance_cell)
+
+    i_left = Cell(scope, Host(name="HOST-01"), "2026-09-01T10:00:00Z/2026-09-01T11:00:00Z")
+    i_right = Cell(scope, Host(name="HOST-01"), "2026-09-01T11:00:00Z/2026-09-01T12:00:00Z")
+    ledger.record_split_parent(instance_cell, i_left, i_right)
+
+    cb1 = ledger.build_coverage_bound()
+    # Must increment partial_cells_instance, NEVER partial_cells_wildcard!
+    assert cb1.partial_cells_instance == 1
+    assert cb1.partial_cells_wildcard == 0
+
+    # Wildcard cell split
+    wildcard_cell = Cell(scope, ANY, "2026-09-01T10:00:00Z/2026-09-01T12:00:00Z")
+    ledger.register_cell(wildcard_cell)
+
+    w_left = Cell(scope, ANY, "2026-09-01T10:00:00Z/2026-09-01T11:00:00Z")
+    w_right = Cell(scope, ANY, "2026-09-01T11:00:00Z/2026-09-01T12:00:00Z")
+    ledger.record_split_parent(wildcard_cell, w_left, w_right)
+
+    cb2 = ledger.build_coverage_bound()
+    # Both counts must accurately reflect their respective split parents
+    assert cb2.partial_cells_instance == 1
+    assert cb2.partial_cells_wildcard == 1
