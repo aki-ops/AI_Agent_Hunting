@@ -307,3 +307,86 @@ def test_final_account_emission_separate_coverage():
     assert account.human_confirmed is True
     assert account.coverage_bound.requirement_coverage.total_satisfied == 1
     assert account.coverage_bound.explored_cells_wildcard == 5
+
+
+def test_mandatory_human_confirmation_enforced():
+    """Regression 1: emit_final_account MUST raise PermissionError if confirmation is omitted for sensitive states."""
+    cb = CoverageBound()
+
+    # MALICIOUS requires confirmation
+    with pytest.raises(PermissionError, match="Mandatory analyst confirmation required"):
+        emit_final_account(
+            disposition=Disposition.MALICIOUS,
+            terminal_state=TerminalState.STOP_RESOLVED,
+            coverage_bound=cb,
+            residuals=[],
+            human_confirmed=False,
+        )
+
+    # CONFLICTED requires confirmation
+    with pytest.raises(PermissionError, match="Mandatory analyst confirmation required"):
+        emit_final_account(
+            disposition=Disposition.CONFLICTED,
+            terminal_state=TerminalState.STOP_BOUNDED,
+            coverage_bound=cb,
+            residuals=["tie"],
+            human_confirmed=False,
+        )
+
+    # All STOP_BOUNDED requires confirmation
+    with pytest.raises(PermissionError, match="Mandatory analyst confirmation required"):
+        emit_final_account(
+            disposition=Disposition.INSUFFICIENT_EVIDENCE,
+            terminal_state=TerminalState.STOP_BOUNDED,
+            coverage_bound=cb,
+            residuals=["budget"],
+            human_confirmed=False,
+        )
+
+    # BENIGN + STOP_RESOLVED does not strictly require confirmation
+    benign_acc = emit_final_account(
+        disposition=Disposition.BENIGN,
+        terminal_state=TerminalState.STOP_RESOLVED,
+        coverage_bound=cb,
+        residuals=[],
+        human_confirmed=False,
+    )
+    assert benign_acc.human_confirmed is False
+
+    # Providing human_confirmed=True succeeds for MALICIOUS
+    confirmed_acc = emit_final_account(
+        disposition=Disposition.MALICIOUS,
+        terminal_state=TerminalState.STOP_RESOLVED,
+        coverage_bound=cb,
+        residuals=[],
+        human_confirmed=True,
+    )
+    assert confirmed_acc.human_confirmed is True
+
+
+def test_frontier_manager_instance_entity_in_multiple_windows():
+    """Regression 2: FrontierManager must register cells per (entity, window), not entity alone."""
+    scope1 = ProviderScope("cdb", {"table": "events"}, "scope1")
+    frontier = FrontierManager([scope1])
+
+    host = Host(name="HOST-01")
+
+    # Window 1: creates 1 cell
+    cells_w1 = frontier.add_instance_entity(host, "window_1")
+    assert len(cells_w1) == 1
+    assert cells_w1[0].time_bucket == "window_1"
+
+    # Window 1 again: deduplicated, creates 0 cells
+    cells_w1_dup = frontier.add_instance_entity(host, "window_1")
+    assert len(cells_w1_dup) == 0
+
+    # Window 2: same host in a NEW window MUST create 1 new cell!
+    cells_w2 = frontier.add_instance_entity(host, "window_2")
+    assert len(cells_w2) == 1
+    assert cells_w2[0].time_bucket == "window_2"
+
+    # Total instance cells in frontier must be 2
+    assert len(frontier.instance_cells) == 2
+    buckets = [c.time_bucket for c in frontier.instance_cells]
+    assert buckets == ["window_1", "window_2"]
+

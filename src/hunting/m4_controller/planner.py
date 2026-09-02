@@ -82,26 +82,32 @@ class FrontierManager:
         self.known_scopes = list(known_scopes)
         self.wildcard_cells: list[Cell] = []
         self.instance_cells: list[Cell] = []
-        self._observed_entities: set[EntityRef] = set()
+        self._registered_instance_pairs: set[tuple[EntityRef, str]] = set()
+        self._registered_wildcard_windows: set[str] = set()
 
     def build_wildcards(self, window: str) -> list[Cell]:
         """Build finite wildcard cells for every known ProviderScope."""
+        if window in self._registered_wildcard_windows:
+            return []
+        self._registered_wildcard_windows.add(window)
         cells = [Cell(scope, ANY, window) for scope in self.known_scopes]
         self.wildcard_cells.extend(cells)
         return cells
 
     def add_instance_entity(self, entity: EntityRef, window: str) -> list[Cell]:
-        """Add instance cells for a discovered entity across all known scopes."""
+        """Add instance cells for a discovered entity across all known scopes in a time window."""
         if isinstance(entity, type(ANY)) or entity == ANY:
             raise ValueError("Instance cells cannot be created for ANY wildcard")
 
-        if entity in self._observed_entities:
+        key = (entity, window)
+        if key in self._registered_instance_pairs:
             return []
 
-        self._observed_entities.add(entity)
+        self._registered_instance_pairs.add(key)
         new_cells = [Cell(scope, entity, window) for scope in self.known_scopes]
         self.instance_cells.extend(new_cells)
         return new_cells
+
 
     def select_expand_candidates(self) -> list[Cell]:
         """Select instance cells eligible for EXPAND action."""

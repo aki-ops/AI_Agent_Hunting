@@ -154,6 +154,15 @@ def evaluate_stopping(state: InvestigationState, budgets: BudgetLedger) -> tuple
     return TerminalState.STOP_BOUNDED, disp, blockers
 
 
+def is_confirmation_mandatory(disposition: Disposition, terminal_state: TerminalState) -> bool:
+    """Analyst confirmation is mandatory for MALICIOUS, CONFLICTED, and all STOP_BOUNDED states."""
+    if disposition in {Disposition.MALICIOUS, Disposition.CONFLICTED}:
+        return True
+    if terminal_state == TerminalState.STOP_BOUNDED:
+        return True
+    return False
+
+
 def emit_final_account(
     disposition: Disposition,
     terminal_state: TerminalState,
@@ -164,7 +173,13 @@ def emit_final_account(
     """Build the final account document.
 
     Enforces mandatory human confirmation for MALICIOUS, CONFLICTED, and all STOP_BOUNDED.
+    Raises PermissionError if confirmation is required but human_confirmed is False.
     """
+    if is_confirmation_mandatory(disposition, terminal_state) and not human_confirmed:
+        raise PermissionError(
+            f"Mandatory analyst confirmation required for {disposition.value} / {terminal_state.value} before final account emission"
+        )
+
     residual_text = "; ".join(residuals) if residuals else ""
     return FinalAccount(
         disposition=disposition,
@@ -173,6 +188,7 @@ def emit_final_account(
         residual=residual_text,
         human_confirmed=human_confirmed,
     )
+
 
 
 __all__ = [
