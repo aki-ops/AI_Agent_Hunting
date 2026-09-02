@@ -96,13 +96,29 @@ different providers. A provider does not need a universal `event_code`.
 It may mint observations. Controls never mint observations and exist only to
 license a `VALID_NEGATIVE` result.
 
-## 6. LLM and deterministic boundary
+## 6. LLM runtime and deterministic boundary
 
-LLM calls are permitted for proposing explanations/requirements, proposing a
+The real M2 runtime calls an external LLM API through an internal
+`ApiLLMProvider` interface. Provider, model, endpoint, timeout and token limits
+are configuration/secrets, not investigation logic. Local model inference is
+outside the current deployment decision. A stub provider remains available for
+deterministic tests and never calls a network.
+
+API calls are permitted for proposing explanations/requirements, proposing a
 native query inside an adapter allowlist, and rendering a narrative from a
 fixed schema. The LLM may not extract fields, label taint, retrieve data,
 expand scope, change state, type outcomes, select actions, run controls,
 attribute evidence, stop the investigation, or compute disposition.
+
+The M2 API contract is:
+
+```text
+structured investigation context
+  → ApiLLMProvider.generate()
+  → schema-validated JSON
+  → explanations + EvidenceRequirements
+  → M3 constraint validation
+```
 
 Raw log text is never passed to the LLM. Only structured, taint-labelled data
 and validated schemas cross the boundary.

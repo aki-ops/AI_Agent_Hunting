@@ -13,11 +13,18 @@ Evidence-grounded, human-in-the-loop threat investigation agent.
 
 ## Current MVP target
 
-The MVP must run the deterministic loop with zero LLM calls, using a stubbed
-abduction engine, a provider-scope manifest and a CDB/mock backend. A Cell is
+The MVP acceptance tests run the deterministic loop with a stubbed abduction
+engine; the real M2 runtime calls an external LLM API. Local model inference is
+not part of the current deployment decision. A provider-scope manifest and a
+CDB/mock backend are used for the deterministic gate. A Cell is
 `(ProviderScope, entity/ANY, time_bucket)`; it has no `event_family` axis.
 Unknown native records remain observations with nullable `semantic_type`, and
 known scopes without an adapter are explicit `UNQUERYABLE` coverage gaps. The
 MVP supports both entity-bearing and entity-free alerts through wildcard Cells
 and `BroadSweep`. The core is provider-neutral: future SIEM, EDR, IDS, cloud or
 audit backends add adapters and capability bindings, not new Cell axes.
+
+The stub is used for deterministic tests and never makes a network call. The
+real M2 implementation uses an API provider selected through configuration;
+provider/model credentials are kept in secrets and are not part of
+investigation state.

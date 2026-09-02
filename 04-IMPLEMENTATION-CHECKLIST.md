@@ -99,34 +99,37 @@ execution evidence; documentation alone is not completion evidence.
 
 ### Investigation workflows — mint observations
 
-- [ ] `ProcessLineage → process_ancestry`.
-- [ ] `LogonHistory → authentication_activity`.
-- [ ] `NetworkConnections → network_connection`.
-- [ ] `PersistenceArtifacts → persistence_change`.
-- [ ] `FileWrites → file_modification`.
-- [ ] `DNSQueries → dns_activity`.
-- [ ] `BroadSweep → scope_records` on a wildcard Cell.
+- [x] `ProcessLineage → process_ancestry`.
+- [x] `LogonHistory → authentication_activity`.
+- [x] `NetworkConnections → network_connection`.
+- [x] `PersistenceArtifacts → persistence_change`.
+- [x] `FileWrites → file_modification`.
+- [x] `DNSQueries → dns_activity`.
+- [x] `BroadSweep → scope_records` on a wildcard Cell.
 
 ### Control operations — never mint observations
 
-- [ ] `ScopeHealthControl(scope, window)`.
-- [ ] `AnyRecordInScope(scope, entity, window)`.
-- [ ] `PredicateObservabilityControl(scope, requirement, predicate)`.
-- [ ] License `VALID_NEGATIVE` only when all three controls pass and target result is empty/complete.
-- [ ] Do not treat `len(rows) < limit` as proof of EOF.
-- [ ] Handle capability misses as `UNQUERYABLE` or `UNSUPPORTED_REQUIREMENT` with diagnostics.
-- [ ] Validate all LLM-proposed native queries against adapter allowlists.
+- [x] `ScopeHealthControl(scope, window)`.
+- [x] `AnyRecordInScope(scope, entity, window)`.
+- [x] `PredicateObservabilityControl(scope, requirement, predicate)`.
+- [x] License `VALID_NEGATIVE` only when all three controls pass and target result is empty/complete.
+- [x] Do not treat `len(rows) < limit` as proof of EOF.
+- [x] Handle capability misses as `UNQUERYABLE` or `UNSUPPORTED_REQUIREMENT` with diagnostics.
+- [x] Validate all LLM-proposed native queries against adapter allowlists.
 
 ### Acceptance
 
-- [ ] Seven workflows execute on the CDB/mock adapter.
-- [ ] Three controls execute without entering the observation ledger.
-- [ ] Exactly-limit and cursor-more results remain incomplete.
-- [ ] Truncated, stale, field-absent and unqueryable queries cannot license a negative.
+- [x] Seven workflows execute on the CDB/mock adapter.
+- [x] Three controls execute without entering the observation ledger.
+- [x] Exactly-limit and cursor-more results remain incomplete.
+- [x] Truncated, stale, field-absent and unqueryable queries cannot license a negative.
 
-## Phase 5 — M2, human loop and reporter
+## Phase 5 — M2 API abduction, human loop and reporter
 
 - [ ] Implement stubbed abduction before real LLM abduction.
+- [ ] Implement `ApiLLMProvider`; local model inference is out of scope for the current deployment.
+- [ ] Configure API endpoint/model/timeout/token limits separately from investigation state; keep credentials in secrets.
+- [ ] Validate structured JSON responses against the M2 response schema before M3 receives them.
 - [ ] LLM input contains structured extracted data and taint only, never raw logs.
 - [ ] Enforce benign/malicious/unknown explanation diversity where applicable.
 - [ ] Generate expectations in terms of evidence requirements, not event families.
@@ -171,11 +174,12 @@ execution evidence; documentation alone is not completion evidence.
 
 ## Definition of done
 
-The CDB MVP is complete only when both entity-bearing and entity-free scenarios
-pass end-to-end with zero LLM calls, unknown records are preserved, all state
-transitions are auditable/replayable, terminal outputs contain valid separate
-coverage bounds, and security assertions pass. This is a limited POC gate, not
-production readiness for every backend.
+The deterministic CDB MVP gate is complete when both entity-bearing and
+entity-free scenarios pass with the stubbed abduction engine, unknown records
+are preserved, all state transitions are auditable/replayable, terminal
+outputs contain valid separate coverage bounds, and security assertions pass.
+The real M2 path uses the external API provider and has a separate integration
+gate. This is a limited POC gate, not production readiness for every backend.
 
 ## Traceability required for every implementation item
 

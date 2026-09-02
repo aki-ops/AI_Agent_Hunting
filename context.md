@@ -92,8 +92,8 @@ adapter's validated operation/field/predicate allowlist.
 3. M1 ledger, native observation preservation and coverage accounting.
 4. M3 constraints, M4 controller, frontier and deterministic sampling.
 5. M5 CDB adapter, seven workflows and three controls.
-6. Stubbed abduction with zero LLM calls and replayable audit log.
-7. Real abduction, human loop and reporter.
+6. Stubbed abduction with zero network calls and replayable audit log.
+7. Real abduction through an external LLM API, human loop and reporter.
 8. Real SIEM/EDR/IDS adapters only after native scope/completeness tests.
 
 ## Non-negotiable security assertions

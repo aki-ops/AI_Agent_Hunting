@@ -392,7 +392,29 @@ Splunk `(index, sourcetype)`, EDR datasets/tenants/endpoints, and IDS
 streams/sensors remain native to their adapters; no universal `event_code` is
 required.
 
-## 11. State machine and coverage report
+## 11. M2 LLM API contract
+
+The real M2 abduction engine calls an external LLM API through an internal
+`ApiLLMProvider` interface. Local model inference is out of scope for the
+current deployment decision. A stub provider is used for deterministic tests
+and must not make network calls.
+
+```text
+structured investigation context
+  → ApiLLMProvider.generate()
+  → schema-validated JSON
+  → explanations + EvidenceRequirements
+  → M3 constraint validation
+```
+
+The API receives only structured extracted data, observation IDs, provenance,
+taint metadata, current hypotheses, coverage bounds and validated schemas. Raw
+alert/log text is never sent to the API. The API response cannot mutate
+observations, attribution, statuses, controls, actions, stopping state or
+disposition. API endpoint, model, timeout, token limits and credentials are
+deployment configuration/secrets.
+
+## 12. State machine and coverage report
 
 ```text
 ALERT → BOOTSTRAP (entities may be empty)
@@ -421,7 +443,7 @@ CoverageBound = {
 high requirement score nor a complete targeted query implies that all records
 in a provider scope were seen.
 
-## 12. Validation experiments and implementation gates
+## 13. Validation experiments and implementation gates
 
 | Experiment | Question | Gate |
 |---|---|---|
@@ -440,7 +462,7 @@ The minimum fixture contains an entity-bearing alert, entity-free alert,
 unknown native event, partial page, stale scope, scope with no adapter, and the
 same evidence represented differently by two providers.
 
-## 13. Implementation phases
+## 14. Implementation phases
 
 ### Phase 0 — contract gate
 
@@ -471,14 +493,14 @@ completeness and field-observability contracts are documented and tested.
 Add optional OCSF/MITRE or project-specific mappings. They enrich observations
 and reports; they do not gate retrieval, scope coverage or raw preservation.
 
-## 14. Go/no-go rule
+## 15. Go/no-go rule
 
 The project is ready for a limited CDB vertical slice when Phase 0 invariants,
 the minimum fixture, and EXP-11/12 pass. It is not ready to claim production
 completeness until at least one real SIEM, one EDR and one IDS adapter
 demonstrate their native scope and completeness contracts.
 
-## 15. Step-to-source traceability
+## 16. Step-to-source traceability
 
 The tags below are defined in `03_LITERATURE-AND-TRACEABILITY.md`. A tag is a
 rationale for a mechanism, not a proof that our implementation is correct.
@@ -496,7 +518,7 @@ rationale for a mechanism, not a proof that our implementation is correct.
 | isolate LLM from logs/state | treat log content as adversarial input and keep evidence grounded | `REF-INJECT-01`, `REF-EVID-01` | adapted |
 | evaluate open-ended hunting | measure recall and reachability on an executable benchmark | `REF-CDB-01` | benchmark evidence; not validation of our agent |
 
-## 16. Provider-neutral extension contract
+## 17. Provider-neutral extension contract
 
 The core is not Splunk-specific. A new backend is an adapter that implements
 the same boundary:
@@ -530,7 +552,7 @@ This is the extensibility criterion: adding a provider adds an adapter and
 bindings; it must not add a new Cell axis or require enumerating every vendor
 event type before querying.
 
-## 17. Capability descriptor and matcher
+## 18. Capability descriptor and matcher
 
 To prevent each provider from accumulating hand-written planner logic, every
 adapter publishes a machine-readable descriptor:
