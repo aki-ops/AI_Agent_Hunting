@@ -6,6 +6,7 @@ Local model inference is out of scope for the current deployment.
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
@@ -13,6 +14,22 @@ from dataclasses import dataclass
 from typing import Any
 
 from hunting.contracts.explanations import ExplanationClass
+
+
+def load_dotenv(path: str = ".env") -> dict[str, str]:
+    """Parse local .env file without external dependencies."""
+    env: dict[str, str] = {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip().strip("'\"")
+    except Exception:
+        pass
+    return env
 
 
 @dataclass(frozen=True)
@@ -28,8 +45,36 @@ class ApiLLMConfig:
     max_tokens: int = 2000
     api_key: str = "secret-token-env"
 
+    @classmethod
+    def from_env(cls, env_path: str = ".env") -> ApiLLMConfig:
+        """Load configuration from .env and environment variables."""
+        file_env = load_dotenv(env_path)
+        combined = {**file_env, **os.environ}
+
+        base_url = combined.get("HERMES_API_BASE_URL", "")
+        default_endpoint = (
+            f"{base_url.rstrip('/')}/chat/completions"
+            if base_url
+            else "https://api.openai.com/v1/chat/completions"
+        )
+
+        endpoint = combined.get("LLM_ENDPOINT", default_endpoint)
+        api_key = combined.get("LLM_API_KEY", combined.get("HERMES_API_KEY", combined.get("OPENAI_API_KEY", "secret-token-env")))
+        model = combined.get("LLM_MODEL", combined.get("HERMES_MODEL_NAME", "1/grok-4.6"))
+        timeout = int(combined.get("LLM_TIMEOUT", 30))
+        max_tokens = int(combined.get("LLM_MAX_TOKENS", 2000))
+
+        return cls(
+            endpoint=endpoint,
+            model=model,
+            timeout_seconds=timeout,
+            max_tokens=max_tokens,
+            api_key=api_key,
+        )
+
 
 class LLMProvider(ABC):
+
     """Abstract interface for LLM abduction."""
 
     @abstractmethod
