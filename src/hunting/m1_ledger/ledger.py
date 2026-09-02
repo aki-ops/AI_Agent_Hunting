@@ -102,6 +102,11 @@ class ObservationLedger:
         """Return the set of observed field names for a (scope, native_type) pair."""
         return set(self._observed_fields.get((scope_id, native_type), set()))
 
+    @property
+    def diagnostics(self) -> list[Diagnostic]:
+        """All recorded query and control diagnostics."""
+        return list(self._diagnostics)
+
     # -----------------------------------------------------------------------
     # Cell tracking (wildcard vs instance separation + split parents)
     # -----------------------------------------------------------------------

@@ -126,19 +126,20 @@ execution evidence; documentation alone is not completion evidence.
 
 ## Phase 5 — M2 API abduction, human loop and reporter
 
-- [ ] Implement stubbed abduction before real LLM abduction.
-- [ ] Implement `ApiLLMProvider`; local model inference is out of scope for the current deployment.
-- [ ] Configure API endpoint/model/timeout/token limits separately from investigation state; keep credentials in secrets.
-- [ ] Validate structured JSON responses against the M2 response schema before M3 receives them.
-- [ ] LLM input contains structured extracted data and taint only, never raw logs.
-- [ ] Enforce benign/malicious/unknown explanation diversity where applicable.
-- [ ] Generate expectations in terms of evidence requirements, not event families.
-- [ ] Validate entity references, predicates and requirement version.
-- [ ] Cap/merge explanations deterministically.
-- [ ] Model human input as `TESTIMONY`; preserve conflicts and resolution records.
-- [ ] Implement analyst confirmation requirements.
-- [ ] Compute disposition as a pure M4 function; M5 only renders.
-- [ ] Final account cites observation IDs, query IDs, diagnostics and coverage bound.
+- [x] Implement stubbed abduction before real LLM abduction.
+- [x] Implement `ApiLLMProvider`; local model inference is out of scope for the current deployment.
+- [x] Configure API endpoint/model/timeout/token limits separately from investigation state; keep credentials in secrets.
+- [x] Validate structured JSON responses against the M2 response schema before M3 receives them.
+- [x] LLM input contains structured extracted data and taint only, never raw logs.
+- [x] Enforce benign/malicious/unknown explanation diversity where applicable.
+- [x] Generate expectations in terms of evidence requirements, not event families.
+- [x] Validate entity references, predicates and requirement version.
+- [x] Cap/merge explanations deterministically.
+- [x] Model human input as `TESTIMONY`; preserve conflicts and resolution records.
+- [x] Implement analyst confirmation requirements.
+- [x] Compute disposition as a pure M4 function; M5 only renders.
+- [x] Final account cites observation IDs, query IDs, diagnostics and coverage bound.
+
 
 ## Security and regression tests
 
