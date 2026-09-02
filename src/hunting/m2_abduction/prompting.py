@@ -74,10 +74,11 @@ def build_llm_prompt_context(
     return {
         "window": window,
         "observations": structured_obs,
-        "unattributed_observation_ids": list(ledger.unattributed_observations),
-        "unmapped_observation_ids": list(ledger.unmapped_observations),
+        "unattributed_observation_ids": [o.id for o in ledger.unattributed_observations],
+        "unmapped_observation_ids": [o.id for o in ledger.unmapped_observations],
         "current_explanations": current_explanations,
     }
+
 
 
 __all__ = [

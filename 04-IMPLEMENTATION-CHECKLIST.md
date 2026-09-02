@@ -143,28 +143,29 @@ execution evidence; documentation alone is not completion evidence.
 
 ## Security and regression tests
 
-- [ ] Raw log content never appears in an LLM prompt.
-- [ ] Hidden benchmark fields are blocked.
-- [ ] M2 cannot mutate observations, statuses or attribution.
-- [ ] No LLM output can stop, escalate, control, or compute disposition directly.
-- [ ] Attacker-planted entities cannot exhaust frontier budget.
-- [ ] Injection fixtures cover command lines, URLs, DNS names, usernames and filenames.
-- [ ] Regression: unknown native event is retained and unmapped.
-- [ ] Regression: no event-family registry is required to query a scope.
-- [ ] Regression: entity-free sampling is reproducible and scope-stratified.
-- [ ] Regression: partial result cannot become valid negative.
-- [ ] Regression: no-adapter scope is explicit in denominator.
-- [ ] Regression: empty surviving-explanation set means bounded, not resolved, stop.
+- [x] Raw log content never appears in an LLM prompt.
+- [x] Hidden benchmark fields are blocked.
+- [x] M2 cannot mutate observations, statuses or attribution.
+- [x] No LLM output can stop, escalate, control, or compute disposition directly.
+- [x] Attacker-planted entities cannot exhaust frontier budget.
+- [x] Injection fixtures cover command lines, URLs, DNS names, usernames and filenames.
+- [x] Regression: unknown native event is retained and unmapped.
+- [x] Regression: no event-family registry is required to query a scope.
+- [x] Regression: entity-free sampling is reproducible and scope-stratified.
+- [x] Regression: partial result cannot become valid negative.
+- [x] Regression: no-adapter scope is explicit in denominator.
+- [x] Regression: empty surviving-explanation set means bounded, not resolved, stop.
 
 ## MVP integration scenarios
 
-- [ ] Entity-bearing alert → instance frontier → operation → observation → stub explanation → stop.
-- [ ] Entity-free alert → wildcard scope cells → `BroadSweep` → entities → instance frontier.
-- [ ] Unknown native event → ledger → `UNMAPPED` → abduction candidate, without false family.
-- [ ] Partial scope scan → `PARTIAL` → cursor/split → complete children; no parent re-issue.
-- [ ] Empty target → three controls → `VALID_NEGATIVE` or typed uncertainty.
-- [ ] No-adapter known scope → `UNQUERYABLE` → `INSUFFICIENT_EVIDENCE` contribution.
-- [ ] Every terminal path emits residuals and `CoverageBound`.
+- [x] Entity-bearing alert → instance frontier → operation → observation → stub explanation → stop.
+- [x] Entity-free alert → wildcard scope cells → `BroadSweep` → entities → instance frontier.
+- [x] Unknown native event → ledger → `UNMAPPED` → abduction candidate, without false family.
+- [x] Partial scope scan → `PARTIAL` → cursor/split → complete children; no parent re-issue.
+- [x] Empty target → three controls → `VALID_NEGATIVE` or typed uncertainty.
+- [x] No-adapter known scope → `UNQUERYABLE` → `INSUFFICIENT_EVIDENCE` contribution.
+- [x] Every terminal path emits residuals and `CoverageBound`.
+
 
 ## Real-provider gate
 
