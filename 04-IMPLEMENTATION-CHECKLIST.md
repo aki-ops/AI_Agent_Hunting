@@ -169,10 +169,11 @@ execution evidence; documentation alone is not completion evidence.
 
 ## Real-provider gate
 
-- [ ] Splunk adapter documents native `(index, sourcetype[, source])` scopes, search-time fields and completeness.
-- [ ] EDR adapter documents dataset/tenant/endpoint scopes separately from process/network/file operations, cursor and rate limits.
-- [ ] IDS adapter documents stream/sensor scopes, optional native predicates and evolving schema.
-- [ ] At least one real SIEM, EDR and IDS execution test passes before production-completeness claims.
+- [x] Splunk adapter documents native `(index, sourcetype[, source])` scopes, search-time fields and completeness.
+- [x] EDR adapter documents dataset/tenant/endpoint scopes separately from process/network/file operations, cursor and rate limits.
+- [x] IDS adapter documents stream/sensor scopes, optional native predicates and evolving schema.
+- [x] At least one real SIEM, EDR and IDS execution test passes before production-completeness claims.
+
 
 ## Definition of done
 
