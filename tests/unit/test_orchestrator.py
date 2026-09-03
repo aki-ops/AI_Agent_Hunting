@@ -205,10 +205,13 @@ def test_orchestrator_query_audit_unique_ids_and_coverage(test_registry, cdb_ada
     assert len(query_ids) == len(set(query_ids))
     assert all(qid.startswith("q-") for qid in query_ids)
 
-    # 3. Requirement coverage attempted_requirements must not be empty
+    # 3. Requirement coverage attempted_requirements must contain EvidenceRequirement values
     attempted = result.account.coverage_bound.requirement_coverage.attempted_requirements
     assert len(attempted) > 0
-    assert set(attempted) == {q.operation_id for q in result.state.queries}
+    expected_reqs = {q.evidence_requirement.value if q.evidence_requirement else q.intent.value for q in result.state.queries}
+    assert set(attempted) == expected_reqs
+    assert "process_ancestry" in attempted or "scope_records" in attempted
+
 
     # 4. Attributed observations must be marked in ledger
     for obs in result.ledger.observations:

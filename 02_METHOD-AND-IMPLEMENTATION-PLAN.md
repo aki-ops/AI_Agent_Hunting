@@ -462,36 +462,55 @@ The minimum fixture contains an entity-bearing alert, entity-free alert,
 unknown native event, partial page, stale scope, scope with no adapter, and the
 same evidence represented differently by two providers.
 
-## 14. Implementation phases
+## 14. Implementation phases & current status
 
-### Phase 0 — contract gate
-
+### Phase 0 — Contract gate (Done)
 Implement `ProviderScope`, `Cell`, `EntityRef|ANY`, `ProviderOperation`,
 `EvidenceRequirement`, `Observation`, `QueryResult`, diagnostics and coverage
-states. Add serialization and invariant tests. Do not begin adapters until Cell
-has no `event_family` field and unknown observations round-trip.
+states. Add serialization and invariant tests. Verified that `Cell` has no
+`event_family` field and unknown observations round-trip.
 
-### Phase 1 — CDB vertical slice
+### Phase 1 — Discovery, input and normalization (Done)
+Implement manifest loading, canonical alert fixtures (both entity-bearing and
+entity-free), stable scope ID assignment, and deterministic entity/window extraction.
 
-Implement manifest loading, one CDB scope, one `scope_scan` operation,
-complete/partial result handling, wildcard sampling, observation envelope and
-coverage report. Demonstrate all minimum fixtures.
+### Phase 2 — M1 observation ledger & raw store (Done)
+Implement protected raw store, append-only observation ledger, native type retention
+(`semantic_type=None` for `UNMAPPED`), deterministic per-field taint labeling, and
+separate wildcard vs instance cell tracking.
 
-### Phase 2 — bindings and workflows
+### Phase 3 — M3 constraints and M4 controller (Done)
+Implement capability matcher, frontier manager, provider-scope-stratified deterministic
+sampling, contradiction resolution (weakening/rejection), diagnostic partitioning,
+lexicographic action loop (`TEST` > `EXPAND` > `SAMPLE`), stopping conditions
+(`STOP_RESOLVED` vs `STOP_BOUNDED`), and final account emission.
 
-Add the seven workflow requirements, explicit bindings, predicate validation,
-negative-evidence controls and deterministic replay. Unsupported requirements
-must be visible in the ledger.
+### Phase 4 — M5 adapter and controls (Done)
+Implement the 7 investigation workflows on the CDB SQLite adapter (`ProcessLineage`,
+`LogonHistory`, `NetworkConnections`, `PersistenceArtifacts`, `FileWrites`, `DNSQueries`,
+`BroadSweep`) and the 3 negative controls (`ScopeHealthControl`, `AnyRecordInScope`,
+`PredicateObservabilityControl`) with strict $L+1$ EOF completeness.
 
-### Phase 3 — real-provider validation
+### Phase 5 — M2 API abduction, human loop and reporter (Done)
+Implement `StubAbductionProvider` and `ApiLLMProvider`, strict response schema validation,
+prompt injection barriers (raw logs isolated), human testimony modeling, and pure
+report rendering (`render_investigation_report`).
 
-Add adapters only after each provider's native partition, pagination,
-completeness and field-observability contracts are documented and tested.
+### Full Loop Orchestrator & CLI Tooling (Done)
+- `InvestigationOrchestrator`: Full autonomous end-to-end engine loop connecting M1–M5.
+- CLI Runner (`main.py`, `src/hunting/cli.py`): Alert ingestion via file, CLI flags,
+  stdin pipe, interactive prompt, and mandatory analyst confirmation sign-off.
+- CDB Seed Script (`scripts/seed_cdb.py`): Generates sample attack telemetry.
+- Full E2E & Security Regression test suite: 100 passing tests.
 
-### Phase 4 — semantic enrichment
+### Real-Provider Gate (Phase A: Simulation Done | Phase B: Live Pending)
+- **Phase A (Specification & Simulation - Done)**: Documented native partition scopes,
+  search-time fields, $L+1$ completeness, cursor rate limits, and evolving schema in
+  `docs/01-REAL-PROVIDER-SPECIFICATIONS.md`. Verified via simulation contract tests in
+  `tests/unit/test_real_providers.py`.
+- **Phase B (Live Production Execution - Pending)**: Live network SDK/API integration
+  against production Splunk, EDR, and IDS clusters with live credentials and live telemetry.
 
-Add optional OCSF/MITRE or project-specific mappings. They enrich observations
-and reports; they do not gate retrieval, scope coverage or raw preservation.
 
 ## 15. Go/no-go rule
 

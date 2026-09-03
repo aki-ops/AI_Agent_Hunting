@@ -26,6 +26,7 @@ from hunting.contracts.cells import CellState
 from hunting.contracts.entities import ANY
 from hunting.contracts.expectations import EvidenceRequirement, FieldOp, FieldPredicate, TestStatus
 from hunting.contracts.explanations import Attribution
+from hunting.contracts.queries import Diagnostic
 from hunting.contracts.state import (
     Alert,
     FinalAccount,
@@ -203,6 +204,8 @@ class InvestigationOrchestrator:
         # -------------------------------------------------------------------
         # 2. M4 FINITE ACTION LOOP (TEST -> EXPAND -> SAMPLE)
         # -------------------------------------------------------------------
+        unsupported_reqs: list[str] = []
+
         while not budgets.is_budget_exhausted:
             # Check stopping condition
             term_state, disp, blockers = evaluate_stopping(state, budgets)
@@ -219,20 +222,18 @@ class InvestigationOrchestrator:
             has_expand = len(expand_candidates) > 0
             has_sample = len(sample_candidates) > 0
 
-
             action = select_next_action(
                 has_untested_expectations=has_untested,
                 has_expand_candidates=has_expand,
                 has_sample_candidates=has_sample,
             )
-
-
             if not action:
                 break
 
             if action == "TEST":
                 exp = untested_expectations[0]
                 query_id = f"q-{len(state.queries) + 1:03d}"
+
                 query, diag = compile_query_plan(
                     exp.evidence_requirement,
                     self.matcher,
@@ -244,6 +245,9 @@ class InvestigationOrchestrator:
                 if not query or diag:
                     exp.test_status = TestStatus.REFUTED
                     update_explanation_contradictions(state.explanations, [exp])
+                    if diag == Diagnostic.UNSUPPORTED_REQUIREMENT:
+                        if exp.evidence_requirement.value not in unsupported_reqs:
+                            unsupported_reqs.append(exp.evidence_requirement.value)
                 else:
                     adapter = self._get_adapter(exp.provider_scope_id or query.scope_id)
                     if not adapter:
@@ -447,9 +451,25 @@ class InvestigationOrchestrator:
 
         # Build coverage bound
         cb = ledger.build_coverage_bound()
-        cb.requirement_coverage.attempted_requirements = [
-            q.operation_id for q in state.queries
-        ]
+        attempted_reqs: list[str] = []
+        satisfied_reqs: list[str] = []
+        partial_reqs: list[str] = []
+
+        for q, res in zip(state.queries, state.query_results):
+            req_name = q.evidence_requirement.value if q.evidence_requirement else q.intent.value
+            attempted_reqs.append(req_name)
+            if res.executed_ok and res.complete and res.rows and len(res.rows) > 0:
+                if req_name not in satisfied_reqs:
+                    satisfied_reqs.append(req_name)
+            elif not res.complete:
+                if req_name not in partial_reqs:
+                    partial_reqs.append(req_name)
+
+        cb.requirement_coverage.attempted_requirements = attempted_reqs
+        cb.requirement_coverage.satisfied_requirements = satisfied_reqs
+        cb.requirement_coverage.partial_requirements = partial_reqs
+        cb.requirement_coverage.unsupported_requirements = unsupported_reqs
+
 
         # Determine confirmation
         if analyst_confirmed is not None:

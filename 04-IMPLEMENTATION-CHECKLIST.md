@@ -167,12 +167,17 @@ execution evidence; documentation alone is not completion evidence.
 - [x] Every terminal path emits residuals and `CoverageBound`.
 
 
-## Real-provider gate
+## Real-provider gate (Production)
 
-- [x] Splunk adapter documents native `(index, sourcetype[, source])` scopes, search-time fields and completeness.
-- [x] EDR adapter documents dataset/tenant/endpoint scopes separately from process/network/file operations, cursor and rate limits.
-- [x] IDS adapter documents stream/sensor scopes, optional native predicates and evolving schema.
-- [x] At least one real SIEM, EDR and IDS execution test passes before production-completeness claims.
+> [!NOTE]
+> Provider contract simulation tests pass via `tests/unit/test_real_providers.py` (`MockSplunkAdapter`, `MockEdrAdapter`, `MockIdsAdapter`).
+> Live production execution tests against real provider endpoints (real SDK/REST API, authentication, network telemetry) remain open until enterprise deployment.
+
+- [ ] Splunk adapter documents native `(index, sourcetype[, source])` scopes, search-time fields and completeness with live SDK execution.
+- [ ] EDR adapter documents dataset/tenant/endpoint scopes separately from process/network/file operations, cursor and rate limits with live API execution.
+- [ ] IDS adapter documents stream/sensor scopes, optional native predicates and evolving schema with live EVE sensor stream.
+- [ ] At least one real SIEM, EDR and IDS live execution test passes before production-completeness claims.
+
 
 
 ## Definition of done
