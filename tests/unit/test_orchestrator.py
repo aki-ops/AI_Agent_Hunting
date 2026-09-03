@@ -177,3 +177,42 @@ def test_orchestrator_mandatory_analyst_confirmation_enforced(test_registry, cdb
     with pytest.raises(PermissionError, match="Mandatory analyst confirmation required"):
         orchestrator.investigate(alert, as_of=as_of, analyst_confirmed=False)
 
+
+def test_orchestrator_query_audit_unique_ids_and_coverage(test_registry, cdb_adapter):
+    orchestrator = InvestigationOrchestrator(
+        registry=test_registry,
+        adapters={"cdb_security": cdb_adapter},
+        auto_confirm_analyst=True,
+    )
+
+    alert = Alert(
+        id="alt-audit-01",
+        raw="Suspicious Host Activity",
+        source="EDR",
+        received_at="2026-09-01T10:14:00Z",
+        fields={"host": "HOST-01"},
+    )
+
+    as_of = datetime(2026, 9, 1, 12, 0, 0, tzinfo=timezone.utc)
+    result = orchestrator.investigate(alert, as_of=as_of)
+
+    # 1. state.queries must be populated
+    assert len(result.state.queries) > 0
+    assert len(result.state.queries) == len(result.state.query_results)
+
+    # 2. Query IDs must be unique
+    query_ids = [q.id for q in result.state.queries]
+    assert len(query_ids) == len(set(query_ids))
+    assert all(qid.startswith("q-") for qid in query_ids)
+
+    # 3. Requirement coverage attempted_requirements must not be empty
+    attempted = result.account.coverage_bound.requirement_coverage.attempted_requirements
+    assert len(attempted) > 0
+    assert set(attempted) == {q.operation_id for q in result.state.queries}
+
+    # 4. Attributed observations must be marked in ledger
+    for obs in result.ledger.observations:
+        if obs.attributed_by:
+            assert obs not in result.ledger.unattributed_observations
+
+

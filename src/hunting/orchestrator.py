@@ -232,11 +232,13 @@ class InvestigationOrchestrator:
 
             if action == "TEST":
                 exp = untested_expectations[0]
+                query_id = f"q-{len(state.queries) + 1:03d}"
                 query, diag = compile_query_plan(
                     exp.evidence_requirement,
                     self.matcher,
                     exp.entity_ref,
                     exp.time_window,
+                    query_id=query_id,
                 )
 
                 if not query or diag:
@@ -250,7 +252,9 @@ class InvestigationOrchestrator:
                     else:
                         res = adapter.execute_query(query.operation_id, exp.entity_ref, exp.time_window)
                         budgets.query_count += 1
+                        state.queries.append(query)
                         state.query_results.append(res)
+                        state.query_count = len(state.queries)
 
                         target_cell = ledger.get_cell(adapter.scope.scope_id, exp.entity_ref, exp.time_window)
                         if target_cell:
@@ -270,9 +274,12 @@ class InvestigationOrchestrator:
                                 )
                                 ledger.add_observation(obs)
                                 state.observations.append(obs)
+                                if obs.id not in state.unattributed:
+                                    state.unattributed.append(obs.id)
 
                             is_confirmed = evaluate_field_predicate(exp.field_predicate, res.rows)
                             exp.test_status = TestStatus.CONFIRMED if is_confirmed else TestStatus.REFUTED
+                            update_explanation_contradictions(state.explanations, [exp])
                         else:
                             # 0 rows: verify with negative controls
                             c_health = adapter.control_health(exp.time_window, as_of=as_of)
@@ -281,10 +288,9 @@ class InvestigationOrchestrator:
 
                             if license_valid_negative(res, c_health, c_any, c_obs):
                                 exp.test_status = TestStatus.REFUTED
+                                update_explanation_contradictions(state.explanations, [exp])
                             else:
-                                exp.test_status = TestStatus.REFUTED
-
-                        update_explanation_contradictions(state.explanations, [exp])
+                                exp.test_status = TestStatus.INCONCLUSIVE
 
             elif action == "EXPAND":
                 expand_candidates = frontier.select_expand_candidates()
@@ -300,8 +306,9 @@ class InvestigationOrchestrator:
                     EvidenceRequirement.SCOPE_RECORDS,
                 )
                 query = None
+                query_id = f"q-{len(state.queries) + 1:03d}"
                 for r in reqs:
-                    q, d = compile_query_plan(r, self.matcher, target_cell.entity, target_cell.time_bucket)
+                    q, d = compile_query_plan(r, self.matcher, target_cell.entity, target_cell.time_bucket, query_id=query_id)
                     if q and not d:
                         query = q
                         break
@@ -311,7 +318,9 @@ class InvestigationOrchestrator:
                     if adapter:
                         res = adapter.execute_query(query.operation_id, target_cell.entity, target_cell.time_bucket)
                         budgets.query_count += 1
+                        state.queries.append(query)
                         state.query_results.append(res)
+                        state.query_count = len(state.queries)
                         ledger.record_query_outcome(query.intent, target_cell, res)
 
                         if res.rows:
@@ -328,6 +337,8 @@ class InvestigationOrchestrator:
                                 )
                                 ledger.add_observation(obs)
                                 state.observations.append(obs)
+                                if obs.id not in state.unattributed:
+                                    state.unattributed.append(obs.id)
 
                                 # Feed newly discovered entities to frontier
                                 for ent in obs.entities:
@@ -344,15 +355,16 @@ class InvestigationOrchestrator:
                 sample_candidates = frontier.select_sample_candidates()
                 sampled_cells = sample_wildcard_cells(sample_candidates, budget=1, seed=self.seed)
                 if not sampled_cells:
-
                     break
                 w_cell = sampled_cells[0]
 
+                query_id = f"q-{len(state.queries) + 1:03d}"
                 query, diag = compile_query_plan(
                     EvidenceRequirement.SCOPE_RECORDS,
                     self.matcher,
                     ANY,
                     w_cell.time_bucket,
+                    query_id=query_id,
                 )
 
                 if query and not diag:
@@ -360,7 +372,9 @@ class InvestigationOrchestrator:
                     if adapter:
                         res = adapter.execute_query(query.operation_id, ANY, w_cell.time_bucket)
                         budgets.query_count += 1
+                        state.queries.append(query)
                         state.query_results.append(res)
+                        state.query_count = len(state.queries)
                         ledger.record_query_outcome(query.intent, w_cell, res)
 
                         if res.rows:
@@ -377,6 +391,8 @@ class InvestigationOrchestrator:
                                 )
                                 ledger.add_observation(obs)
                                 state.observations.append(obs)
+                                if obs.id not in state.unattributed:
+                                    state.unattributed.append(obs.id)
 
                                 for ent in obs.entities:
                                     for ic in frontier.add_instance_entity(ent, w_cell.time_bucket):
@@ -400,7 +416,7 @@ class InvestigationOrchestrator:
                 for cand_exp in cand_exps:
                     # Link attribution if not already present
                     if not cand_exp.attributions:
-                        for o in ledger.observations:
+                        for o in ledger.unattributed_observations:
                             cand_exp.attributions.append(
                                 Attribution(observation_id=o.id, cause="abduced from telemetry observation")
                             )
@@ -409,11 +425,20 @@ class InvestigationOrchestrator:
                     if not any(e.label == cand_exp.label for e in state.explanations):
                         state.explanations.append(cand_exp)
 
+                    # Mark attributions in ledger and state so M2 is NOT invoked repeatedly
+                    for attr in cand_exp.attributions:
+                        ledger.mark_attributed(attr.observation_id, cand_exp.id)
+                        if attr.observation_id not in state.abduced_over:
+                            state.abduced_over.append(attr.observation_id)
+                        if attr.observation_id in state.unattributed:
+                            state.unattributed.remove(attr.observation_id)
+
                 for cand_expectation in cand_exps_expectations:
                     if not any(e.id == cand_expectation.id for e in state.expectations):
                         state.expectations.append(cand_expectation)
 
             budgets.current_turn += 1
+
 
         # -------------------------------------------------------------------
         # 3. TERMINATION & ACCOUNT EMISSION
