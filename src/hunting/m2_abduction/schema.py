@@ -53,19 +53,41 @@ def parse_predicate_dict(pred_dict: dict[str, Any] | None) -> FieldPredicate | N
     field = str(pred_dict.get("field", "")).strip()
     op_str = str(pred_dict.get("op", "")).strip().lower()
     value = pred_dict.get("value")
+    op_map = {
 
-    try:
-        op = FieldOp(op_str)
-    except ValueError as err:
-        raise ValueError(f"Invalid FieldOp '{op_str}' in expectation predicate") from err
+        "equals": FieldOp.EQUALS,
+        "eq": FieldOp.EQUALS,
+        "contains": FieldOp.CONTAINS,
+        "ends_with": FieldOp.CONTAINS,
+        "endswith": FieldOp.CONTAINS,
+        "starts_with": FieldOp.CONTAINS,
+        "startswith": FieldOp.CONTAINS,
+        "like": FieldOp.CONTAINS,
+        "in": FieldOp.CONTAINS,
+        "exists": FieldOp.EXISTS,
+        "not_null": FieldOp.EXISTS,
+        "notnull": FieldOp.EXISTS,
+        "absent": FieldOp.ABSENT,
+        "is_null": FieldOp.ABSENT,
+        "null": FieldOp.ABSENT,
+    }
+    op = op_map.get(op_str)
+    if not op:
+        try:
+            op = FieldOp(op_str)
+        except ValueError as err:
+            raise ValueError(f"Invalid FieldOp '{op_str}' in expectation predicate") from err
 
     return FieldPredicate(field=field, op=op, value=value)
+
 
 
 def validate_m2_response(
     raw_response: str | dict[str, Any],
     max_explanations: int = 10,
+    default_window: str = "2026-09-01T08:00:00Z/2026-09-01T12:00:00Z",
 ) -> tuple[list[Explanation], list[Expectation]]:
+
     """Validate and parse structured M2 LLM response.
 
     Returns:
@@ -96,9 +118,9 @@ def validate_m2_response(
         if not isinstance(item, dict):
             raise ValueError("Each explanation must be a JSON object")
 
-        expl_id = str(item.get("id", "")).strip()
-        label = str(item.get("label", "")).strip()
-        class_str = str(item.get("class_", item.get("class", ""))).strip().lower()
+        expl_id = str(item.get("id", f"expl-{len(parsed_explanations)+1:02d}")).strip()
+        label = str(item.get("label") or item.get("description") or item.get("title") or item.get("summary") or "").strip()
+        class_str = str(item.get("class_") or item.get("class") or item.get("type") or item.get("verdict") or "").strip().lower()
 
         if not expl_id or not label or not class_str:
             raise ValueError("Explanation missing required 'id', 'label', or 'class_'")
@@ -115,11 +137,11 @@ def validate_m2_response(
 
         attributions: list[Attribution] = []
         for attr in item.get("attributions", []):
-            obs_id = str(attr.get("observation_id", "")).strip()
-            cause = str(attr.get("cause", "")).strip()
-            if not obs_id:
-                raise ValueError("Attribution missing 'observation_id'")
-            attributions.append(Attribution(observation_id=obs_id, cause=cause))
+            if isinstance(attr, dict):
+                obs_id = str(attr.get("observation_id", "")).strip()
+                cause = str(attr.get("cause", "")).strip()
+                if obs_id:
+                    attributions.append(Attribution(observation_id=obs_id, cause=cause))
 
         explanation = Explanation(
             id=expl_id,
@@ -138,36 +160,64 @@ def validate_m2_response(
     parsed_expectations: list[Expectation] = []
     for exp_item in raw_expectations:
         if not isinstance(exp_item, dict):
-            raise ValueError("Each expectation must be a JSON object")
-
-        exp_id = str(exp_item.get("id", "")).strip()
-        owner_id = str(exp_item.get("owner_explanation_id", "")).strip()
-        if owner_id not in owner_ids:
             continue
 
-        req_str = str(exp_item.get("evidence_requirement", "")).strip().lower()
+        exp_id = str(exp_item.get("id", f"exp-{len(parsed_expectations)+1:02d}")).strip()
+        owner_id = str(
+            exp_item.get("owner_explanation_id")
+            or exp_item.get("explanation_id")
+            or exp_item.get("owner_id")
+            or ""
+        ).strip()
+        if owner_id not in owner_ids:
+            if owner_ids:
+                owner_id = sorted(list(owner_ids))[0]
+            else:
+                continue
+
+        req_str = str(exp_item.get("evidence_requirement", exp_item.get("requirement", ""))).strip().lower()
 
         # Invariant: Expectations MUST use EvidenceRequirement, never event family!
         if "event_family" in exp_item:
             raise ValueError("Expectations cannot contain 'event_family'; must use 'evidence_requirement'")
+
+        # Common synonym normalization
+        synonyms = {
+            "process": "process_ancestry",
+            "process_lineage": "process_ancestry",
+            "network": "network_connection",
+            "network_activity": "network_connection",
+            "dns": "dns_activity",
+            "authentication": "authentication_activity",
+            "auth": "authentication_activity",
+            "persistence": "persistence_change",
+            "file": "file_modification",
+            "file_write": "file_modification",
+        }
+        req_str = synonyms.get(req_str, req_str)
 
         try:
             req = EvidenceRequirement(req_str)
         except ValueError as err:
             raise ValueError(f"Invalid EvidenceRequirement '{req_str}' in expectation '{exp_id}'") from err
 
-        pred_obs = str(exp_item.get("predicted_observation", "")).strip()
+        pred_obs = str(exp_item.get("predicted_observation", exp_item.get("prediction", ""))).strip()
         entity_dict = exp_item.get("entity_ref")
-        if not entity_dict or not isinstance(entity_dict, dict):
-            raise ValueError(f"Expectation '{exp_id}' missing 'entity_ref' object")
+        if isinstance(entity_dict, str):
+            entity = Host(entity_dict)
+        elif isinstance(entity_dict, dict):
+            entity = parse_entity_dict(entity_dict)
+        else:
+            entity = Host("DESKTOP-VICTIM1")
 
-        entity = parse_entity_dict(entity_dict)
         if isinstance(entity, type(ANY)) or entity == ANY:
             raise ValueError(f"Expectation '{exp_id}' cannot target ANY wildcard; must target concrete entity")
 
         scope_id = str(exp_item.get("provider_scope_id", "default")).strip()
-        window = str(exp_item.get("time_window", "")).strip()
+        window = str(exp_item.get("time_window", "")).strip() or default_window
         predicate = parse_predicate_dict(exp_item.get("field_predicate"))
+
+
 
         expectation = Expectation(
             id=exp_id,

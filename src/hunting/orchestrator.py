@@ -415,7 +415,11 @@ class InvestigationOrchestrator:
             if ledger.unattributed_observations:
                 prompt_ctx = build_llm_prompt_context(state, ledger, window_str)
                 llm_response = self.llm_provider.generate(prompt_ctx)
-                cand_exps, cand_exps_expectations = validate_m2_response(llm_response)
+                cand_exps, cand_exps_expectations = validate_m2_response(
+                    llm_response,
+                    default_window=window_str,
+                )
+
 
                 for cand_exp in cand_exps:
                     # Link attribution if not already present

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
@@ -178,12 +179,37 @@ class ApiLLMProvider(LLMProvider):
             raise ValueError("Security violation: raw log content cannot be sent to external LLM API")
 
         system_instruction = (
-            "You are an expert Threat Hunting Abduction Engine (M2). "
-            "Propose diverse hypotheses (benign, malicious, unknown) and concrete testable expectations "
-            "using EvidenceRequirements (process_ancestry, authentication_activity, network_connection, "
-            "persistence_change, file_modification, dns_activity, scope_records). "
-            "Output strictly valid JSON with keys 'explanations' and 'expectations'. Do not include markdown fences."
+            "You are an expert Threat Hunting Abduction Engine (M2).\n"
+            "Propose diverse hypotheses (benign, malicious, unknown) and concrete testable expectations.\n"
+            "Output strictly valid JSON with no markdown fences, matching this exact schema:\n"
+            "{\n"
+            '  "explanations": [\n'
+            '    {\n'
+            '      "id": "expl-01",\n'
+            '      "label": "Brief descriptive title of hypothesis",\n'
+            '      "class_": "malicious",\n'
+            '      "attributions": [{"observation_id": "<observation_id_from_prompt>", "cause": "reason"}]\n'
+            '    }\n'
+            '  ],\n'
+            '  "expectations": [\n'
+            '    {\n'
+            '      "id": "exp-01",\n'
+            '      "owner_explanation_id": "expl-01",\n'
+            '      "evidence_requirement": "process_ancestry",\n'
+            '      "predicted_observation": "parent process is explorer or cmd",\n'
+            '      "entity_ref": {"type": "Host", "name": "<host_or_entity_from_prompt>"},\n'
+            '      "time_window": "<window_from_prompt>",\n'
+            '      "field_predicate": {"field": "process_image", "op": "CONTAINS", "value": "powershell"}\n'
+            '    }\n'
+            '  ]\n'
+            "}\n"
+
+            "Valid class_ values: 'malicious', 'benign', 'unknown'.\n"
+            "Valid evidence_requirement values: 'process_ancestry', 'authentication_activity', 'network_connection', 'persistence_change', 'file_modification', 'dns_activity', 'scope_records'.\n"
+            "Valid field_predicate ops: 'EQUALS', 'CONTAINS', 'EXISTS', 'ABSENT'."
         )
+
+
 
         payload = {
             "model": self.config.model,
@@ -193,6 +219,7 @@ class ApiLLMProvider(LLMProvider):
             ],
             "temperature": 0.0,
             "max_tokens": self.config.max_tokens,
+            "stream": False,
         }
 
         headers = {
@@ -210,14 +237,34 @@ class ApiLLMProvider(LLMProvider):
 
         try:
             with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
-                resp_bytes = resp.read()
-                resp_json = json.loads(resp_bytes.decode("utf-8"))
+                content_type = resp.headers.get("Content-Type", "")
+                if "text/event-stream" in content_type:
+                    # Gateway returned Server-Sent Events (SSE) stream
+                    chunks: list[str] = []
+                    for line in resp:
+                        line_str = line.decode("utf-8", errors="replace").strip()
+                        if line_str == "data: [DONE]":
+                            break
+                        if line_str.startswith("data:"):
+                            try:
+                                chunk_json = json.loads(line_str[5:].strip())
+                                for choice in chunk_json.get("choices", []):
+                                    delta = choice.get("delta", {})
+                                    if "content" in delta and delta["content"]:
+                                        chunks.append(delta["content"])
+                            except Exception:
+                                continue
+                    content = "".join(chunks).strip()
+                else:
+                    resp_bytes = resp.read()
+                    resp_json = json.loads(resp_bytes.decode("utf-8"))
+                    choices = resp_json.get("choices", [])
+                    if not choices:
+                        raise ValueError(f"LLM API returned no choices: {resp_json}")
+                    content = str(choices[0].get("message", {}).get("content", "")).strip()
 
-                choices = resp_json.get("choices", [])
-                if not choices:
-                    raise ValueError(f"LLM API returned no choices: {resp_json}")
-
-                content = str(choices[0].get("message", {}).get("content", "")).strip()
+                # Strip reasoning / thinking blocks (<think>...</think>)
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
                 # Strip markdown code fences if model enclosed JSON in ```json ... ```
                 if content.startswith("```json"):
@@ -226,8 +273,17 @@ class ApiLLMProvider(LLMProvider):
                     content = content[3:]
                 if content.endswith("```"):
                     content = content[:-3]
+                content = content.strip()
 
-                return content.strip()
+                # Extract JSON object substring if model added conversational preamble
+                if not content.startswith("{") and "{" in content and "}" in content:
+                    start_idx = content.find("{")
+                    end_idx = content.rfind("}") + 1
+                    content = content[start_idx:end_idx].strip()
+
+                return content
+
+
         except urllib.error.HTTPError as http_err:
             error_body = http_err.read().decode("utf-8", errors="replace")
             raise ConnectionError(f"LLM API HTTP {http_err.code} error: {error_body}") from http_err
