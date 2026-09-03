@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from hunting.contracts.cells import Cell, CellState
 from hunting.contracts.coverage import CoverageBound
+from hunting.contracts.entities import ANY, AnyEntity, EntityRef
 from hunting.contracts.observations import Observation
 from hunting.contracts.queries import (
     ControlResult,
@@ -124,7 +125,14 @@ class ObservationLedger:
         else:
             self._instance_cells[key] = cell
 
+    def get_cell(self, scope_id: str, entity: EntityRef | ANY, time_bucket: str) -> Cell | None:
+        """Lookup an active registered cell by scope, entity and time bucket."""
+        ent_str = "ANY" if entity is ANY or isinstance(entity, AnyEntity) else str(getattr(entity, "name", entity))
+        key = f"{scope_id}:{ent_str}:{time_bucket}"
+        return self._wildcard_cells.get(key) or self._instance_cells.get(key)
+
     def record_split_parent(self, parent_cell: Cell, left_child: Cell, right_child: Cell) -> None:
+
         """Store partial parent as audit-only split record; exclude from active coverage."""
         parent_cell.split_parent = True
         parent_cell.state = CellState.PARTIAL
