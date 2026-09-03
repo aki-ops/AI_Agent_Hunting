@@ -30,6 +30,8 @@ class Diagnostic(str, Enum):
     UNQUERYABLE = "unqueryable"
     UNSUPPORTED_REQUIREMENT = "unsupported_requirement"
     PARSE_FAILED = "parse_failed"
+    ABDUCTION_TIMEOUT = "abduction_timeout"
+    ABDUCTION_FAILED = "abduction_failed"
 
     @property
     def diagnostic_class(self) -> DiagnosticClass:
@@ -37,8 +39,10 @@ class Diagnostic(str, Enum):
             Diagnostic.QUERY_FAILED,
             Diagnostic.SOURCE_UNHEALTHY,
             Diagnostic.PARTIAL_RESULT,
+            Diagnostic.ABDUCTION_TIMEOUT,
         }
         return DiagnosticClass.RETRYABLE if self in retryable else DiagnosticClass.PERMANENT
+
 
 
 class QueryIntent(str, Enum):

@@ -1,3 +1,7 @@
+from hunting.m2_abduction.policy import (
+    AbductionPolicy,
+    AbductionPolicyConfig,
+)
 from hunting.m2_abduction.prompting import (
     build_llm_prompt_context,
     sanitize_observation_for_llm,
@@ -15,6 +19,8 @@ from hunting.m2_abduction.schema import (
 )
 
 __all__ = [
+    "AbductionPolicy",
+    "AbductionPolicyConfig",
     "ApiLLMConfig",
     "LLMProvider",
     "StubAbductionProvider",
@@ -25,3 +31,4 @@ __all__ = [
     "parse_predicate_dict",
     "validate_m2_response",
 ]
+

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from hunting.contracts.abduction import AbductionRuntime
 from hunting.contracts.conflicts import Conflict, HumanInput
 from hunting.contracts.coverage import CoverageBound
 from hunting.contracts.entities import EntityRef
@@ -134,6 +135,8 @@ class InvestigationState:
     unmapped_observations: list[str] = field(default_factory=list)
     scope_gaps: list[tuple[str, str]] = field(default_factory=list)
     coverage_bound: CoverageBound = field(default_factory=CoverageBound)
+    abduction_runtime: AbductionRuntime = field(default_factory=AbductionRuntime)
     stop: TerminalState | None = None
     turn: int = 0
     query_count: int = 0
+

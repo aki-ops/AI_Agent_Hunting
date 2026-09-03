@@ -51,12 +51,28 @@ def build_llm_prompt_context(
     state: InvestigationState,
     ledger: ObservationLedger,
     window: str = "2026-09-01T10:00:00Z/2026-09-01T11:00:00Z",
+    pending_observation_ids: set[str] | None = None,
+    epoch: int = 0,
+    max_observations: int = 20,
 ) -> dict[str, Any]:
     """Construct structured prompt context for M2 Abduction.
 
-    Never passes raw log text to the LLM.
+    Enforces context engineering:
+      - Only serializes curated delta observations (capped at max_observations).
+      - Summarizes live hypotheses and active expectations.
+      - Never passes raw log text to the LLM.
     """
-    structured_obs = [sanitize_observation_for_llm(o) for o in ledger.observations]
+    if pending_observation_ids is not None:
+        target_obs = [
+            o for o in ledger.observations
+            if o.id in pending_observation_ids
+        ][:max_observations]
+    else:
+        # Fallback: prioritize unattributed observations up to max_observations
+        unattr = ledger.unattributed_observations
+        target_obs = (unattr if unattr else ledger.observations)[:max_observations]
+
+    structured_obs = [sanitize_observation_for_llm(o) for o in target_obs]
 
     # Current hypotheses summary
     current_explanations = [
@@ -71,13 +87,29 @@ def build_llm_prompt_context(
         for e in state.explanations
     ]
 
+    # Current expectations summary
+    current_expectations = [
+        {
+            "id": exp.id,
+            "owner_id": exp.owner_explanation_id,
+            "requirement": exp.evidence_requirement.value,
+            "status": exp.test_status.value,
+        }
+        for exp in state.expectations
+    ]
+
     return {
+        "epoch": epoch,
         "window": window,
         "observations": structured_obs,
-        "unattributed_observation_ids": [o.id for o in ledger.unattributed_observations],
-        "unmapped_observation_ids": [o.id for o in ledger.unmapped_observations],
+        "unattributed_observation_ids": [o.id for o in target_obs if o.id in {u.id for u in ledger.unattributed_observations}],
+        "unmapped_observation_ids": [o.id for o in target_obs if o.is_unmapped],
         "current_explanations": current_explanations,
+        "current_expectations": current_expectations,
+        "total_ledger_observations": len(ledger.observations),
+        "total_unattributed_in_ledger": len(ledger.unattributed_observations),
     }
+
 
 
 

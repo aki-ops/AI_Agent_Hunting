@@ -16,6 +16,7 @@ Executes the complete investigation lifecycle:
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Sequence
@@ -29,6 +30,7 @@ from hunting.contracts.explanations import Attribution
 from hunting.contracts.queries import Diagnostic
 from hunting.contracts.state import (
     Alert,
+    DarkSource,
     FinalAccount,
     InvestigationState,
     TerminalState,
@@ -37,6 +39,7 @@ from hunting.m1_ledger import ObservationLedger
 from hunting.m1_ledger.extraction import build_observation
 from hunting.m1_ledger.raw_storage import ProtectedRawStore
 from hunting.m2_abduction import (
+    AbductionPolicy,
     LLMProvider,
     StubAbductionProvider,
     build_llm_prompt_context,
@@ -109,6 +112,7 @@ class InvestigationOrchestrator:
         raw_store: ProtectedRawStore | None = None,
         auto_confirm_analyst: bool = True,
         seed: int = 42,
+        abduction_policy: AbductionPolicy | None = None,
     ) -> None:
 
         self.registry = registry
@@ -137,6 +141,8 @@ class InvestigationOrchestrator:
         self.raw_store = raw_store or ProtectedRawStore()
         self.auto_confirm_analyst = auto_confirm_analyst
         self.seed = seed
+        self.abduction_policy = abduction_policy or AbductionPolicy()
+
 
 
     def _get_adapter(self, scope_id: str | None) -> Any:
@@ -152,7 +158,108 @@ class InvestigationOrchestrator:
                 return ad
         return self._default_adapter
 
+    def _execute_abduction_epoch(
+        self,
+        state: InvestigationState,
+        ledger: ObservationLedger,
+        window_str: str,
+    ) -> None:
+        """Execute one state-gated micro-batch abduction epoch with bounded retries and graceful fallback."""
+        runtime = state.abduction_runtime
+        policy = self.abduction_policy
+        batch_ids = sorted(list(runtime.pending_observation_ids))[:policy.config.max_observations_per_call]
+        if not batch_ids:
+            return
+
+        ctx_hash = policy.compute_context_hash(batch_ids, state)
+        if ctx_hash == runtime.last_context_hash:
+            return
+
+        prompt_ctx = build_llm_prompt_context(
+            state,
+            ledger,
+            window=window_str,
+            pending_observation_ids=set(batch_ids),
+            epoch=runtime.epoch,
+            max_observations=policy.config.max_observations_per_call,
+        )
+
+        llm_response = None
+        retries = 0
+        max_retries = policy.config.max_retries
+
+        while retries <= max_retries:
+            try:
+                llm_response = self.llm_provider.generate(prompt_ctx)
+                break
+            except Exception as err:
+                retries += 1
+                if retries > max_retries:
+                    runtime.failures += 1
+                    runtime.last_context_hash = ctx_hash
+                    for oid in batch_ids:
+                        runtime.processed_observation_ids.add(oid)
+                        runtime.pending_observation_ids.discard(oid)
+                    is_timeout = isinstance(err, (TimeoutError, ConnectionError)) or "timeout" in str(err).lower()
+                    diag = Diagnostic.ABDUCTION_TIMEOUT if is_timeout else Diagnostic.ABDUCTION_FAILED
+                    state.scope_gaps.append(("m2_abduction", f"Abduction failed after {max_retries} retries ({diag.value}): {err}"))
+                    state.dark_sources.append(DarkSource(source="m2_llm_api", window=window_str, demanded_by=["all"]))
+                    return
+                backoff = policy.config.backoff_seconds[min(retries - 1, len(policy.config.backoff_seconds) - 1)]
+                time.sleep(backoff)
+
+        if not llm_response:
+            return
+
+        # Mark invocation success
+        runtime.calls += 1
+        runtime.epoch += 1
+        runtime.last_context_hash = ctx_hash
+        runtime.last_call_turn = state.turn
+
+        # Move batch_ids from pending to processed so they do not trigger repeated calls
+        for oid in batch_ids:
+            runtime.processed_observation_ids.add(oid)
+            runtime.pending_observation_ids.discard(oid)
+
+        # Parse & validate response
+        try:
+            cand_exps, cand_exps_expectations = validate_m2_response(
+                llm_response,
+                default_window=window_str,
+            )
+        except Exception as parse_err:
+            runtime.failures += 1
+            state.scope_gaps.append(("m2_abduction", f"Invalid M2 response: {parse_err}"))
+            return
+
+
+        for cand_exp in cand_exps:
+            # Link attribution if not already present
+            if not cand_exp.attributions:
+                for oid in batch_ids:
+                    cand_exp.attributions.append(
+                        Attribution(observation_id=oid, cause="abduced from telemetry observation")
+                    )
+            validate_citation_integrity(cand_exp, ledger)
+
+            if not any(e.label == cand_exp.label for e in state.explanations):
+                state.explanations.append(cand_exp)
+
+            # Mark attributions in ledger and state
+            for attr in cand_exp.attributions:
+                ledger.mark_attributed(attr.observation_id, cand_exp.id)
+                if attr.observation_id not in state.abduced_over:
+                    state.abduced_over.append(attr.observation_id)
+                if attr.observation_id in state.unattributed:
+                    state.unattributed.remove(attr.observation_id)
+
+        for cand_expectation in cand_exps_expectations:
+            if not any(e.id == cand_expectation.id for e in state.expectations):
+                state.expectations.append(cand_expectation)
+
     def investigate(
+
         self,
         alert: Alert,
         as_of: datetime | None = None,
@@ -280,6 +387,9 @@ class InvestigationOrchestrator:
                                 state.observations.append(obs)
                                 if obs.id not in state.unattributed:
                                     state.unattributed.append(obs.id)
+                                if obs.id not in state.abduction_runtime.processed_observation_ids:
+                                    state.abduction_runtime.pending_observation_ids.add(obs.id)
+
 
                             is_confirmed = evaluate_field_predicate(exp.field_predicate, res.rows)
                             exp.test_status = TestStatus.CONFIRMED if is_confirmed else TestStatus.REFUTED
@@ -343,6 +453,9 @@ class InvestigationOrchestrator:
                                 state.observations.append(obs)
                                 if obs.id not in state.unattributed:
                                     state.unattributed.append(obs.id)
+                                if obs.id not in state.abduction_runtime.processed_observation_ids:
+                                    state.abduction_runtime.pending_observation_ids.add(obs.id)
+
 
                                 # Feed newly discovered entities to frontier
                                 for ent in obs.entities:
@@ -397,6 +510,9 @@ class InvestigationOrchestrator:
                                 state.observations.append(obs)
                                 if obs.id not in state.unattributed:
                                     state.unattributed.append(obs.id)
+                                if obs.id not in state.abduction_runtime.processed_observation_ids:
+                                    state.abduction_runtime.pending_observation_ids.add(obs.id)
+
 
                                 for ent in obs.entities:
                                     for ic in frontier.add_instance_entity(ent, w_cell.time_bucket):
@@ -410,40 +526,15 @@ class InvestigationOrchestrator:
                     w_cell.state = CellState.EXPLORED
 
             # ---------------------------------------------------------------
-            # M2 Abduction step: Propose hypotheses for unmapped/unattributed obs
+            # M2 Abduction step: State-Gated Micro-Batch Abduction
             # ---------------------------------------------------------------
-            if ledger.unattributed_observations:
-                prompt_ctx = build_llm_prompt_context(state, ledger, window_str)
-                llm_response = self.llm_provider.generate(prompt_ctx)
-                cand_exps, cand_exps_expectations = validate_m2_response(
-                    llm_response,
-                    default_window=window_str,
-                )
-
-
-                for cand_exp in cand_exps:
-                    # Link attribution if not already present
-                    if not cand_exp.attributions:
-                        for o in ledger.unattributed_observations:
-                            cand_exp.attributions.append(
-                                Attribution(observation_id=o.id, cause="abduced from telemetry observation")
-                            )
-                    validate_citation_integrity(cand_exp, ledger)
-
-                    if not any(e.label == cand_exp.label for e in state.explanations):
-                        state.explanations.append(cand_exp)
-
-                    # Mark attributions in ledger and state so M2 is NOT invoked repeatedly
-                    for attr in cand_exp.attributions:
-                        ledger.mark_attributed(attr.observation_id, cand_exp.id)
-                        if attr.observation_id not in state.abduced_over:
-                            state.abduced_over.append(attr.observation_id)
-                        if attr.observation_id in state.unattributed:
-                            state.unattributed.remove(attr.observation_id)
-
-                for cand_expectation in cand_exps_expectations:
-                    if not any(e.id == cand_expectation.id for e in state.expectations):
-                        state.expectations.append(cand_expectation)
+            should_call, reason = self.abduction_policy.should_call(
+                state,
+                state.abduction_runtime,
+                action=action,
+            )
+            if should_call:
+                self._execute_abduction_epoch(state, ledger, window_str)
 
             budgets.current_turn += 1
 
@@ -451,7 +542,17 @@ class InvestigationOrchestrator:
         # -------------------------------------------------------------------
         # 3. TERMINATION & ACCOUNT EMISSION
         # -------------------------------------------------------------------
+        # Final flush check: process remaining evidence if budget allows
+        should_flush, _ = self.abduction_policy.should_call(
+            state,
+            state.abduction_runtime,
+            is_final=True,
+        )
+        if should_flush:
+            self._execute_abduction_epoch(state, ledger, window_str)
+
         term_state, disp, blockers = evaluate_stopping(state, budgets)
+
 
         # Build coverage bound
         cb = ledger.build_coverage_bound()
