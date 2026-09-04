@@ -53,13 +53,14 @@ traceability record.
 
 ## Phase 4 — reasoning and control
 
-- [ ] Exact predicates and temporal/entity correlations are deterministic.
-- [ ] Evidence may be compatible with multiple hypotheses.
-- [ ] Semantic LLM output is advisory and M3-validated.
-- [ ] Competing hypotheses remain until genuinely refuted.
-- [ ] Controller owns TEST/EXPAND/DISCOVER/PIVOT/REFINE/STOP.
-- [ ] Query, turn, runtime, scan and LLM budgets are enforced.
-- [ ] `STOP_RESOLVED`, `STOP_BOUNDED` and `STOP_EXHAUSTED_BY_BUDGET` are distinct.
+- [x] Exact predicates and temporal/entity correlations are deterministic.
+- [x] Evidence may be compatible with multiple hypotheses.
+- [x] Semantic LLM output is advisory and M3-validated.
+- [x] Competing hypotheses remain until genuinely refuted.
+- [x] Controller owns TEST/EXPAND/DISCOVER/PIVOT/REFINE/STOP.
+- [x] Query, turn, runtime, scan and LLM budgets are enforced.
+- [x] `STOP_RESOLVED`, `STOP_BOUNDED` and `STOP_EXHAUSTED_BY_BUDGET` are distinct.
+
 
 ## Phase 5 — reporting and coverage
 
