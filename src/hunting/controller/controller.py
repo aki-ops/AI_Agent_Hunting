@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from hunting.contracts.cells import CellState
 from hunting.contracts.expectations import TestStatus
 from hunting.contracts.hunt import (
     HuntState,
@@ -81,7 +82,17 @@ class CanonicalActionController:
             for e in state.expectations
         )
 
-        if resolved_hypotheses and not live_hypotheses and all_expectations_concluded:
+        # Invariant: A hunt CANNOT be STOP_RESOLVED if any targeted instance cell remains UNEXPLORED
+        unexplored_instance_cells = [
+            c for c in state.cells if not c.is_wildcard and c.state == CellState.UNEXPLORED
+        ]
+
+        if (
+            resolved_hypotheses
+            and not live_hypotheses
+            and all_expectations_concluded
+            and not unexplored_instance_cells
+        ):
             decision = StoppingDecision.STOP_RESOLVED
         else:
             decision = StoppingDecision.STOP_BOUNDED

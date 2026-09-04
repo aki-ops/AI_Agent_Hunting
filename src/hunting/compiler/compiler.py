@@ -284,32 +284,148 @@ class KnowledgeBehaviorCompiler:
         request: HuntRequest,
         time_window: str,
     ) -> tuple[HuntObjective, list[Hypothesis], list[EvidenceRequirementV4]]:
-        """General deterministic compilation when templates are not matched."""
-        hypo = Hypothesis(
-            id=f"hypo-{request.id}",
-            statement=f"Investigate activity described by: {request.content}",
-            origin=HypothesisOrigin.INPUT,
-            status=HypothesisStatus.LIVE,
-            requirements=[f"req-{request.id}-scope"],
-        )
+        """General deterministic compilation when templates are not matched.
 
-        req = EvidenceRequirementV4(
-            id=f"req-{request.id}-scope",
-            description=f"Evidence matching inquiry: {request.content}",
+        Decomposes request into competing hypotheses (adversary vs benign baseline)
+        and concrete behavioral evidence requirements.
+        """
+        content_lower = request.content.lower()
+
+        # 1. Determine behavioral requirements based on query keywords or default behavioral facets
+        active_reqs: list[EvidenceRequirementV4] = []
+
+        # Check process triggers
+        if any(k in content_lower for k in ("proc", "process", "cmd", "lineage", "exec", "powershell", "bash", "sh", "spawn", "anomal")):
+            active_reqs.append(
+                EvidenceRequirementV4(
+                    id=f"req-{request.id}-proc",
+                    description=f"Process execution and lineage audit matching: {request.content}",
+                    evidence_type="process_ancestry",
+                    predicate=FieldPredicate(field="cmdline", op=FieldOp.EXISTS),
+                    falsification_condition="process ancestry confirms zero anomalous executions under verified sensor coverage",
+                    source_refs=["BEHAVIORAL_BASELINE", "MITRE-T1059"],
+                    status=RequirementStatus.VALIDATED,
+                )
+            )
+
+        # Check network triggers
+        if any(k in content_lower for k in ("net", "network", "c2", "beacon", "traffic", "port", "ip", "dns", "domain", "connect")):
+            active_reqs.append(
+                EvidenceRequirementV4(
+                    id=f"req-{request.id}-net",
+                    description=f"Network connection and outbound C2 audit matching: {request.content}",
+                    evidence_type="network_connection",
+                    predicate=FieldPredicate(field="destination_port", op=FieldOp.EXISTS),
+                    falsification_condition="network flow confirms zero unauthorized outbound connections",
+                    source_refs=["BEHAVIORAL_BASELINE", "MITRE-T1071"],
+                    status=RequirementStatus.VALIDATED,
+                )
+            )
+
+        # Check persistence triggers
+        if any(k in content_lower for k in ("task", "persist", "service", "schedule", "cron", "autorun")):
+            active_reqs.append(
+                EvidenceRequirementV4(
+                    id=f"req-{request.id}-pers",
+                    description=f"Persistence mechanism audit matching: {request.content}",
+                    evidence_type="persistence_change",
+                    predicate=FieldPredicate(field="task_name", op=FieldOp.EXISTS),
+                    falsification_condition="scheduler logs and persistence registry verify zero unauthorized artifacts",
+                    source_refs=["BEHAVIORAL_BASELINE", "MITRE-T1053"],
+                    status=RequirementStatus.VALIDATED,
+                )
+            )
+
+        # Check authentication triggers
+        if any(k in content_lower for k in ("auth", "login", "logon", "user", "credential", "lateral")):
+            active_reqs.append(
+                EvidenceRequirementV4(
+                    id=f"req-{request.id}-auth",
+                    description=f"Authentication and logon activity audit matching: {request.content}",
+                    evidence_type="authentication_activity",
+                    predicate=FieldPredicate(field="logon_type", op=FieldOp.EXISTS),
+                    falsification_condition="authentication logs confirm standard service account baseline without anomalies",
+                    source_refs=["BEHAVIORAL_BASELINE", "MITRE-T1078"],
+                    status=RequirementStatus.VALIDATED,
+                )
+            )
+
+        # Check file triggers
+        if any(k in content_lower for k in ("file", "write", "drop", "webshell", "shell")):
+            active_reqs.append(
+                EvidenceRequirementV4(
+                    id=f"req-{request.id}-file",
+                    description=f"File modification and drop audit matching: {request.content}",
+                    evidence_type="file_modification",
+                    predicate=FieldPredicate(field="file_path", op=FieldOp.EXISTS),
+                    falsification_condition="filesystem inspection shows zero unauthorized files or scripts",
+                    source_refs=["BEHAVIORAL_BASELINE", "MITRE-T1505"],
+                    status=RequirementStatus.VALIDATED,
+                )
+            )
+
+        # If no specific category was triggered (e.g. general / "hunting tự do"), provide standard multi-phase decomposition
+        if not active_reqs:
+            active_reqs.append(
+                EvidenceRequirementV4(
+                    id=f"req-{request.id}-proc",
+                    description=f"Process execution and lineage audit for: {request.content}",
+                    evidence_type="process_ancestry",
+                    predicate=FieldPredicate(field="cmdline", op=FieldOp.EXISTS),
+                    falsification_condition="process ancestry confirms zero anomalous executions under verified sensor coverage",
+                    source_refs=["BEHAVIORAL_BASELINE"],
+                    status=RequirementStatus.VALIDATED,
+                )
+            )
+            active_reqs.append(
+                EvidenceRequirementV4(
+                    id=f"req-{request.id}-net",
+                    description=f"Network connection audit for: {request.content}",
+                    evidence_type="network_connection",
+                    predicate=FieldPredicate(field="destination_port", op=FieldOp.EXISTS),
+                    falsification_condition="network flow confirms zero unauthorized outbound connections",
+                    source_refs=["BEHAVIORAL_BASELINE"],
+                    status=RequirementStatus.VALIDATED,
+                )
+            )
+
+        # Baseline scope records requirement for benign hypothesis
+        req_baseline = EvidenceRequirementV4(
+            id=f"req-{request.id}-baseline",
+            description=f"Verified operational telemetry baseline: {request.content}",
             evidence_type="scope_records",
-            falsification_condition="verified sensor coverage with zero matching events",
-            source_refs=["INPUT_REQUEST"],
+            falsification_condition="telemetry gap or unobservable audit partition",
+            source_refs=["SENSOR_BASELINE"],
             status=RequirementStatus.VALIDATED,
         )
 
+        # 2. Competing Hypotheses
+        hypo_active = Hypothesis(
+            id=f"hypo-{request.id}-active",
+            statement=f"Anomalous or unauthorized activity observed matching inquiry: {request.content}",
+            origin=HypothesisOrigin.INPUT,
+            status=HypothesisStatus.LIVE,
+            requirements=[r.id for r in active_reqs],
+        )
+
+        hypo_benign = Hypothesis(
+            id=f"hypo-{request.id}-benign",
+            statement=f"Telemetry reflects normal operational behavior and benign baseline for: {request.content}",
+            origin=HypothesisOrigin.RULE,
+            status=HypothesisStatus.LIVE,
+            requirements=[req_baseline.id],
+        )
+
+        requirements = [*active_reqs, req_baseline]
+
         objective = HuntObjective(
             request_id=request.id,
-            target_hypotheses=[hypo.id],
+            target_hypotheses=[hypo_active.id, hypo_benign.id],
             time_window=time_window,
             target_scopes=request.provider_hints or ["cdb_native_scope"],
         )
 
-        return objective, [hypo], [req]
+        return objective, [hypo_active, hypo_benign], requirements
 
     def _detect_prompt_injection(self, text: str) -> bool:
         """Scan input for prompt injection signatures."""

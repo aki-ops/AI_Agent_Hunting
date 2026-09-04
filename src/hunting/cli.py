@@ -226,7 +226,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run_cli(args: argparse.Namespace) -> int:
-    """Execute hunting CLI with parsed arguments."""
+    """Execute investigation or hypothesis-driven hunt workflow based on parsed arguments."""
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     db_path = Path(args.db)
     if not db_path.exists():
         adapter = CdbAdapter(":memory:")

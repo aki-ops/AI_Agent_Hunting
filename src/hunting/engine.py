@@ -184,6 +184,17 @@ class HypothesisHuntEngine:
             untested_exps = [e for e in state.expectations if e.test_status == TestStatus.UNTESTED]
             has_untested = len(untested_exps) > 0
             has_pending_controls = len(pending_controls) > 0
+
+            # If any instance cell is UNEXPLORED and has no active expectations, ensure it is added to expand_candidates
+            for c in state.cells:
+                if not c.is_wildcard and c.state == CellState.UNEXPLORED:
+                    has_active = any(
+                        e.entity_ref == c.entity and e.test_status == TestStatus.UNTESTED
+                        for e in state.expectations
+                    )
+                    if not has_active and c.entity not in expand_candidates:
+                        expand_candidates.append(c.entity)
+
             has_expand = len(expand_candidates) > 0
             has_discover = any(c.is_wildcard and c.state == CellState.UNEXPLORED for c in state.cells)
 
@@ -250,7 +261,7 @@ class HypothesisHuntEngine:
 
                 # Update cell coverage
                 matching_cell = wc_cell
-                if plan.is_targeted and exp.entity_ref:
+                if plan.is_targeted and exp.entity_ref and not isinstance(exp.entity_ref, AnyEntity):
                     for c in state.cells:
                         if not c.is_wildcard and c.entity == exp.entity_ref:
                             matching_cell = c
@@ -358,7 +369,10 @@ class HypothesisHuntEngine:
                             ev_enum = EvidenceRequirement(req.evidence_type)
                         except ValueError:
                             ev_enum = EvidenceRequirement.PROCESS_ANCESTRY
-                        owner_id = req.supports[0] if req.supports else state.hypotheses[0].id
+                        owner_id = req.supports[0] if req.supports else next(
+                            (h.id for h in state.hypotheses if req.id in h.requirements),
+                            state.hypotheses[0].id,
+                        )
                         ent_label = getattr(ent, "name", getattr(ent, "username", getattr(ent, "address", "ent")))
                         state.expectations.append(
                             Expectation(

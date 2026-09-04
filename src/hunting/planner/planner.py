@@ -19,7 +19,7 @@ from typing import Callable
 from hunting.capabilities.models import VersionedCapabilityDescriptor
 from hunting.capabilities.registry import build_default_capability_registry
 from hunting.contracts.cells import ProviderScope
-from hunting.contracts.entities import ANY, EntityRef
+from hunting.contracts.entities import ANY, AnyEntity, EntityRef
 from hunting.contracts.hunt import EvidenceRequirementV4, QueryPlan
 from hunting.contracts.queries import Diagnostic
 from hunting.planner.cache import PlanCache
@@ -59,7 +59,12 @@ class CanonicalQueryPlanner:
             # Customize parameters for current entity and time window
             params = dict(cached_plan.parameters)
             params["window"] = time_window
-            if entity is not None and not isinstance(entity, type(ANY)):
+            is_targeted = (
+                entity is not None
+                and not isinstance(entity, (AnyEntity, type(ANY)))
+                and cached_plan.operation_id not in ("cdb_broad_sweep", "cdb_scope_scan")
+            )
+            if entity is not None and not isinstance(entity, (AnyEntity, type(ANY))):
                 target_val = getattr(entity, "name", None) or getattr(entity, "address", None) or getattr(entity, "path", "")
                 if "host" in params:
                     params["host"] = target_val
@@ -77,6 +82,7 @@ class CanonicalQueryPlanner:
                 parameters=params,
                 estimated_cost=cached_plan.estimated_cost,
                 completeness_contract=cached_plan.completeness_contract,
+                is_targeted=is_targeted,
             ), None
 
         # Step 2: Check provider descriptor
@@ -115,6 +121,12 @@ class CanonicalQueryPlanner:
                 else:
                     params[k] = v
 
+            is_targeted = (
+                entity is not None
+                and not isinstance(entity, (AnyEntity, type(ANY)))
+                and template.operation_id not in ("cdb_broad_sweep", "cdb_scope_scan")
+            )
+
             plan = QueryPlan(
                 id=query_id,
                 requirement_id=requirement.id,
@@ -124,6 +136,7 @@ class CanonicalQueryPlanner:
                 parameters=params,
                 estimated_cost=template.estimated_cost,
                 completeness_contract=descriptor.completeness_contract,
+                is_targeted=is_targeted,
             )
 
             # Hard filter validation
@@ -150,6 +163,7 @@ class CanonicalQueryPlanner:
             raw_gen = self.llm_generator(prompt)
             # Parse parameters
             params = {"window": time_window, "custom_field": raw_gen}
+            is_targeted = entity is not None and not isinstance(entity, (AnyEntity, type(ANY)))
             plan = QueryPlan(
                 id=query_id,
                 requirement_id=requirement.id,
@@ -159,6 +173,7 @@ class CanonicalQueryPlanner:
                 parameters=params,
                 estimated_cost=5,
                 completeness_contract=descriptor.completeness_contract,
+                is_targeted=is_targeted,
             )
             valid, diag = self.validator.validate_plan(plan, entity, scope, time_window)
             if not valid or not self.validator.dry_run(plan):

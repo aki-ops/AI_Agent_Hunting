@@ -148,12 +148,10 @@ class HypothesisReasoningEngine:
 
         if any(h.status == HypothesisStatus.SUPPORTED for h in attack_hypos):
             for bh in benign_hypos:
-                if bh.status == HypothesisStatus.LIVE:
-                    bh.status = HypothesisStatus.WEAKENED
+                bh.status = HypothesisStatus.REFUTED
         elif all(h.status == HypothesisStatus.REFUTED for h in attack_hypos) and attack_hypos:
             for bh in benign_hypos:
-                if bh.status in (HypothesisStatus.LIVE, HypothesisStatus.WEAKENED):
-                    bh.status = HypothesisStatus.SUPPORTED
+                bh.status = HypothesisStatus.SUPPORTED
 
 
 __all__ = [

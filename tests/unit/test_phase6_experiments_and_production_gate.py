@@ -12,9 +12,10 @@ Verifies the 8 canonical requirements in 04-IMPLEMENTATION-CHECKLIST.md:
 """
 from __future__ import annotations
 
-from hunting.contracts.cells import ProviderScope
+from hunting.compiler.compiler import KnowledgeBehaviorCompiler
+from hunting.contracts.cells import Cell, CellState, ProviderScope
 from hunting.contracts.entities import Host
-from hunting.contracts.expectations import TestStatus
+from hunting.contracts.expectations import EvidenceRequirement, Expectation, TestStatus
 from hunting.contracts.hunt import (
     EvidenceCard,
     HuntRequest,
@@ -519,3 +520,102 @@ def test_12_delta_grouping_incremental_efficiency():
     # Total cards in builder remains 2
     all_cards = group_builder.build_cards()
     assert len(all_cards) == 2
+
+
+def test_13_free_form_hunting_with_target_entity_explores_cell_and_resolves_competing_hypotheses():
+    """Verify free-form hunt generates competing hypotheses, explores target cells with targeted queries, and respects stopping invariants."""
+    cdb = CdbAdapter()
+    cdb.insert_events([
+        {
+            "timestamp": "2026-02-01T10:00:00Z",
+            "native_type": "process_creation",
+            "host": "SRV-APPS-01",
+            "user": "appuser",
+            "pid": 2048,
+            "cmdline": "powershell.exe -enc ZQBjAGgAbwAgACIAaAB1AG4AdAAiAA==",
+            "image": "C:\\Windows\\System32\\powershell.exe",
+        },
+        {
+            "timestamp": "2026-02-01T10:05:00Z",
+            "native_type": "network_flow",
+            "host": "SRV-APPS-01",
+            "ip": "198.51.100.10",
+            "port": 443,
+        },
+    ])
+
+    request = HuntRequest(
+        id="hunt-free-01",
+        kind=HuntRequestKind.NL_QUESTION,
+        content="hunting tự do",
+        entities=[Host(name="SRV-APPS-01")],
+    )
+
+    # 1. Compiler decomposes into competing hypotheses and multi-phase behavioral requirements
+    compiler = KnowledgeBehaviorCompiler()
+    obj, hypotheses, reqs = compiler.compile(request)
+    assert len(hypotheses) == 2
+    active_h = next(h for h in hypotheses if "active" in h.id)
+    benign_h = next(h for h in hypotheses if "benign" in h.id)
+    assert active_h.status == HypothesisStatus.LIVE
+    assert benign_h.status == HypothesisStatus.LIVE
+    assert len(reqs) >= 2
+    assert any(r.evidence_type == "process_ancestry" for r in reqs)
+    assert any(r.evidence_type == "scope_records" for r in reqs)
+
+    # 2. Engine executes hunt
+    engine = HypothesisHuntEngine(cdb_adapter=cdb)
+    result = engine.execute_hunt(request, adapter=cdb, time_window="2026-02-01T00:00:00Z/P1D")
+
+    # Invariant A: Target instance cell is NOT left UNEXPLORED
+    srv_cells = [c for c in result.state.cells if not c.is_wildcard and getattr(c.entity, "name", "") == "SRV-APPS-01"]
+    assert len(srv_cells) == 1
+    assert srv_cells[0].state == CellState.EXPLORED
+
+    # Invariant B: Targeted queries were executed with is_targeted=True
+    targeted_queries = [q for q in result.state.queries if q.is_targeted]
+    assert len(targeted_queries) >= 1
+    assert any(q.parameters.get("host") == "SRV-APPS-01" for q in targeted_queries)
+
+    # Invariant C: Expectations for target entity were created and tested
+    srv_exps = [e for e in result.state.expectations if getattr(e.entity_ref, "name", "") == "SRV-APPS-01"]
+    assert len(srv_exps) >= 2
+    assert all(e.test_status in (TestStatus.CONFIRMED, TestStatus.REFUTED, TestStatus.UNTESTABLE) for e in srv_exps)
+
+    # Invariant D: Both competing hypotheses are evaluated (one supported, one refuted)
+    final_active = next(h for h in result.account.hypotheses if "active" in h.id)
+    final_benign = next(h for h in result.account.hypotheses if "benign" in h.id)
+    assert final_active.status == HypothesisStatus.SUPPORTED
+    assert final_benign.status == HypothesisStatus.REFUTED
+    assert result.state.stopping_decision == StoppingDecision.STOP_RESOLVED
+
+    # Invariant E: Coverage guard - an UNEXPLORED instance cell strictly prevents STOP_RESOLVED
+    scope = ProviderScope(provider_id="cdb_sqlite", native_partition={"table": "events"}, scope_id="scope-test")
+    state_with_unexplored_cell = HuntState(
+        hypotheses=[
+            Hypothesis(id="h-sup", statement="Resolved attack", status=HypothesisStatus.SUPPORTED),
+            Hypothesis(id="h-ref", statement="Refuted benign", status=HypothesisStatus.REFUTED),
+        ],
+        expectations=[
+            Expectation(
+                id="exp-done",
+                owner_explanation_id="h-sup",
+                evidence_requirement=EvidenceRequirement.PROCESS_ANCESTRY,
+                predicted_observation="cmd execution",
+                entity_ref=Host(name="SRV-EXPLORED"),
+                field_predicate=None,
+                provider_scope_id="scope-test",
+                time_window="2026-02-01T00:00:00Z/P1D",
+                falsification_condition="clean",
+                test_status=TestStatus.CONFIRMED,
+            )
+        ],
+        cells=[
+            Cell(provider_scope=scope, entity=Host(name="SRV-EXPLORED"), time_bucket="2026-02-01T00:00:00Z/P1D", state=CellState.EXPLORED),
+            Cell(provider_scope=scope, entity=Host(name="SRV-UNEXPLORED"), time_bucket="2026-02-01T00:00:00Z/P1D", state=CellState.UNEXPLORED),
+        ],
+    )
+    controller = CanonicalActionController()
+    stopping_dec = controller.evaluate_stopping(state_with_unexplored_cell)
+    assert stopping_dec == StoppingDecision.STOP_BOUNDED
+

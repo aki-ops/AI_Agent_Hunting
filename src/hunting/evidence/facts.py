@@ -83,10 +83,16 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
         )
 
     # 2. Network connection fact & destination relationship
-    elif fields.get("destination_ip") or fields.get("remote_ip"):
-        dst_ip = fields.get("destination_ip") or fields.get("remote_ip")
+    elif fields.get("destination_ip") or fields.get("remote_ip") or fields.get("ip"):
+        dst_ip = fields.get("destination_ip") or fields.get("remote_ip") or fields.get("ip")
         ip_entity = IPAddress(address=str(dst_ip))
         relations.append(EntityRelation(source_entity=host_entity, relation_type="connected_to", target_entity=ip_entity))
+
+        net_fields = {k: v for k, v in fields.items() if k in ("destination_ip", "destination_port", "protocol", "bytes_out", "ip", "port") and v is not None}
+        if "ip" in net_fields and "destination_ip" not in net_fields:
+            net_fields["destination_ip"] = net_fields["ip"]
+        if "port" in net_fields and "destination_port" not in net_fields:
+            net_fields["destination_port"] = net_fields["port"]
 
         facts.append(
             EvidenceFact(
@@ -94,7 +100,7 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
                 fact_type="network_connection",
                 timestamp=timestamp,
                 primary_entity=ip_entity,
-                fields={k: v for k, v in fields.items() if k in ("destination_ip", "destination_port", "protocol", "bytes_out") and v is not None},
+                fields=net_fields,
                 relations=tuple(relations),
             )
         )
