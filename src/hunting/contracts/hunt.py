@@ -73,6 +73,10 @@ class HuntObjective:
     target_hypotheses: list[str] = field(default_factory=list)
     time_window: str = ""
     target_scopes: list[str] = field(default_factory=list)
+    kind: HuntRequestKind | str | None = None
+    statement: str = ""
+    entities: list[EntityRef] = field(default_factory=list)
+    time_policy: TimePolicy | None = None
 
     def __post_init__(self) -> None:
         if not self.request_id.strip():
@@ -159,6 +163,7 @@ class QueryPlan:
     parameters: dict[str, Any] = field(default_factory=dict)
     estimated_cost: int = 1
     completeness_contract: str = "complete"
+    is_targeted: bool = False
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -245,6 +250,20 @@ class FinalHuntAccount:
     residuals: list[str]
     coverage_bound: CoverageBound
     stopping_decision: StoppingDecision
+    observation_citations: list[str] = field(default_factory=list)
+    diagnostics: list[dict[str, Any]] = field(default_factory=list)
+    gap_breakdown: dict[str, list[str]] = field(default_factory=dict)
+
+    @property
+    def outcome(self) -> HuntOutcome:
+        """Derive canonical outcome from supporting / contradicting / unreachable."""
+        if self.supporting:
+            return HuntOutcome.SUPPORTED
+        if self.contradicting and not self.supporting:
+            return HuntOutcome.CONTRADICTED
+        if self.unreachable and not self.supporting:
+            return HuntOutcome.UNREACHABLE
+        return HuntOutcome.UNKNOWN  # Rendered as NO_EVIDENCE_FOUND in final report
 
 
 __all__ = [

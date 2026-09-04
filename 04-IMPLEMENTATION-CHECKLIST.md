@@ -64,12 +64,12 @@ traceability record.
 
 ## Phase 5 — reporting and coverage
 
-- [ ] Scope coverage is separate from requirement coverage.
-- [ ] Targeted query never implies full scope coverage.
-- [ ] `NO_EVIDENCE_FOUND` is never rendered as `BENIGN`.
-- [ ] Final account cites request, hypothesis, cards, observations, queries,
+- [x] Scope coverage is separate from requirement coverage.
+- [x] Targeted query never implies full scope coverage.
+- [x] `NO_EVIDENCE_FOUND` is never rendered as `BENIGN`.
+- [x] Final account cites request, hypothesis, cards, observations, queries,
   diagnostics, residuals and coverage.
-- [ ] Report distinguishes not found, not observable, unqueryable and unknown source.
+- [x] Report distinguishes not found, not observable, unqueryable and unknown source.
 
 ## Phase 6 — experiments and production gate
 
