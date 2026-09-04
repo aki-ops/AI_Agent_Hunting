@@ -6,9 +6,9 @@ Query operations and semantic mappings are separate contracts.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Mapping
+from typing import Any, Mapping
 
 from hunting.contracts.entities import AnyEntity, EntityRef
 
@@ -18,6 +18,10 @@ class ProviderScope:
     provider_id: str
     native_partition: Mapping[str, str]
     scope_id: str = ""
+    coverage_start: str | None = None
+    coverage_end: str | None = None
+    retention_days: int | None = None
+    known_gaps: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if not self.provider_id.strip():
@@ -47,6 +51,8 @@ class Cell:
     def __post_init__(self) -> None:
         if not self.time_bucket.strip():
             raise ValueError("time_bucket must not be empty")
+        if hasattr(self, "event_family"):
+            raise ValueError("Cell cannot contain event_family axis")
 
     @property
     def is_wildcard(self) -> bool:
@@ -54,3 +60,4 @@ class Cell:
 
 
 __all__ = ["ProviderScope", "Cell", "CellState"]
+

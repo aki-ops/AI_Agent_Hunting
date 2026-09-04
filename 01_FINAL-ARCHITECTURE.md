@@ -1,178 +1,231 @@
-# 01 — FINAL ARCHITECTURE (v3 — ProviderScope/ProviderOperation reset)
+# 01 — FINAL ARCHITECTURE (v4)
 
-**Status: CORE CONTRACT FROZEN.** This document defines module boundaries and
-terminology. Runtime parameters and implementation tasks live in `02`. The
-revised contracts must pass the Phase 0 invariant tests before adapters begin.
+**CANONICAL SOURCE OF TRUTH.** This document defines a pure hypothesis-driven
+threat-hunting engine. `02` defines algorithms, `03` records evidence and
+sources, and `04` is the implementation gate.
 
-## 1. Objective
+## 1. Goal
 
-Take an arbitrary security alert—including one carrying no entities—and
-produce an auditable account of what happened, not an unjustified verdict. The
-agent must keep competing explanations alive, distinguish “found nothing” from
-“nothing happened”, treat log text as untrusted data, and report what it could
-not see.
+Start from a short hunt hypothesis or hunt question and produce an auditable
+account of supporting, contradicting, unknown and unreachable evidence. The
+engine is not alert-triage and does not require a CVE PoC.
 
-## 2. Architecture
+It must:
+
+- turn a hypothesis into testable evidence requirements;
+- discover configured provider capabilities and execute bounded queries;
+- work across heterogeneous SIEM, EDR, IDS, identity and cloud telemetry;
+- discover entities without a predeclared event taxonomy;
+- evaluate evidence against competing hypotheses;
+- keep raw observations out of repeated LLM contexts;
+- stop with explicit coverage and uncertainty bounds.
+
+## 2. Scope
 
 ```text
- ALERT
-   |
-   v
- [M1] OBSERVATION LEDGER  <----- observations ----- [M3] CONSTRAINT CHECKER
-   |                                                   ^
-   | unattributed observations                         |
-   v                                                   |
- [M2] ABDUCTION ENGINE (LLM) ---- explanations ------ [M4] CONTROLLER
-                                                           |
-                                                           | bounded query plan
-                                                           v
-                                               [M5] ADAPTER / REPORTER (LLM)
-                                                           |
-                                         native provider query + final account
-                                                           v
-                                                        ANALYST
+HYPOTHESIS / TTP / IOC / CVE / CTI / NL QUESTION
+→ evidence-driven hunting
 ```
 
-There are five modules. M2 and M5 may call an LLM. No module may add a second
-state machine, a universal event ontology, or an implicit completeness oracle.
+An alert can be converted by an external integration into a hypothesis, but the
+core engine has no alert-investigation mode. Active exploitation/pentesting is
+out of scope.
 
-## 3. Module responsibilities
+## 3. Architecture
 
-| Module | Responsibility | LLM |
+```text
+HuntRequest
+    ↓
+Knowledge / Behavior Compiler
+    ↓
+Hypothesis + EvidenceRequirements
+    ↓
+Capability Registry + Runtime Validation
+    ↓
+Query Planner + Query Validator
+    ↓
+Provider Adapters / Query Execution
+    ↓
+Observation Ledger
+    ↓
+Evidence Fact + Evidence Group Builder
+    ↓
+Compatibility / Evidence Evaluator
+    ↓
+HuntState
+    ↓
+Deterministic Action Controller
+    ├── TEST / EXPAND / DISCOVER / PIVOT / REFINE
+    └── STOP
+    ↓
+Final Hunt Account
+```
+
+`HuntState` is data, not a second controller.
+
+| Component | Responsibility | LLM |
 |---|---|---|
-| **M1 Observation Ledger** | Deterministic parsing, entity extraction, taint/provenance, native observation preservation, outcome typing, attribution bookkeeping and coverage accounting. The prompt-injection boundary. | Forbidden |
-| **M2 Abduction Engine** | Propose candidate explanations and the `EvidenceRequirement`s each predicts. This is the only open-world component. | Required |
-| **M3 Constraint Checker** | Check schema, provenance, contradictions, expectation results and negative-evidence preconditions. The only module allowed to change explanation/attribution status. | Forbidden |
-| **M4 Controller** | Select cells/actions, enforce budgets, schedule sampling, decide escalation/stopping, and compute the final disposition exactly once. | Forbidden |
-| **M5 Adapter / Reporter** | Bind requirements to allow-listed `ProviderOperation`s, validate/execute native queries, and render the final account. Never derives a disposition. | Required |
+| Knowledge/Behavior Compiler | Normalize request and derive behavior candidates | optional, bounded |
+| Capability/Adapter Layer | Describe and execute provider operations | no state authority |
+| Query Planner/Validator | Bind evidence to safe queries | templates first; fallback only |
+| Observation/Evidence Layer | Preserve, compress and evaluate evidence | semantic fallback only |
+| Hunt Controller | Own transitions, budgets, coverage and stopping | forbidden |
+| Account Renderer | Produce structured account and optional prose | optional |
 
-## 4. The four separate contracts
+## 4. Input and output
 
-| Question | Contract | Boundary |
-|---|---|---|
-| Where is data addressable? | `ProviderScope` | native partition, coverage, retention, gaps |
-| How is it queried? | `ProviderOperation` | provider API/search, parameters, pagination, completeness |
-| What evidence would answer a question? | `EvidenceRequirement` | small versioned question vocabulary |
-| What did a record mean? | `native_type` + nullable `SemanticType` | optional post-hoc enrichment |
+```python
+HuntRequest = {
+    "id": str,
+    "kind": "HYPOTHESIS" | "TTP" | "IOC" | "CVE" | "CTI_REPORT" |
+            "NL_QUESTION" | "SCHEDULED",
+    "content": str,
+    "entities": list[EntityRef],
+    "time_policy": TimePolicy | None,
+    "provider_hints": list[str],
+}
+```
 
-`EventFamily` is not a Cell axis, not a registry denominator, and not a
-restriction on what the agent may query. If kept, it is only an optional
-semantic label assigned after retrieval. An event with no label is a valid
-observation and retains its native type, fields, raw reference and provenance.
+Entities, time and provider hints are optional. Missing values use an explicit
+deployment policy and are never silently treated as facts.
 
-## 5. Addressability and query surface
+```python
+FinalHuntAccount = {
+    "request_id": str,
+    "objective": HuntObjective,
+    "hypotheses": list[Hypothesis],
+    "evidence_cards": list[EvidenceCard],
+    "queries": list[QueryRecord],
+    "supporting": list[str],
+    "contradicting": list[str],
+    "unknown": list[str],
+    "unreachable": list[str],
+    "residuals": list[str],
+    "coverage_bound": CoverageBound,
+    "stopping_decision": StoppingDecision,
+}
+```
+
+## 5. Core contracts
+
+```python
+Hypothesis = {
+    "id": str,
+    "statement": str,
+    "origin": "INPUT" | "LLM_PROPOSAL" | "RULE" | "HUMAN",
+    "status": "LIVE" | "SUPPORTED" | "WEAKENED" | "REFUTED" | "UNTESTABLE",
+    "source_refs": list[str],
+    "requirements": list[str],
+}
+
+EvidenceRequirement = {
+    "id": str,
+    "description": str,
+    "evidence_type": str,
+    "entity_scope": EntityRef | "ANY" | "POPULATION",
+    "time_scope": TimeWindow,
+    "predicate": Predicate | None,
+    "supports": list[str],
+    "contradicts": list[str],
+    "falsification_condition": str,
+    "source_refs": list[str],
+    "status": "PROPOSED" | "VALIDATED" | "UNSUPPORTED" | "REJECTED",
+}
+```
+
+`EvidenceRequirement` is reusable. `Expectation` instantiates it for a
+particular entity/time/predicate. `QueryPlan` is provider-specific:
+
+```text
+EvidenceRequirement → Expectation → QueryPlan → QueryResult
+```
 
 ```python
 ProviderScope = {
-    provider_id: str,
-    native_partition: dict[str, str],
-    scope_id: str,
+    "provider_id": str,
+    "scope_id": str,
+    "native_partition": dict[str, str],
+    "coverage_start": datetime,
+    "coverage_end": datetime | None,
+    "retention_days": int | None,
+    "known_gaps": list[Gap],
 }
 
 Cell = {
-    provider_scope: ProviderScope,
-    entity: EntityRef | ANY,
-    time_bucket: TimeBucket,
+    "provider_scope": ProviderScope,
+    "entity": EntityRef | ANY,
+    "time_bucket": TimeBucket,
 }
 ```
 
-A `Cell` answers only whether a provider scope/entity/time region has been
-explored. It has no event-family, intent or operation axis.
+`Cell` is a coverage address only. It has no `event_family`, `event_code`,
+intent or operation axis. Native types remain in observations; semantic mapping
+is optional.
 
-The seven investigation workflows are:
-
-`ProcessLineage`, `LogonHistory`, `NetworkConnections`, `PersistenceArtifacts`,
-`FileWrites`, `DNSQueries`, and `BroadSweep`.
-
-The three control operations are:
-
-`ScopeHealthControl`, `AnyRecordInScope`, and `PredicateObservabilityControl`.
-
-Workflows map to `EvidenceRequirement`s; requirements map to provider
-operations. A requirement can be answered by different native records on
-different providers. A provider does not need a universal `event_code`.
-
-`BroadSweep` operates on a wildcard Cell and is the entity-free bootstrap path.
-It may mint observations. Controls never mint observations and exist only to
-license a `VALID_NEGATIVE` result.
-
-## 6. LLM runtime and deterministic boundary
-
-The real M2 runtime calls an external LLM API through an internal
-`ApiLLMProvider` interface. Provider, model, endpoint, timeout and token limits
-are configuration/secrets, not investigation logic. Local model inference is
-outside the current deployment decision. A stub provider remains available for
-deterministic tests and never calls a network.
-
-API calls are permitted for proposing explanations/requirements, proposing a
-native query inside an adapter allowlist, and rendering a narrative from a
-fixed schema. The LLM may not extract fields, label taint, retrieve data,
-expand scope, change state, type outcomes, select actions, run controls,
-attribute evidence, stop the investigation, or compute disposition.
-
-The M2 API contract is:
-
-```text
-structured investigation context
-  → ApiLLMProvider.generate()
-  → schema-validated JSON
-  → explanations + EvidenceRequirements
-  → M3 constraint validation
+```python
+EvidenceCard = {
+    "id": str,
+    "fingerprint": str,
+    "representative_observation_ids": list[str],
+    "count": int,
+    "entity_summary": dict,
+    "time_summary": dict,
+    "field_summary": dict,
+    "fact_type": str,
+    "completeness": str,
+    "relations": list[EvidenceRelation],
+}
 ```
 
-Raw log text is never passed to the LLM. Only structured, taint-labelled data
-and validated schemas cross the boundary.
+The ledger stores every observation. The LLM receives bounded cards and deltas,
+not every raw row.
 
-## 7. Investigation lifecycle
+## 6. LLM boundary and cost policy
 
-```text
-ALERT
-  → DISCOVER  configured/discovered ProviderScopes and operations
-  → BOOTSTRAP entities (possibly empty) and time window
-  → SCOPE     wildcard cells, then instance cells from observations
-  → PLAN      EvidenceRequirement → CapabilityBinding → ProviderOperation
-  → EXECUTE   native query with complete/partial metadata
-  → NORMALIZE preserve native record; semantic mapping optional
-  → ABDUCE    explanations for unaccounted observations
-  → VALIDATE  constraints, controls and contradictions
-  → EXPAND + SAMPLE bounded frontier exploration
-  → ASSESS    explanations, residuals and separate coverage bounds
-  → TERMINATE STOP_RESOLVED or STOP_BOUNDED
-  → CONFIRM   analyst confirmation where mandatory
+LLM calls are conditional gates:
+
+| Gate | Trigger | MVP limit |
+|---|---|---:|
+| Objective compilation | Unstructured or novel input | 1 |
+| Query fallback | No validated template | 1 per requirement/provider/schema |
+| Ambiguous evidence | Rules cannot discriminate hypotheses | 1 per epoch |
+| Narrative | Explicit analyst request | 1, optional |
+
+```python
+max_llm_calls_per_hunt = 3
+max_llm_calls_per_epoch = 1
+max_retries = 1
+max_dynamic_requirements = 5
 ```
 
-An entity-free alert is first-class: wildcard Cells come from known provider
-scopes alone. A complete targeted query does not make an entire scope explored;
-only a complete scope scan can make that coverage claim.
+Known predicates, grouping, correlation, capability selection, coverage, state
+and stopping are deterministic. A known or duplicate observation never triggers
+an LLM call.
 
-## 8. Dispositions
+## 7. Outcomes and stopping
 
-M4 computes one mutually exclusive disposition and writes it once:
+```text
+SUPPORTED       — evidence satisfies the hypothesis requirements
+CONTRADICTED    — complete and observable evidence refutes it
+INCONCLUSIVE    — evidence is insufficient or ambiguous
+UNKNOWN         — required meaning/data cannot be established
+UNREACHABLE     — provider/scope/telemetry cannot be queried
+```
 
-| Disposition | Meaning |
-|---|---|
-| `MALICIOUS` / `BENIGN` | one surviving explanation of that class leads unambiguously |
-| `UNKNOWN` | evidence supports a surviving explanation whose class is unknown |
-| `INSUFFICIENT_EVIDENCE` | investigation cannot choose because required evidence is missing, dark, unqueryable or budget-bounded |
-| `CONFLICTED` | unresolved evidence conflict or tied explanations of different classes |
+```text
+STOP_RESOLVED | STOP_BOUNDED | STOP_EXHAUSTED_BY_BUDGET
+```
 
-`UNKNOWN` is a statement about the behaviour; `INSUFFICIENT_EVIDENCE` is a
-statement about our observability. Unavailable required telemetry is always the
-latter.
+`NO_EVIDENCE_FOUND` is a report result, not `BENIGN`. The account must state the
+searched frame, incomplete regions and unobservable requirements.
 
-## 9. Coverage claims
+## 8. Basis and limitations
 
-Coverage is reported on two axes:
+The architecture adapts the knowledge–hypothesis–action model from *Evidential
+Cyber Threat Hunting*, adaptive targeted collection and hypothesis testing from
+ATHAFI, and behavior-to-query synthesis from ThreatRaptor. MITRE’s methodology
+separates hypothesis development, data requirements and collection gaps.
 
-- **scope coverage:** `EXPLORED`, `PARTIAL`, `UNEXPLORED`, `UNQUERYABLE` and
-  `UNREACHABLE` cells;
-- **requirement coverage:** requirements that are `EXACT`, `PARTIAL`,
-  `UNSUPPORTED_REQUIREMENT`, executed-complete, or failed.
-
-`UNKNOWN_SOURCE` is outside the configured/discovered universe. It is reported
-as a blind spot but not counted as a denominator. Retrieved records without a
-semantic mapping are `UNMAPPED`, remain first-class evidence, and are counted
-in the coverage bound.
-
-The architecture claims neither hypothesis completeness nor visibility into
-undeclared/deleted/suppressed data. It bounds and reports those limitations.
+The exact Cell model, EvidenceCard compression, compatibility semantics,
+bounded LLM gates and coverage-aware stopping are thesis engineering decisions,
+not claims that a paper proved the exact implementation. See `03` and `02`.

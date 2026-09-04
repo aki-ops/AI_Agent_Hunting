@@ -1,10 +1,18 @@
 # AI Agent Hunting
 
-[![Tests](https://img.shields.io/badge/tests-100%20passed-brightgreen.svg)]()
+> **Architecture status:** `01–04` now describe the v4 hypothesis-driven hunt
+> target. The CLI examples below are the legacy alert-oriented MVP until the
+> v4 migration checklist is implemented. Do not treat the current runtime as
+> v4-complete.
+
+[![Tests](https://img.shields.io/badge/tests-legacy%20MVP%20suite-brightgreen.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)]()
 
-**AI Agent Hunting** is a deterministic, evidence-grounded, human-in-the-loop threat investigation agent architecture. It provides mathematically bounded, auditable, and replayable cyber threat investigations without trusting generative models to execute actions or compute outcomes.
+**AI Agent Hunting** is a deterministic, evidence-grounded, hypothesis-driven
+threat-hunting engine architecture. It provides bounded, auditable and
+replayable hunts without trusting generative models to execute actions or
+compute outcomes.
 
 ---
 

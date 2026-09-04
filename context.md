@@ -1,4 +1,4 @@
-# AI Agent Hunting — Project Context (v3)
+# AI Agent Hunting — Project Context (v4)
 
 Use `01_FINAL-ARCHITECTURE.md` for WHAT, `02_METHOD-AND-IMPLEMENTATION-PLAN.md`
 for HOW/contracts/tasks, `03_LITERATURE-AND-TRACEABILITY.md` for sources, and
@@ -7,22 +7,23 @@ operational context, not a fourth contract.
 
 ## Objective
 
-Build an evidence-grounded, human-in-the-loop threat investigation agent. It
-produces an auditable account with claim-to-observation links, preserves
-competing explanations, never treats an empty query as real-world absence, and
-reports residual uncertainty and blind spots. Raw log text is untrusted and
-never enters an LLM prompt.
+Build a pure hypothesis-driven, evidence-grounded threat-hunting engine. It
+starts from a hypothesis/TTP/IOC/CVE/CTI/question, preserves competing
+explanations, never treats an empty query as real-world absence, and reports
+residual uncertainty and blind spots. Raw log text is untrusted and never
+enters a repeated LLM prompt.
 
 ## Current status
 
-The previous family-centric contract has been replaced. The core is ready only
-for a **limited CDB/mock vertical slice after Phase 0 contract tests pass**. It
-is not production-ready for Splunk/EDR/IDS until real-provider completeness and
-scope tests pass.
+The v4 target contract is documented in `01–04`. The existing implementation is
+still the earlier alert-oriented MVP and requires migration before it can claim
+the v4 hypothesis-only flow. It is not production-ready for Splunk/EDR/IDS
+until real-provider completeness and scope tests pass.
 
-Five modules remain: M1 Observation Ledger, M2 Abduction Engine, M3 Constraint
-Checker, M4 Controller, and M5 Adapter/Reporter. M2/M5 may use an LLM; all state,
-retrieval, constraints, coverage and disposition remain deterministic.
+Six implementation components are defined: knowledge/behavior compiler,
+capability/adapters, query planner/validator, observation/evidence layer, hunt
+controller, and account renderer. LLM calls are bounded gates; state,
+capability validation, coverage, and stopping remain deterministic.
 
 ## Core vocabulary
 
@@ -34,7 +35,7 @@ retrieval, constraints, coverage and disposition remain deterministic.
 | `EvidenceRequirement` | versioned question-side evidence shape, not a vendor event catalogue |
 | `native_type` | original provider record/relationship type, preserved |
 | `semantic_type` | optional post-hoc mapping; may be `None` |
-| `EventFamily` | optional reporting label only; never a Cell axis or query restriction |
+| `EventFamily` | not a Cell axis or query universe; native event types remain in observations |
 
 If a record belongs to no semantic family, keep it as an observation with native
 fields and `semantic_type=None` (`UNMAPPED`). Never route it to `OTHER` or drop
@@ -48,9 +49,9 @@ it as a blind spot, but do not pretend it is enumerable.
 Cell = (provider_scope, entity | ANY, time_bucket)
 ```
 
-Wildcard Cells come from known provider scopes and permit an entity-free alert
-to bootstrap through `BroadSweep`. Instance Cells are added from alert or
-observed entities, regardless of semantic mapping. A complete targeted query
+Wildcard Cells come from known provider scopes and permit a sparse hypothesis
+to bootstrap through bounded discovery. Instance Cells are added from request
+or observed entities, regardless of semantic mapping. A complete targeted query
 does not make a scope explored; only a complete scope-level scan does.
 
 States are `EXPLORED`, `PARTIAL`, `UNEXPLORED`, `UNQUERYABLE` and
@@ -61,15 +62,17 @@ unmapped observations.
 ## Query flow
 
 ```text
-alert
-  → configured/discovered ProviderScopes
+HuntRequest/HuntObjective
+  → configured ProviderScopes and capabilities
   → EvidenceRequirement
   → CapabilityMatcher(CapabilityDescriptor)
   → CapabilityBinding
   → allow-listed ProviderOperation
   → native query/result (complete or partial)
   → Observation (native preserved, semantic optional)
-  → expansion/sampling/assessment
+  → EvidenceFact/EvidenceGroup
+  → TEST/EXPAND/DISCOVER/PIVOT/REFINE
+  → assessment
 ```
 
 Investigation workflows: `ProcessLineage`, `LogonHistory`,
@@ -88,13 +91,12 @@ adapter's validated operation/field/predicate allowlist.
 ## Implementation order
 
 1. Phase 0 contracts, validators and invariant tests.
-2. Phase 1 manifest, CDB scope/operation and normalization.
-3. M1 ledger, native observation preservation and coverage accounting.
-4. M3 constraints, M4 controller, frontier and deterministic sampling.
-5. M5 CDB adapter, seven workflows and three controls.
-6. Stubbed abduction with zero network calls and replayable audit log.
-7. Real abduction through an external LLM API, human loop and reporter.
-8. Real SIEM/EDR/IDS adapters only after native scope/completeness tests.
+2. Knowledge/behavior compiler and hypothesis-only input.
+3. Capability descriptors, query templates and validated fallback.
+4. Observation ledger, fact extraction and EvidenceGroup compression.
+5. Evidence compatibility, hunt controller and bounded LLM gates.
+6. CDB vertical slice and cost/recall/security experiments.
+7. Real SIEM/EDR/IDS adapters only after native scope/completeness tests.
 
 ## Non-negotiable security assertions
 

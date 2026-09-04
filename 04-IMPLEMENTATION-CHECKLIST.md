@@ -1,209 +1,87 @@
-# Implementation Checklist (v3)
+# 04 — IMPLEMENTATION CHECKLIST (v4)
 
-Executable worklist for `01_FINAL-ARCHITECTURE.md` and
-`02_METHOD-AND-IMPLEMENTATION-PLAN.md`. A checked item requires a test or
-execution evidence; documentation alone is not completion evidence.
+An item is complete only with a test, replay or captured execution artifact.
+`01` is the architecture source of truth; `02` is the method; `03` is the
+traceability record.
 
-## Scope and gates
+## Phase 0 — contracts
 
-### Phase 0 — contract gate
-
-- [x] Python 3.10+ project, CI, lint and test runner.
-- [x] Replay manifest contains git SHA, config hash and deterministic seed.
-- [x] Implement `ProviderScope` with native partition, coverage, retention and gaps.
-- [x] Implement `Cell(provider_scope, entity, time_bucket)` with **no** `event_family` field.
-- [x] Implement `EntityRef` concrete variants and the real `ANY` wildcard value.
-- [x] Implement `ProviderOperation` with scope IDs, parameter schema, pagination and completeness semantics.
-- [x] Implement `EvidenceRequirement` and `CapabilityBinding` with `EXACT/PARTIAL`.
-- [x] Implement `CapabilityDescriptor` and a provider-neutral `CapabilityMatcher`.
-- [x] Implement `Observation` with preserved `native_type` and nullable `semantic_type`.
-- [x] Implement `QueryResult.complete`; never infer completeness from row count alone.
-- [x] Implement diagnostics and states `UNEXPLORED`, `PARTIAL`, `EXPLORED`, `UNQUERYABLE`, `UNREACHABLE`.
-- [x] Implement `UNMAPPED`, `UNEXPLAINED`, `UNSUPPORTED_REQUIREMENT` and `UNKNOWN_SOURCE` handling.
-- [x] Implement `CoverageBound` with separate scope/requirement coverage and unmapped counts.
-- [x] Malformed contracts fail validation; unknown semantic type does not.
-- [x] `TESTIMONY` cannot become `OBSERVED`; M2 cannot write attribution/status.
-
-### Phase 0 acceptance
-
-- [x] Contract round-trip tests pass.
-- [x] Unknown native observation round-trips with `semantic_type=None`.
-- [x] `UNQUERYABLE` is in the denominator; `UNKNOWN_SOURCE` is reported outside it.
-- [x] A complete targeted query does not mark the whole provider scope explored.
-
-## Phase 1 — discovery, input and normalization
-
-- [x] Define canonical alert fixtures, including an entity-free alert.
-- [x] Deterministically extract and normalize alert entities and time window.
-- [x] Load/validate a provider manifest; no event-family declarations required.
-- [x] Assign stable IDs to every configured/discovered `ProviderScope`.
-- [x] Validate operation-to-scope relationships and operation schemas.
-- [x] Preserve native partition identity in provenance.
-- [x] Build CDB/mock fixture with at least one scope and one `scope_scan` operation.
-- [x] Add fixtures for a stale scope, known gap, unknown native record and no-adapter scope.
-
-### Acceptance
-
-- [x] Entity-bearing alert creates instance candidates.
-- [x] Entity-free alert creates a finite wildcard frame from known scopes alone.
-- [x] Retention-expired/known-gap cells are never selected.
-- [x] A known scope with no operation is `UNQUERYABLE`, not silently omitted.
+- [x] `HuntRequest` accepts hypothesis/TTP/IOC/CVE/CTI/NL question without alert.
+- [x] `HuntObjective`, `Hypothesis`, `EvidenceRequirement`, `Expectation` and `QueryPlan` are distinct.
+- [x] `Cell(provider_scope, entity|ANY, time_bucket)` has no `event_family`.
+- [x] `ProviderScope` preserves native partition, retention and gaps.
+- [x] `ProviderOperation` declares schema, pagination and completeness.
+- [x] `Observation` preserves native type and nullable semantic type.
+- [x] `QueryResult.complete` is explicit; row count never implies EOF.
+- [x] `UNKNOWN`, `INCONCLUSIVE`, `UNREACHABLE` and `UNSUPPORTED` are distinct.
+- [x] `CoverageBound` separates scope, requirement and unknown boundaries.
+- [x] Only the Action Controller changes HuntState.
 
 
-## Phase 2 — M1 observation ledger
+## Phase 1 — knowledge and hypothesis
 
-- [x] Implement raw event loaders and protected raw references.
-- [x] Preserve provider-native records and native type, including unknown types.
-- [x] Extract stable envelope fields and provider-specific fields without assuming a universal schema.
-- [x] Apply per-field taint and provenance deterministically.
-- [x] Store append-only observations and query outcomes.
-- [x] Record `observed_fields[(provider_scope, native_type)]`.
-- [x] Maintain unattributed observations independent of semantic mapping.
-- [x] Keep `UNMAPPED` observations available to abduction and reporting.
-- [x] Track wildcard and instance cells separately.
-- [x] Store partial parents as audit-only split records; exclude them from active coverage.
+- [ ] Version CVE/TTP/IOC/behavior records with source citations.
+- [ ] Add behavior templates for process, remote authentication, network, file and persistence.
+- [ ] Compile structured hypotheses without LLM.
+- [ ] Use LLM only for unstructured/novel input with schema validation.
+- [ ] Require source references, falsification and required fields.
+- [ ] Reject unsupported or injection-distorted requirements.
+- [ ] Separate CVE exposure, preconditions, exploitation and post-exploitation.
 
-### Acceptance
+## Phase 2 — capabilities and queries
 
-- [x] Parse failures become typed diagnostics; no silent drops.
-- [x] Every observation has scope, provenance, raw reference and field taint.
-- [x] Unknown event without event code remains a valid observation.
-- [x] Complete scope scan can mark scope coverage; targeted evidence query cannot.
+- [ ] Version deployment-specific capability descriptors.
+- [ ] Validate entity, time, fields, permissions and completeness.
+- [ ] Try query templates before LLM fallback.
+- [ ] Parse, allowlist, dry-run and validate generated queries.
+- [ ] Cache validated plans by requirement/provider/schema.
+- [ ] Missing capability becomes `UNSUPPORTED` or `UNREACHABLE`.
 
-## Phase 3 — M3 constraints and M4 controller
+## Phase 3 — execution and evidence
 
-### Planning, frontier and sampling
+- [ ] Adapters return complete QueryResult envelopes.
+- [ ] Cursor pagination and bounded time-split fallback work.
+- [ ] Raw observations are append-only and auditable.
+- [ ] Deterministic fact extraction handles fields and relationships.
+- [ ] Repeated observations form EvidenceGroups with representative IDs/counts.
+- [ ] Grouping preserves held-out malicious-event recall.
+- [ ] LLM receives cards/deltas, never the full raw ledger.
+- [ ] Ambiguous groups are batched; no per-event LLM call.
 
-- [x] Compile `EvidenceRequirement → CapabilityBinding → ProviderOperation`.
-- [x] Select bindings from adapter descriptors; no provider-specific branches in the core planner.
-- [x] Record unsupported requirements without fabricating a query.
-- [x] Build wildcard cells per known `ProviderScope`.
-- [x] Add instance cells from alert/observed entities regardless of semantic mapping.
-- [x] Restrict wildcard selection to `SAMPLE`; restrict entity expansion to `EXPAND`.
-- [x] Implement provider-scope-stratified deterministic sampling with seed and budget ledger.
-- [x] Implement cursor pagination and time-split fallback for `PARTIAL` results.
-- [x] Bound split depth with `min_bucket`; never re-issue the same truncated query forever.
+## Phase 4 — reasoning and control
 
-### Constraints and stopping
+- [ ] Exact predicates and temporal/entity correlations are deterministic.
+- [ ] Evidence may be compatible with multiple hypotheses.
+- [ ] Semantic LLM output is advisory and M3-validated.
+- [ ] Competing hypotheses remain until genuinely refuted.
+- [ ] Controller owns TEST/EXPAND/DISCOVER/PIVOT/REFINE/STOP.
+- [ ] Query, turn, runtime, scan and LLM budgets are enforced.
+- [ ] `STOP_RESOLVED`, `STOP_BOUNDED` and `STOP_EXHAUSTED_BY_BUDGET` are distinct.
 
-- [x] Schema and cited-observation integrity checks.
-- [x] Contradiction handling and preserved rejection reasons.
-- [x] Fixed action order and lexicographic selection.
-- [x] Retryable/permanent diagnostic partition.
-- [x] Turn/query budgets and tainted-entity budget; deferred entities counted.
-- [x] `STOP_RESOLVED` requires a surviving explanation and no blocking uncertainty.
-- [x] `STOP_BOUNDED` requires residuals and coverage bound.
-- [x] Every terminal path emits separate scope and requirement coverage.
+## Phase 5 — reporting and coverage
 
-## Phase 4 — M5 adapter and controls
+- [ ] Scope coverage is separate from requirement coverage.
+- [ ] Targeted query never implies full scope coverage.
+- [ ] `NO_EVIDENCE_FOUND` is never rendered as `BENIGN`.
+- [ ] Final account cites request, hypothesis, cards, observations, queries,
+  diagnostics, residuals and coverage.
+- [ ] Report distinguishes not found, not observable, unqueryable and unknown source.
 
-### Investigation workflows — mint observations
+## Phase 6 — experiments and production gate
 
-- [x] `ProcessLineage → process_ancestry`.
-- [x] `LogonHistory → authentication_activity`.
-- [x] `NetworkConnections → network_connection`.
-- [x] `PersistenceArtifacts → persistence_change`.
-- [x] `FileWrites → file_modification`.
-- [x] `DNSQueries → dns_activity`.
-- [x] `BroadSweep → scope_records` on a wildcard Cell.
-
-### Control operations — never mint observations
-
-- [x] `ScopeHealthControl(scope, window)`.
-- [x] `AnyRecordInScope(scope, entity, window)`.
-- [x] `PredicateObservabilityControl(scope, requirement, predicate)`.
-- [x] License `VALID_NEGATIVE` only when all three controls pass and target result is empty/complete.
-- [x] Do not treat `len(rows) < limit` as proof of EOF.
-- [x] Handle capability misses as `UNQUERYABLE` or `UNSUPPORTED_REQUIREMENT` with diagnostics.
-- [x] Validate all LLM-proposed native queries against adapter allowlists.
-
-### Acceptance
-
-- [x] Seven workflows execute on the CDB/mock adapter.
-- [x] Three controls execute without entering the observation ledger.
-- [x] Exactly-limit and cursor-more results remain incomplete.
-- [x] Truncated, stale, field-absent and unqueryable queries cannot license a negative.
-
-## Phase 5 — M2 API abduction, human loop and reporter
-
-- [x] Implement stubbed abduction before real LLM abduction.
-- [x] Implement `ApiLLMProvider`; local model inference is out of scope for the current deployment.
-- [x] Configure API endpoint/model/timeout/token limits separately from investigation state; keep credentials in secrets.
-- [x] Validate structured JSON responses against the M2 response schema before M3 receives them.
-- [x] LLM input contains structured extracted data and taint only, never raw logs.
-- [x] Enforce benign/malicious/unknown explanation diversity where applicable.
-- [x] Generate expectations in terms of evidence requirements, not event families.
-- [x] Validate entity references, predicates and requirement version.
-- [x] Cap/merge explanations deterministically.
-- [x] Model human input as `TESTIMONY`; preserve conflicts and resolution records.
-- [x] Implement analyst confirmation requirements.
-- [x] Compute disposition as a pure M4 function; M5 only renders.
-- [x] Final account cites observation IDs, query IDs, diagnostics and coverage bound.
-
-
-## Security and regression tests
-
-- [x] Raw log content never appears in an LLM prompt.
-- [x] Hidden benchmark fields are blocked.
-- [x] M2 cannot mutate observations, statuses or attribution.
-- [x] No LLM output can stop, escalate, control, or compute disposition directly.
-- [x] Attacker-planted entities cannot exhaust frontier budget.
-- [x] Injection fixtures cover command lines, URLs, DNS names, usernames and filenames.
-- [x] Regression: unknown native event is retained and unmapped.
-- [x] Regression: no event-family registry is required to query a scope.
-- [x] Regression: entity-free sampling is reproducible and scope-stratified.
-- [x] Regression: partial result cannot become valid negative.
-- [x] Regression: no-adapter scope is explicit in denominator.
-- [x] Regression: empty surviving-explanation set means bounded, not resolved, stop.
-
-## MVP integration scenarios
-
-- [x] Entity-bearing alert → instance frontier → operation → observation → stub explanation → stop.
-- [x] Entity-free alert → wildcard scope cells → `BroadSweep` → entities → instance frontier.
-- [x] Unknown native event → ledger → `UNMAPPED` → abduction candidate, without false family.
-- [x] Partial scope scan → `PARTIAL` → cursor/split → complete children; no parent re-issue.
-- [x] Empty target → three controls → `VALID_NEGATIVE` or typed uncertainty.
-- [x] No-adapter known scope → `UNQUERYABLE` → `INSUFFICIENT_EVIDENCE` contribution.
-- [x] Every terminal path emits residuals and `CoverageBound`.
-
-
-## Real-provider gate (Production)
-
-> [!NOTE]
-> Provider contract simulation tests pass via `tests/unit/test_real_providers.py` (`MockSplunkAdapter`, `MockEdrAdapter`, `MockIdsAdapter`).
-> Live production execution tests against real provider endpoints (real SDK/REST API, authentication, network telemetry) remain open until enterprise deployment.
-
-- [ ] Splunk adapter documents native `(index, sourcetype[, source])` scopes, search-time fields and completeness with live SDK execution.
-- [ ] EDR adapter documents dataset/tenant/endpoint scopes separately from process/network/file operations, cursor and rate limits with live API execution.
-- [ ] IDS adapter documents stream/sensor scopes, optional native predicates and evolving schema with live EVE sensor stream.
-- [ ] At least one real SIEM, EDR and IDS live execution test passes before production-completeness claims.
-
-
+- [ ] Hypothesis-only hunt runs without alert or PoC.
+- [ ] Unknown native event survives ingestion and evaluation.
+- [ ] Partial query cannot license negative evidence.
+- [ ] Evidence grouping does not reduce malicious-event recall beyond threshold.
+- [ ] LLM calls, tokens, latency and retries stay within hard budget.
+- [ ] Prompt injection cannot alter objective, state, scope or disposition.
+- [ ] CDB/mock SIEM, EDR and IDS adapter contract tests pass.
+- [ ] Live SIEM, EDR and IDS execution tests pass before production claims.
 
 ## Definition of done
 
-The deterministic CDB MVP gate is complete when both entity-bearing and
-entity-free scenarios pass with the stubbed abduction engine, unknown records
-are preserved, all state transitions are auditable/replayable, terminal
-outputs contain valid separate coverage bounds, and security assertions pass.
-The real M2 path uses the external API provider and has a separate integration
-gate. This is a limited POC gate, not production readiness for every backend.
-
-## Traceability required for every implementation item
-
-Before checking an item, record the applicable source tag in `03` and the
-execution evidence. The following is the minimum map:
-
-| Checklist area | Reference/document | What it supports | What must still be measured here |
-|---|---|---|---|
-| Provider scopes and native partitions | `REF-SPLUNK-01`, `REF-SURICATA-01`, `REF-OCSF-01` | native addressability and observed schema | discovery/completeness per adapter |
-| Provider operations and bindings | `REF-SYNRAG-01`, `REF-SIEVE-01` | backend-aware executable query generation | syntax, execution and semantic correctness |
-| Native + semantic observation envelope | `REF-OCSF-01`, `REF-OTEL-01`, `REF-MATRYOSHKA-01` | optional normalization without erasure | unknown-event retention and mapping accuracy |
-| Evidence requirements | `REF-ATTACK-DC-01` | question-side evidence concepts | unsupported-requirement behavior |
-| Cells and incomplete results | `REF-INCOMP-01` | empty vs unknown distinction | false-negative/negative-license rate |
-| Sampling | `REF-SAMP-01` | bounded sampling within a defined frame | recall, bias and reproducibility |
-| LLM/log boundary | `REF-INJECT-01`, `REF-EVID-01` | adversarial-log isolation and grounded evidence | security regression tests |
-| Open-ended hunting evaluation | `REF-CDB-01` | executable benchmark methodology | recall, cost and reachability on our implementation |
-
-The references justify the direction; they do not allow an item to be marked
-done without a passing test or captured run.
+The MVP is complete when a hypothesis-only CDB vertical slice completes with
+validated requirements, provider-neutral Cells, evidence grouping, bounded LLM
+gates, competing-hypothesis evaluation, auditable state transitions and a
+coverage-aware FinalHuntAccount. Production readiness remains a separate live
+provider gate.

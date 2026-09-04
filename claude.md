@@ -7,15 +7,15 @@ the checklist.
 ## Think before coding
 
 - State assumptions when they affect scope or correctness.
-- Treat `01`/`02` as the active v3 contracts; report conflicts instead of
+- Treat `01`/`02` as the active v4 contracts; report conflicts instead of
   silently inventing a fourth design.
 - Keep parameters provisional unless an experiment establishes them.
 - Prefer the smallest change that closes a tested gap.
 
 ## Project-specific architecture rules
 
-- Five modules only: M1 ledger, M2 abduction, M3 constraints, M4 controller,
-  M5 adapter/reporter.
+- Use the six v4 components in `01`; keep `HuntState` as data and the Action
+  Controller as the only state-transition authority.
 - `Cell` is `(ProviderScope, entity/ANY, time_bucket)`. Never add
   `event_family` to Cell or use it as the coverage denominator.
 - `ProviderScope` (native data partition) and `ProviderOperation` (query
@@ -40,6 +40,8 @@ the checklist.
   counted, never silently discarded.
 - Queries are template/allowlist-first. Validate provider, scope, fields,
   predicates, time bounds, pagination and limits before execution.
+- Evidence is grouped and compressed before LLM reasoning. Never call the LLM
+  once per observation; use bounded epoch/delta escalation.
 
 ## Evidence and provenance
 
@@ -54,9 +56,10 @@ the checklist.
 ## Testing standards
 
 - Every contract and state transition has a known-answer unit test.
-- Integration tests cover entity-bearing and entity-free alerts, unknown native
+- Integration tests cover sparse and entity-bearing hypotheses, unknown native
   records, partial results, stale scopes, unqueryable scopes and unsupported
-  requirements.
+  requirements. Legacy alert CLI tests remain only as compatibility tests until
+  the v4 migration is implemented.
 - Security tests cover command lines, URLs, DNS names, usernames and filenames;
   assert raw-content isolation, hidden-target blocking and LLM mutation guards.
 - MVP means a replayable CDB/mock vertical slice with zero LLM calls. Real

@@ -69,5 +69,9 @@ class AnyEntity:
 # Singleton wildcard constant — always use this, never instantiate AnyEntity directly
 ANY = AnyEntity()
 
+# Account alias
+User = Account
+
 # All valid entity reference types (including wildcard)
 EntityRef = Host | Account | Process | IPAddress | File | Domain | AnyEntity
+
