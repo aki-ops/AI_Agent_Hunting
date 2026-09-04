@@ -32,6 +32,7 @@ class Diagnostic(str, Enum):
     PARSE_FAILED = "parse_failed"
     ABDUCTION_TIMEOUT = "abduction_timeout"
     ABDUCTION_FAILED = "abduction_failed"
+    UNREACHABLE = "unreachable"
 
     @property
     def diagnostic_class(self) -> DiagnosticClass:

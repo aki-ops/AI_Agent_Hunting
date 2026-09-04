@@ -31,12 +31,13 @@ traceability record.
 
 ## Phase 2 — capabilities and queries
 
-- [ ] Version deployment-specific capability descriptors.
-- [ ] Validate entity, time, fields, permissions and completeness.
-- [ ] Try query templates before LLM fallback.
-- [ ] Parse, allowlist, dry-run and validate generated queries.
-- [ ] Cache validated plans by requirement/provider/schema.
-- [ ] Missing capability becomes `UNSUPPORTED` or `UNREACHABLE`.
+- [x] Version deployment-specific capability descriptors.
+- [x] Validate entity, time, fields, permissions and completeness.
+- [x] Try query templates before LLM fallback.
+- [x] Parse, allowlist, dry-run and validate generated queries.
+- [x] Cache validated plans by requirement/provider/schema.
+- [x] Missing capability becomes `UNSUPPORTED` or `UNREACHABLE`.
+
 
 ## Phase 3 — execution and evidence
 
