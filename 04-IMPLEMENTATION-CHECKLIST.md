@@ -20,13 +20,14 @@ traceability record.
 
 ## Phase 1 — knowledge and hypothesis
 
-- [ ] Version CVE/TTP/IOC/behavior records with source citations.
-- [ ] Add behavior templates for process, remote authentication, network, file and persistence.
-- [ ] Compile structured hypotheses without LLM.
-- [ ] Use LLM only for unstructured/novel input with schema validation.
-- [ ] Require source references, falsification and required fields.
-- [ ] Reject unsupported or injection-distorted requirements.
-- [ ] Separate CVE exposure, preconditions, exploitation and post-exploitation.
+- [x] Version CVE/TTP/IOC/behavior records with source citations.
+- [x] Add behavior templates for process, remote authentication, network, file and persistence.
+- [x] Compile structured hypotheses without LLM.
+- [x] Use LLM only for unstructured/novel input with schema validation.
+- [x] Require source references, falsification and required fields.
+- [x] Reject unsupported or injection-distorted requirements.
+- [x] Separate CVE exposure, preconditions, exploitation and post-exploitation.
+
 
 ## Phase 2 — capabilities and queries
 
