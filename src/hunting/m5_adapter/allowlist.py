@@ -7,19 +7,27 @@ Enforces:
 """
 from __future__ import annotations
 
-from datetime import datetime
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from hunting.contracts.expectations import FieldPredicate
 
 _ALLOWLISTED_OPERATIONS = frozenset({
     "cdb_scope_scan",
+    "cdb_broad_sweep",
     "cdb_process_search",
+    "cdb_process_lineage",
     "cdb_auth_search",
+    "cdb_logon_history",
     "cdb_net_search",
+    "cdb_network_connections",
     "cdb_persistence_search",
+    "cdb_persistence_artifacts",
     "cdb_file_search",
+    "cdb_file_writes",
     "cdb_dns_search",
+    "cdb_dns_queries",
 })
 
 _ALLOWLISTED_FIELDS = frozenset({
@@ -71,13 +79,32 @@ def validate_field_name(field_name: str) -> None:
 
 
 def validate_time_window_format(window_str: str) -> tuple[datetime, datetime]:
-    """Validate and parse 'start/end' ISO interval."""
+    """Validate and parse 'start/end' ISO interval or relative lookback."""
     if "/" not in window_str:
-        raise ValueError(f"Invalid window format '{window_str}'; expected 'start_iso/end_iso'")
+        raise ValueError(f"Invalid window format '{window_str}'; expected 'start/end'")
     start_str, end_str = window_str.split("/", 1)
+
+    # Handle NOW-relative format (e.g. NOW-14d/NOW)
+    now = datetime.now(timezone.utc)
+    if start_str.startswith("NOW-") and end_str == "NOW":
+        m = re.match(r"^NOW-(\d+)([dhm])$", start_str)
+        if m:
+            val, unit = int(m.group(1)), m.group(2)
+            if unit == "d":
+                delta = timedelta(days=val)
+            elif unit == "h":
+                delta = timedelta(hours=val)
+            else:
+                delta = timedelta(minutes=val)
+            return now - delta, now
+
     try:
         start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-        end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+        if end_str.startswith("P") and end_str.endswith("D"):
+            days = int(end_str[1:-1])
+            end_dt = start_dt + timedelta(days=days)
+        else:
+            end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
     except Exception as err:
         raise ValueError(f"Malformed ISO timestamp in window '{window_str}': {err}") from err
 

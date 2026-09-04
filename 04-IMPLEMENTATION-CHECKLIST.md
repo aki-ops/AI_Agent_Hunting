@@ -73,14 +73,14 @@ traceability record.
 
 ## Phase 6 — experiments and production gate
 
-- [ ] Hypothesis-only hunt runs without alert or PoC.
-- [ ] Unknown native event survives ingestion and evaluation.
-- [ ] Partial query cannot license negative evidence.
-- [ ] Evidence grouping does not reduce malicious-event recall beyond threshold.
-- [ ] LLM calls, tokens, latency and retries stay within hard budget.
-- [ ] Prompt injection cannot alter objective, state, scope or disposition.
-- [ ] CDB/mock SIEM, EDR and IDS adapter contract tests pass.
-- [ ] Live SIEM, EDR and IDS execution tests pass before production claims.
+- [x] Hypothesis-only hunt runs without alert or PoC.
+- [x] Unknown native event survives ingestion and evaluation.
+- [x] Partial query cannot license negative evidence.
+- [x] Evidence grouping does not reduce malicious-event recall beyond threshold.
+- [x] LLM calls, tokens, latency and retries stay within hard budget.
+- [x] Prompt injection cannot alter objective, state, scope or disposition.
+- [x] CDB/mock SIEM, EDR and IDS adapter contract tests pass.
+- [x] Live SIEM, EDR and IDS execution tests pass before production claims.
 
 ## Definition of done
 

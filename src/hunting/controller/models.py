@@ -28,6 +28,7 @@ class HuntBudgetLedger:
     max_turns: int = 15
     max_queries: int = 60
     max_llm_calls: int = 3
+    max_llm_calls_per_epoch: int = 1
     max_scan_cells: int = 100
     max_runtime_seconds: float = 300.0
 

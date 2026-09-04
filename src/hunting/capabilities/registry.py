@@ -101,6 +101,7 @@ def build_default_capability_registry() -> dict[str, VersionedCapabilityDescript
         observable_fields=("image", "parent_image", "cmdline", "pid", "user", "logon_type", "destination_ip", "destination_port", "file_path", "task_name", "query"),
         completeness_contract="complete",
     )
+    registry["cdb"] = registry["cdb_sqlite"]
 
     # 2. Splunk Enterprise
     splunk_scope = ProviderScope(

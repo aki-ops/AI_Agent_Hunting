@@ -159,7 +159,8 @@ def build_final_hunt_account(
                 "details": getattr(d, "details", {}),
             })
     for qr in state.query_results:
-        for diag in qr.diagnostics:
+        diag = getattr(qr, "diagnostic", None)
+        if diag:
             diag_records.append({
                 "name": str(diag),
                 "diagnostic_class": "query_diagnostic",

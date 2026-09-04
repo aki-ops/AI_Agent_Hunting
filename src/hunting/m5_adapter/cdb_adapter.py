@@ -186,15 +186,15 @@ class CdbAdapter:
                 conditions.append(f"({fn} IS NULL OR {fn} = '')")
 
         # Specific operation constraints
-        if operation_id == "cdb_process_search":
+        if operation_id in ("cdb_process_search", "cdb_process_lineage"):
             conditions.append("(pid IS NOT NULL OR image IS NOT NULL OR cmdline IS NOT NULL)")
-        elif operation_id == "cdb_auth_search":
+        elif operation_id in ("cdb_auth_search", "cdb_logon_history"):
             conditions.append("(user IS NOT NULL OR event_id = '4624' OR event_id = '4625')")
-        elif operation_id == "cdb_net_search":
+        elif operation_id in ("cdb_net_search", "cdb_network_connections"):
             conditions.append("(ip IS NOT NULL OR port IS NOT NULL)")
-        elif operation_id == "cdb_file_search":
+        elif operation_id in ("cdb_file_search", "cdb_file_writes"):
             conditions.append("file_path IS NOT NULL")
-        elif operation_id == "cdb_dns_search":
+        elif operation_id in ("cdb_dns_search", "cdb_dns_queries"):
             conditions.append("domain IS NOT NULL")
 
         where_clause = " AND ".join(conditions)
