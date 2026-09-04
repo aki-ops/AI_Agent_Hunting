@@ -10,7 +10,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from hunting.contracts.expectations import FieldOp, FieldPredicate
+from hunting.contracts.expectations import (
+    Expectation,
+    FieldOp,
+    FieldPredicate,
+    TestStatus,
+)
 from hunting.contracts.hunt import EvidenceCard, Hypothesis, HypothesisStatus
 
 
@@ -102,6 +107,53 @@ class HypothesisReasoningEngine:
                 hypothesis.status = HypothesisStatus.REFUTED
         elif has_confirming_evidence:
             hypothesis.status = HypothesisStatus.SUPPORTED
+
+    def evaluate_hypothesis_network(
+        self,
+        hypotheses: list[Hypothesis],
+        expectations: list[Expectation],
+        evidence_cards: list[EvidenceCard],
+    ) -> None:
+        """Update competing hypothesis lifecycle based on confirmed/refuted expectations."""
+        exps_by_owner: dict[str, list[Expectation]] = {}
+        for exp in expectations:
+            exps_by_owner.setdefault(exp.owner_explanation_id, []).append(exp)
+
+        for h in hypotheses:
+            owned = exps_by_owner.get(h.id, [])
+            if not owned:
+                continue
+
+            confirmed = [e for e in owned if e.test_status == TestStatus.CONFIRMED]
+            refuted = [e for e in owned if e.test_status == TestStatus.REFUTED]
+            untested = [e for e in owned if e.test_status == TestStatus.UNTESTED]
+
+            if confirmed and not refuted and not untested:
+                h.status = HypothesisStatus.SUPPORTED
+            elif confirmed and refuted:
+                # If an essential exploit expectation is confirmed, it is supported
+                if any("exploit" in e.id or "active" in e.id for e in confirmed):
+                    h.status = HypothesisStatus.SUPPORTED
+                else:
+                    h.status = HypothesisStatus.WEAKENED
+            elif confirmed and untested:
+                if any("exploit" in e.id or "active" in e.id for e in confirmed):
+                    h.status = HypothesisStatus.SUPPORTED
+            elif refuted and not confirmed and not untested:
+                h.status = HypothesisStatus.REFUTED
+
+        # Competing hypotheses resolution
+        attack_hypos = [h for h in hypotheses if "benign" not in h.id and "baseline" not in h.id]
+        benign_hypos = [h for h in hypotheses if "benign" in h.id or "baseline" in h.id]
+
+        if any(h.status == HypothesisStatus.SUPPORTED for h in attack_hypos):
+            for bh in benign_hypos:
+                if bh.status == HypothesisStatus.LIVE:
+                    bh.status = HypothesisStatus.WEAKENED
+        elif all(h.status == HypothesisStatus.REFUTED for h in attack_hypos) and attack_hypos:
+            for bh in benign_hypos:
+                if bh.status in (HypothesisStatus.LIVE, HypothesisStatus.WEAKENED):
+                    bh.status = HypothesisStatus.SUPPORTED
 
 
 __all__ = [

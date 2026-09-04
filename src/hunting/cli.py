@@ -20,7 +20,10 @@ from typing import Any
 
 import yaml
 
+from hunting.contracts.entities import Account, Domain, Host, IPAddress
+from hunting.contracts.hunt import HuntRequest, HuntRequestKind
 from hunting.contracts.state import Alert
+from hunting.engine import HypothesisHuntEngine
 from hunting.m2_abduction.provider import ApiLLMConfig, ApiLLMProvider, StubAbductionProvider
 from hunting.m5_adapter import CdbAdapter
 from hunting.orchestrator import InvestigationOrchestrator
@@ -145,18 +148,64 @@ def render_terminal_summary(
     print()
 
 
+def render_hunt_terminal_summary(
+    request: HuntRequest,
+    result: Any,
+    output_path: str | None,
+) -> None:
+    """Print an attractive summary table for hypothesis hunts to stdout."""
+    account = result.account
+    cb = account.coverage_bound
+    w_pct = (cb.explored_cells_wildcard / cb.known_cells_wildcard * 100) if cb.known_cells_wildcard > 0 else 0.0
+    i_pct = (cb.explored_cells_instance / cb.known_cells_instance * 100) if cb.known_cells_instance > 0 else 0.0
+
+    print("\n" + "=" * 72)
+    print("                THREAT HUNTING ACCOUNT SUMMARY")
+    print("=" * 72)
+    print(f" Request ID:      {request.id} ({request.kind.value})")
+    print(f" Content:         {request.content}")
+    entities_str = ", ".join(f"{getattr(e, 'name', getattr(e, 'username', getattr(e, 'address', 'ent')))}" for e in request.entities)
+    print(f" Target Entities: {entities_str or '(Population Sweep / Wildcard)'}")
+    print(f" Time Window:     {account.objective.time_window}")
+    print("-" * 72)
+    print(f" Final Outcome:   {account.outcome.value}")
+    print(f" Stopping Dec:    {account.stopping_decision.value}")
+    print(f" Hypotheses:      {len(account.hypotheses)} total ({len(account.supporting)} supported, {len(account.contradicting)} contradicted)")
+    for h in account.hypotheses:
+        print(f"   * [{h.status.value}] {h.id}: {h.statement[:55]}")
+    print("-" * 72)
+    print(f" Evidence Cards:  {len(account.evidence_cards)} cards")
+    print(f" Ledger Events:   {len(result.ledger.observations)} observations")
+    print(f" Queries Run:     {len(account.queries)} queries")
+    print(f" Coverage:        Wildcard: {w_pct:.1f}%, Instance: {i_pct:.1f}%")
+    print("=" * 72)
+    if output_path:
+        print(f" Full threat hunt report written to: {output_path}")
+    print()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hunting",
-        description="AI Agent Hunting: Deterministic Abductive Threat Investigation CLI",
+        description="AI Agent Hunting: Deterministic Hypothesis Threat Hunting & Investigation CLI",
     )
-    # Alert inputs
-    alert_group = parser.add_argument_group("Alert Inputs")
+    # Hypothesis / Threat Hunting inputs (v4)
+    hunt_group = parser.add_argument_group("Hypothesis & Threat Hunting Inputs (v4)")
+    hunt_group.add_argument("--cve", type=str, help="Hunt for known CVE identifier (e.g. CVE-2024-21887)")
+    hunt_group.add_argument("--ttp", type=str, help="Hunt for MITRE ATT&CK technique (e.g. T1059.001)")
+    hunt_group.add_argument("--ioc", type=str, help="Hunt for observable indicator of compromise (e.g. IP/domain/hash)")
+    hunt_group.add_argument("--threat-actor", type=str, help="Hunt for threat actor campaign/profile")
+    hunt_group.add_argument("--campaign", type=str, help="Hunt for specific adversary campaign")
+    hunt_group.add_argument("--query", "-q", type=str, help="Natural language hunting question")
+    hunt_group.add_argument("--time-window", type=str, help="Explicit search time window ISO interval (e.g. 2026-02-01T00:00:00Z/P1D)")
+
+    # Alert inputs (Legacy compatibility)
+    alert_group = parser.add_argument_group("Alert Inputs (Legacy)")
     alert_group.add_argument("--alert", "-a", type=str, help="Path to alert JSON/YAML file or raw JSON string")
-    alert_group.add_argument("--host", type=str, help="Ad-hoc alert Host entity (e.g. DESKTOP-VICTIM1)")
-    alert_group.add_argument("--user", type=str, help="Ad-hoc alert User entity (e.g. CORP\\alice)")
-    alert_group.add_argument("--ip", type=str, help="Ad-hoc alert IP entity (e.g. 192.168.1.50)")
-    alert_group.add_argument("--domain", type=str, help="Ad-hoc alert Domain entity (e.g. evil-c2.corp.internal)")
+    alert_group.add_argument("--host", type=str, help="Host entity (e.g. DESKTOP-VICTIM1)")
+    alert_group.add_argument("--user", type=str, help="User entity (e.g. CORP\\alice)")
+    alert_group.add_argument("--ip", type=str, help="IP entity (e.g. 192.168.1.50)")
+    alert_group.add_argument("--domain", type=str, help="Domain entity (e.g. evil-c2.corp.internal)")
     alert_group.add_argument("--source", type=str, default="EDR", help="Alert source name [default: EDR]")
     alert_group.add_argument("--time", type=str, help="Alert timestamp ISO 8601 [default: current UTC]")
     alert_group.add_argument("-i", "--interactive", action="store_true", help="Interactive prompt mode for alert setup")
@@ -178,6 +227,62 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run_cli(args: argparse.Namespace) -> int:
     """Execute hunting CLI with parsed arguments."""
+    db_path = Path(args.db)
+    if not db_path.exists():
+        adapter = CdbAdapter(":memory:")
+    else:
+        adapter = CdbAdapter(str(db_path))
+
+    # Check if hypothesis threat hunting mode is triggered
+    is_hypothesis_hunt = bool(args.cve or args.ttp or args.ioc or args.threat_actor or args.campaign or args.query)
+    if is_hypothesis_hunt:
+        entities = []
+        if args.host:
+            entities.append(Host(name=args.host))
+        if args.user:
+            entities.append(Account(username=args.user))
+        if args.ip:
+            entities.append(IPAddress(address=args.ip))
+        if args.domain:
+            entities.append(Domain(name=args.domain))
+
+        if args.cve:
+            kind = HuntRequestKind.CVE
+            content = args.cve
+        elif args.ttp:
+            kind = HuntRequestKind.TTP
+            content = args.ttp
+        elif args.ioc:
+            kind = HuntRequestKind.IOC
+            content = args.ioc
+        elif args.query:
+            kind = HuntRequestKind.NL_QUESTION
+            content = args.query
+        else:
+            kind = HuntRequestKind.HYPOTHESIS
+            content = args.threat_actor or args.campaign or "Adversary Campaign"
+
+        req = HuntRequest(
+            id=f"hunt-req-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
+            kind=kind,
+            content=content,
+            entities=entities,
+        )
+
+        engine = HypothesisHuntEngine(cdb_adapter=adapter)
+        time_win = args.time_window or "NOW-14d/NOW"
+        print(f"[*] Starting hypothesis threat hunt for {kind.value}: '{content}'...")
+        result = engine.execute_hunt(req, adapter=adapter, time_window=time_win)
+
+        if args.output:
+            out_file = Path(args.output)
+            out_file.parent.mkdir(parents=True, exist_ok=True)
+            out_file.write_text(result.report, encoding="utf-8")
+
+        render_hunt_terminal_summary(req, result, args.output)
+        return 0
+
+    # Otherwise, legacy alert investigation mode
     # 1. Determine alert
     alert: Alert
     if args.interactive:
@@ -196,10 +301,8 @@ def run_cli(args: argparse.Namespace) -> int:
         else:
             alert = prompt_interactive_alert()
     else:
-        # Default to interactive if no inputs supplied
-        print("[!] No alert input provided. Entering interactive mode...")
+        print("[!] No input provided. Entering interactive mode...")
         alert = prompt_interactive_alert()
-
 
     # 2. Load Manifest & Database
     manifest_path = Path(args.manifest)
@@ -207,14 +310,6 @@ def run_cli(args: argparse.Namespace) -> int:
         print(f"[-] Error: Manifest file not found: {manifest_path}", file=sys.stderr)
         return 1
     registry = load_registry(manifest_path)
-
-    db_path = Path(args.db)
-    if not db_path.exists():
-        # Fallback to in-memory if sample database not yet generated
-        print(f"[*] Note: Database {db_path} not found. Initializing temporary in-memory database...")
-        adapter = CdbAdapter(":memory:")
-    else:
-        adapter = CdbAdapter(str(db_path))
 
     # 3. Setup LLM Provider
     if args.llm == "api":
@@ -234,7 +329,6 @@ def run_cli(args: argparse.Namespace) -> int:
     print(f"[*] Starting autonomous investigation for alert '{alert.id}'...")
     try:
         if not args.auto_confirm:
-            # When auto-confirm is False, attempt run and handle interactive confirmation if needed
             try:
                 result = orchestrator.investigate(alert, analyst_confirmed=False)
             except PermissionError as e:

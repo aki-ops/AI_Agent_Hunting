@@ -138,3 +138,58 @@ def test_cli_confirmation_decline_and_accept(tmp_path):
         assert exit_code == 0
         assert out_report.exists()
 
+
+def test_cli_hypothesis_hunt_with_cve(tmp_path):
+    """Test hypothesis hunting execution via CLI with --cve."""
+    parser = build_parser()
+    out_report = tmp_path / "cve_report.md"
+
+    args = parser.parse_args([
+        "--cve", "CVE-2024-21887",
+        "--host", "WEB-IVANTI-01",
+        "--time-window", "2026-02-01T00:00:00Z/P1D",
+        "--output", str(out_report),
+    ])
+
+    exit_code = run_cli(args)
+    assert exit_code == 0
+    assert out_report.exists()
+    content = out_report.read_text(encoding="utf-8")
+    assert "Threat Hunting Investigation Final Account" in content
+    assert "CVE-2024-21887" in content
+
+
+def test_cli_hypothesis_hunt_with_ttp_and_entity(tmp_path):
+    """Test hypothesis hunting execution via CLI with --ttp."""
+    parser = build_parser()
+    out_report = tmp_path / "ttp_report.md"
+
+    args = parser.parse_args([
+        "--ttp", "T1059.001",
+        "--host", "WORKSTATION-01",
+        "--output", str(out_report),
+    ])
+
+    exit_code = run_cli(args)
+    assert exit_code == 0
+    assert out_report.exists()
+    content = out_report.read_text(encoding="utf-8")
+    assert "Threat Hunting Investigation Final Account" in content
+
+
+def test_cli_hypothesis_hunt_with_query(tmp_path):
+    """Test hypothesis hunting execution via CLI with natural language --query."""
+    parser = build_parser()
+    out_report = tmp_path / "nl_report.md"
+
+    args = parser.parse_args([
+        "--query", "Investigate abnormal python executions on web servers",
+        "--output", str(out_report),
+    ])
+
+    exit_code = run_cli(args)
+    assert exit_code == 0
+    assert out_report.exists()
+    content = out_report.read_text(encoding="utf-8")
+    assert "Threat Hunting Investigation Final Account" in content
+

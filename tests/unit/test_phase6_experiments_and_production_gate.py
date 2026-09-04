@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.entities import Host
+from hunting.contracts.expectations import TestStatus
 from hunting.contracts.hunt import (
     EvidenceCard,
     HuntRequest,
@@ -333,3 +334,188 @@ def test_8_live_adapter_execution_tests_gated_before_production_claims():
     # In CI/mock environment, status is honestly reported as LOCAL_CDB_VERIFIED, never claiming unverified live status
     assert status == "MVP_COMPLETE_LOCAL_CDB_VERIFIED"
     assert status != "LIVE_PRODUCTION_VERIFIED"
+
+
+def test_9_telemetry_null_pid_and_unknown_event_survives_real_engine():
+    """Verify that DNS, network, and process events with pid=None or unknown native formats survive ingestion and real engine execution without crash."""
+    cdb = CdbAdapter()
+    cdb.insert_events([
+        # Process event with pid=None and ppid=None
+        {
+            "timestamp": "2026-02-01T10:00:00Z",
+            "native_type": "process_creation",
+            "host": "WEB-SERVER-01",
+            "user": "SYSTEM",
+            "pid": None,
+            "ppid": None,
+            "image": "C:\\test\\app.exe",
+            "cmdline": "app.exe --status",
+        },
+        # Event with pid=None and ppid=None
+        {
+            "timestamp": "2026-02-01T10:02:00Z",
+            "native_type": "dns_query",
+            "host": "WEB-SERVER-01",
+            "domain": "internal-update.corp",
+            "pid": None,
+            "ppid": None,
+        },
+        # Network event with no pid
+        {
+            "timestamp": "2026-02-01T10:05:00Z",
+            "native_type": "net_connect",
+            "host": "WEB-SERVER-01",
+            "ip": "10.0.0.5",
+            "port": 443,
+        },
+        # Completely unknown native event
+        {
+            "timestamp": "2026-02-01T10:10:00Z",
+            "native_type": "custom_audit_record",
+            "host": "WEB-SERVER-01",
+            "raw_text": "audit_checkpoint_passed",
+        },
+    ])
+
+    request = HuntRequest(
+        id="hunt-robust-telemetry",
+        kind=HuntRequestKind.CVE,
+        content="CVE-2024-21887",
+        entities=[Host(name="WEB-SERVER-01")],
+    )
+
+    engine = HypothesisHuntEngine(cdb_adapter=cdb)
+    # Execution must complete cleanly without TypeError on int(None) or unhandled schema
+    result = engine.execute_hunt(request, adapter=cdb, time_window="2026-02-01T00:00:00Z/P1D")
+    assert result.account.request_id == "hunt-robust-telemetry"
+    assert result.state.stopping_decision is not None
+    assert len(result.account.evidence_cards) >= 1
+
+
+def test_10_action_loop_executes_actions_and_expectation_lifecycle():
+    """Verify that the engine executes through CanonicalActionController and drives the Expectation lifecycle."""
+    cdb = CdbAdapter()
+    cdb.insert_events([
+        {
+            "timestamp": "2026-02-01T10:00:00Z",
+            "native_type": "process_creation",
+            "host": "HOST-TEST-01",
+            "user": "root",
+            "pid": 5555,
+            "cmdline": "python -c 'import socket; s=socket.socket()'",
+            "image": "/usr/bin/python3",
+        }
+    ])
+
+    request = HuntRequest(
+        id="hunt-lifecycle-test",
+        kind=HuntRequestKind.CVE,
+        content="CVE-2024-21887",
+        entities=[Host(name="HOST-TEST-01")],
+    )
+
+    engine = HypothesisHuntEngine(cdb_adapter=cdb)
+    result = engine.execute_hunt(request, adapter=cdb, time_window="2026-02-01T00:00:00Z/P1D")
+
+    # Invariants:
+    # 1. Expectations were instantiated
+    assert len(result.state.expectations) > 0
+
+    # 2. Exploit expectation was CONFIRMED
+    exploit_exps = [e for e in result.state.expectations if "exploit" in e.id]
+    assert len(exploit_exps) >= 1
+    assert any(e.test_status == TestStatus.CONFIRMED for e in exploit_exps)
+
+    # 3. Post-exploitation file write expectation was REFUTED (complete query returned 0 rows)
+    post_exps = [e for e in result.state.expectations if "post" in e.id]
+    assert len(post_exps) >= 1
+    assert any(e.test_status == TestStatus.REFUTED for e in post_exps)
+
+    # 4. Controller executed turns and reached stopping decision
+    assert result.state.turn >= 1
+    assert result.state.stopping_decision is not None
+
+
+def test_11_premature_conclusion_prevented_and_competing_hypotheses_retained():
+    """Verify that generic benign telemetry does NOT mark attack hypothesis SUPPORTED, and keeps benign hypothesis LIVE."""
+    cdb = CdbAdapter()
+    # Insert normal benign process (not matching CVE exploit)
+    cdb.insert_events([
+        {
+            "timestamp": "2026-02-01T10:00:00Z",
+            "native_type": "process_creation",
+            "host": "WEB-BENIGN-01",
+            "user": "SYSTEM",
+            "pid": 1024,
+            "cmdline": "C:\\Windows\\System32\\svchost.exe -k netsvcs",
+            "image": "C:\\Windows\\System32\\svchost.exe",
+        }
+    ])
+
+    request = HuntRequest(
+        id="hunt-benign-check",
+        kind=HuntRequestKind.CVE,
+        content="CVE-2024-21887",
+        entities=[Host(name="WEB-BENIGN-01")],
+    )
+
+    engine = HypothesisHuntEngine(cdb_adapter=cdb)
+    result = engine.execute_hunt(request, adapter=cdb, time_window="2026-02-01T00:00:00Z/P1D")
+
+    # The attack hypothesis must NOT be marked SUPPORTED because svchost does not satisfy the exploit predicate
+    attack_hypos = [h for h in result.account.hypotheses if "exploited" in h.id]
+    assert len(attack_hypos) == 1
+    assert attack_hypos[0].status != HypothesisStatus.SUPPORTED
+
+    # Benign hypothesis must remain LIVE or SUPPORTED, never prematurely contradicted
+    benign_hypos = [h for h in result.account.hypotheses if "benign" in h.id]
+    assert len(benign_hypos) == 1
+    assert benign_hypos[0].status in (HypothesisStatus.LIVE, HypothesisStatus.SUPPORTED)
+
+
+def test_12_delta_grouping_incremental_efficiency():
+    """Verify that EvidenceGroupBuilder.ingest_delta groups incrementally without full ledger re-indexing."""
+    scope = ProviderScope(provider_id="cdb", native_partition={"table": "events"})
+    group_builder = EvidenceGroupBuilder()
+
+    obs1 = Observation(
+        id="obs-1",
+        provider_scope=scope,
+        cell_id="c1",
+        timestamp="2026-02-01T10:00:00Z",
+        epistemic_type=EpistemicType.OBSERVED,
+        native_type="process_creation",
+        fields={"image": "powershell.exe", "host": "HOST-01"},
+    )
+    obs2 = Observation(
+        id="obs-2",
+        provider_scope=scope,
+        cell_id="c1",
+        timestamp="2026-02-01T10:01:00Z",
+        epistemic_type=EpistemicType.OBSERVED,
+        native_type="process_creation",
+        fields={"image": "cmd.exe", "host": "HOST-01"},
+    )
+
+    # Ingest delta batch 1
+    delta_1 = group_builder.ingest_delta([obs1, obs2])
+    assert len(delta_1) == 2
+    assert len(group_builder._groups) == 2
+
+    # Ingest delta batch 2 with another instance of obs1 fingerprint
+    obs3 = Observation(
+        id="obs-3",
+        provider_scope=scope,
+        cell_id="c1",
+        timestamp="2026-02-01T10:02:00Z",
+        epistemic_type=EpistemicType.OBSERVED,
+        native_type="process_creation",
+        fields={"image": "powershell.exe", "host": "HOST-01"},
+    )
+    delta_2 = group_builder.ingest_delta([obs3])
+    # Only 1 card was affected and returned in delta!
+    assert len(delta_2) == 1
+    assert delta_2[0].count == 2
+    # Total cards in builder remains 2
+    all_cards = group_builder.build_cards()
+    assert len(all_cards) == 2

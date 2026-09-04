@@ -41,6 +41,16 @@ class EvidenceFact:
     relations: tuple[EntityRelation, ...] = field(default_factory=tuple)
 
 
+def _safe_int(val: Any, default: int = 0) -> int:
+    """Safely convert value to int, defaulting to default on None or invalid string."""
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
 def extract_facts(observation: Observation) -> list[EvidenceFact]:
     """Deterministically extract structured facts and relationships from an observation."""
     facts: list[EvidenceFact] = []
@@ -51,13 +61,13 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
     relations: list[EntityRelation] = []
 
     # 1. Process execution fact & ancestry relationship
-    if "image" in fields or "cmdline" in fields:
-        pid = int(fields.get("pid", 0))
+    if fields.get("image") or fields.get("cmdline"):
+        pid = _safe_int(fields.get("pid"), 0)
         proc_entity = Process(host=str(host_name), pid=pid, time=timestamp)
         relations.append(EntityRelation(source_entity=host_entity, relation_type="executed_process", target_entity=proc_entity))
 
-        if "parent_image" in fields:
-            parent_pid = int(fields.get("parent_pid", 0))
+        if fields.get("parent_image"):
+            parent_pid = _safe_int(fields.get("parent_pid"), 0)
             parent_proc = Process(host=str(host_name), pid=parent_pid, time=timestamp)
             relations.append(EntityRelation(source_entity=parent_proc, relation_type="spawned_process", target_entity=proc_entity))
 
@@ -67,13 +77,13 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
                 fact_type="process_execution",
                 timestamp=timestamp,
                 primary_entity=proc_entity,
-                fields={k: v for k, v in fields.items() if k in ("image", "cmdline", "parent_image", "user")},
+                fields={k: v for k, v in fields.items() if k in ("image", "cmdline", "parent_image", "user") and v is not None},
                 relations=tuple(relations),
             )
         )
 
     # 2. Network connection fact & destination relationship
-    elif "destination_ip" in fields or "remote_ip" in fields:
+    elif fields.get("destination_ip") or fields.get("remote_ip"):
         dst_ip = fields.get("destination_ip") or fields.get("remote_ip")
         ip_entity = IPAddress(address=str(dst_ip))
         relations.append(EntityRelation(source_entity=host_entity, relation_type="connected_to", target_entity=ip_entity))
@@ -84,13 +94,13 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
                 fact_type="network_connection",
                 timestamp=timestamp,
                 primary_entity=ip_entity,
-                fields={k: v for k, v in fields.items() if k in ("destination_ip", "destination_port", "protocol", "bytes_out")},
+                fields={k: v for k, v in fields.items() if k in ("destination_ip", "destination_port", "protocol", "bytes_out") and v is not None},
                 relations=tuple(relations),
             )
         )
 
     # 3. Authentication fact
-    elif "user" in fields and ("logon_type" in fields or "status" in fields):
+    elif fields.get("user") and (fields.get("logon_type") or fields.get("status")):
         user_entity = Account(username=str(fields["user"]))
         relations.append(EntityRelation(source_entity=user_entity, relation_type="authenticated_on", target_entity=host_entity))
 
@@ -100,13 +110,13 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
                 fact_type="authentication_activity",
                 timestamp=timestamp,
                 primary_entity=user_entity,
-                fields={k: v for k, v in fields.items() if k in ("user", "logon_type", "source_ip", "status")},
+                fields={k: v for k, v in fields.items() if k in ("user", "logon_type", "source_ip", "status") and v is not None},
                 relations=tuple(relations),
             )
         )
 
     # 4. File modification fact
-    elif "file_path" in fields or "path" in fields:
+    elif fields.get("file_path") or fields.get("path"):
         path = fields.get("file_path") or fields.get("path")
         file_entity = File(host=str(host_name), path=str(path))
         relations.append(EntityRelation(source_entity=host_entity, relation_type="wrote_file", target_entity=file_entity))
@@ -117,13 +127,13 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
                 fact_type="file_modification",
                 timestamp=timestamp,
                 primary_entity=file_entity,
-                fields={k: v for k, v in fields.items() if k in ("file_path", "path", "action", "hash")},
+                fields={k: v for k, v in fields.items() if k in ("file_path", "path", "action", "hash") and v is not None},
                 relations=tuple(relations),
             )
         )
 
     # 5. DNS query fact
-    elif "query" in fields or "domain" in fields:
+    elif fields.get("query") or fields.get("domain"):
         dom = fields.get("query") or fields.get("domain")
         domain_entity = Domain(name=str(dom))
         relations.append(EntityRelation(source_entity=host_entity, relation_type="resolved_domain", target_entity=domain_entity))
@@ -134,7 +144,7 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
                 fact_type="dns_activity",
                 timestamp=timestamp,
                 primary_entity=domain_entity,
-                fields={k: v for k, v in fields.items() if k in ("query", "domain", "query_type", "response")},
+                fields={k: v for k, v in fields.items() if k in ("query", "domain", "query_type", "response") and v is not None},
                 relations=tuple(relations),
             )
         )

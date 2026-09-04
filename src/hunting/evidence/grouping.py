@@ -21,74 +21,93 @@ class EvidenceGroupBuilder:
 
     def __init__(self, max_representative_ids: int = 3) -> None:
         self.max_representative_ids = max_representative_ids
+        self._groups: dict[str, list[Observation]] = defaultdict(list)
 
-    def build_cards(self, observations: list[Observation]) -> list[EvidenceCard]:
-        """Group observations and return compressed EvidenceCards."""
-        groups: dict[str, list[Observation]] = defaultdict(list)
+    def _build_card_from_group(self, fp: str, group_obs: list[Observation]) -> EvidenceCard:
+        """Construct a single EvidenceCard from a list of grouped observations."""
+        rep_ids = [o.id for o in group_obs[: self.max_representative_ids]]
+        count = len(group_obs)
 
-        # 1. Compute fingerprint for each observation
-        for obs in observations:
+        # Determine primary fact type from first observation
+        facts = extract_facts(group_obs[0])
+        primary_fact_type = facts[0].fact_type if facts else "telemetry"
+
+        # Summaries
+        timestamps = [o.timestamp for o in group_obs if o.timestamp]
+        earliest = min(timestamps) if timestamps else ""
+        latest = max(timestamps) if timestamps else ""
+
+        # Entity summary
+        entities_seen: dict[str, set[str]] = defaultdict(set)
+        for o in group_obs:
+            if "host" in o.fields and o.fields["host"]:
+                entities_seen["hosts"].add(str(o.fields["host"]))
+            if "user" in o.fields and o.fields["user"]:
+                entities_seen["users"].add(str(o.fields["user"]))
+            if "destination_ip" in o.fields and o.fields["destination_ip"]:
+                entities_seen["destination_ips"].add(str(o.fields["destination_ip"]))
+
+        entity_summary = {k: list(v) for k, v in entities_seen.items()}
+        time_summary = {"earliest": earliest, "latest": latest, "span_events": count}
+
+        # Field summary (sample of distinct commands, paths, domains)
+        field_summary: dict[str, list[str]] = {}
+        cmdlines = {str(o.fields.get("cmdline")) for o in group_obs if o.fields.get("cmdline")}
+        if cmdlines:
+            field_summary["cmdlines"] = list(cmdlines)[:5]
+        file_paths = {str(o.fields.get("file_path")) for o in group_obs if o.fields.get("file_path")}
+        if file_paths:
+            field_summary["file_paths"] = list(file_paths)[:5]
+        domains = {str(o.fields.get("domain") or o.fields.get("query")) for o in group_obs if o.fields.get("domain") or o.fields.get("query")}
+        if domains:
+            field_summary["domains"] = list(domains)[:5]
+
+        relations_summary = []
+        if facts and facts[0].relations:
+            for rel in facts[0].relations:
+                relations_summary.append({
+                    "relation": rel.relation_type,
+                    "source": str(rel.source_entity),
+                    "target": str(rel.target_entity),
+                })
+
+        return EvidenceCard(
+            id=f"card-{fp[:12]}",
+            fingerprint=fp,
+            representative_observation_ids=rep_ids,
+            count=count,
+            entity_summary=entity_summary,
+            time_summary=time_summary,
+            field_summary=field_summary,
+            fact_type=primary_fact_type,
+            completeness="complete",
+            relations=relations_summary,
+        )
+
+    def ingest_delta(self, new_observations: list[Observation]) -> list[EvidenceCard]:
+        """Incrementally ingest new observations and return only the newly created or modified cards."""
+        if not new_observations:
+            return []
+
+        affected_fps: set[str] = set()
+        for obs in new_observations:
             fp = self.compute_fingerprint(obs)
-            groups[fp].append(obs)
+            self._groups[fp].append(obs)
+            affected_fps.add(fp)
 
-        # 2. Build EvidenceCard for each group
-        cards: list[EvidenceCard] = []
-        for fp, group_obs in groups.items():
-            rep_ids = [o.id for o in group_obs[: self.max_representative_ids]]
-            count = len(group_obs)
+        delta_cards = [self._build_card_from_group(fp, self._groups[fp]) for fp in affected_fps]
+        delta_cards.sort(key=lambda c: (-c.count, c.id))
+        return delta_cards
 
-            # Determine primary fact type from first observation
-            facts = extract_facts(group_obs[0])
-            primary_fact_type = facts[0].fact_type if facts else "telemetry"
+    def build_cards(self, observations: list[Observation] | None = None) -> list[EvidenceCard]:
+        """Group observations and return compressed EvidenceCards."""
+        if observations is not None:
+            self._groups.clear()
+            for obs in observations:
+                fp = self.compute_fingerprint(obs)
+                self._groups[fp].append(obs)
 
-            # Summaries
-            timestamps = [o.timestamp for o in group_obs if o.timestamp]
-            earliest = min(timestamps) if timestamps else ""
-            latest = max(timestamps) if timestamps else ""
-
-            # Entity summary
-            entities_seen: dict[str, set[str]] = defaultdict(set)
-            for o in group_obs:
-                if "host" in o.fields:
-                    entities_seen["hosts"].add(str(o.fields["host"]))
-                if "user" in o.fields:
-                    entities_seen["users"].add(str(o.fields["user"]))
-                if "destination_ip" in o.fields:
-                    entities_seen["destination_ips"].add(str(o.fields["destination_ip"]))
-
-            entity_summary = {k: list(v) for k, v in entities_seen.items()}
-            time_summary = {"earliest": earliest, "latest": latest, "span_events": count}
-
-            # Field summary (sample of distinct commands or paths)
-            field_summary: dict[str, list[str]] = {}
-            cmdlines = {str(o.fields.get("cmdline")) for o in group_obs if "cmdline" in o.fields}
-            if cmdlines:
-                field_summary["cmdlines"] = list(cmdlines)[:5]
-
-            relations_summary = []
-            if facts and facts[0].relations:
-                for rel in facts[0].relations:
-                    relations_summary.append({
-                        "relation": rel.relation_type,
-                        "source": str(rel.source_entity),
-                        "target": str(rel.target_entity),
-                    })
-
-            card = EvidenceCard(
-                id=f"card-{fp[:12]}",
-                fingerprint=fp,
-                representative_observation_ids=rep_ids,
-                count=count,
-                entity_summary=entity_summary,
-                time_summary=time_summary,
-                field_summary=field_summary,
-                fact_type=primary_fact_type,
-                completeness="complete",
-                relations=relations_summary,
-            )
-            cards.append(card)
-
-        # Sort cards deterministically by count descending then id
+        cards = [self._build_card_from_group(fp, group_obs) for fp, group_obs in self._groups.items()]
         cards.sort(key=lambda c: (-c.count, c.id))
         return cards
 

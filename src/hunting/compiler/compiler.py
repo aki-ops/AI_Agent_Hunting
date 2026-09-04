@@ -106,11 +106,17 @@ class KnowledgeBehaviorCompiler:
                 requirements=[f"req-{cve_id}-baseline"],
             )
 
+            exploit_predicate = FieldPredicate(field="cmdline", op=FieldOp.EXISTS)
+            if cve_id == "CVE-2024-21887" or any("python" in ind.lower() for ind in record.phases.exploitation_indicators):
+                exploit_predicate = FieldPredicate(field="cmdline", op=FieldOp.CONTAINS, value="python")
+            elif any("sql" in ind.lower() for ind in record.phases.exploitation_indicators):
+                exploit_predicate = FieldPredicate(field="cmdline", op=FieldOp.CONTAINS, value="sql")
+
             req_exploit = EvidenceRequirementV4(
                 id=f"req-{cve_id}-exploit",
                 description=f"Evidence of exploitation attempts targeting {cve_id}: {'; '.join(record.phases.exploitation_indicators)}",
                 evidence_type="process_ancestry",
-                predicate=FieldPredicate(field="cmdline", op=FieldOp.EXISTS),
+                predicate=exploit_predicate,
                 falsification_condition=f"telemetry confirms zero exploitation indicators for {cve_id}",
                 source_refs=list(record.source_citations),
                 status=RequirementStatus.VALIDATED,

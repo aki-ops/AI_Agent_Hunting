@@ -8,9 +8,36 @@ Enforces:
 from __future__ import annotations
 
 import json
-from typing import Callable
+from collections import defaultdict
+from typing import Any, Callable
 
+from hunting.contracts.entities import AnyEntity
+from hunting.contracts.expectations import (
+    EvidenceRequirement,
+    Expectation,
+    FieldOp,
+    FieldPredicate,
+)
 from hunting.contracts.hunt import EvidenceCard, Hypothesis
+from hunting.controller.reasoning import evaluate_field_predicate
+
+REQ_FACT_MAP: dict[EvidenceRequirement, set[str]] = {
+    EvidenceRequirement.PROCESS_ANCESTRY: {"process_execution"},
+    EvidenceRequirement.AUTHENTICATION_ACTIVITY: {"authentication_activity"},
+    EvidenceRequirement.NETWORK_CONNECTION: {"network_connection"},
+    EvidenceRequirement.FILE_MODIFICATION: {"file_modification"},
+    EvidenceRequirement.DNS_ACTIVITY: {"dns_activity"},
+    EvidenceRequirement.PERSISTENCE_CHANGE: {"persistence_change"},
+    EvidenceRequirement.SCOPE_RECORDS: {
+        "process_execution",
+        "authentication_activity",
+        "network_connection",
+        "file_modification",
+        "dns_activity",
+        "persistence_change",
+        "telemetry",
+    },
+}
 
 
 class EvidenceEvaluator:
@@ -20,10 +47,87 @@ class EvidenceEvaluator:
         self.llm_caller = llm_caller
         self.llm_calls_made = 0
 
+    def evaluate_card_against_expectation(
+        self,
+        card: EvidenceCard,
+        expectation: Expectation,
+    ) -> bool:
+        """Deterministically evaluate whether an EvidenceCard satisfies an Expectation."""
+        # 1. Fact type compatibility
+        allowed_facts = REQ_FACT_MAP.get(expectation.evidence_requirement, {"telemetry"})
+        if card.fact_type not in allowed_facts:
+            return False
+
+        # 2. Entity match (if expectation has a specific entity ref)
+        if expectation.entity_ref and not isinstance(expectation.entity_ref, AnyEntity):
+            ent_name = (
+                getattr(expectation.entity_ref, "name", None)
+                or getattr(expectation.entity_ref, "username", None)
+                or getattr(expectation.entity_ref, "address", None)
+            )
+            if ent_name:
+                ent_lower = str(ent_name).strip().lower()
+                all_card_entities = [
+                    str(e).strip().lower()
+                    for ent_list in card.entity_summary.values()
+                    for e in (ent_list if isinstance(ent_list, list) else [ent_list])
+                ]
+                if all_card_entities and ent_lower not in all_card_entities:
+                    return False
+
+        # 3. Field predicate match (if expectation has a field predicate)
+        if expectation.field_predicate is not None:
+            pred = expectation.field_predicate
+            f_name = pred.field.lower()
+            candidates: list[Any] = []
+
+            for k, v in card.field_summary.items():
+                if k.lower() in (f_name, f"{f_name}s", f_name.rstrip("s")):
+                    if isinstance(v, list):
+                        candidates.extend(v)
+                    else:
+                        candidates.append(v)
+
+            if not candidates and card.relations:
+                for rel in card.relations:
+                    if f_name in rel:
+                        candidates.append(rel[f_name])
+
+            if pred.op == FieldOp.ABSENT:
+                if any(evaluate_field_predicate(c, FieldPredicate(field=f_name, op=FieldOp.EXISTS)) for c in candidates):
+                    return False
+                return True
+
+            if not candidates:
+                return False
+
+            if not any(evaluate_field_predicate(c, pred) for c in candidates):
+                return False
+
+        return True
+
+    def _matches_heuristic(self, card: EvidenceCard, h: Hypothesis) -> bool:
+        """Deterministic keyword heuristic for legacy/fallback evaluation."""
+        h_text = h.statement.lower()
+        if card.fact_type == "process_execution" and ("process" in h_text or "exploit" in h_text or "powershell" in h_text):
+            return True
+        elif card.fact_type == "network_connection" and ("c2" in h_text or "network" in h_text or "beacon" in h_text):
+            return True
+        elif card.fact_type == "persistence_change" and ("task" in h_text or "persist" in h_text):
+            return True
+        elif card.fact_type == "file_modification" and ("file" in h_text or "webshell" in h_text):
+            return True
+        elif card.fact_type == "authentication_activity" and ("auth" in h_text or "logon" in h_text):
+            return True
+        elif card.fact_type == "dns_activity" and ("dns" in h_text or "domain" in h_text):
+            return True
+        return False
+
     def evaluate_cards(
         self,
         cards: list[EvidenceCard],
         hypotheses: list[Hypothesis],
+        expectations: list[Expectation] | None = None,
     ) -> dict[str, list[str]]:
         """Evaluate which hypotheses each EvidenceCard is compatible with.
 
@@ -32,25 +136,33 @@ class EvidenceEvaluator:
         compatibility: dict[str, list[str]] = {}
         ambiguous_cards: list[EvidenceCard] = []
 
-        # 1. Deterministic evaluation by fact type and keywords
-        for card in cards:
-            compatible_hypotheses: list[str] = []
-            for h in hypotheses:
-                h_text = h.statement.lower()
-                # Check if card fact type or cmdlines match hypothesis context
-                if card.fact_type == "process_execution" and ("process" in h_text or "exploit" in h_text or "powershell" in h_text):
-                    compatible_hypotheses.append(h.id)
-                elif card.fact_type == "network_connection" and ("c2" in h_text or "network" in h_text or "beacon" in h_text):
-                    compatible_hypotheses.append(h.id)
-                elif card.fact_type == "persistence_change" and ("task" in h_text or "persist" in h_text):
-                    compatible_hypotheses.append(h.id)
-                elif card.fact_type == "file_modification" and ("file" in h_text or "webshell" in h_text):
-                    compatible_hypotheses.append(h.id)
+        if expectations:
+            exp_by_owner: dict[str, list[Expectation]] = defaultdict(list)
+            for exp in expectations:
+                exp_by_owner[exp.owner_explanation_id].append(exp)
 
-            if compatible_hypotheses:
-                compatibility[card.id] = compatible_hypotheses
-            else:
-                ambiguous_cards.append(card)
+            for card in cards:
+                matched_hypo_ids: list[str] = []
+                for h in hypotheses:
+                    h_exps = exp_by_owner.get(h.id, [])
+                    if h_exps:
+                        if any(self.evaluate_card_against_expectation(card, exp) for exp in h_exps):
+                            matched_hypo_ids.append(h.id)
+                    else:
+                        if self._matches_heuristic(card, h):
+                            matched_hypo_ids.append(h.id)
+
+                if matched_hypo_ids:
+                    compatibility[card.id] = matched_hypo_ids
+                else:
+                    ambiguous_cards.append(card)
+        else:
+            for card in cards:
+                compatible_hypotheses = [h.id for h in hypotheses if self._matches_heuristic(card, h)]
+                if compatible_hypotheses:
+                    compatibility[card.id] = compatible_hypotheses
+                else:
+                    ambiguous_cards.append(card)
 
         # 2. Batch ambiguous cards together (NO per-event or per-card individual calls!)
         if ambiguous_cards and self.llm_caller is not None:
@@ -71,7 +183,8 @@ class EvidenceEvaluator:
         cards: list[EvidenceCard],
         hypotheses: list[Hypothesis],
     ) -> dict[str, list[str]]:
-        """Batch evaluate ambiguous cards in exactly 1 LLM call using card summaries."""
+        if self.llm_caller is None:
+            return {c.id: [] for c in cards}
         self.llm_calls_made += 1
 
         card_summaries = [
