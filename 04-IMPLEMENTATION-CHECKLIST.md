@@ -41,14 +41,15 @@ traceability record.
 
 ## Phase 3 — execution and evidence
 
-- [ ] Adapters return complete QueryResult envelopes.
-- [ ] Cursor pagination and bounded time-split fallback work.
-- [ ] Raw observations are append-only and auditable.
-- [ ] Deterministic fact extraction handles fields and relationships.
-- [ ] Repeated observations form EvidenceGroups with representative IDs/counts.
-- [ ] Grouping preserves held-out malicious-event recall.
-- [ ] LLM receives cards/deltas, never the full raw ledger.
-- [ ] Ambiguous groups are batched; no per-event LLM call.
+- [x] Adapters return complete QueryResult envelopes.
+- [x] Cursor pagination and bounded time-split fallback work.
+- [x] Raw observations are append-only and auditable.
+- [x] Deterministic fact extraction handles fields and relationships.
+- [x] Repeated observations form EvidenceGroups with representative IDs/counts.
+- [x] Grouping preserves held-out malicious-event recall.
+- [x] LLM receives cards/deltas, never the full raw ledger.
+- [x] Ambiguous groups are batched; no per-event LLM call.
+
 
 ## Phase 4 — reasoning and control
 
