@@ -105,6 +105,17 @@ def build_default_query_templates() -> dict[str, QueryTemplate]:
         estimated_cost=2,
     )
 
+    # 8. WEB REQUESTS
+    templates[EvidenceRequirement.WEB_REQUEST.value] = QueryTemplate(
+        id="tmpl-q-web-requests",
+        requirement_type=EvidenceRequirement.WEB_REQUEST.value,
+        operation_id="cdb_web_requests",
+        parameters_template={"domain": "{domain}", "window": "{window}"},
+        allowed_fields=("uri", "domain", "host", "client_ip", "server_ip", "c_ip", "s_ip", "http_method", "site"),
+        allowed_operators=("EQUALS", "CONTAINS", "EXISTS"),
+        estimated_cost=1,
+    )
+
     return templates
 
 

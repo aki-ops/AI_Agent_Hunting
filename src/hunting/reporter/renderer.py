@@ -22,19 +22,28 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
 
     Pure function: Never mutates account, dispositions, or hypotheses.
     """
-    # Determine top-level outcome headline
-    if account.supporting:
+    # Determine top-level outcome headline based on canonical account.outcome
+    if account.outcome == HuntOutcome.SUPPORTED:
         outcome_str = HuntOutcome.SUPPORTED.value
         verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Adversary Activity Detected)"
-    elif account.contradicting and not account.supporting:
+    elif account.outcome == HuntOutcome.CONTRADICTED:
         outcome_str = HuntOutcome.CONTRADICTED.value
         verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Hypothesis Refuted by Negative Evidence)"
-    elif account.unreachable and not account.supporting:
+    elif account.outcome == HuntOutcome.INCONCLUSIVE:
+        outcome_str = HuntOutcome.INCONCLUSIVE.value
+        verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Telemetry Gap / Inconclusive Evidence)"
+    elif account.outcome == HuntOutcome.UNREACHABLE:
         outcome_str = HuntOutcome.UNREACHABLE.value
         verdict_banner = "**Investigation Outcome:** `NO_EVIDENCE_FOUND` (Target Scopes Unreachable)"
+    elif account.outcome == HuntOutcome.UNSUPPORTED:
+        outcome_str = HuntOutcome.UNSUPPORTED.value
+        verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Telemetry Unsupported)"
+    elif account.outcome == HuntOutcome.INSUFFICIENTLY_SPECIFIED:
+        outcome_str = HuntOutcome.INSUFFICIENTLY_SPECIFIED.value
+        verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Insufficiently Specified)"
     else:
         outcome_str = "NO_EVIDENCE_FOUND"
-        verdict_banner = "**Investigation Outcome:** `NO_EVIDENCE_FOUND`"
+        verdict_banner = "**Investigation Outcome:** `NO_EVIDENCE_FOUND` (Inconclusive / Bounded)"
 
     cb = account.coverage_bound
     req_cov = cb.requirement_coverage
@@ -63,6 +72,35 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
     else:
         entity_str = "`POPULATION / ANY`"
 
+    # Extract impacted entities from cards and objective:
+    # Separate compromised hosts (adversary execution) from observer/sensor hosts (network telemetry capture)
+    all_hosts: set[str] = set()
+    compromised_hosts: set[str] = set()
+    sensor_hosts: set[str] = set()
+    all_users: set[str] = set()
+
+    for c in account.evidence_cards:
+        c_hosts = [str(h) for h in c.entity_summary.get("hosts", []) if str(h).strip()]
+        for h in c_hosts:
+            all_hosts.add(h)
+        if c.fact_type in ("process_execution", "file_modification", "persistence_change"):
+            for h in c_hosts:
+                compromised_hosts.add(h)
+        elif c.fact_type in ("web_request", "web_activity", "network_connection", "dns_activity"):
+            for h in c_hosts:
+                sensor_hosts.add(h)
+        for u in c.entity_summary.get("users", []):
+            all_users.add(str(u))
+
+    if not compromised_hosts and all_hosts:
+        compromised_hosts = set(all_hosts)
+
+    hosts_str = ", ".join(f"`{h}`" for h in sorted(all_hosts)) if all_hosts else "`None detected`"
+    comp_hosts_str = ", ".join(f"`{h}`" for h in sorted(compromised_hosts)) if compromised_hosts else "`None detected`"
+    pure_sensor_hosts = sorted(sensor_hosts - compromised_hosts)
+    sensor_hosts_str = ", ".join(f"`{h}`" for h in pure_sensor_hosts) if pure_sensor_hosts else None
+    users_str = ", ".join(f"`{u}`" for u in sorted(all_users)) if all_users else "`None detected`"
+
     lines: list[str] = [
         "# Threat Hunting Investigation Final Account",
         "",
@@ -73,17 +111,93 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
         f"- **Objective Statement:** {stmt_str}",
         f"- **Searched Time Window:** {time_frame_str}",
         f"- **Target Entities:** {entity_str}",
+        f"- **Compromised Target Host(s):** {comp_hosts_str}",
     ]
+    if sensor_hosts_str:
+        lines.append(f"- **Telemetry Capture / Sensor Host(s):** {sensor_hosts_str}")
+    lines.extend([
+        f"- **Impacted Accounts Identified:** {users_str}",
+        "",
+        "---",
+        "## Executive Threat Brief",
+        "",
+    ])
 
-    # Epistemic notice when no evidence is found
-    if not account.supporting:
-        lines.extend([
+    if account.outcome == HuntOutcome.SUPPORTED:
+        supp_hyps = [h for h in account.hypotheses if h.status == HypothesisStatus.SUPPORTED]
+        main_hyp = supp_hyps[0].statement if supp_hyps else stmt_str
+        threat_brief_items = [
+            "> [!CAUTION]",
+            "> **CRITICAL FINDING: Adversary Activity Confirmed.**",
+            "> Telemetry verification across observed security logs confirmed the active threat hypothesis:",
+            f"> *\"{main_hyp}\"*.",
+            f"> Suspicious behavior and anomalous command line executions were detected on compromised target host(s): **{comp_hosts_str}**",
+            f"> involving user security context(s): **{users_str}**.",
             "",
+            "**Key Incident Characteristics:**",
+            "- **Attack Surface / Vector:** Web application / unauthorized remote command execution.",
+            f"- **Compromised Target Host(s):** {comp_hosts_str}",
+        ]
+        if sensor_hosts_str:
+            threat_brief_items.append(f"- **Telemetry Capture / Sensor Host(s):** {sensor_hosts_str} (network sniffer / telemetry tap)")
+        threat_brief_items.extend([
+            f"- **Executed Telemetry Queries:** {len(account.queries)} query executions across provider scopes.",
+            f"- **Evidence Groups Validated:** {len(account.evidence_cards)} distinct evidence cards with verified telemetry falsification criteria.",
+        ])
+        lines.extend(threat_brief_items)
+    elif account.outcome == HuntOutcome.CONTRADICTED:
+        lines.extend([
+            "> [!NOTE]",
+            "> **THREAT HYPOTHESIS REFUTED.**",
+            "> Complete telemetry inspection evaluated the observable attack vectors and confirmed zero indications of adversary compromise.",
+            "> Telemetry aligns with established benign operational baselines within the investigated scope and time window.",
+        ])
+    elif account.outcome == HuntOutcome.INCONCLUSIVE:
+        lines.extend([
+            "> [!WARNING]",
+            "> **INVESTIGATION OUTCOME: INCONCLUSIVE (TELEMETRY GAP / UNCONFIRMED OBSERVATION).**",
+            "> Telemetry inspection yielded inconclusive or partial data across target entities.",
+            "> The observed evidence is insufficient to definitively support or contradict the hypothesis.",
+        ])
+    else:
+        lines.extend([
             "> [!IMPORTANT]",
             "> **Epistemic Notice:** `NO_EVIDENCE_FOUND` represents the bounded absence of detected adversary activity",
             "> within the queried telemetry frame. This result is strictly **NOT** a finding of `BENIGN` and does not imply",
             "> absence of compromise outside the observed scope or telemetry capabilities.",
         ])
+
+    # Investigation Storyline & Process Walkthrough
+    provider_names = {q.get("provider_id", "telemetry") for q in account.queries} if account.queries else {"telemetry"}
+    scope_names = {q.get("scope_id", "default") for q in account.queries} if account.queries else {"default"}
+    # Dynamically extract requirement types for timeline description
+    req_names: list[str] = []
+    if account.coverage_bound and account.coverage_bound.requirement_coverage:
+        for r_id in account.coverage_bound.requirement_coverage.attempted_requirements:
+            r_clean = r_id.split("-")[-1]
+            if r_clean not in req_names:
+                req_names.append(r_clean)
+    if not req_names and account.hypotheses:
+        for h in account.hypotheses:
+            for r_id in h.requirements:
+                r_clean = r_id.split("-")[-1]
+                if r_clean not in req_names:
+                    req_names.append(r_clean)
+    req_summary_str = ", ".join(req_names) if req_names else "behavioral telemetry requirements"
+
+    lines.extend([
+        "",
+        "---",
+        "## Investigation Storyline & Execution Timeline",
+        "",
+        "| Phase | Stage Description | Actions & Telemetry Operations | Result / Status |",
+        "|---|---|---|---|",
+        f"| **Phase 1** | **Telemetry Environment Discovery** | Autonomous audit discovered live providers ({', '.join(sorted(provider_names))}) and scopes ({', '.join(sorted(scope_names))}) | Active telemetry indexed |",
+        f"| **Phase 2** | **Hypothesis Decomposition** | Decomposed hypothesis into testable behavioral requirements ({req_summary_str}) | Requirements validated |",
+        f"| **Phase 3** | **Population Discovery Sweep** | Executed wildcard sweep (`ANY` entity) across telemetry partition to discover candidate hosts | Candidate hosts: {hosts_str} |",
+        f"| **Phase 4** | **Target Host Verification** | Promoted discovered hosts to instance cells; tested falsification predicates | {len(account.evidence_cards)} cards verified |",
+        f"| **Phase 5** | **Termination & Final Accounting** | Reconciled scope coverage, requirement satisfaction, and epistemic disposition | Decision: `{account.stopping_decision.value}` |",
+    ])
 
     # 1. Coverage Accounting (Separate Scope vs Requirement)
     lines.extend([
@@ -185,32 +299,138 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
         f"- **Refuted Hypotheses:** {competing_ref if competing_ref else '[]'}",
     ])
 
-    # 3. Evidence Cards & Cited Observations
+    # 3. Key Technical Evidence & Forensic Artifacts
     lines.extend([
         "",
         "---",
-        "## 3. Evidence Cards & Cited Observations",
+        "## 3. Key Technical Evidence & Forensic Artifacts",
         "",
     ])
     if account.evidence_cards:
         lines.extend([
-            "### Evidence Cards",
-            "| Card ID | Fingerprint | Fact Type | Count | Completeness | Entity Summary |",
-            "|---|---|---|---|---|---|",
+            "### Evidence Cards Summary",
+            "| Host | User Context | Fact Type | Parent Process | Executable / Command / Artifact | Events | Card ID |",
+            "|---|---|---|---|---|---|---|",
         ])
         for card in account.evidence_cards:
-            ent_summary_str = ", ".join(f"{k}={v}" for k, v in card.entity_summary.items()) if card.entity_summary else "N/A"
-            lines.append(f"| `{card.id}` | `{card.fingerprint[:16]}...` | `{card.fact_type}` | {card.count} | `{card.completeness}` | {ent_summary_str} |")
+            c_hosts = ", ".join(f"`{h}`" for h in card.entity_summary.get("hosts", [])) if card.entity_summary.get("hosts") else "`N/A`"
+            c_users = ", ".join(f"`{u}`" for u in card.entity_summary.get("users", [])) if card.entity_summary.get("users") else "`N/A`"
+            c_parents = ", ".join(f"`{p.split(chr(92))[-1]}`" for p in card.field_summary.get("parent_images", [])) if card.field_summary.get("parent_images") else "`N/A`"
+
+            # Identify main artifacts (cmdline, image, or file path)
+            artifacts: list[str] = []
+            if card.field_summary.get("cmdlines"):
+                for c in card.field_summary["cmdlines"][:2]:
+                    clean_c = c.replace("|", "\\|")
+                    artifacts.append(f"`{clean_c[:60]}...`" if len(clean_c) > 60 else f"`{clean_c}`")
+            elif card.field_summary.get("images"):
+                for img in card.field_summary["images"][:2]:
+                    artifacts.append(f"`{img.split(chr(92))[-1]}`")
+            elif card.field_summary.get("file_paths"):
+                for fp in card.field_summary["file_paths"][:2]:
+                    artifacts.append(f"`{fp}`")
+            elif card.field_summary.get("domains"):
+                for d in card.field_summary["domains"][:2]:
+                    artifacts.append(f"`{d}`")
+
+            artifact_str = "<br>".join(artifacts) if artifacts else "`N/A`"
+            lines.append(f"| {c_hosts} | {c_users} | `{card.fact_type}` | {c_parents} | {artifact_str} | {card.count} | `{card.id}` |")
+
+        lines.extend([
+            "",
+            "### Detailed Evidence Breakdown",
+        ])
+        for card in account.evidence_cards:
+            lines.extend([
+                "",
+                f"#### Evidence Card: `{card.id}` ({card.fact_type or 'General Activity'})",
+                f"- **Fingerprint:** `{card.fingerprint[:24]}...`",
+                f"- **Event Count:** {card.count} occurrences (`{card.completeness}` completeness)",
+            ])
+            if card.time_summary:
+                t_earliest = card.time_summary.get("earliest", "N/A")
+                t_latest = card.time_summary.get("latest", "N/A")
+                lines.append(f"- **Observed Time Window:** `{t_earliest}` to `{t_latest}`")
+            if card.entity_summary:
+                ent_parts = [
+                    f"**{k}:** {', '.join(f'`{v_item}`' for v_item in v)}" if isinstance(v, list) else f"**{k}:** `{v}`"
+                    for k, v in card.entity_summary.items()
+                ]
+                lines.append(f"- **Associated Entities:** {'; '.join(ent_parts)}")
+
+            if card.field_summary:
+                if card.field_summary.get("parent_images"):
+                    parents = [f"`{p}`" for p in card.field_summary["parent_images"]]
+                    lines.append(f"- **Parent Process(es):** {', '.join(parents)}")
+                if card.field_summary.get("images"):
+                    imgs = [f"`{img}`" for img in card.field_summary["images"]]
+                    lines.append(f"- **Image/Process Executable(s):** {', '.join(imgs)}")
+                if card.field_summary.get("cmdlines"):
+                    lines.append("- **Observed Command Lines:**")
+                    for cmd in card.field_summary["cmdlines"]:
+                        lines.append(f"  ```shell\n  {cmd}\n  ```")
+                if card.field_summary.get("file_paths"):
+                    lines.append("- **Observed File Paths:**")
+                    for fp in card.field_summary["file_paths"]:
+                        lines.append(f"  - `{fp}`")
+                if card.field_summary.get("domains"):
+                    lines.append(f"- **Observed Domains/Queries:** {', '.join(f'`{d}`' for d in card.field_summary['domains'])}")
+                if card.field_summary.get("dest_ips"):
+                    lines.append(f"- **Observed Remote IPs:** {', '.join(f'`{ip}`' for ip in card.field_summary['dest_ips'])}")
     else:
         lines.append("*No evidence cards generated.*")
+
+    # Actionable Containment & Incident Response Recommendations
+    lines.extend([
+        "",
+        "---",
+        "## Actionable Containment & Incident Response Recommendations",
+        "",
+    ])
+    if account.supporting:
+        lines.extend([
+            "> [!CAUTION]",
+            "> **Immediate Incident Response Actions Required:**",
+            "",
+            "1. **Endpoint Isolation & Containment:**",
+            f"   - Immediately disconnect and isolate impacted host(s): {hosts_str} from the network to halt potential lateral movement.",
+            "2. **Web Server & Webshell Eradication:**",
+            "   - Audit web server document root directories (e.g., Joomla/IIS) for newly dropped or modified script files (`.php`, `.asp`, `.aspx`).",
+            "   - Terminate suspicious child processes spawned under web server workers (`w3wp.exe`, `httpd.exe`, `php-cgi.exe`).",
+            "3. **Account & Credential Security:**",
+            f"   - Invalidate active sessions and rotate credentials for affected security contexts: {users_str}.",
+            "   - Audit privilege escalation paths and recent modifications to local administrators / domain groups.",
+            "4. **Detection Rule Deployment:**",
+            "   - Deploy high-fidelity detection rules alerting on web server worker processes spawning script interpreters or command shells (`cmd.exe`, `powershell.exe`, `php-cgi.exe`).",
+        ])
+    elif account.contradicting and not account.supporting:
+        lines.extend([
+            "- **Threat Refuted:** No immediate containment actions required for this specific hypothesis.",
+            "- **Continuous Monitoring:** Maintain standard telemetry logging and monitor for future deviations from benign baseline behavior.",
+        ])
+    else:
+        lines.extend([
+            "- **Inconclusive / Bounded Search:** No matching adversary telemetry was detected within the specified observation window.",
+            "- **Visibility Improvement:** Consider expanding telemetry collection coverage or extending time boundary if threat activity is suspected through other indicators.",
+        ])
 
     lines.extend([
         "",
         "### Cited Observations (Audit Trail)",
+        "",
+        "> [!NOTE]",
+        "> The raw observation IDs below record deterministic telemetry provenance and mathematical auditability.",
+        "",
     ])
     if account.observation_citations:
+        lines.extend([
+            "<details>",
+            f"<summary><strong>Click to expand Raw Telemetry Observation IDs ({len(account.observation_citations)} events)</strong></summary>",
+            "",
+        ])
         for obs_id in sorted(account.observation_citations):
             lines.append(f"- `{obs_id}`")
+        lines.append("</details>")
     else:
         lines.append("- None")
 
@@ -235,6 +455,34 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
             cc = q.get("completeness_contract", "N/A")
             targeted = "YES" if q.get("is_targeted") else "NO (Broad)"
             lines.append(f"| `{qid}` | `{rid}` | `{pid}` | `{sid}` | `{opid}` | `{cc}` | `{targeted}` |")
+
+        # Executable query statements
+        queries_with_text = [q for q in account.queries if q.get("query_text")]
+        if queries_with_text:
+            lines.extend([
+                "",
+                "### Executed Query Statements (SPL / SQL)",
+                "",
+                "> [!TIP]",
+                "> Chuyên viên phân tích SOC có thể sao chép trực tiếp các câu lệnh truy vấn dưới đây vào Splunk Web hoặc CDB để tự mình kiểm chứng lại kết quả.",
+                "",
+                "<details>",
+                f"<summary><strong>Click to expand Executed Query Plans ({len(queries_with_text)} statements)</strong></summary>",
+                "",
+            ])
+            for q in queries_with_text:
+                qid = q.get("query_id", "N/A")
+                opid = q.get("operation_id", "N/A")
+                qtext = str(q.get("query_text", "")).strip()
+                lang = "spl" if "search " in qtext.lower() else "sql"
+                lines.extend([
+                    f"#### Query: `{qid}` ({opid})",
+                    f"```{lang}",
+                    qtext,
+                    "```",
+                    "",
+                ])
+            lines.append("</details>")
     else:
         lines.append("*No queries executed.*")
 

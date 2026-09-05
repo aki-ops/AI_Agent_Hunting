@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from hunting.contracts.explanations import ExplanationClass
 
@@ -290,11 +290,372 @@ class ApiLLMProvider(LLMProvider):
         except urllib.error.URLError as url_err:
             raise ConnectionError(f"LLM API network connection failed: {url_err.reason}") from url_err
 
+    def call_raw(self, prompt: str, system_instruction: str | None = None) -> str:
+        """Execute HTTP POST request for generic prompt to external LLM API and return response text."""
+        sys_inst = (
+            system_instruction
+            or "You are an expert Threat Hunting AI Agent. Return structured JSON matching the requested format."
+        )
+        payload = {
+            "model": self.config.model,
+            "messages": [
+                {"role": "system", "content": sys_inst},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.0,
+            "max_tokens": self.config.max_tokens,
+            "stream": False,
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.config.api_key}",
+            "User-Agent": "AI-Agent-Hunting/1.0",
+        }
+
+        req = urllib.request.Request(
+            self.config.endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
+                content_type = resp.headers.get("Content-Type", "")
+                if "text/event-stream" in content_type:
+                    chunks: list[str] = []
+                    for line in resp:
+                        line_str = line.decode("utf-8", errors="replace").strip()
+                        if line_str == "data: [DONE]":
+                            break
+                        if line_str.startswith("data:"):
+                            try:
+                                chunk_json = json.loads(line_str[5:].strip())
+                                for choice in chunk_json.get("choices", []):
+                                    delta = choice.get("delta", {})
+                                    if "content" in delta and delta["content"]:
+                                        chunks.append(delta["content"])
+                            except Exception:
+                                continue
+                    content = "".join(chunks).strip()
+                else:
+                    resp_bytes = resp.read()
+                    resp_json = json.loads(resp_bytes.decode("utf-8"))
+                    # Extract usage metadata (OpenAI or Gemini format)
+                    usage = resp_json.get("usage") or resp_json.get("usageMetadata") or {}
+                    p_tok = usage.get("prompt_tokens") or usage.get("promptTokenCount")
+                    c_tok = usage.get("completion_tokens") or usage.get("candidatesTokenCount")
+                    self.last_usage = {
+                        "prompt_tokens": int(p_tok) if p_tok is not None else None,
+                        "completion_tokens": int(c_tok) if c_tok is not None else None,
+                    }
+                    choices = resp_json.get("choices", [])
+                    if not choices:
+                        raise ValueError(f"LLM API returned no choices: {resp_json}")
+                    content = str(choices[0].get("message", {}).get("content", "")).strip()
+
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                if content.startswith("```json"):
+                    content = content[7:]
+                elif content.startswith("```"):
+                    content = content[3:]
+                if content.endswith("```"):
+                    content = content[:-3]
+                content = content.strip()
+
+                if not content.startswith("{") and "{" in content and "}" in content:
+                    start_idx = content.find("{")
+                    end_idx = content.rfind("}") + 1
+                    content = content[start_idx:end_idx].strip()
+
+                return content
+
+        except urllib.error.HTTPError as http_err:
+            error_body = http_err.read().decode("utf-8", errors="replace")
+            raise ConnectionError(f"LLM API HTTP {http_err.code} error: {error_body}") from http_err
+        except urllib.error.URLError as url_err:
+            raise ConnectionError(f"LLM API network connection failed: {url_err.reason}") from url_err
+
+
+def create_llm_caller(
+    provider: ApiLLMProvider | LLMProvider,
+    tracker: Any | None = None,
+    component: str = "generic",
+) -> Callable[[str], str]:
+    """Factory creating a tracked, bounded LLM caller function for engine components."""
+    import logging
+    import time
+    logger = logging.getLogger(__name__)
+
+    def caller(prompt: str) -> str:
+        if tracker is not None and tracker.is_exhausted:
+            logger.warning(f"LLM budget exhausted for component '{component}' - using deterministic fallback")
+            return "{}"
+        t0 = time.perf_counter()
+        resp = "{}"
+        try:
+            if hasattr(provider, "call_raw"):
+                resp = provider.call_raw(prompt)
+            elif hasattr(provider, "generate"):
+                resp = provider.generate({"prompt": prompt})
+            else:
+                resp = "{}"
+        except Exception as err:
+            logger.warning(f"LLM call failed for component '{component}': {err} - falling back to deterministic processing")
+            return "{}"
+
+        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        if tracker is not None:
+            model = getattr(getattr(provider, "config", None), "model", getattr(tracker, "model_name", "stub"))
+            last_usage = getattr(provider, "last_usage", {}) or {}
+            actual_prompt = last_usage.get("prompt_tokens")
+            actual_completion = last_usage.get("completion_tokens")
+            try:
+                tracker.record_call(
+                    component=component,
+                    prompt=prompt,
+                    response=resp,
+                    duration_ms=elapsed_ms,
+                    model=model,
+                    actual_prompt_tokens=actual_prompt,
+                    actual_completion_tokens=actual_completion,
+                )
+            except Exception as rec_err:
+                logger.debug(f"Failed to record call in tracker: {rec_err}")
+        return resp
+
+    return caller
+
+
+
+class StubSemanticCompiler:
+    """Deterministic semantic compiler stub for offline testing and evaluation.
+
+    Fulfills the semantic compilation schema without live network or external
+    LLMs. The fixture is selected explicitly by the caller; it never infers a
+    scenario from words in the request.
+    """
+
+    def __init__(self, scenario: str = "generic") -> None:
+        allowed = {"generic", "database", "web"}
+        if scenario not in allowed:
+            raise ValueError(f"Unsupported semantic fixture scenario: {scenario}")
+        self.scenario = scenario
+
+    def __call__(self, prompt: str) -> str:
+        return self.compile(prompt)
+
+    def compile(self, prompt: str) -> str:
+        prompt_lower = prompt.lower()
+        if "request content:" in prompt_lower:
+            idx = prompt_lower.index("request content:") + len("request content:")
+            content = prompt[idx:]
+            if "\n\n" in content:
+                content = content.split("\n\n", 1)[0].strip()
+        else:
+            content = prompt.strip()
+
+        # Explicit fixture: database compromise
+        if self.scenario == "database":
+            data = {
+                "normalized_claim": {
+                    "text": "Attacker compromised database db01",
+                    "status": "UNVERIFIED",
+                },
+                "entities": [
+                    {"type": "host", "value": "db01", "role": "target"}
+                ],
+                "mechanism_status": "UNKNOWN",
+                "hypotheses": [
+                    {
+                        "id": "hypo-db-cred",
+                        "statement": "Unauthorized database access via credential misuse or privilege abuse",
+                        "class": "credential_access",
+                        "assumptions": ["Attacker acquired database administrative credentials"],
+                        "requirements": ["req-db-auth", "req-db-proc"],
+                    },
+                    {
+                        "id": "hypo-db-benign",
+                        "statement": "Normal operational database baseline without unauthorized access",
+                        "class": "benign_baseline",
+                        "assumptions": ["Routine DBA query execution and administrative maintenance"],
+                        "requirements": ["req-db-baseline"],
+                    },
+                ],
+                "requirements": [
+                    {
+                        "id": "req-db-auth",
+                        "semantic_intent": "remote_authentication",
+                        "necessity": "CRITICAL",
+                        "search_hints": ["db01"],
+                        "falsification_condition": "authentication logs confirm only authorized DBA sessions",
+                        "description": "Audit authentication events for database host db01",
+                        "source_refs": ["MITRE-T1078"],
+                    },
+                    {
+                        "id": "req-db-proc",
+                        "semantic_intent": "server_side_execution",
+                        "necessity": "SUPPORTING",
+                        "search_hints": ["db01"],
+                        "falsification_condition": "process lineage shows zero anomalous binaries on database server",
+                        "description": "Audit process lineage for database server db01",
+                        "source_refs": ["MITRE-T1059"],
+                    },
+                    {
+                        "id": "req-db-baseline",
+                        "semantic_intent": "operational_baseline",
+                        "necessity": "SUPPORTING",
+                        "search_hints": ["db01"],
+                        "falsification_condition": "telemetry partition gap or audit failure",
+                        "description": "Verified operational telemetry baseline for database host",
+                        "source_refs": ["SENSOR_BASELINE"],
+                    },
+                ],
+            }
+            return json.dumps(data)
+
+        # Explicit fixture: web/domain access. Domain extraction is entity
+        # parsing for the fixture, not semantic classification.
+        domain_match = re.search(r"(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}", content)
+        extracted_domain = domain_match.group(0) if domain_match else "www.imreallynotbatman.com"
+
+        if self.scenario == "web":
+            data = {
+                "normalized_claim": {
+                    "text": f"Attacker gained access to {extracted_domain}",
+                    "status": "UNVERIFIED",
+                },
+                "entities": [
+                    {"type": "domain", "value": extracted_domain, "role": "target"}
+                ],
+                "mechanism_status": "UNKNOWN",
+                "hypotheses": [
+                    {
+                        "id": "hypo-web-exploit",
+                        "statement": f"External adversary exploited web vulnerability on {extracted_domain}",
+                        "class": "external_exploitation",
+                        "assumptions": ["Web service exposed externally with exploitable vulnerability"],
+                        "requirements": ["req-web-activity", "req-web-proc", "req-web-file"],
+                    },
+                    {
+                        "id": "hypo-web-cred",
+                        "statement": f"Adversary accessed infrastructure supporting {extracted_domain} via stolen credentials",
+                        "class": "credential_access",
+                        "assumptions": ["Valid credentials compromised and reused"],
+                        "requirements": ["req-web-auth", "req-web-proc"],
+                    },
+                    {
+                        "id": "hypo-web-benign",
+                        "statement": f"Normal operational baseline without security compromise on {extracted_domain}",
+                        "class": "benign_baseline",
+                        "assumptions": ["Routine inbound traffic and standard administrative operations"],
+                        "requirements": ["req-web-baseline"],
+                    },
+                ],
+                "requirements": [
+                    {
+                        "id": "req-web-activity",
+                        "semantic_intent": "web_request_activity",
+                        "necessity": "CRITICAL",
+                        "search_hints": [extracted_domain, extracted_domain[4:] if extracted_domain.startswith("www.") else extracted_domain],
+                        "falsification_condition": "web telemetry shows zero malicious requests or exploit signatures",
+                        "description": f"Inbound HTTP/web requests targeting {extracted_domain}",
+                        "source_refs": ["MITRE-T1190"],
+                    },
+                    {
+                        "id": "req-web-proc",
+                        "semantic_intent": "server_side_execution",
+                        "necessity": "CRITICAL",
+                        "search_hints": [extracted_domain],
+                        "falsification_condition": "process lineage shows zero spawned shells or command interpreters",
+                        "description": f"Process execution and server-side lineage audit associated with {extracted_domain}",
+                        "source_refs": ["MITRE-T1059"],
+                    },
+                    {
+                        "id": "req-web-file",
+                        "semantic_intent": "file_artifact",
+                        "necessity": "SUPPORTING",
+                        "search_hints": [extracted_domain],
+                        "falsification_condition": "filesystem inspection shows zero web shells or modified scripts",
+                        "description": f"File modifications and artifact drops associated with {extracted_domain}",
+                        "source_refs": ["MITRE-T1505"],
+                    },
+                    {
+                        "id": "req-web-auth",
+                        "semantic_intent": "remote_authentication",
+                        "necessity": "SUPPORTING",
+                        "search_hints": [extracted_domain],
+                        "falsification_condition": "authentication audit shows standard administrative sessions",
+                        "description": "Authentication and logon activity audit",
+                        "source_refs": ["MITRE-T1078"],
+                    },
+                    {
+                        "id": "req-web-baseline",
+                        "semantic_intent": "operational_baseline",
+                        "necessity": "SUPPORTING",
+                        "search_hints": [extracted_domain],
+                        "falsification_condition": "telemetry gap or unobservable audit partition",
+                        "description": "Verified operational telemetry baseline",
+                        "source_refs": ["SENSOR_BASELINE"],
+                    },
+                ],
+            }
+            return json.dumps(data)
+
+        # Generic fallback
+        data = {
+            "normalized_claim": {
+                "text": "Generic free-text threat inquiry",
+                "status": "UNVERIFIED",
+            },
+            "entities": [],
+            "mechanism_status": "UNKNOWN",
+            "hypotheses": [
+                {
+                    "id": "hypo-gen-active",
+                    "statement": "Anomalous or unauthorized threat activity in environment",
+                    "class": "unclassified",
+                    "assumptions": ["Adversary activity present in monitored telemetry"],
+                    "requirements": ["req-gen-proc"],
+                },
+                {
+                    "id": "hypo-gen-benign",
+                    "statement": "Normal operational behavior and clean baseline",
+                    "class": "benign_baseline",
+                    "assumptions": ["Telemetry reflects standard operational baseline"],
+                    "requirements": ["req-gen-baseline"],
+                },
+            ],
+            "requirements": [
+                {
+                    "id": "req-gen-proc",
+                    "semantic_intent": "server_side_execution",
+                    "necessity": "CRITICAL",
+                    "search_hints": [],
+                    "falsification_condition": "process lineage confirms zero anomalous executions",
+                    "description": "Process execution and command line audit",
+                    "source_refs": ["BEHAVIORAL_BASELINE"],
+                },
+                {
+                    "id": "req-gen-baseline",
+                    "semantic_intent": "operational_baseline",
+                    "necessity": "SUPPORTING",
+                    "search_hints": [],
+                    "falsification_condition": "telemetry gap or unobservable audit partition",
+                    "description": "Verified operational telemetry baseline",
+                    "source_refs": ["SENSOR_BASELINE"],
+                },
+            ],
+        }
+        return json.dumps(data)
 
 
 __all__ = [
     "ApiLLMConfig",
     "LLMProvider",
     "StubAbductionProvider",
+    "StubSemanticCompiler",
     "ApiLLMProvider",
+    "create_llm_caller",
 ]

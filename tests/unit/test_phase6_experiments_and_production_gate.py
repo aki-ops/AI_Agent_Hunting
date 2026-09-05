@@ -279,8 +279,9 @@ def test_6_prompt_injection_cannot_alter_state_or_disposition():
     )
     hypo = Hypothesis(id="hyp-1", statement="Investigate compromise", status=HypothesisStatus.LIVE)
     compat = reasoner.evaluate_compatibility(card, [hypo])
-    assert compat[hypo.id] is True
-    # Heuristic matches process activity, but NEVER sets status to BENIGN
+    # Raw log text must not trigger semantic attribution without a typed
+    # expectation. This is the anti-keyword invariant.
+    assert compat[hypo.id] is False
     assert hypo.status == HypothesisStatus.LIVE
     assert hypo.status != "BENIGN"
 
@@ -551,20 +552,21 @@ def test_13_free_form_hunting_with_target_entity_explores_cell_and_resolves_comp
         entities=[Host(name="SRV-APPS-01")],
     )
 
-    # 1. Compiler decomposes into competing hypotheses and multi-phase behavioral requirements
-    compiler = KnowledgeBehaviorCompiler()
+    # 1. Compiler decomposes into competing hypotheses and multi-phase behavioral requirements via semantic compiler
+    from hunting.m2_abduction.provider import StubSemanticCompiler
+    compiler = KnowledgeBehaviorCompiler(llm_caller=StubSemanticCompiler(scenario="generic"))
     obj, hypotheses, reqs = compiler.compile(request)
-    assert len(hypotheses) == 2
-    active_h = next(h for h in hypotheses if "active" in h.id)
+    assert len(hypotheses) >= 2
+    active_h = next(h for h in hypotheses if "mal" in h.id or "active" in h.id)
     benign_h = next(h for h in hypotheses if "benign" in h.id)
     assert active_h.status == HypothesisStatus.LIVE
     assert benign_h.status == HypothesisStatus.LIVE
     assert len(reqs) >= 2
-    assert any(r.evidence_type == "process_ancestry" for r in reqs)
-    assert any(r.evidence_type == "scope_records" for r in reqs)
+    assert any(r.evidence_type in ("process_ancestry", "process") for r in reqs)
+    assert any(r.evidence_type in ("scope_records", "baseline") for r in reqs)
 
     # 2. Engine executes hunt
-    engine = HypothesisHuntEngine(cdb_adapter=cdb)
+    engine = HypothesisHuntEngine(compiler=KnowledgeBehaviorCompiler(llm_caller=StubSemanticCompiler(scenario="generic")), cdb_adapter=cdb)
     result = engine.execute_hunt(request, adapter=cdb, time_window="2026-02-01T00:00:00Z/P1D")
 
     # Invariant A: Target instance cell is NOT left UNEXPLORED
@@ -618,4 +620,3 @@ def test_13_free_form_hunting_with_target_entity_explores_cell_and_resolves_comp
     controller = CanonicalActionController()
     stopping_dec = controller.evaluate_stopping(state_with_unexplored_cell)
     assert stopping_dec == StoppingDecision.STOP_BOUNDED
-

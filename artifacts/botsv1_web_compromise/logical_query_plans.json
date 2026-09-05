@@ -1,0 +1,258 @@
+[
+  {
+    "id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-web_request-we1149srv",
+    "requirement_id": "req-hunt-botsv1-web-01-web_request",
+    "provider": "splunk",
+    "scope": "splunk_botsv1",
+    "data_sources": [
+      {
+        "index": "botsv1",
+        "sourcetype": "(sourcetype=\"stream:http\" OR sourcetype=\"iis\")"
+      }
+    ],
+    "filters": [
+      {
+        "field": "site",
+        "op": "CONTAINS",
+        "value": "imreallynotbatman.com"
+      }
+    ],
+    "fields": [
+      "timestamp",
+      "host",
+      "user"
+    ],
+    "entity": {
+      "kind": "host",
+      "name": "we1149srv"
+    },
+    "time_window": "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+    "constraints": {
+      "domain": "imreallynotbatman.com"
+    },
+    "limit": 100,
+    "is_targeted": true,
+    "evidence_type": "web_request"
+  },
+  {
+    "id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-process_ancestry-we1149srv",
+    "requirement_id": "req-hunt-botsv1-web-01-process_ancestry",
+    "provider": "splunk",
+    "scope": "splunk_botsv1",
+    "data_sources": [
+      {
+        "index": "botsv1",
+        "sourcetype": "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"
+      }
+    ],
+    "filters": [
+      {
+        "field": "cmdline",
+        "op": "EXISTS",
+        "value": ""
+      }
+    ],
+    "fields": [
+      "timestamp",
+      "host",
+      "user"
+    ],
+    "entity": {
+      "kind": "host",
+      "name": "we1149srv"
+    },
+    "time_window": "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+    "constraints": {},
+    "limit": 100,
+    "is_targeted": true,
+    "evidence_type": "process_ancestry"
+  },
+  {
+    "id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-file_modification-we1149srv",
+    "requirement_id": "req-hunt-botsv1-web-01-file_modification",
+    "provider": "splunk",
+    "scope": "splunk_botsv1",
+    "data_sources": [
+      {
+        "index": "botsv1",
+        "sourcetype": "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"
+      }
+    ],
+    "filters": [
+      {
+        "field": "file_path",
+        "op": "EXISTS",
+        "value": ""
+      }
+    ],
+    "fields": [
+      "timestamp",
+      "host",
+      "user"
+    ],
+    "entity": {
+      "kind": "host",
+      "name": "we1149srv"
+    },
+    "time_window": "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+    "constraints": {},
+    "limit": 100,
+    "is_targeted": true,
+    "evidence_type": "file_modification"
+  },
+  {
+    "id": "lqp-exp-hypo-hunt-botsv1-web-01-benign-req-hunt-botsv1-web-01-baseline-we1149srv",
+    "requirement_id": "req-hunt-botsv1-web-01-baseline",
+    "provider": "splunk",
+    "scope": "splunk_botsv1",
+    "data_sources": [
+      {
+        "index": "botsv1",
+        "sourcetype": null
+      }
+    ],
+    "filters": [],
+    "fields": [
+      "timestamp",
+      "host",
+      "user"
+    ],
+    "entity": {
+      "kind": "host",
+      "name": "we1149srv"
+    },
+    "time_window": "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+    "constraints": {},
+    "limit": 100,
+    "is_targeted": true,
+    "evidence_type": "scope_records"
+  },
+  {
+    "id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-web_request-splunk-02",
+    "requirement_id": "req-hunt-botsv1-web-01-web_request",
+    "provider": "splunk",
+    "scope": "splunk_botsv1",
+    "data_sources": [
+      {
+        "index": "botsv1",
+        "sourcetype": "(sourcetype=\"stream:http\" OR sourcetype=\"iis\")"
+      }
+    ],
+    "filters": [
+      {
+        "field": "site",
+        "op": "CONTAINS",
+        "value": "imreallynotbatman.com"
+      }
+    ],
+    "fields": [
+      "timestamp",
+      "host",
+      "user"
+    ],
+    "entity": {
+      "kind": "host",
+      "name": "splunk-02"
+    },
+    "time_window": "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+    "constraints": {
+      "domain": "imreallynotbatman.com"
+    },
+    "limit": 100,
+    "is_targeted": true,
+    "evidence_type": "web_request"
+  },
+  {
+    "id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-process_ancestry-splunk-02",
+    "requirement_id": "req-hunt-botsv1-web-01-process_ancestry",
+    "provider": "splunk",
+    "scope": "splunk_botsv1",
+    "data_sources": [
+      {
+        "index": "botsv1",
+        "sourcetype": "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"
+      }
+    ],
+    "filters": [
+      {
+        "field": "cmdline",
+        "op": "EXISTS",
+        "value": ""
+      }
+    ],
+    "fields": [
+      "timestamp",
+      "host",
+      "user"
+    ],
+    "entity": {
+      "kind": "host",
+      "name": "splunk-02"
+    },
+    "time_window": "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+    "constraints": {},
+    "limit": 100,
+    "is_targeted": true,
+    "evidence_type": "process_ancestry"
+  },
+  {
+    "id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-file_modification-splunk-02",
+    "requirement_id": "req-hunt-botsv1-web-01-file_modification",
+    "provider": "splunk",
+    "scope": "splunk_botsv1",
+    "data_sources": [
+      {
+        "index": "botsv1",
+        "sourcetype": "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"
+      }
+    ],
+    "filters": [
+      {
+        "field": "file_path",
+        "op": "EXISTS",
+        "value": ""
+      }
+    ],
+    "fields": [
+      "timestamp",
+      "host",
+      "user"
+    ],
+    "entity": {
+      "kind": "host",
+      "name": "splunk-02"
+    },
+    "time_window": "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+    "constraints": {},
+    "limit": 100,
+    "is_targeted": true,
+    "evidence_type": "file_modification"
+  },
+  {
+    "id": "lqp-exp-hypo-hunt-botsv1-web-01-benign-req-hunt-botsv1-web-01-baseline-splunk-02",
+    "requirement_id": "req-hunt-botsv1-web-01-baseline",
+    "provider": "splunk",
+    "scope": "splunk_botsv1",
+    "data_sources": [
+      {
+        "index": "botsv1",
+        "sourcetype": null
+      }
+    ],
+    "filters": [],
+    "fields": [
+      "timestamp",
+      "host",
+      "user"
+    ],
+    "entity": {
+      "kind": "host",
+      "name": "splunk-02"
+    },
+    "time_window": "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+    "constraints": {},
+    "limit": 100,
+    "is_targeted": true,
+    "evidence_type": "scope_records"
+  }
+]

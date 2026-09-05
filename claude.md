@@ -1,66 +1,49 @@
-# CLAUDE.md
+# Repository Working Rules
 
-Working rules for AI agents in this repository. Read `context.md` first, then
-use `01` for architecture, `02` for implementation contracts, and `04` for
-the checklist.
+Read `context.md` first, then use `01_FINAL-ARCHITECTURE.md` as the canonical
+architecture, `02_METHOD-AND-IMPLEMENTATION-PLAN.md` as the method, `03` for
+source traceability and `04` for implementation status.
 
-## Think before coding
+## Architecture rules
 
-- State assumptions when they affect scope or correctness.
-- Treat `01`/`02` as the active v4 contracts; report conflicts instead of
-  silently inventing a fourth design.
-- Keep parameters provisional unless an experiment establishes them.
-- Prefer the smallest change that closes a tested gap.
+- `Cell` is exactly `(ProviderScope, entity | ANY, time_bucket)`.
+- Never add `event_family`, `event_code` or operation as a Cell axis.
+- `ProviderScope` and `ProviderOperation` are separate contracts.
+- `EvidenceRequirement` describes the question; adapters answer it.
+- Preserve native types and unknown native records.
+- `search_hints` are query constraints, never evidence, confirmed entities or
+  coverage addresses.
+- Scope coverage and requirement coverage are separate.
+- A complete targeted query does not establish full scope coverage.
 
-## Project-specific architecture rules
+## Determinism and LLM boundary
 
-- Use the six v4 components in `01`; keep `HuntState` as data and the Action
-  Controller as the only state-transition authority.
-- `Cell` is `(ProviderScope, entity/ANY, time_bucket)`. Never add
-  `event_family` to Cell or use it as the coverage denominator.
-- `ProviderScope` (native data partition) and `ProviderOperation` (query
-  function) are separate contracts.
-- `EvidenceRequirement` describes the question; provider operations answer it.
-  Unsupported requirements are explicit, not fabricated.
-- Preserve `native_type`; `semantic_type=None` is valid. Never drop an unknown
-  event or force it into `OTHER`.
-- `UNQUERYABLE` is counted in coverage; `UNKNOWN_SOURCE` is reported outside
-  the denominator. Scope and requirement coverage are separate.
-- A complete targeted query does not mean the whole scope is explored.
+- Known CVE/TTP/IOC/template inputs compile deterministically.
+- Free-text semantic compilation requires the configured API LLM or stops as
+  `STOP_INSUFFICIENT`.
+- No natural-language keyword fallback or statement/ID keyword attribution.
+- Query templates and allowlists run before any planner fallback.
+- Fact extraction, predicates, correlation, controls, action selection,
+  stopping and final disposition are deterministic.
+- LLM output is schema-validated and advisory. It cannot execute a query,
+  mutate state, select an action or determine final disposition.
+- Group evidence before LLM refinement; never call once per raw observation.
 
-## Determinism and security
+## Security and provenance
 
-- Field/entity extraction, taint, retrieval, coverage, controls, action
-  selection, stopping and disposition are deterministic.
-- LLM input contains structured extracted fields and taint only; raw log
-  content never enters a prompt.
-- M2 cannot mutate observations, attribution or statuses. No LLM output can
-  select a control, stop the run, or compute disposition.
-- Tainted entities may generate leads within a budget; deferred entities are
-  counted, never silently discarded.
-- Queries are template/allowlist-first. Validate provider, scope, fields,
-  predicates, time bounds, pagination and limits before execution.
-- Evidence is grouped and compressed before LLM reasoning. Never call the LLM
-  once per observation; use bounded epoch/delta escalation.
+- Raw log content is untrusted and must not be placed in repeated LLM context.
+- Incomplete, stale, unsupported or unreachable results cannot license a
+  negative conclusion.
+- Every report claim cites query/observation/card IDs and a coverage bound.
+- Keep literature-derived principles separate from thesis engineering choices
+  and measured implementation results.
+- Audit records are append-only.
 
-## Evidence and provenance
+## Testing rules
 
-- Every claim cites observation/query IDs and a coverage bound.
-- Keep `INHERITED`, `ADAPTED`, `COMPOSED`, `ORIGINAL`, `ENGINEERING` and
-  experimental status labels honest.
-- Do not cite `UNVERIFIED` references as established evidence.
-- Do not use null-baseline results or benchmark outcomes beyond their measured
-  scope.
-- Audit logs are append-only.
-
-## Testing standards
-
-- Every contract and state transition has a known-answer unit test.
-- Integration tests cover sparse and entity-bearing hypotheses, unknown native
-  records, partial results, stale scopes, unqueryable scopes and unsupported
-  requirements. Legacy alert CLI tests remain only as compatibility tests until
-  the v4 migration is implemented.
-- Security tests cover command lines, URLs, DNS names, usernames and filenames;
-  assert raw-content isolation, hidden-target blocking and LLM mutation guards.
-- MVP means a replayable CDB/mock vertical slice with zero LLM calls. Real
-  SIEM/EDR/IDS production claims require real adapter execution evidence.
+- Every contract and state transition needs a known-answer test.
+- Test sparse and entity-bearing hypotheses, unknown native records, partial
+  results, stale scopes, unsupported requirements and prompt-injection payloads.
+- CDB and Splunk are the current executable providers.
+- Real LLM API, EDR and IDS execution evidence is required before production
+  claims for those paths.

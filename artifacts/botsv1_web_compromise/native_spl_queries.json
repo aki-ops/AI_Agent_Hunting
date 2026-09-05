@@ -1,0 +1,90 @@
+[
+  {
+    "id": "nqp-lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-web_request-we1149srv",
+    "logical_plan_id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-web_request-we1149srv",
+    "provider": "splunk",
+    "native_query": "search index=\"botsv1\" (sourcetype=\"stream:http\" OR sourcetype=\"iis\") host=\"we1149srv\" (site=\"*imreallynotbatman.com*\" OR cs_host=\"*imreallynotbatman.com*\" OR \"imreallynotbatman.com\" OR \"imreallynotbatman.com\")\n| eval site=coalesce(site, cs_host) | where like(lower(site), \"%imreallynotbatman.com%\")\n| head 101\n| table _time, host, sourcetype, image, cmdline, parent_image, user, pid, ppid, destination_ip, destination_port, source_ip, source_port, protocol, file_path, domain, query, logon_type, status, hash, uri, cs_uri_stem, cs_method, client_ip, server_ip, c_ip, s_ip, http_method, site, cs_host, _raw",
+    "time_range": [
+      "2016-08-01T00:00:00Z",
+      "2016-08-29T23:59:59Z"
+    ],
+    "limit": 100
+  },
+  {
+    "id": "nqp-lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-process_ancestry-we1149srv",
+    "logical_plan_id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-process_ancestry-we1149srv",
+    "provider": "splunk",
+    "native_query": "search index=\"botsv1\" sourcetype=\"XmlWinEventLog:Microsoft-Windows-Sysmon/Operational\" *EventID>1<* host=\"we1149srv\"\n| rex field=_raw \"<Data Name='Image'>(?<image>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='CommandLine'>(?<cmdline>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='ParentImage'>(?<parent_image>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='User'>(?<user>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='ProcessId'>(?<pid>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='ParentProcessId'>(?<ppid>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='Hashes'>(?<hash>[^<]+)</Data>\"\n| where isnotnull(cmdline) AND cmdline!=\"\"\n| head 101\n| table _time, host, sourcetype, image, cmdline, parent_image, user, pid, ppid, destination_ip, destination_port, source_ip, source_port, protocol, file_path, domain, query, logon_type, status, hash, uri, cs_uri_stem, cs_method, client_ip, server_ip, c_ip, s_ip, http_method, site, cs_host, _raw",
+    "time_range": [
+      "2016-08-01T00:00:00Z",
+      "2016-08-29T23:59:59Z"
+    ],
+    "limit": 100
+  },
+  {
+    "id": "nqp-lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-file_modification-we1149srv",
+    "logical_plan_id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-file_modification-we1149srv",
+    "provider": "splunk",
+    "native_query": "search index=\"botsv1\" sourcetype=\"XmlWinEventLog:Microsoft-Windows-Sysmon/Operational\" *EventID>11<* host=\"we1149srv\"\n| rex field=_raw \"<Data Name='TargetFilename'>(?<file_path>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='Image'>(?<image>[^<]+)</Data>\"\n| where isnotnull(file_path) AND file_path!=\"\"\n| head 101\n| table _time, host, sourcetype, image, cmdline, parent_image, user, pid, ppid, destination_ip, destination_port, source_ip, source_port, protocol, file_path, domain, query, logon_type, status, hash, uri, cs_uri_stem, cs_method, client_ip, server_ip, c_ip, s_ip, http_method, site, cs_host, _raw",
+    "time_range": [
+      "2016-08-01T00:00:00Z",
+      "2016-08-29T23:59:59Z"
+    ],
+    "limit": 100
+  },
+  {
+    "id": "nqp-lqp-exp-hypo-hunt-botsv1-web-01-benign-req-hunt-botsv1-web-01-baseline-we1149srv",
+    "logical_plan_id": "lqp-exp-hypo-hunt-botsv1-web-01-benign-req-hunt-botsv1-web-01-baseline-we1149srv",
+    "provider": "splunk",
+    "native_query": "search index=\"botsv1\" host=\"we1149srv\"\n| head 101\n| table _time, host, sourcetype, image, cmdline, parent_image, user, pid, ppid, destination_ip, destination_port, source_ip, source_port, protocol, file_path, domain, query, logon_type, status, hash, uri, cs_uri_stem, cs_method, client_ip, server_ip, c_ip, s_ip, http_method, site, cs_host, _raw",
+    "time_range": [
+      "2016-08-01T00:00:00Z",
+      "2016-08-29T23:59:59Z"
+    ],
+    "limit": 100
+  },
+  {
+    "id": "nqp-lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-web_request-splunk-02",
+    "logical_plan_id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-web_request-splunk-02",
+    "provider": "splunk",
+    "native_query": "search index=\"botsv1\" (sourcetype=\"stream:http\" OR sourcetype=\"iis\") host=\"splunk-02\" (site=\"*imreallynotbatman.com*\" OR cs_host=\"*imreallynotbatman.com*\" OR \"imreallynotbatman.com\" OR \"imreallynotbatman.com\")\n| eval site=coalesce(site, cs_host) | where like(lower(site), \"%imreallynotbatman.com%\")\n| head 101\n| table _time, host, sourcetype, image, cmdline, parent_image, user, pid, ppid, destination_ip, destination_port, source_ip, source_port, protocol, file_path, domain, query, logon_type, status, hash, uri, cs_uri_stem, cs_method, client_ip, server_ip, c_ip, s_ip, http_method, site, cs_host, _raw",
+    "time_range": [
+      "2016-08-01T00:00:00Z",
+      "2016-08-29T23:59:59Z"
+    ],
+    "limit": 100
+  },
+  {
+    "id": "nqp-lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-process_ancestry-splunk-02",
+    "logical_plan_id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-process_ancestry-splunk-02",
+    "provider": "splunk",
+    "native_query": "search index=\"botsv1\" sourcetype=\"XmlWinEventLog:Microsoft-Windows-Sysmon/Operational\" *EventID>1<* host=\"splunk-02\"\n| rex field=_raw \"<Data Name='Image'>(?<image>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='CommandLine'>(?<cmdline>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='ParentImage'>(?<parent_image>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='User'>(?<user>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='ProcessId'>(?<pid>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='ParentProcessId'>(?<ppid>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='Hashes'>(?<hash>[^<]+)</Data>\"\n| where isnotnull(cmdline) AND cmdline!=\"\"\n| head 101\n| table _time, host, sourcetype, image, cmdline, parent_image, user, pid, ppid, destination_ip, destination_port, source_ip, source_port, protocol, file_path, domain, query, logon_type, status, hash, uri, cs_uri_stem, cs_method, client_ip, server_ip, c_ip, s_ip, http_method, site, cs_host, _raw",
+    "time_range": [
+      "2016-08-01T00:00:00Z",
+      "2016-08-29T23:59:59Z"
+    ],
+    "limit": 100
+  },
+  {
+    "id": "nqp-lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-file_modification-splunk-02",
+    "logical_plan_id": "lqp-exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-file_modification-splunk-02",
+    "provider": "splunk",
+    "native_query": "search index=\"botsv1\" sourcetype=\"XmlWinEventLog:Microsoft-Windows-Sysmon/Operational\" *EventID>11<* host=\"splunk-02\"\n| rex field=_raw \"<Data Name='TargetFilename'>(?<file_path>[^<]+)</Data>\"\n| rex field=_raw \"<Data Name='Image'>(?<image>[^<]+)</Data>\"\n| where isnotnull(file_path) AND file_path!=\"\"\n| head 101\n| table _time, host, sourcetype, image, cmdline, parent_image, user, pid, ppid, destination_ip, destination_port, source_ip, source_port, protocol, file_path, domain, query, logon_type, status, hash, uri, cs_uri_stem, cs_method, client_ip, server_ip, c_ip, s_ip, http_method, site, cs_host, _raw",
+    "time_range": [
+      "2016-08-01T00:00:00Z",
+      "2016-08-29T23:59:59Z"
+    ],
+    "limit": 100
+  },
+  {
+    "id": "nqp-lqp-exp-hypo-hunt-botsv1-web-01-benign-req-hunt-botsv1-web-01-baseline-splunk-02",
+    "logical_plan_id": "lqp-exp-hypo-hunt-botsv1-web-01-benign-req-hunt-botsv1-web-01-baseline-splunk-02",
+    "provider": "splunk",
+    "native_query": "search index=\"botsv1\" host=\"splunk-02\"\n| head 101\n| table _time, host, sourcetype, image, cmdline, parent_image, user, pid, ppid, destination_ip, destination_port, source_ip, source_port, protocol, file_path, domain, query, logon_type, status, hash, uri, cs_uri_stem, cs_method, client_ip, server_ip, c_ip, s_ip, http_method, site, cs_host, _raw",
+    "time_range": [
+      "2016-08-01T00:00:00Z",
+      "2016-08-29T23:59:59Z"
+    ],
+    "limit": 100
+  }
+]

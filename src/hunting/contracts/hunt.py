@@ -96,6 +96,10 @@ class HypothesisStatus(str, Enum):
     WEAKENED = "WEAKENED"
     REFUTED = "REFUTED"
     UNTESTABLE = "UNTESTABLE"
+    INSUFFICIENTLY_SPECIFIED = "INSUFFICIENTLY_SPECIFIED"
+    UNSUPPORTED = "UNSUPPORTED"
+    UNKNOWN = "UNKNOWN"
+    UNREACHABLE = "UNREACHABLE"
 
 
 @dataclass
@@ -107,6 +111,8 @@ class Hypothesis:
     status: HypothesisStatus = HypothesisStatus.LIVE
     source_refs: list[str] = field(default_factory=list)
     requirements: list[str] = field(default_factory=list)
+    assumptions: list[str] = field(default_factory=list)
+    hypothesis_class: str = ""
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -116,10 +122,16 @@ class Hypothesis:
 
 
 class RequirementStatus(str, Enum):
-    PROPOSED = "PROPOSED"
-    VALIDATED = "VALIDATED"
+    DEFINED = "DEFINED"
+    PLANNED = "PLANNED"
+    EXECUTED = "EXECUTED"
+    CONFIRMED = "CONFIRMED"
+    REFUTED = "REFUTED"
+    INCONCLUSIVE = "INCONCLUSIVE"
     UNSUPPORTED = "UNSUPPORTED"
     REJECTED = "REJECTED"
+    PROPOSED = "PROPOSED"
+    VALIDATED = "VALIDATED"
 
 
 @dataclass
@@ -139,7 +151,10 @@ class EvidenceRequirementV4:
     contradicts: list[str] = field(default_factory=list)
     falsification_condition: str = ""
     source_refs: list[str] = field(default_factory=list)
-    status: RequirementStatus = RequirementStatus.PROPOSED
+    status: RequirementStatus = RequirementStatus.DEFINED
+    semantic_intent: str = ""
+    necessity: str = "CRITICAL"
+    search_hints: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -148,8 +163,61 @@ class EvidenceRequirementV4:
             raise ValueError("EvidenceRequirementV4.evidence_type must not be empty")
 
 
-# Convenient alias for canonical v4 question specification
+# Convenient aliases for canonical v4 question specification
 EvidenceRequirementSpec = EvidenceRequirementV4
+EvidenceRequirement = EvidenceRequirementV4
+
+
+@dataclass
+class LogicalQueryPlan:
+    """Logical execution plan independent of native provider query language."""
+    id: str
+    requirement_id: str
+    provider: str
+    scope: str
+    data_sources: list[dict[str, Any]] = field(default_factory=list)
+    filters: list[dict[str, Any]] = field(default_factory=list)
+    fields: list[str] = field(default_factory=list)
+    entity: EntityRef | None = None
+    time_window: str = ""
+    constraints: dict[str, Any] = field(default_factory=dict)
+    limit: int = 100
+    is_targeted: bool = False
+    evidence_type: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.id.strip():
+            raise ValueError("LogicalQueryPlan.id must not be empty")
+        if not self.requirement_id.strip():
+            raise ValueError("LogicalQueryPlan.requirement_id must not be empty")
+
+
+@dataclass
+class NativeQueryPlan:
+    """Provider-compiled native executable query (SPL, SQL, KQL) with bounded time range."""
+    id: str
+    logical_plan_id: str
+    provider: str
+    native_query: str
+    time_range: tuple[str, str] = ("", "")
+    limit: int = 100
+
+    def __post_init__(self) -> None:
+        if not self.id.strip():
+            raise ValueError("NativeQueryPlan.id must not be empty")
+        if not self.native_query.strip():
+            raise ValueError("NativeQueryPlan.native_query must not be empty")
+
+
+@dataclass
+class EvidenceAssessment:
+    """Advisory assessment from semantic evaluation layer."""
+    card_id: str
+    compatible_hypotheses: list[str] = field(default_factory=list)
+    confidence: float = 0.0
+    reason: str = ""
+    missing_evidence: list[str] = field(default_factory=list)
+    source_refs: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -204,6 +272,8 @@ class HuntOutcome(str, Enum):
     INCONCLUSIVE = "INCONCLUSIVE"
     UNKNOWN = "UNKNOWN"
     UNREACHABLE = "UNREACHABLE"
+    INSUFFICIENTLY_SPECIFIED = "INSUFFICIENTLY_SPECIFIED"
+    UNSUPPORTED = "UNSUPPORTED"
 
 
 class StoppingDecision(str, Enum):
@@ -211,6 +281,9 @@ class StoppingDecision(str, Enum):
     STOP_RESOLVED = "STOP_RESOLVED"
     STOP_BOUNDED = "STOP_BOUNDED"
     STOP_EXHAUSTED_BY_BUDGET = "STOP_EXHAUSTED_BY_BUDGET"
+    STOP_INSUFFICIENT = "STOP_INSUFFICIENT"
+    STOP_UNSUPPORTED = "STOP_UNSUPPORTED"
+    STOP_UNREACHABLE = "STOP_UNREACHABLE"
 
 
 @dataclass
@@ -228,6 +301,11 @@ class HuntState:
     observations: list[Observation] = field(default_factory=list)
     queries: list[QueryPlan] = field(default_factory=list)
     query_results: list[QueryResult] = field(default_factory=list)
+    logical_query_plans: list[LogicalQueryPlan] = field(default_factory=list)
+    native_query_plans: list[NativeQueryPlan] = field(default_factory=list)
+    capability_catalog: Any | None = None
+    evidence_assessments: list[EvidenceAssessment] = field(default_factory=list)
+    llm_usage: dict[str, Any] = field(default_factory=dict)
     cells: list[Cell] = field(default_factory=list)
     coverage: CoverageBound = field(default_factory=CoverageBound)
     stopping_decision: StoppingDecision | None = None
@@ -257,12 +335,26 @@ class FinalHuntAccount:
     @property
     def outcome(self) -> HuntOutcome:
         """Derive canonical outcome from supporting / contradicting / unreachable."""
-        if self.supporting:
-            return HuntOutcome.SUPPORTED
-        if self.contradicting and not self.supporting:
-            return HuntOutcome.CONTRADICTED
-        if self.unreachable and not self.supporting:
+        if self.stopping_decision == StoppingDecision.STOP_INSUFFICIENT:
+            return HuntOutcome.INSUFFICIENTLY_SPECIFIED
+        if self.stopping_decision == StoppingDecision.STOP_UNSUPPORTED:
+            return HuntOutcome.UNSUPPORTED
+        if self.stopping_decision == StoppingDecision.STOP_UNREACHABLE:
             return HuntOutcome.UNREACHABLE
+        attack_hypos = [h for h in self.hypotheses if h.hypothesis_class != "benign_baseline"]
+        if not attack_hypos:
+            attack_hypos = self.hypotheses
+
+        if any(h.id in self.supporting for h in attack_hypos):
+            return HuntOutcome.SUPPORTED
+        if all(h.id in self.contradicting for h in attack_hypos) and attack_hypos:
+            if not self.residuals and not self.unreachable and not self.unknown:
+                return HuntOutcome.CONTRADICTED
+            return HuntOutcome.INCONCLUSIVE
+        if all(h.id in self.unreachable for h in attack_hypos) and attack_hypos:
+            return HuntOutcome.UNREACHABLE
+        if any(h.id in self.contradicting for h in attack_hypos):
+            return HuntOutcome.INCONCLUSIVE
         return HuntOutcome.UNKNOWN  # Rendered as NO_EVIDENCE_FOUND in final report
 
 
@@ -277,6 +369,10 @@ __all__ = [
     "RequirementStatus",
     "EvidenceRequirementV4",
     "EvidenceRequirementSpec",
+    "EvidenceRequirement",
+    "LogicalQueryPlan",
+    "NativeQueryPlan",
+    "EvidenceAssessment",
     "QueryPlan",
     "EvidenceCard",
     "HuntOutcome",

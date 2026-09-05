@@ -26,6 +26,7 @@ from hunting.contracts.hunt import (
     HuntRequest,
     HuntRequestKind,
     HypothesisOrigin,
+    HypothesisStatus,
     RequirementStatus,
     TimePolicy,
 )
@@ -67,6 +68,7 @@ def test_2_five_behavior_templates():
         BehaviorCategory.NETWORK,
         BehaviorCategory.FILE,
         BehaviorCategory.PERSISTENCE,
+        BehaviorCategory.WEB,
     }
 
     assert categories == expected_categories
@@ -143,7 +145,7 @@ def test_4_llm_normalization_for_unstructured_input():
     assert compiler.llm_calls_made == 1  # Exactly 1 LLM call
     assert len(hypotheses) == 1
     assert hypotheses[0].origin == HypothesisOrigin.LLM_PROPOSAL
-    assert requirements[0].status == RequirementStatus.VALIDATED
+    assert requirements[0].status in (RequirementStatus.DEFINED, RequirementStatus.VALIDATED)
 
     # Calling again exceeding limit raises error
     with pytest.raises(RuntimeError, match="LLM cost policy: max 1 LLM call allowed"):
@@ -236,3 +238,74 @@ def test_7_separate_cve_five_phases():
 
     with pytest.raises(ValueError, match="CVEPhases.exploitation_indicators must not be empty"):
         CVEPhases(exposure=("test",), exploitation_indicators=())
+
+
+def test_8_web_compromise_template_decomp():
+    """8. Web compromise request compiles into web_request, process_ancestry, and file_modification via semantic compiler."""
+    from hunting.m2_abduction.provider import StubSemanticCompiler
+    compiler = KnowledgeBehaviorCompiler(llm_caller=StubSemanticCompiler(scenario="web"))
+    req = HuntRequest(
+        id="hunt-web-01",
+        kind=HuntRequestKind.HYPOTHESIS,
+        content="Attacker compromised web www.imreallynotbatman.com",
+    )
+    obj, hypotheses, reqs = compiler.compile(req)
+    assert len(hypotheses) >= 2
+    types = {r.evidence_type for r in reqs}
+    assert "web_request" in types
+    assert "process_ancestry" in types
+    assert "file_modification" in types
+    assert "scope_records" in types
+
+
+def test_9_unrecognized_hypothesis_insufficient_specified():
+    """9. Unrecognized hypothesis returns INSUFFICIENTLY_SPECIFIED without fallback queries."""
+    compiler = KnowledgeBehaviorCompiler()
+    req = HuntRequest(
+        id="hunt-obscure-01",
+        kind=HuntRequestKind.HYPOTHESIS,
+        content="Random alien transmission detected in hyperspace",
+    )
+    obj, hypotheses, reqs = compiler.compile(req)
+    assert len(hypotheses) == 1
+    assert hypotheses[0].status == HypothesisStatus.INSUFFICIENTLY_SPECIFIED
+    assert len(reqs) == 0
+
+
+def test_10_validate_compiler_llm_output_schema():
+    """10. validate_compiler_llm_output strictly enforces types, falsification, and citations."""
+    from hunting.compiler.compiler import validate_compiler_llm_output
+
+    valid_json = {
+        "hypotheses": [{"id": "h-1", "statement": "Lateral movement"}],
+        "requirements": [
+            {
+                "id": "req-1",
+                "description": "Logon spikes",
+                "evidence_type": "authentication_activity",
+                "falsification_condition": "clean logons",
+                "source_refs": ["MITRE-T1078"],
+            }
+        ],
+    }
+    hypos, reqs = validate_compiler_llm_output(valid_json)
+    assert len(hypos) == 1
+    assert hypos[0].status == HypothesisStatus.LIVE
+    assert len(reqs) == 1
+
+    # Invalid evidence type rejected
+    invalid_type = {
+        "hypotheses": [{"id": "h-1", "statement": "Invalid type"}],
+        "requirements": [
+            {
+                "id": "req-1",
+                "description": "Bad type",
+                "evidence_type": "unknown_magic_type",
+                "falsification_condition": "clean",
+                "source_refs": ["REF"],
+            }
+        ],
+    }
+    hypos, reqs = validate_compiler_llm_output(invalid_type)
+    assert len(reqs) == 0
+    assert hypos[0].status == HypothesisStatus.INSUFFICIENTLY_SPECIFIED

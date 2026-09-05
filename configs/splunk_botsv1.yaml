@@ -1,0 +1,78 @@
+# Splunk BOTSv1 Declarative Capability Mapping Manifest (Mode 2)
+# Maps BOTSv1 sourcetypes and events to canonical EvidenceRequirements.
+
+index: "botsv1"
+provider_id: "splunk"
+scope_id: "splunk_botsv1"
+retention_days: 4000
+
+bindings:
+  process_ancestry:
+    sourcetype: "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"
+    event_filter: "*EventID>1<*"
+    extractions:
+      image: "<Data Name='Image'>(?<image>[^<]+)</Data>"
+      cmdline: "<Data Name='CommandLine'>(?<cmdline>[^<]+)</Data>"
+      parent_image: "<Data Name='ParentImage'>(?<parent_image>[^<]+)</Data>"
+      user: "<Data Name='User'>(?<user>[^<]+)</Data>"
+      pid: "<Data Name='ProcessId'>(?<pid>[^<]+)</Data>"
+      ppid: "<Data Name='ParentProcessId'>(?<ppid>[^<]+)</Data>"
+      hash: "<Data Name='Hashes'>(?<hash>[^<]+)</Data>"
+
+  network_connection:
+    sourcetype: "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"
+    event_filter: "*EventID>3<*"
+    extractions:
+      destination_ip: "<Data Name='DestinationIp'>(?<destination_ip>[^<]+)</Data>"
+      destination_port: "<Data Name='DestinationPort'>(?<destination_port>[^<]+)</Data>"
+      source_ip: "<Data Name='SourceIp'>(?<source_ip>[^<]+)</Data>"
+      source_port: "<Data Name='SourcePort'>(?<source_port>[^<]+)</Data>"
+      protocol: "<Data Name='Protocol'>(?<protocol>[^<]+)</Data>"
+      image: "<Data Name='Image'>(?<image>[^<]+)</Data>"
+      user: "<Data Name='User'>(?<user>[^<]+)</Data>"
+
+  file_modification:
+    sourcetype: "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"
+    event_filter: "*EventID>11<*"
+    extractions:
+      file_path: "<Data Name='TargetFilename'>(?<file_path>[^<]+)</Data>"
+      image: "<Data Name='Image'>(?<image>[^<]+)</Data>"
+
+  authentication_activity:
+    sourcetype: "WinEventLog:Security"
+    event_filter: "(EventCode=4624 OR EventCode=4625)"
+    extractions:
+      user: 'Account Name:\s*(?<user>[^\r\n]+)'
+      logon_type: 'Logon Type:\s*(?<logon_type>\d+)'
+
+  dns_activity:
+    sourcetype: "stream:dns"
+    event_filter: "*"
+    extractions:
+      domain: "query"
+      query_type: "record_type"
+      response: "response"
+
+  persistence_change:
+    sourcetype: "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"
+    event_filter: "(*EventID>12<* OR *EventID>13<*)"
+    extractions:
+      registry_key: "<Data Name='TargetObject'>(?<registry_key>[^<]+)</Data>"
+      image: "<Data Name='Image'>(?<image>[^<]+)</Data>"
+
+  web_request:
+    sourcetype: 'stream:http" OR sourcetype="iis'
+    event_filter: "*"
+    extractions:
+      uri: "uri"
+      client_ip: "c_ip"
+      server_ip: "s_ip"
+      status: "status"
+      http_method: "http_method"
+      site: "site"
+
+  scope_records:
+    sourcetype: "*"
+    event_filter: "*"
+    extractions: {}
+

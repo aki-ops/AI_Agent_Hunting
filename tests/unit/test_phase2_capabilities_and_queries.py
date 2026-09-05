@@ -18,7 +18,7 @@ from hunting.capabilities import (
 )
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.entities import ANY, Host, IPAddress
-from hunting.contracts.expectations import EvidenceRequirement
+from hunting.contracts.expectations import EvidenceRequirement, FieldOp, FieldPredicate
 from hunting.contracts.hunt import EvidenceRequirementV4, QueryPlan
 from hunting.contracts.queries import Diagnostic
 from hunting.planner import CanonicalQueryPlanner, PlanCache, QueryValidator
@@ -218,3 +218,82 @@ def test_6_missing_capability_unsupported_or_unreachable():
     plan_gap, diag_gap = planner.plan_query(er_valid, ANY, gap_scope, "NOW-7d/NOW")
     assert plan_gap is None
     assert diag_gap == Diagnostic.UNREACHABLE
+
+
+def test_7_logical_query_plan_generation_and_compilation():
+    """7. Test LogicalQueryPlan generation and compilation to NativeQueryPlan."""
+    planner = CanonicalQueryPlanner()
+    scope = ProviderScope(
+        provider_id="splunk",
+        scope_id="splunk_botsv1",
+        native_partition={"index": "botsv1"},
+        retention_days=4000,
+    )
+    req = EvidenceRequirementV4(
+        id="er-web-01",
+        description="Web request to compromised site",
+        evidence_type="web_request",
+        predicate=FieldPredicate(field="uri", op=FieldOp.EXISTS),
+        falsification_condition="no web requests",
+        source_refs=["MITRE-T1190"],
+    )
+
+    # 1. Plan logical query
+    lqp, diag = planner.plan_logical_query(
+        requirement=req,
+        entity=Host(name="we1149srv"),
+        scope=scope,
+        time_window="2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+    )
+    assert diag is None
+    assert lqp is not None
+    assert lqp.provider == "splunk"
+    assert lqp.is_targeted is True
+    assert len(lqp.filters) == 1
+    assert lqp.filters[0]["field"] == "uri"
+
+    # 2. Compile to native query plan
+    nqp, diag = planner.compile_native_query(lqp)
+    assert diag is None
+    assert nqp is not None
+    assert nqp.provider == "splunk"
+    assert "stream:http" in nqp.native_query
+    assert 'host="we1149srv"' in nqp.native_query
+    assert "| head 101" in nqp.native_query  # L+1 rule
+    assert "| table _time" in nqp.native_query
+
+
+def test_8_compiler_unsupported_evidence_type_validation():
+    """8. Test validator rejects logical query plan with unsupported evidence type."""
+    from hunting.contracts.capabilities import ProviderCapabilityCatalog
+
+    planner = CanonicalQueryPlanner()
+    catalog = ProviderCapabilityCatalog(
+        provider_id="splunk",
+        status="ONLINE",
+        indices=["botsv1"],
+        supported_evidence_types=["process_ancestry"],  # only process supported
+        observable_fields=["timestamp", "host", "image"],
+    )
+    scope = ProviderScope(
+        provider_id="splunk",
+        scope_id="splunk_botsv1",
+        native_partition={"index": "botsv1"},
+    )
+    req = EvidenceRequirementV4(
+        id="er-exotic-01",
+        description="Exotic hardware bus probe",
+        evidence_type="hardware_bus_anomaly",
+        falsification_condition="none",
+        source_refs=["REF"],
+    )
+
+    lqp, diag = planner.plan_logical_query(
+        requirement=req,
+        entity=None,
+        scope=scope,
+        time_window="2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+        catalog=catalog,
+    )
+    assert lqp is None
+    assert diag == Diagnostic.UNSUPPORTED_REQUIREMENT

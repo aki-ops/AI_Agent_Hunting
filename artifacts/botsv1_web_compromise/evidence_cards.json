@@ -1,0 +1,4240 @@
+[
+  {
+    "id": "card-be13cd255f96",
+    "fingerprint": "be13cd255f960f330a9f8fff7e057df6092f66d1c154517f5dcf87de50b3774a",
+    "representative_observation_ids": [
+      "obs-sweep-1",
+      "obs-sweep-2",
+      "obs-sweep-3"
+    ],
+    "count": 196,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.250.70"
+      ],
+      "domains": [
+        "imreallynotbatman.com"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T22:22:12.403+00:00",
+      "latest": "2016-08-10T22:22:27.612+00:00",
+      "span_events": 196
+    },
+    "field_summary": {
+      "domains": [
+        "imreallynotbatman.com"
+      ],
+      "uris": [
+        "/joomla/index.php/component/search/"
+      ],
+      "sites": [
+        "imreallynotbatman.com"
+      ]
+    },
+    "fact_type": "web_request",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "served_web_request",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='imreallynotbatman.com')"
+      }
+    ]
+  },
+  {
+    "id": "card-85047dc2a924",
+    "fingerprint": "85047dc2a924e33596ad0c546a2d3dc9b57977bb3017858c9eadadfa67098f3e",
+    "representative_observation_ids": [
+      "obs-205",
+      "obs-206",
+      "obs-207"
+    ],
+    "count": 92,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-24T18:27:01.000+00:00",
+      "latest": "2016-08-24T18:27:03.000+00:00",
+      "span_events": 92
+    },
+    "field_summary": {},
+    "fact_type": "generic_telemetry",
+    "completeness": "complete",
+    "relations": []
+  },
+  {
+    "id": "card-cfbbc54b5383",
+    "fingerprint": "cfbbc54b53837e1e0ca882c401712040c3fcb430b10294d1e3d6779a38d699da",
+    "representative_observation_ids": [
+      "obs-103",
+      "obs-137",
+      "obs-139"
+    ],
+    "count": 20,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR",
+        "NT AUTHORITY\\SYSTEM"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:55:22.000+00:00",
+      "latest": "2016-08-24T18:16:49.000+00:00",
+      "span_events": 20
+    },
+    "field_summary": {
+      "cmdlines": [
+        "\\??\\C:\\Windows\\system32\\conhost.exe 0xffffffff"
+      ],
+      "images": [
+        "C:\\Windows\\System32\\conhost.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\System32\\sc.exe",
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1780, time='2016-08-24T18:16:49.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-24T18:16:49.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1780, time='2016-08-24T18:16:49.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-f40f054614e7",
+    "fingerprint": "f40f054614e7ad2add6e24c19a7e7891813d209559f8d4c29397c31fd9082709",
+    "representative_observation_ids": [
+      "obs-102",
+      "obs-106",
+      "obs-108"
+    ],
+    "count": 18,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\NETWORK SERVICE"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:55:50.000+00:00",
+      "latest": "2016-08-24T18:25:15.000+00:00",
+      "span_events": 18
+    },
+    "field_summary": {
+      "cmdlines": [
+        "C:\\Windows\\system32\\wbem\\wmiprvse.exe -secured -Embedding"
+      ],
+      "images": [
+        "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\System32\\svchost.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=4012, time='2016-08-24T18:25:15.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-24T18:25:15.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=4012, time='2016-08-24T18:25:15.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-7eaa1c065b10",
+    "fingerprint": "7eaa1c065b10d65a6fa7c8fd7c851573c150b0c2603e22d1007599781c227b99",
+    "representative_observation_ids": [
+      "obs-101",
+      "obs-105",
+      "obs-107"
+    ],
+    "count": 17,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\SYSTEM"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:55:51.000+00:00",
+      "latest": "2016-08-24T18:25:17.000+00:00",
+      "span_events": 17
+    },
+    "field_summary": {
+      "cmdlines": [
+        "C:\\Windows\\system32\\wbem\\wmiprvse.exe -Embedding"
+      ],
+      "images": [
+        "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\System32\\svchost.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2688, time='2016-08-24T18:25:17.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-24T18:25:17.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2688, time='2016-08-24T18:25:17.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-2c573061ec31",
+    "fingerprint": "2c573061ec316facbdc76d1d7ec8c5f0dbab9ec1a6c38ae9c387bbfc4c3c919b",
+    "representative_observation_ids": [
+      "obs-405",
+      "obs-406",
+      "obs-412"
+    ],
+    "count": 15,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "8.8.8.8"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:20.003+00:00",
+      "latest": "2016-08-28T23:58:58.693+00:00",
+      "span_events": 15
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-1bc5eed50fd1",
+    "fingerprint": "1bc5eed50fd1b86b4dfbeacafada0cf7025d0b158b762ed39f76e7f92ded588e",
+    "representative_observation_ids": [
+      "obs-402",
+      "obs-403",
+      "obs-409"
+    ],
+    "count": 10,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "8.8.8.8"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:32.706+00:00",
+      "latest": "2016-08-28T23:59:00.318+00:00",
+      "span_events": 10
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='8.8.8.8')"
+      }
+    ]
+  },
+  {
+    "id": "card-7670bbd751dd",
+    "fingerprint": "7670bbd751ddf9cad1a8c91915d3c2bdfb1593519a04431d320338a03d381770",
+    "representative_observation_ids": [
+      "obs-144",
+      "obs-148",
+      "obs-150"
+    ],
+    "count": 8,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:55:24.000+00:00",
+      "latest": "2016-08-10T22:20:13.000+00:00",
+      "span_events": 8
+    },
+    "field_summary": {
+      "cmdlines": [
+        "cmd.exe /c \"dir 2&gt;&amp;1\""
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ],
+      "parent_images": [
+        "C:\\Program Files (x86)\\PHP\\v5.5\\php-cgi.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2724, time='2016-08-10T22:20:13.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:20:13.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2724, time='2016-08-10T22:20:13.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-89a1580f9ac4",
+    "fingerprint": "89a1580f9ac4780e7412a2c79d54359afb9a1ac065b466fd2ffb59b0c04fa73c",
+    "representative_observation_ids": [
+      "obs-201",
+      "obs-242",
+      "obs-243"
+    ],
+    "count": 5,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-24T18:27:02.000+00:00",
+      "latest": "2016-08-24T18:27:30.000+00:00",
+      "span_events": 5
+    },
+    "field_summary": {},
+    "fact_type": "generic_telemetry",
+    "completeness": "complete",
+    "relations": []
+  },
+  {
+    "id": "card-c7c92b3ea5ed",
+    "fingerprint": "c7c92b3ea5ed7e9eae7f9cc8f7eb7f33891849f7be17e7052d68ef3a20a2c158",
+    "representative_observation_ids": [
+      "obs-sweep-19",
+      "obs-sweep-39",
+      "obs-319"
+    ],
+    "count": 4,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.250.70"
+      ],
+      "domains": [
+        "imreallynotbatman.com"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T22:22:20.271+00:00",
+      "latest": "2016-08-10T22:22:22.857+00:00",
+      "span_events": 4
+    },
+    "field_summary": {
+      "domains": [
+        "imreallynotbatman.com"
+      ],
+      "sites": [
+        "imreallynotbatman.com"
+      ]
+    },
+    "fact_type": "web_request",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "served_web_request",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='imreallynotbatman.com')"
+      }
+    ]
+  },
+  {
+    "id": "card-0fbe0069c41e",
+    "fingerprint": "0fbe0069c41e157586d2a1af429849617cb7fed7ae17228f67f439d88003fe05",
+    "representative_observation_ids": [
+      "obs-202",
+      "obs-203",
+      "obs-204"
+    ],
+    "count": 3,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-24T18:27:30.000+00:00",
+      "latest": "2016-08-24T18:27:30.000+00:00",
+      "span_events": 3
+    },
+    "field_summary": {},
+    "fact_type": "generic_telemetry",
+    "completeness": "complete",
+    "relations": []
+  },
+  {
+    "id": "card-b778a65522eb",
+    "fingerprint": "b778a65522eba3431137ce78a6c3a972e9a3a2b7d2e1b046d7e9fe55e97f3520",
+    "representative_observation_ids": [
+      "obs-158",
+      "obs-199",
+      "obs-200"
+    ],
+    "count": 3,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "IIS APPPOOL\\joomla"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:46:28.000+00:00",
+      "latest": "2016-08-10T22:16:27.000+00:00",
+      "span_events": 3
+    },
+    "field_summary": {
+      "cmdlines": [
+        "\"C:\\Program Files (x86)\\PHP\\v5.5\\php-cgi.exe\""
+      ],
+      "images": [
+        "C:\\Program Files (x86)\\PHP\\v5.5\\php-cgi.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\System32\\inetsrv\\w3wp.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2116, time='2016-08-10T22:16:27.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:16:27.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2116, time='2016-08-10T22:16:27.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-3480760978fe",
+    "fingerprint": "3480760978fe813fc87b5282db0949a21f355d9623a601eb45fa3c25f00bd9a0",
+    "representative_observation_ids": [
+      "obs-169",
+      "obs-185"
+    ],
+    "count": 2,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:58:23.000+00:00",
+      "latest": "2016-08-10T22:08:13.000+00:00",
+      "span_events": 2
+    },
+    "field_summary": {
+      "cmdlines": [
+        "C:\\Windows\\system32\\cmd.exe"
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ],
+      "parent_images": [
+        "C:\\inetpub\\wwwroot\\joomla\\3791.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3424, time='2016-08-10T22:08:13.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:08:13.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3424, time='2016-08-10T22:08:13.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-4fd38c42dce4",
+    "fingerprint": "4fd38c42dce41ae9433385257f868f6cf8dc43bb8e502a17270e51da53242b82",
+    "representative_observation_ids": [
+      "obs-450",
+      "obs-466"
+    ],
+    "count": 2,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "224.0.0.252"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:34.227+00:00",
+      "latest": "2016-08-28T23:58:39.566+00:00",
+      "span_events": 2
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-a650c09aee42",
+    "fingerprint": "a650c09aee425e1d0507ac7d0ba2f54597d8b844df22e967ad921366bec66806",
+    "representative_observation_ids": [
+      "obs-138",
+      "obs-140"
+    ],
+    "count": 2,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T22:21:31.000+00:00",
+      "latest": "2016-08-10T22:21:34.000+00:00",
+      "span_events": 2
+    },
+    "field_summary": {
+      "cmdlines": [
+        "cmd.exe /c \"exit 2&gt;&amp;1\""
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ],
+      "parent_images": [
+        "C:\\Program Files (x86)\\PHP\\v5.5\\php-cgi.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=4032, time='2016-08-10T22:21:34.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:21:34.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=4032, time='2016-08-10T22:21:34.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-008e225a3e48",
+    "fingerprint": "008e225a3e485335a66b0df55e087f8e1f6fd5363107ac68004b049c5928eff9",
+    "representative_observation_ids": [
+      "obs-192"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:55:33.000+00:00",
+      "latest": "2016-08-10T21:55:33.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "cmd.exe /c \"ifconfig 2&gt;&amp;1\""
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ],
+      "parent_images": [
+        "C:\\Program Files (x86)\\PHP\\v5.5\\php-cgi.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1800, time='2016-08-10T21:55:33.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:55:33.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1800, time='2016-08-10T21:55:33.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-00c5a66b74c4",
+    "fingerprint": "00c5a66b74c4a42eafd9d90b609f9ac73704be1ed16e7bf455c7a9bf2f37bb2d",
+    "representative_observation_ids": [
+      "obs-490"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.6"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:22.129+00:00",
+      "latest": "2016-08-28T23:58:22.129+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.6')"
+      }
+    ]
+  },
+  {
+    "id": "card-08c6fd6fe656",
+    "fingerprint": "08c6fd6fe656bd0a84440db32e8dcf2d2caf53f0f9253bdbf39be036b0583242",
+    "representative_observation_ids": [
+      "obs-142"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T22:20:33.000+00:00",
+      "latest": "2016-08-10T22:20:33.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "cmd.exe /c \"move 2.jpeg imnotbatman.jpg 2&gt;&amp;1\""
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ],
+      "parent_images": [
+        "C:\\Program Files (x86)\\PHP\\v5.5\\php-cgi.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3340, time='2016-08-10T22:20:33.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:20:33.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3340, time='2016-08-10T22:20:33.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-0e6ca2744eee",
+    "fingerprint": "0e6ca2744eee337cd720f2cab12daec6e337a652ad0ea51a6763d336e3af7c92",
+    "representative_observation_ids": [
+      "obs-414"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.225.156"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:54.429+00:00",
+      "latest": "2016-08-28T23:58:54.429+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.225.156')"
+      }
+    ]
+  },
+  {
+    "id": "card-11672dcfcf76",
+    "fingerprint": "11672dcfcf761de56d07b770385d116f38221a9ad63a223785d876f0ab59001b",
+    "representative_observation_ids": [
+      "obs-475"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.224.58"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:30.546+00:00",
+      "latest": "2016-08-28T23:58:30.546+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.224.58')"
+      }
+    ]
+  },
+  {
+    "id": "card-145bdd2e2d4d",
+    "fingerprint": "145bdd2e2d4d9b1c8dbfa5966ea304141fbbafb82f41c406902626484631a9ef",
+    "representative_observation_ids": [
+      "obs-408"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.227.133"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:57.452+00:00",
+      "latest": "2016-08-28T23:58:57.452+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-149542736987",
+    "fingerprint": "1495427369879f9d52aed408175de537f16711e1db3644340343410915e1b923",
+    "representative_observation_ids": [
+      "obs-458"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.177"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:37.273+00:00",
+      "latest": "2016-08-28T23:58:37.273+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.230.177')"
+      }
+    ]
+  },
+  {
+    "id": "card-151c178814dc",
+    "fingerprint": "151c178814dcf8090bf7cca542feeff4d0c0e8e1b923e8585df56d40d6d44d45",
+    "representative_observation_ids": [
+      "obs-477"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.226.224"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:28.795+00:00",
+      "latest": "2016-08-28T23:58:28.795+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.226.224')"
+      }
+    ]
+  },
+  {
+    "id": "card-154dcb7a89f5",
+    "fingerprint": "154dcb7a89f544125acdf73285897cfe82bb127ae80fd33d60a8fe9a009f0bfc",
+    "representative_observation_ids": [
+      "obs-173"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T22:05:42.000+00:00",
+      "latest": "2016-08-10T22:05:42.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "cmd.exe /c \"echo 63059\""
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ],
+      "parent_images": [
+        "C:\\Program Files (x86)\\PHP\\v5.5\\php-cgi.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1288, time='2016-08-10T22:05:42.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:05:42.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1288, time='2016-08-10T22:05:42.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-158b07f6d593",
+    "fingerprint": "158b07f6d5930f512d58e6f78255199978bff0387ac47a8a5b84b09e0d7609f8",
+    "representative_observation_ids": [
+      "obs-452"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.206"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:38.917+00:00",
+      "latest": "2016-08-28T23:58:38.917+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.206')"
+      }
+    ]
+  },
+  {
+    "id": "card-16f17947f1e5",
+    "fingerprint": "16f17947f1e5d550f5b1ac72063512ddfa1db6c2d7557d1fa1382956684f6427",
+    "representative_observation_ids": [
+      "obs-420"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "23.203.184.161"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:52.503+00:00",
+      "latest": "2016-08-28T23:58:52.503+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='23.203.184.161')"
+      }
+    ]
+  },
+  {
+    "id": "card-1700b5c64a1d",
+    "fingerprint": "1700b5c64a1d13fa87a66332fb76252b72b389f0b8da49c8dd7068835d111a8b",
+    "representative_observation_ids": [
+      "obs-429"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.231.50"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:47.413+00:00",
+      "latest": "2016-08-28T23:58:47.413+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.231.50')"
+      }
+    ]
+  },
+  {
+    "id": "card-172255cf27f0",
+    "fingerprint": "172255cf27f0105bfbb6886db6add0f7258f2b8772e7369580bbc851406d51e4",
+    "representative_observation_ids": [
+      "obs-186"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:56:18.000+00:00",
+      "latest": "2016-08-10T21:56:18.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "3791.exe  "
+      ],
+      "images": [
+        "C:\\inetpub\\wwwroot\\joomla\\3791.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3880, time='2016-08-10T21:56:18.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:56:18.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3880, time='2016-08-10T21:56:18.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-180d638595cc",
+    "fingerprint": "180d638595cc0f52fbc0dc5883533b3799309e1bb2032a4cbdf801bfc3c0b148",
+    "representative_observation_ids": [
+      "obs-181"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:58:37.000+00:00",
+      "latest": "2016-08-10T21:58:37.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "net  share"
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\net.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=612, time='2016-08-10T21:58:37.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:58:37.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=612, time='2016-08-10T21:58:37.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-1c68c944d17b",
+    "fingerprint": "1c68c944d17bf18ff6a14bf0395913390d56df84b6fbdadb06da625d20f593e2",
+    "representative_observation_ids": [
+      "obs-425"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.225.193"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:49.197+00:00",
+      "latest": "2016-08-28T23:58:49.197+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-2187d90060b4",
+    "fingerprint": "2187d90060b4a9f0281ed98e7726e415d5ada44f0f6c1756cad47de18aaf9878",
+    "representative_observation_ids": [
+      "obs-433"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.152"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:46.011+00:00",
+      "latest": "2016-08-28T23:58:46.011+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-21c919d86902",
+    "fingerprint": "21c919d86902458d6ccefe3bc7e774f199339ca20f92b82ed217b8860806c17c",
+    "representative_observation_ids": [
+      "obs-167"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T22:11:06.000+00:00",
+      "latest": "2016-08-10T22:11:06.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "ping  http://prankglassinebracket.jumpingcrab.com:"
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\PING.EXE"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2528, time='2016-08-10T22:11:06.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:11:06.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2528, time='2016-08-10T22:11:06.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-2439c18bc457",
+    "fingerprint": "2439c18bc457f6ed5d0e19c7725ddaac5f7eabc302f6faf99273284c4c6019fe",
+    "representative_observation_ids": [
+      "obs-198"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:55:22.000+00:00",
+      "latest": "2016-08-10T21:55:22.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "cmd.exe /c \"echo 24365\""
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ],
+      "parent_images": [
+        "C:\\Program Files (x86)\\PHP\\v5.5\\php-cgi.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=308, time='2016-08-10T21:55:22.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:55:22.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=308, time='2016-08-10T21:55:22.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-243b32829f96",
+    "fingerprint": "243b32829f96842aca509ce934ced6da1765da57da881f96bc760c2c7a480f6e",
+    "representative_observation_ids": [
+      "obs-465"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.227.144"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:34.330+00:00",
+      "latest": "2016-08-28T23:58:34.330+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-249acdaba203",
+    "fingerprint": "249acdaba2035a35c566329bfb2c5348445ecca649073454e2a01c63f4e7c266",
+    "representative_observation_ids": [
+      "obs-422"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.229.165"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:51.631+00:00",
+      "latest": "2016-08-28T23:58:51.631+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.229.165')"
+      }
+    ]
+  },
+  {
+    "id": "card-28f16c4a86be",
+    "fingerprint": "28f16c4a86be4880e316820ab665a8b931b296236ea13ae1898cf3d2675465f3",
+    "representative_observation_ids": [
+      "obs-188"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:56:18.000+00:00",
+      "latest": "2016-08-10T21:56:18.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "cmd.exe /c \"3791.exe 2&gt;&amp;1\""
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ],
+      "parent_images": [
+        "C:\\Program Files (x86)\\PHP\\v5.5\\php-cgi.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2896, time='2016-08-10T21:56:18.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:56:18.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2896, time='2016-08-10T21:56:18.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-29476e042e06",
+    "fingerprint": "29476e042e06b9c8589c8cb2e5baf5d1d07da08b3a8c09ae912637b7c110470e",
+    "representative_observation_ids": [
+      "obs-154"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T22:17:22.000+00:00",
+      "latest": "2016-08-10T22:17:22.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "tasklist  "
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\tasklist.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3920, time='2016-08-10T22:17:22.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:17:22.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3920, time='2016-08-10T22:17:22.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-2afbf9ff8b55",
+    "fingerprint": "2afbf9ff8b55fe3877b54ad54c3698212fe1cb477995028a7727f8bd1e9bbdd7",
+    "representative_observation_ids": [
+      "obs-455"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.224.44"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:38.273+00:00",
+      "latest": "2016-08-28T23:58:38.273+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.224.44')"
+      }
+    ]
+  },
+  {
+    "id": "card-2d60837e96d0",
+    "fingerprint": "2d60837e96d0777fab27ecfd1e690685db52d9df0d8eeff3a4c30416bb429d66",
+    "representative_observation_ids": [
+      "obs-411"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.224.23"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:55.278+00:00",
+      "latest": "2016-08-28T23:58:55.278+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.224.23')"
+      }
+    ]
+  },
+  {
+    "id": "card-304cc9e714bf",
+    "fingerprint": "304cc9e714bfbfd547b51a376763913cf820c261b8f8a62729c988a5309598e3",
+    "representative_observation_ids": [
+      "obs-126"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\SYSTEM"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-24T16:36:25.000+00:00",
+      "latest": "2016-08-24T16:36:25.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "\"LogonUI.exe\" /flags:0x0"
+      ],
+      "images": [
+        "C:\\Windows\\System32\\LogonUI.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\System32\\winlogon.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3736, time='2016-08-24T16:36:25.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-24T16:36:25.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3736, time='2016-08-24T16:36:25.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-326e20661ffa",
+    "fingerprint": "326e20661ffaed4ea131e14e3afe877245c6d739dd0f6e18241a04d31783df13",
+    "representative_observation_ids": [
+      "obs-174"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:59:12.000+00:00",
+      "latest": "2016-08-10T21:59:12.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "net  use c:\\share"
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\net.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=140, time='2016-08-10T21:59:12.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:59:12.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=140, time='2016-08-10T21:59:12.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-334997c04e41",
+    "fingerprint": "334997c04e4195535797ce9d4c95c9c9c40e49e5b9bfa97f80acb0d8e3e2cdce",
+    "representative_observation_ids": [
+      "obs-453"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "191.232.139.214"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:38.753+00:00",
+      "latest": "2016-08-28T23:58:38.753+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='191.232.139.214')"
+      }
+    ]
+  },
+  {
+    "id": "card-33c81ac5ffd6",
+    "fingerprint": "33c81ac5ffd625599a16f676b43e135c5ae184e2a20d7677f92321533cccb99e",
+    "representative_observation_ids": [
+      "obs-436"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.224.35"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:44.849+00:00",
+      "latest": "2016-08-28T23:58:44.849+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.224.35')"
+      }
+    ]
+  },
+  {
+    "id": "card-34da3d18fc0d",
+    "fingerprint": "34da3d18fc0d0feb38e61e42eb4139dad92a82e8ea47601e24c2c22f6a70f86a",
+    "representative_observation_ids": [
+      "obs-496"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.179"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:19.916+00:00",
+      "latest": "2016-08-28T23:58:19.916+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.179')"
+      }
+    ]
+  },
+  {
+    "id": "card-36d84f64c1e7",
+    "fingerprint": "36d84f64c1e77f81030fe86e48134a9f431a73a6dbd9582da3c52517efefbdcd",
+    "representative_observation_ids": [
+      "obs-483"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.212"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:25.105+00:00",
+      "latest": "2016-08-28T23:58:25.105+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-3738d342446a",
+    "fingerprint": "3738d342446ab42ad006a6cb51f928481464edb0b25dd1e073e958fca1f58eb8",
+    "representative_observation_ids": [
+      "obs-443"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.214"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:43.253+00:00",
+      "latest": "2016-08-28T23:58:43.253+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.230.214')"
+      }
+    ]
+  },
+  {
+    "id": "card-375cb6866a27",
+    "fingerprint": "375cb6866a27bef7415514d75dc91a42933bee489dcac77e63dc07c51bec6459",
+    "representative_observation_ids": [
+      "obs-489"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.236"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:22.716+00:00",
+      "latest": "2016-08-28T23:58:22.716+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.236')"
+      }
+    ]
+  },
+  {
+    "id": "card-378320697d5d",
+    "fingerprint": "378320697d5d518f8ea82de53babd947817ac10982123bcd9a93026204cf4a46",
+    "representative_observation_ids": [
+      "obs-182"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:58:30.000+00:00",
+      "latest": "2016-08-10T21:58:30.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "whoami"
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\whoami.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3808, time='2016-08-10T21:58:30.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:58:30.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3808, time='2016-08-10T21:58:30.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-3bc382f867cf",
+    "fingerprint": "3bc382f867cfbce3107719365e72409572c007dc8b950a1bd72e8628a48f7b0b",
+    "representative_observation_ids": [
+      "obs-424"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.227.176"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:51.052+00:00",
+      "latest": "2016-08-28T23:58:51.052+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.227.176')"
+      }
+    ]
+  },
+  {
+    "id": "card-3c79fafebcd4",
+    "fingerprint": "3c79fafebcd4a98566fdc53de99165316e9328ba0cfc07f1da6fd2949e64c399",
+    "representative_observation_ids": [
+      "obs-155"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T22:17:17.000+00:00",
+      "latest": "2016-08-10T22:17:17.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "help"
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\help.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3180, time='2016-08-10T22:17:17.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:17:17.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3180, time='2016-08-10T22:17:17.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-3ca6a10e41b9",
+    "fingerprint": "3ca6a10e41b96bf93b3e02f2e03940dd697094afd270644ea61362b12260de84",
+    "representative_observation_ids": [
+      "obs-430"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.30"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:47.239+00:00",
+      "latest": "2016-08-28T23:58:47.239+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.230.30')"
+      }
+    ]
+  },
+  {
+    "id": "card-3dda693aa90d",
+    "fingerprint": "3dda693aa90d8049d4567d8e611e37e94f3a287b624f8a805801f8dc5ea8ee47",
+    "representative_observation_ids": [
+      "obs-434"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.234"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:45.980+00:00",
+      "latest": "2016-08-28T23:58:45.980+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.234')"
+      }
+    ]
+  },
+  {
+    "id": "card-3fbb780a90d5",
+    "fingerprint": "3fbb780a90d5f9c566002e72a2afc7ba472c48ee68031b7b96bb9430a21e06c1",
+    "representative_observation_ids": [
+      "obs-469"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.224.49"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:32.921+00:00",
+      "latest": "2016-08-28T23:58:32.921+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.224.49')"
+      }
+    ]
+  },
+  {
+    "id": "card-413fa4dafcde",
+    "fingerprint": "413fa4dafcdeb85f45a39071b748f204de2e59ed2268cd6b53dfeeb876c41164",
+    "representative_observation_ids": [
+      "obs-419"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.226.220"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:52.840+00:00",
+      "latest": "2016-08-28T23:58:52.840+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.226.220')"
+      }
+    ]
+  },
+  {
+    "id": "card-48e9ab3d491b",
+    "fingerprint": "48e9ab3d491b07a1a93610943fd7450e55f7faa5767880cc982f876d6cef9d09",
+    "representative_observation_ids": [
+      "obs-451"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.229.0"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:39.465+00:00",
+      "latest": "2016-08-28T23:58:39.465+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.229.0')"
+      }
+    ]
+  },
+  {
+    "id": "card-4a1b77182701",
+    "fingerprint": "4a1b771827018a58ce887c1954a4929b97c8fd560a2b63dcbfe693eb3da7608f",
+    "representative_observation_ids": [
+      "obs-493"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.226.191"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:20.475+00:00",
+      "latest": "2016-08-28T23:58:20.475+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.226.191')"
+      }
+    ]
+  },
+  {
+    "id": "card-4a6f5358e285",
+    "fingerprint": "4a6f5358e2856219ccf7515ad9bac5c61206f223fa7206d17b3ef4e6880d57cb",
+    "representative_observation_ids": [
+      "obs-175"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:58:59.000+00:00",
+      "latest": "2016-08-10T21:58:59.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "C:\\Windows\\system32\\net1  user"
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\net1.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\net.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1048, time='2016-08-10T21:58:59.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:58:59.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1048, time='2016-08-10T21:58:59.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-546d56f0ec9f",
+    "fingerprint": "546d56f0ec9f590cd29b8f4d718566b99b6f4eed257263508a34dd4fc1114177",
+    "representative_observation_ids": [
+      "obs-407"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.224.78"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:57.669+00:00",
+      "latest": "2016-08-28T23:58:57.669+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.224.78')"
+      }
+    ]
+  },
+  {
+    "id": "card-548921630078",
+    "fingerprint": "5489216300787352c12b6b95d7df63923b687af7aa55968725928849e097b156",
+    "representative_observation_ids": [
+      "obs-125"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "Window Manager\\DWM-3"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-24T16:36:26.000+00:00",
+      "latest": "2016-08-24T16:36:26.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "\"dwm.exe\""
+      ],
+      "images": [
+        "C:\\Windows\\System32\\dwm.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\System32\\winlogon.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1092, time='2016-08-24T16:36:26.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-24T16:36:26.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1092, time='2016-08-24T16:36:26.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-5561a836b1fe",
+    "fingerprint": "5561a836b1fe044b5cf3fe0531b0894b4afc7b57db3d2490e7d623dde5d1089d",
+    "representative_observation_ids": [
+      "obs-500"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.73"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:16.832+00:00",
+      "latest": "2016-08-28T23:58:16.832+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.73')"
+      }
+    ]
+  },
+  {
+    "id": "card-55a476288abf",
+    "fingerprint": "55a476288abff4a71c1807368d5c17476572b234713b41e243d206be85c8abda",
+    "representative_observation_ids": [
+      "obs-166"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T22:11:23.000+00:00",
+      "latest": "2016-08-10T22:11:23.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "nslookup  http://prankglassinebracket.jumpingcrab."
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\nslookup.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3508, time='2016-08-10T22:11:23.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:11:23.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3508, time='2016-08-10T22:11:23.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-5684cac650d8",
+    "fingerprint": "5684cac650d8a031265c2d78d484bbfcfc6a93e5ab77df6299873faed8d8bbce",
+    "representative_observation_ids": [
+      "obs-497"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.171"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:19.714+00:00",
+      "latest": "2016-08-28T23:58:19.714+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.230.171')"
+      }
+    ]
+  },
+  {
+    "id": "card-57002323d8f3",
+    "fingerprint": "57002323d8f393b1317b8af8520d662bc5b163ab5150307496e656f62e0b1c05",
+    "representative_observation_ids": [
+      "obs-404"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.225.44"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:59:00.105+00:00",
+      "latest": "2016-08-28T23:59:00.105+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-64d596b7d7dc",
+    "fingerprint": "64d596b7d7dc8842383cf395347fc0be9cb713f87c09fb5ca7d66837358d11ce",
+    "representative_observation_ids": [
+      "obs-177"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:58:50.000+00:00",
+      "latest": "2016-08-10T21:58:50.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "find  / \"\\\\\""
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\find.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=444, time='2016-08-10T21:58:50.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:58:50.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=444, time='2016-08-10T21:58:50.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-66deac0cc5a8",
+    "fingerprint": "66deac0cc5a8cda15f17772258602dfe16aa4c5718dfed7a447f8741d991ae50",
+    "representative_observation_ids": [
+      "obs-426"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.162"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:49.145+00:00",
+      "latest": "2016-08-28T23:58:49.145+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.230.162')"
+      }
+    ]
+  },
+  {
+    "id": "card-6eba719dcbc6",
+    "fingerprint": "6eba719dcbc669fa3ed9b237e8e9647d96b76a107c0bd17723ae4ed7520de7f0",
+    "representative_observation_ids": [
+      "obs-479"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.226.68"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:27.510+00:00",
+      "latest": "2016-08-28T23:58:27.510+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.226.68')"
+      }
+    ]
+  },
+  {
+    "id": "card-768c63505960",
+    "fingerprint": "768c63505960c02843ba31c2674e4ac54ae95d09745c3b551254f96fb7b61a7e",
+    "representative_observation_ids": [
+      "obs-194"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:55:26.000+00:00",
+      "latest": "2016-08-10T21:55:26.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "cmd.exe /c \"ls 2&gt;&amp;1\""
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ],
+      "parent_images": [
+        "C:\\Program Files (x86)\\PHP\\v5.5\\php-cgi.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3920, time='2016-08-10T21:55:26.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:55:26.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3920, time='2016-08-10T21:55:26.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-7c96c36fb430",
+    "fingerprint": "7c96c36fb430b321f6b6befa3cbfba9930c9aa8e5cc8d4a71881e4865d61d636",
+    "representative_observation_ids": [
+      "obs-104"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\SYSTEM"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-24T18:16:49.000+00:00",
+      "latest": "2016-08-24T18:16:49.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "C:\\Windows\\system32\\sc.exe start wuauserv"
+      ],
+      "images": [
+        "C:\\Windows\\System32\\sc.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\System32\\svchost.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2056, time='2016-08-24T18:16:49.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-24T18:16:49.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2056, time='2016-08-24T18:16:49.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-7e12ebd6dfd5",
+    "fingerprint": "7e12ebd6dfd5f67f07fd4626ceb5acfdf879f74c13fa4c6066a4774365320f14",
+    "representative_observation_ids": [
+      "obs-413"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.88"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:54.479+00:00",
+      "latest": "2016-08-28T23:58:54.479+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.88')"
+      }
+    ]
+  },
+  {
+    "id": "card-82284f1b49fa",
+    "fingerprint": "82284f1b49fa1f01cd303a3a8bef21c068760965b11c4f5f8d98baf0a8300b34",
+    "representative_observation_ids": [
+      "obs-473"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.229.165"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:32.543+00:00",
+      "latest": "2016-08-28T23:58:32.543+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.229.165')"
+      }
+    ]
+  },
+  {
+    "id": "card-849824739ba8",
+    "fingerprint": "849824739ba84f846ffbf3cb243512958104f723885ea3296b891938fcdc8c72",
+    "representative_observation_ids": [
+      "obs-456"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.164"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:37.754+00:00",
+      "latest": "2016-08-28T23:58:37.754+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.230.164')"
+      }
+    ]
+  },
+  {
+    "id": "card-849e8cbff924",
+    "fingerprint": "849e8cbff924e70843921a929d2692eb95f7da09435981f18464342a5455d0d2",
+    "representative_observation_ids": [
+      "obs-499"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.227.232"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:18.057+00:00",
+      "latest": "2016-08-28T23:58:18.057+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.227.232')"
+      }
+    ]
+  },
+  {
+    "id": "card-856be90f682b",
+    "fingerprint": "856be90f682bf4d9adee75d77a5068aa27e40be54d6ab1cb83da6bdc1581a963",
+    "representative_observation_ids": [
+      "obs-462"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.7"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:36.009+00:00",
+      "latest": "2016-08-28T23:58:36.009+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.230.7')"
+      }
+    ]
+  },
+  {
+    "id": "card-886e430ccbd2",
+    "fingerprint": "886e430ccbd2053b5e485db496d54e330d6d0941007f33a5c66663c9a3c6b147",
+    "representative_observation_ids": [
+      "obs-146"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T22:20:10.000+00:00",
+      "latest": "2016-08-10T22:20:10.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "cmd.exe /c \"move ..\\1.jpeg 2.jpeg 2&gt;&amp;1\""
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ],
+      "parent_images": [
+        "C:\\Program Files (x86)\\PHP\\v5.5\\php-cgi.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=836, time='2016-08-10T22:20:10.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:20:10.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=836, time='2016-08-10T22:20:10.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-8dcd41b28cf1",
+    "fingerprint": "8dcd41b28cf14d2d9d528b4b10f85a95759825cf258d041143121b365ce6b33a",
+    "representative_observation_ids": [
+      "obs-178"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:58:50.000+00:00",
+      "latest": "2016-08-10T21:58:50.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "C:\\Windows\\system32\\net1  session "
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\net1.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\net.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2608, time='2016-08-10T21:58:50.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:58:50.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2608, time='2016-08-10T21:58:50.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-8f6b3f6c8acc",
+    "fingerprint": "8f6b3f6c8acc9d56489b103c1403dd62b7d1c9244c7b28cca5dda12d8e7523f0",
+    "representative_observation_ids": [
+      "obs-439"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.151"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:44.157+00:00",
+      "latest": "2016-08-28T23:58:44.157+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.230.151')"
+      }
+    ]
+  },
+  {
+    "id": "card-9057a4e27ef3",
+    "fingerprint": "9057a4e27ef326232d3b770cf902586a314e3ff06e9ad543bf8aaff7df98a166",
+    "representative_observation_ids": [
+      "obs-128"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\SYSTEM"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-24T16:36:24.000+00:00",
+      "latest": "2016-08-24T16:36:24.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "%SystemRoot%\\system32\\csrss.exe ObjectDirectory=\\Windows SharedSection=1024,20480,768 Windows=On SubSystemType=Windows ServerDll=basesrv,1 ServerDll=winsrv:UserServerDllInitialization,3 ServerDll=sxssrv,4 ProfileControl=Off MaxRequestThreads=16"
+      ],
+      "images": [
+        "C:\\Windows\\System32\\csrss.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\System32\\smss.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=4072, time='2016-08-24T16:36:24.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-24T16:36:24.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=4072, time='2016-08-24T16:36:24.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-90952a928ec7",
+    "fingerprint": "90952a928ec7de359bea0f4594e8310d63d85e6fc845fec9185b565d288d3833",
+    "representative_observation_ids": [
+      "obs-416"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.226.95"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:53.611+00:00",
+      "latest": "2016-08-28T23:58:53.611+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.226.95')"
+      }
+    ]
+  },
+  {
+    "id": "card-90b5460ed904",
+    "fingerprint": "90b5460ed904e43ea2b55e3ed6924fc9bd92fd924ad0f295c9b3025e5e21a2c2",
+    "representative_observation_ids": [
+      "obs-476"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.229.229"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:30.296+00:00",
+      "latest": "2016-08-28T23:58:30.296+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.229.229')"
+      }
+    ]
+  },
+  {
+    "id": "card-99b801a44247",
+    "fingerprint": "99b801a442475ea73d49c10bb970c273ad145a5efcc591fe5a141862418e4180",
+    "representative_observation_ids": [
+      "obs-435"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.229.207"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:45.429+00:00",
+      "latest": "2016-08-28T23:58:45.429+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.229.207')"
+      }
+    ]
+  },
+  {
+    "id": "card-9a58ee923f24",
+    "fingerprint": "9a58ee923f240a47b40b9816781b3e302971085f43a0cf27ba1d6244b7b1093d",
+    "representative_observation_ids": [
+      "obs-437"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.229.241"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:44.351+00:00",
+      "latest": "2016-08-28T23:58:44.351+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-9ac5d18b31aa",
+    "fingerprint": "9ac5d18b31aaaa1576427e7504018d92610790e2cd232f98463f4482ba7f99f1",
+    "representative_observation_ids": [
+      "obs-183"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:58:28.000+00:00",
+      "latest": "2016-08-10T21:58:28.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "net  view /domain"
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\net.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3900, time='2016-08-10T21:58:28.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:58:28.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3900, time='2016-08-10T21:58:28.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-9da9e03dfc9d",
+    "fingerprint": "9da9e03dfc9d00ec36efddab38ced674e7116bae5fa417ed604e28b490041d1a",
+    "representative_observation_ids": [
+      "obs-481"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.40"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:26.691+00:00",
+      "latest": "2016-08-28T23:58:26.691+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-a08bd2570019",
+    "fingerprint": "a08bd25700191330782d3e8d7d01a2be1d2a701695bc5babaa5802b492911a0b",
+    "representative_observation_ids": [
+      "obs-491"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.226.123"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:21.929+00:00",
+      "latest": "2016-08-28T23:58:21.929+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.226.123')"
+      }
+    ]
+  },
+  {
+    "id": "card-a33316bd82ed",
+    "fingerprint": "a33316bd82ed8b433cd084dc4798e748c63537441b988a70f3faaf13bce3c977",
+    "representative_observation_ids": [
+      "obs-127"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\SYSTEM"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-24T16:36:24.000+00:00",
+      "latest": "2016-08-24T16:36:24.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "winlogon.exe"
+      ],
+      "images": [
+        "C:\\Windows\\System32\\winlogon.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\System32\\smss.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3904, time='2016-08-24T16:36:24.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-24T16:36:24.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=3904, time='2016-08-24T16:36:24.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-a8b3934cb3cf",
+    "fingerprint": "a8b3934cb3cfac54bb89540ce076d78fa3f3c1d1bd0e726c0ad199e2899a459f",
+    "representative_observation_ids": [
+      "obs-487"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.225.36"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:23.677+00:00",
+      "latest": "2016-08-28T23:58:23.677+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.225.36')"
+      }
+    ]
+  },
+  {
+    "id": "card-b18a3fff8ec6",
+    "fingerprint": "b18a3fff8ec6f15f884b5e2474338af863d8d7b6e1a06a760658fa062c1431d8",
+    "representative_observation_ids": [
+      "obs-459"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.231.37"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:37.256+00:00",
+      "latest": "2016-08-28T23:58:37.256+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.231.37')"
+      }
+    ]
+  },
+  {
+    "id": "card-b44c854918a5",
+    "fingerprint": "b44c854918a5e56b910f9a657e1707b1337066ecaae7b1fb6c84751b07b4a03a",
+    "representative_observation_ids": [
+      "obs-442"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.225.80"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:43.266+00:00",
+      "latest": "2016-08-28T23:58:43.266+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.225.80')"
+      }
+    ]
+  },
+  {
+    "id": "card-b5b3588b0535",
+    "fingerprint": "b5b3588b0535736ecc7a368ea38b809cdbe7a115695867fbb91e29d5605acad4",
+    "representative_observation_ids": [
+      "obs-471"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.36"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:32.819+00:00",
+      "latest": "2016-08-28T23:58:32.819+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.36')"
+      }
+    ]
+  },
+  {
+    "id": "card-bef3b6c2091a",
+    "fingerprint": "bef3b6c2091ad05f0c71ad8a7c8e232898ea55a3c5dbdd6ba4de7dcdbec6b6e2",
+    "representative_observation_ids": [
+      "obs-180"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:58:37.000+00:00",
+      "latest": "2016-08-10T21:58:37.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "C:\\Windows\\system32\\net1  share"
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\net1.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\net.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1984, time='2016-08-10T21:58:37.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:58:37.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1984, time='2016-08-10T21:58:37.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-c150069548b4",
+    "fingerprint": "c150069548b4035bff6f196eb08e7f7a3907e3092fbd21148f2c00bf4cda706c",
+    "representative_observation_ids": [
+      "obs-485"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.227.232"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:23.745+00:00",
+      "latest": "2016-08-28T23:58:23.745+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-c4722ccd97b7",
+    "fingerprint": "c4722ccd97b72a37d51e2ab78a624f41dd4066730d85ccedf3e63efe62b32ae2",
+    "representative_observation_ids": [
+      "obs-179"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:58:50.000+00:00",
+      "latest": "2016-08-10T21:58:50.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "net  session "
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\net.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2656, time='2016-08-10T21:58:50.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:58:50.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2656, time='2016-08-10T21:58:50.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-c4e3162dc0f9",
+    "fingerprint": "c4e3162dc0f98ad6bf39df4237764eb669fedc70218c01094e07f40a34f7298c",
+    "representative_observation_ids": [
+      "obs-421"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.227.198"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:51.792+00:00",
+      "latest": "2016-08-28T23:58:51.792+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.227.198')"
+      }
+    ]
+  },
+  {
+    "id": "card-c6c7a453f0a0",
+    "fingerprint": "c6c7a453f0a0495a9e2dd6af9d8febc6ad5a6197f8d3d101d9a855760df06075",
+    "representative_observation_ids": [
+      "obs-438"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.27"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:44.350+00:00",
+      "latest": "2016-08-28T23:58:44.350+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.230.27')"
+      }
+    ]
+  },
+  {
+    "id": "card-c7c8b4d663bb",
+    "fingerprint": "c7c8b4d663bb212950fc848d10c9c4b805e844194333d23178a691e0a6214a4f",
+    "representative_observation_ids": [
+      "obs-470"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.227.112"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:32.908+00:00",
+      "latest": "2016-08-28T23:58:32.908+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.227.112')"
+      }
+    ]
+  },
+  {
+    "id": "card-ced92212ac8b",
+    "fingerprint": "ced92212ac8bfe2bba1a7bd360dbe0ccb0b438f8a1f5b73cefc4f4f4f110d10c",
+    "representative_observation_ids": [
+      "obs-498"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.227.24"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:18.806+00:00",
+      "latest": "2016-08-28T23:58:18.806+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.227.24')"
+      }
+    ]
+  },
+  {
+    "id": "card-d124e591e718",
+    "fingerprint": "d124e591e718aa7e5ae50d4cd822d1964ae46544c692dfa0246aeaa3938c4d21",
+    "representative_observation_ids": [
+      "obs-427"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.224.47"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:49.106+00:00",
+      "latest": "2016-08-28T23:58:49.106+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.224.47')"
+      }
+    ]
+  },
+  {
+    "id": "card-e09e91842d89",
+    "fingerprint": "e09e91842d89fdf52501824497f37ea7f9e6d235948ce81ffccf0b7470d1629b",
+    "representative_observation_ids": [
+      "obs-401"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.189"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:59:00.611+00:00",
+      "latest": "2016-08-28T23:59:00.611+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.189')"
+      }
+    ]
+  },
+  {
+    "id": "card-e49155291671",
+    "fingerprint": "e49155291671fcc35a06c7dd57aee65750d86e33b673710184f91381c3b6de61",
+    "representative_observation_ids": [
+      "obs-440"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.226.109"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:43.722+00:00",
+      "latest": "2016-08-28T23:58:43.722+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.226.109')"
+      }
+    ]
+  },
+  {
+    "id": "card-e6ea83262176",
+    "fingerprint": "e6ea8326217628d2a301c6da455767b98fcd322bd529077c502236a85eccc99f",
+    "representative_observation_ids": [
+      "obs-454"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.224.23"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:38.624+00:00",
+      "latest": "2016-08-28T23:58:38.624+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.224.23')"
+      }
+    ]
+  },
+  {
+    "id": "card-e9ba349dc95f",
+    "fingerprint": "e9ba349dc95f5d4d5e16affc30ea836b21b0d7e00447a5bdfc424d0bd75261e6",
+    "representative_observation_ids": [
+      "obs-474"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.231.10"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:31.353+00:00",
+      "latest": "2016-08-28T23:58:31.353+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.231.10')"
+      }
+    ]
+  },
+  {
+    "id": "card-ea1b6113b96b",
+    "fingerprint": "ea1b6113b96b3950c0e60f7361aeb8989820694643555cf6dd2545ce72fc81a5",
+    "representative_observation_ids": [
+      "obs-447"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.148"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:42.912+00:00",
+      "latest": "2016-08-28T23:58:42.912+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.148')"
+      }
+    ]
+  },
+  {
+    "id": "card-eb51ba17bc89",
+    "fingerprint": "eb51ba17bc895a80ad48750ede49af0f3a4855d4c8f05c2aa39354c0e94110e4",
+    "representative_observation_ids": [
+      "obs-445"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.219"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:43.028+00:00",
+      "latest": "2016-08-28T23:58:43.028+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.219')"
+      }
+    ]
+  },
+  {
+    "id": "card-ebd6304b7fbe",
+    "fingerprint": "ebd6304b7fbedf5c4f25491f62224aa15848151c0610ac1baa1cb5e9e406c887",
+    "representative_observation_ids": [
+      "obs-132"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "IIS APPPOOL\\DefaultAppPool"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-24T16:33:46.000+00:00",
+      "latest": "2016-08-24T16:33:46.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "c:\\windows\\system32\\inetsrv\\w3wp.exe -ap \"DefaultAppPool\" -v \"v4.0\" -l \"webengine4.dll\" -a \\\\.\\pipe\\iisipm45a13fae-8ca5-408b-a9e4-631fc0631086 -h \"C:\\inetpub\\temp\\apppools\\DefaultAppPool\\DefaultAppPool.config\" -w \"\" -m 0 -t 20 -ta 0"
+      ],
+      "images": [
+        "C:\\Windows\\System32\\inetsrv\\w3wp.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\System32\\svchost.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2416, time='2016-08-24T16:33:46.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-24T16:33:46.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2416, time='2016-08-24T16:33:46.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-ebfe5228e741",
+    "fingerprint": "ebfe5228e741edaff210988f595964fe36b335cc27b58cbf2c2b872ab2bae123",
+    "representative_observation_ids": [
+      "obs-448"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "204.79.197.200"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:42.794+00:00",
+      "latest": "2016-08-28T23:58:42.794+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='204.79.197.200')"
+      }
+    ]
+  },
+  {
+    "id": "card-ecff65ad3e50",
+    "fingerprint": "ecff65ad3e50d8619ec57612a122d565ab7137ab76c820602a7c02a730f892dc",
+    "representative_observation_ids": [
+      "obs-176"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:58:59.000+00:00",
+      "latest": "2016-08-10T21:58:59.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "net  user"
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\net.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=4092, time='2016-08-10T21:58:59.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T21:58:59.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=4092, time='2016-08-10T21:58:59.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-ed3631c3c307",
+    "fingerprint": "ed3631c3c307d9b382c7138b1c6022ef84f6471fdc7573adea607cd3e52f1f06",
+    "representative_observation_ids": [
+      "obs-165"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\IUSR"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T22:11:30.000+00:00",
+      "latest": "2016-08-10T22:11:30.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "nslookup  prankglassinebracket.jumpingcrab.com"
+      ],
+      "images": [
+        "C:\\Windows\\SysWOW64\\nslookup.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\SysWOW64\\cmd.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1648, time='2016-08-10T22:11:30.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-10T22:11:30.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=1648, time='2016-08-10T22:11:30.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-ed9e3a02724e",
+    "fingerprint": "ed9e3a02724eddc541ef8e1cfb187cea0b66d241e11c5656367501c48e5df326",
+    "representative_observation_ids": [
+      "obs-449"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.227.12"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:41.902+00:00",
+      "latest": "2016-08-28T23:58:41.902+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.227.12')"
+      }
+    ]
+  },
+  {
+    "id": "card-eddf35f4aa5a",
+    "fingerprint": "eddf35f4aa5a9af931312974587d58f21f7421682b037fe2fe33912ca40c721d",
+    "representative_observation_ids": [
+      "obs-423"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.227.200"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:51.230+00:00",
+      "latest": "2016-08-28T23:58:51.230+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-f16cadf1d19c",
+    "fingerprint": "f16cadf1d19c9456eac47fb8e771188281860df5864e07a0631beb49da7f7b1b",
+    "representative_observation_ids": [
+      "obs-478"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.230.170"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:27.933+00:00",
+      "latest": "2016-08-28T23:58:27.933+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.230.170')"
+      }
+    ]
+  },
+  {
+    "id": "card-f59b76aecff9",
+    "fingerprint": "f59b76aecff9d3c56df369525c9acbd74c80d66a87a585d553e428a424d2baa7",
+    "representative_observation_ids": [
+      "obs-480"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.225.111"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:27.332+00:00",
+      "latest": "2016-08-28T23:58:27.332+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "dns_activity",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "resolved_domain",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "Domain(kind=<EntityKind.DOMAIN: 'domain'>, name='None')"
+      }
+    ]
+  },
+  {
+    "id": "card-f70a8198f28b",
+    "fingerprint": "f70a8198f28ba7f8084e513216dc6f9bc9adfdf8eabefb929b68ab6c8ca88567",
+    "representative_observation_ids": [
+      "obs-441"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.225.33"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:43.334+00:00",
+      "latest": "2016-08-28T23:58:43.334+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.225.33')"
+      }
+    ]
+  },
+  {
+    "id": "card-f8b9d90f9f1f",
+    "fingerprint": "f8b9d90f9f1ff8666e71798755723923187cc147ef165b545e443fc427fbc5ff",
+    "representative_observation_ids": [
+      "obs-457"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "191.232.139.214"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:37.640+00:00",
+      "latest": "2016-08-28T23:58:37.640+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='191.232.139.214')"
+      }
+    ]
+  },
+  {
+    "id": "card-fbe7e7601b6c",
+    "fingerprint": "fbe7e7601b6cfd467c24cd675ff1de71fa71a7e03612a3c8c00355748f19c3b2",
+    "representative_observation_ids": [
+      "obs-129"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "we1149srv"
+      ],
+      "users": [
+        "NT AUTHORITY\\SYSTEM"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-24T16:36:24.000+00:00",
+      "latest": "2016-08-24T16:36:24.000+00:00",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "\\SystemRoot\\System32\\smss.exe 00000000 00000050 "
+      ],
+      "images": [
+        "C:\\Windows\\System32\\smss.exe"
+      ],
+      "parent_images": [
+        "C:\\Windows\\System32\\smss.exe"
+      ]
+    },
+    "fact_type": "process_execution",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "executed_process",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='we1149srv')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2600, time='2016-08-24T16:36:24.000+00:00')"
+      },
+      {
+        "relation": "spawned_process",
+        "source": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=0, time='2016-08-24T16:36:24.000+00:00')",
+        "target": "Process(kind=<EntityKind.PROCESS: 'process'>, host='we1149srv', pid=2600, time='2016-08-24T16:36:24.000+00:00')"
+      }
+    ]
+  },
+  {
+    "id": "card-fcbfe3b58429",
+    "fingerprint": "fcbfe3b58429aceb785f0a78ca609c1a10f57dfc1ba1639e51d3716fcc650ff0",
+    "representative_observation_ids": [
+      "obs-467"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.229.78"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:33.634+00:00",
+      "latest": "2016-08-28T23:58:33.634+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.229.78')"
+      }
+    ]
+  },
+  {
+    "id": "card-fe66df7f1ff1",
+    "fingerprint": "fe66df7f1ff1f67acfc53b277b4ff4ea17ac81d027525e2f5c689b0e9ec27c8e",
+    "representative_observation_ids": [
+      "obs-410"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.70"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:55.724+00:00",
+      "latest": "2016-08-28T23:58:55.724+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.70')"
+      }
+    ]
+  },
+  {
+    "id": "card-fe798d8a8803",
+    "fingerprint": "fe798d8a8803190d194a5712804b1e44728904241f93936e822445208188516d",
+    "representative_observation_ids": [
+      "obs-486"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.226.110"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:23.692+00:00",
+      "latest": "2016-08-28T23:58:23.692+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.226.110')"
+      }
+    ]
+  },
+  {
+    "id": "card-ff2402dacce4",
+    "fingerprint": "ff2402dacce45b4ac306fdecabe7693ce2ff4ca33a3a638e18d7cd86971b26fa",
+    "representative_observation_ids": [
+      "obs-463"
+    ],
+    "count": 1,
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "destination_ips": [
+        "192.168.228.154"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-28T23:58:35.796+00:00",
+      "latest": "2016-08-28T23:58:35.796+00:00",
+      "span_events": 1
+    },
+    "field_summary": {},
+    "fact_type": "network_connection",
+    "completeness": "complete",
+    "relations": [
+      {
+        "relation": "connected_to",
+        "source": "Host(kind=<EntityKind.HOST: 'host'>, name='splunk-02')",
+        "target": "IPAddress(kind=<EntityKind.IP: 'ip'>, address='192.168.228.154')"
+      }
+    ]
+  }
+]

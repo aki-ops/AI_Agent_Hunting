@@ -2,12 +2,13 @@
 
 Enforces:
 - Deterministic compatibility checking of EvidenceCards against Hypotheses.
-- Ambiguous or novel cards are evaluated in micro-batches (max 1 LLM call per epoch).
+        - Ambiguous or novel cards are evaluated in micro-batches (max 1 LLM call per epoch).
 - LLM receives card summaries/deltas, NEVER the full raw ledger.
 """
 from __future__ import annotations
 
 import json
+import logging
 from collections import defaultdict
 from typing import Any, Callable
 
@@ -18,8 +19,10 @@ from hunting.contracts.expectations import (
     FieldOp,
     FieldPredicate,
 )
-from hunting.contracts.hunt import EvidenceCard, Hypothesis
+from hunting.contracts.hunt import EvidenceAssessment, EvidenceCard, Hypothesis
 from hunting.controller.reasoning import evaluate_field_predicate
+
+logger = logging.getLogger(__name__)
 
 REQ_FACT_MAP: dict[EvidenceRequirement, set[str]] = {
     EvidenceRequirement.PROCESS_ANCESTRY: {"process_execution"},
@@ -28,6 +31,7 @@ REQ_FACT_MAP: dict[EvidenceRequirement, set[str]] = {
     EvidenceRequirement.FILE_MODIFICATION: {"file_modification"},
     EvidenceRequirement.DNS_ACTIVITY: {"dns_activity"},
     EvidenceRequirement.PERSISTENCE_CHANGE: {"persistence_change"},
+    EvidenceRequirement.WEB_REQUEST: {"web_request", "web_activity", "http_traffic"},
     EvidenceRequirement.SCOPE_RECORDS: {
         "process_execution",
         "authentication_activity",
@@ -35,6 +39,8 @@ REQ_FACT_MAP: dict[EvidenceRequirement, set[str]] = {
         "file_modification",
         "dns_activity",
         "persistence_change",
+        "web_request",
+        "web_activity",
         "telemetry",
     },
 }
@@ -67,12 +73,13 @@ class EvidenceEvaluator:
             )
             if ent_name:
                 ent_lower = str(ent_name).strip().lower()
+                ent_root = ent_lower[4:] if ent_lower.startswith("www.") else ent_lower
                 all_card_entities = [
                     str(e).strip().lower()
                     for ent_list in card.entity_summary.values()
                     for e in (ent_list if isinstance(ent_list, list) else [ent_list])
                 ]
-                if all_card_entities and ent_lower not in all_card_entities:
+                if all_card_entities and not (ent_lower in all_card_entities or ent_root in all_card_entities):
                     return False
 
         # 3. Field predicate match (if expectation has a field predicate)
@@ -106,23 +113,6 @@ class EvidenceEvaluator:
 
         return True
 
-    def _matches_heuristic(self, card: EvidenceCard, h: Hypothesis) -> bool:
-        """Deterministic keyword heuristic for legacy/fallback evaluation."""
-        h_text = h.statement.lower()
-        if card.fact_type == "process_execution" and ("process" in h_text or "exploit" in h_text or "powershell" in h_text):
-            return True
-        elif card.fact_type == "network_connection" and ("c2" in h_text or "network" in h_text or "beacon" in h_text):
-            return True
-        elif card.fact_type == "persistence_change" and ("task" in h_text or "persist" in h_text):
-            return True
-        elif card.fact_type == "file_modification" and ("file" in h_text or "webshell" in h_text):
-            return True
-        elif card.fact_type == "authentication_activity" and ("auth" in h_text or "logon" in h_text):
-            return True
-        elif card.fact_type == "dns_activity" and ("dns" in h_text or "domain" in h_text):
-            return True
-        return False
-
     def evaluate_cards(
         self,
         cards: list[EvidenceCard],
@@ -148,21 +138,16 @@ class EvidenceEvaluator:
                     if h_exps:
                         if any(self.evaluate_card_against_expectation(card, exp) for exp in h_exps):
                             matched_hypo_ids.append(h.id)
-                    else:
-                        if self._matches_heuristic(card, h):
-                            matched_hypo_ids.append(h.id)
+                    # No expectation means there is no typed semantic basis for
+                    # deterministic attribution. It must remain ambiguous and
+                    # go through the bounded batch evaluator below.
 
                 if matched_hypo_ids:
                     compatibility[card.id] = matched_hypo_ids
                 else:
                     ambiguous_cards.append(card)
         else:
-            for card in cards:
-                compatible_hypotheses = [h.id for h in hypotheses if self._matches_heuristic(card, h)]
-                if compatible_hypotheses:
-                    compatibility[card.id] = compatible_hypotheses
-                else:
-                    ambiguous_cards.append(card)
+            ambiguous_cards.extend(cards)
 
         # 2. Batch ambiguous cards together (NO per-event or per-card individual calls!)
         if ambiguous_cards and self.llm_caller is not None:
@@ -186,6 +171,10 @@ class EvidenceEvaluator:
         if self.llm_caller is None:
             return {c.id: [] for c in cards}
         self.llm_calls_made += 1
+
+        valid_card_ids = {c.id for c in cards}
+        valid_hypo_ids = {h.id for h in hypotheses}
+        validated_compat: dict[str, list[str]] = {c.id: [] for c in cards}
 
         card_summaries = [
             {
@@ -211,11 +200,80 @@ class EvidenceEvaluator:
         try:
             res = json.loads(raw_resp)
             if isinstance(res, dict):
-                return {k: list(v) for k, v in res.items()}
-        except Exception:
-            pass
+                # Check if wrapped in "evaluations" list
+                if "evaluations" in res and isinstance(res["evaluations"], list):
+                    for item in res["evaluations"]:
+                        if isinstance(item, dict) and "card_id" in item:
+                            cid = str(item["card_id"]).strip()
+                            hyps = item.get("compatible_hypotheses") or item.get("hypotheses") or []
+                            if not hyps and "hypothesis_evaluations" in item:
+                                hyps = [
+                                    he.get("hypothesis_id")
+                                    for he in item["hypothesis_evaluations"]
+                                    if isinstance(he, dict) and he.get("hypothesis_id")
+                                ]
+                            if cid in valid_card_ids and isinstance(hyps, list):
+                                validated_compat[cid] = [
+                                    str(h_id).strip()
+                                    for h_id in hyps
+                                    if str(h_id).strip() in valid_hypo_ids
+                                ]
+                else:
+                    for k, v in res.items():
+                        k_str = str(k).strip()
+                        if k_str in valid_card_ids and isinstance(v, list):
+                            # Filter out hallucinated hypothesis IDs
+                            filtered_hypos = [str(h_id).strip() for h_id in v if str(h_id).strip() in valid_hypo_ids]
+                            validated_compat[k_str] = filtered_hypos
+                return validated_compat
+        except Exception as e:
+            logger.debug(f"LLM evidence evaluation parse error: {e}")
 
-        return {c.id: [] for c in cards}
+        return validated_compat
+
+    def evaluate_evidence_advisory(
+        self,
+        card: EvidenceCard,
+        hypotheses: list[Hypothesis],
+        expectations: list[Expectation] | None = None,
+    ) -> EvidenceAssessment:
+        """Produce advisory semantic assessment for an EvidenceCard."""
+        expectations_by_hypothesis: dict[str, list[Expectation]] = defaultdict(list)
+        for expectation in expectations or []:
+            expectations_by_hypothesis[expectation.owner_explanation_id].append(expectation)
+
+        # Advisory output is grounded only in typed expectations. With no
+        # expectation, the correct result is unknown—not a keyword guess.
+        compatible = [
+            h.id
+            for h in hypotheses
+            if any(
+                self.evaluate_card_against_expectation(card, expectation)
+                for expectation in expectations_by_hypothesis.get(h.id, [])
+            )
+        ]
+        confidence = 0.85 if compatible else 0.0
+        if compatible:
+            reason = f"EvidenceCard fact_type '{card.fact_type}' matches {len(compatible)} hypotheses"
+        elif expectations:
+            reason = "EvidenceCard did not satisfy any typed expectation"
+        else:
+            reason = "No typed expectation was available; attribution remains unknown"
+        missing = [] if compatible else [h.id for h in hypotheses]
+        source_refs = getattr(card, "source_refs", None)
+        if source_refs is None:
+            source_refs = list(getattr(card, "representative_observation_ids", []))
+        else:
+            source_refs = list(source_refs)
+
+        return EvidenceAssessment(
+            card_id=card.id,
+            compatible_hypotheses=compatible,
+            confidence=confidence,
+            reason=reason,
+            missing_evidence=missing,
+            source_refs=source_refs,
+        )
 
 
-__all__ = ["EvidenceEvaluator"]
+__all__ = ["EvidenceEvaluator", "REQ_FACT_MAP"]

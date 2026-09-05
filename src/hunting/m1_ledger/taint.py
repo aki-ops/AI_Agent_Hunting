@@ -86,13 +86,6 @@ def label_field_taint(field_name: str, value: Any = None, context: dict[str, Any
     if fn_lower in _ATTACKER_INFLUENCED_FIELDS:
         return TaintLabel.ATTACKER_INFLUENCED
 
-    # Partial / substring heuristics for common patterns
-    if any(s in fn_lower for s in ("cmd", "command", "query", "url", "path", "script", "payload")):
-        return TaintLabel.ATTACKER_INFLUENCED
-
-    if any(s in fn_lower for s in ("port", "time", "id", "pid", "status")):
-        return TaintLabel.STRUCTURAL
-
     # Special case: user field when logon failed or attacker-supplied
     if fn_lower in ("user", "username", "target_user"):
         if context and context.get("logon_status") in ("failed", "failure", 4625):

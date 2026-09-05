@@ -1,0 +1,1656 @@
+{
+  "stopping_decision": "STOP_EXHAUSTED_BY_BUDGET",
+  "hunt_outcome": "SUPPORTED",
+  "hypotheses": [
+    {
+      "id": "hypo-hunt-botsv1-web-01-active",
+      "statement": "Attacker compromised web www.imreallynotbatman.com",
+      "origin": "INPUT",
+      "status": "SUPPORTED",
+      "source_refs": [],
+      "requirements": [
+        "req-hunt-botsv1-web-01-web_request",
+        "req-hunt-botsv1-web-01-process_ancestry",
+        "req-hunt-botsv1-web-01-file_modification"
+      ]
+    },
+    {
+      "id": "hypo-hunt-botsv1-web-01-benign",
+      "statement": "Telemetry reflects normal operational baseline; refuted hypothesis: 'Attacker compromised web www.imreallynotbatman.com'",
+      "origin": "RULE",
+      "status": "REFUTED",
+      "source_refs": [],
+      "requirements": [
+        "req-hunt-botsv1-web-01-baseline"
+      ]
+    }
+  ],
+  "evidence_assessments": [
+    {
+      "card_id": "card-be13cd255f96",
+      "compatible_hypotheses": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "confidence": 0.85,
+      "reason": "EvidenceCard fact_type 'web_request' matches 2 hypotheses",
+      "missing_evidence": [],
+      "source_refs": [
+        "obs-sweep-1",
+        "obs-sweep-2",
+        "obs-sweep-3"
+      ]
+    },
+    {
+      "card_id": "card-c7c92b3ea5ed",
+      "compatible_hypotheses": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "confidence": 0.85,
+      "reason": "EvidenceCard fact_type 'web_request' matches 2 hypotheses",
+      "missing_evidence": [],
+      "source_refs": [
+        "obs-sweep-19",
+        "obs-sweep-39"
+      ]
+    },
+    {
+      "card_id": "card-cfbbc54b5383",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-103",
+        "obs-137",
+        "obs-139"
+      ]
+    },
+    {
+      "card_id": "card-f40f054614e7",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-102",
+        "obs-106",
+        "obs-108"
+      ]
+    },
+    {
+      "card_id": "card-7eaa1c065b10",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-101",
+        "obs-105",
+        "obs-107"
+      ]
+    },
+    {
+      "card_id": "card-7670bbd751dd",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-144",
+        "obs-148",
+        "obs-150"
+      ]
+    },
+    {
+      "card_id": "card-b778a65522eb",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-158",
+        "obs-199",
+        "obs-200"
+      ]
+    },
+    {
+      "card_id": "card-3480760978fe",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-169",
+        "obs-185"
+      ]
+    },
+    {
+      "card_id": "card-a650c09aee42",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-138",
+        "obs-140"
+      ]
+    },
+    {
+      "card_id": "card-008e225a3e48",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-192"
+      ]
+    },
+    {
+      "card_id": "card-08c6fd6fe656",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-142"
+      ]
+    },
+    {
+      "card_id": "card-154dcb7a89f5",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-173"
+      ]
+    },
+    {
+      "card_id": "card-172255cf27f0",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-186"
+      ]
+    },
+    {
+      "card_id": "card-180d638595cc",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-181"
+      ]
+    },
+    {
+      "card_id": "card-21c919d86902",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-167"
+      ]
+    },
+    {
+      "card_id": "card-2439c18bc457",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-198"
+      ]
+    },
+    {
+      "card_id": "card-28f16c4a86be",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-188"
+      ]
+    },
+    {
+      "card_id": "card-29476e042e06",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-154"
+      ]
+    },
+    {
+      "card_id": "card-304cc9e714bf",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-126"
+      ]
+    },
+    {
+      "card_id": "card-326e20661ffa",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-174"
+      ]
+    },
+    {
+      "card_id": "card-378320697d5d",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-182"
+      ]
+    },
+    {
+      "card_id": "card-3c79fafebcd4",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-155"
+      ]
+    },
+    {
+      "card_id": "card-4a6f5358e285",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-175"
+      ]
+    },
+    {
+      "card_id": "card-548921630078",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-125"
+      ]
+    },
+    {
+      "card_id": "card-55a476288abf",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-166"
+      ]
+    },
+    {
+      "card_id": "card-64d596b7d7dc",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-177"
+      ]
+    },
+    {
+      "card_id": "card-768c63505960",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-194"
+      ]
+    },
+    {
+      "card_id": "card-7c96c36fb430",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-104"
+      ]
+    },
+    {
+      "card_id": "card-886e430ccbd2",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-146"
+      ]
+    },
+    {
+      "card_id": "card-8dcd41b28cf1",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-178"
+      ]
+    },
+    {
+      "card_id": "card-9057a4e27ef3",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-128"
+      ]
+    },
+    {
+      "card_id": "card-9ac5d18b31aa",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-183"
+      ]
+    },
+    {
+      "card_id": "card-a33316bd82ed",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-127"
+      ]
+    },
+    {
+      "card_id": "card-bef3b6c2091a",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-180"
+      ]
+    },
+    {
+      "card_id": "card-c4722ccd97b7",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-179"
+      ]
+    },
+    {
+      "card_id": "card-ebd6304b7fbe",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-132"
+      ]
+    },
+    {
+      "card_id": "card-ecff65ad3e50",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-176"
+      ]
+    },
+    {
+      "card_id": "card-ed3631c3c307",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-165"
+      ]
+    },
+    {
+      "card_id": "card-fbe7e7601b6c",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'process_execution' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-129"
+      ]
+    },
+    {
+      "card_id": "card-85047dc2a924",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'generic_telemetry' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-205",
+        "obs-206",
+        "obs-207"
+      ]
+    },
+    {
+      "card_id": "card-89a1580f9ac4",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'generic_telemetry' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-201",
+        "obs-242",
+        "obs-243"
+      ]
+    },
+    {
+      "card_id": "card-0fbe0069c41e",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'generic_telemetry' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-202",
+        "obs-203",
+        "obs-204"
+      ]
+    },
+    {
+      "card_id": "card-2c573061ec31",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-405",
+        "obs-406",
+        "obs-412"
+      ]
+    },
+    {
+      "card_id": "card-1bc5eed50fd1",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-402",
+        "obs-403",
+        "obs-409"
+      ]
+    },
+    {
+      "card_id": "card-4fd38c42dce4",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-450",
+        "obs-466"
+      ]
+    },
+    {
+      "card_id": "card-00c5a66b74c4",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-490"
+      ]
+    },
+    {
+      "card_id": "card-0e6ca2744eee",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-414"
+      ]
+    },
+    {
+      "card_id": "card-11672dcfcf76",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-475"
+      ]
+    },
+    {
+      "card_id": "card-145bdd2e2d4d",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-408"
+      ]
+    },
+    {
+      "card_id": "card-149542736987",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-458"
+      ]
+    },
+    {
+      "card_id": "card-151c178814dc",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-477"
+      ]
+    },
+    {
+      "card_id": "card-158b07f6d593",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-452"
+      ]
+    },
+    {
+      "card_id": "card-16f17947f1e5",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-420"
+      ]
+    },
+    {
+      "card_id": "card-1700b5c64a1d",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-429"
+      ]
+    },
+    {
+      "card_id": "card-1c68c944d17b",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-425"
+      ]
+    },
+    {
+      "card_id": "card-2187d90060b4",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-433"
+      ]
+    },
+    {
+      "card_id": "card-243b32829f96",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-465"
+      ]
+    },
+    {
+      "card_id": "card-249acdaba203",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-422"
+      ]
+    },
+    {
+      "card_id": "card-2afbf9ff8b55",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-455"
+      ]
+    },
+    {
+      "card_id": "card-2d60837e96d0",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-411"
+      ]
+    },
+    {
+      "card_id": "card-334997c04e41",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-453"
+      ]
+    },
+    {
+      "card_id": "card-33c81ac5ffd6",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-436"
+      ]
+    },
+    {
+      "card_id": "card-34da3d18fc0d",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-496"
+      ]
+    },
+    {
+      "card_id": "card-36d84f64c1e7",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-483"
+      ]
+    },
+    {
+      "card_id": "card-3738d342446a",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-443"
+      ]
+    },
+    {
+      "card_id": "card-375cb6866a27",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-489"
+      ]
+    },
+    {
+      "card_id": "card-3bc382f867cf",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-424"
+      ]
+    },
+    {
+      "card_id": "card-3ca6a10e41b9",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-430"
+      ]
+    },
+    {
+      "card_id": "card-3dda693aa90d",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-434"
+      ]
+    },
+    {
+      "card_id": "card-3fbb780a90d5",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-469"
+      ]
+    },
+    {
+      "card_id": "card-413fa4dafcde",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-419"
+      ]
+    },
+    {
+      "card_id": "card-48e9ab3d491b",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-451"
+      ]
+    },
+    {
+      "card_id": "card-4a1b77182701",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-493"
+      ]
+    },
+    {
+      "card_id": "card-546d56f0ec9f",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-407"
+      ]
+    },
+    {
+      "card_id": "card-5561a836b1fe",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-500"
+      ]
+    },
+    {
+      "card_id": "card-5684cac650d8",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-497"
+      ]
+    },
+    {
+      "card_id": "card-57002323d8f3",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-404"
+      ]
+    },
+    {
+      "card_id": "card-66deac0cc5a8",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-426"
+      ]
+    },
+    {
+      "card_id": "card-6eba719dcbc6",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-479"
+      ]
+    },
+    {
+      "card_id": "card-7e12ebd6dfd5",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-413"
+      ]
+    },
+    {
+      "card_id": "card-82284f1b49fa",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-473"
+      ]
+    },
+    {
+      "card_id": "card-849824739ba8",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-456"
+      ]
+    },
+    {
+      "card_id": "card-849e8cbff924",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-499"
+      ]
+    },
+    {
+      "card_id": "card-856be90f682b",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-462"
+      ]
+    },
+    {
+      "card_id": "card-8f6b3f6c8acc",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-439"
+      ]
+    },
+    {
+      "card_id": "card-90952a928ec7",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-416"
+      ]
+    },
+    {
+      "card_id": "card-90b5460ed904",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-476"
+      ]
+    },
+    {
+      "card_id": "card-99b801a44247",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-435"
+      ]
+    },
+    {
+      "card_id": "card-9a58ee923f24",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-437"
+      ]
+    },
+    {
+      "card_id": "card-9da9e03dfc9d",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-481"
+      ]
+    },
+    {
+      "card_id": "card-a08bd2570019",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-491"
+      ]
+    },
+    {
+      "card_id": "card-a8b3934cb3cf",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-487"
+      ]
+    },
+    {
+      "card_id": "card-b18a3fff8ec6",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-459"
+      ]
+    },
+    {
+      "card_id": "card-b44c854918a5",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-442"
+      ]
+    },
+    {
+      "card_id": "card-b5b3588b0535",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-471"
+      ]
+    },
+    {
+      "card_id": "card-c150069548b4",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-485"
+      ]
+    },
+    {
+      "card_id": "card-c4e3162dc0f9",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-421"
+      ]
+    },
+    {
+      "card_id": "card-c6c7a453f0a0",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-438"
+      ]
+    },
+    {
+      "card_id": "card-c7c8b4d663bb",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-470"
+      ]
+    },
+    {
+      "card_id": "card-ced92212ac8b",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-498"
+      ]
+    },
+    {
+      "card_id": "card-d124e591e718",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-427"
+      ]
+    },
+    {
+      "card_id": "card-e09e91842d89",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-401"
+      ]
+    },
+    {
+      "card_id": "card-e49155291671",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-440"
+      ]
+    },
+    {
+      "card_id": "card-e6ea83262176",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-454"
+      ]
+    },
+    {
+      "card_id": "card-e9ba349dc95f",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-474"
+      ]
+    },
+    {
+      "card_id": "card-ea1b6113b96b",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-447"
+      ]
+    },
+    {
+      "card_id": "card-eb51ba17bc89",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-445"
+      ]
+    },
+    {
+      "card_id": "card-ebfe5228e741",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-448"
+      ]
+    },
+    {
+      "card_id": "card-ed9e3a02724e",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-449"
+      ]
+    },
+    {
+      "card_id": "card-eddf35f4aa5a",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-423"
+      ]
+    },
+    {
+      "card_id": "card-f16cadf1d19c",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-478"
+      ]
+    },
+    {
+      "card_id": "card-f59b76aecff9",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'dns_activity' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-480"
+      ]
+    },
+    {
+      "card_id": "card-f70a8198f28b",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-441"
+      ]
+    },
+    {
+      "card_id": "card-f8b9d90f9f1f",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-457"
+      ]
+    },
+    {
+      "card_id": "card-fcbfe3b58429",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-467"
+      ]
+    },
+    {
+      "card_id": "card-fe66df7f1ff1",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-410"
+      ]
+    },
+    {
+      "card_id": "card-fe798d8a8803",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-486"
+      ]
+    },
+    {
+      "card_id": "card-ff2402dacce4",
+      "compatible_hypotheses": [],
+      "confidence": 0.15,
+      "reason": "EvidenceCard fact_type 'network_connection' did not match any active hypotheses",
+      "missing_evidence": [
+        "hypo-hunt-botsv1-web-01-active",
+        "hypo-hunt-botsv1-web-01-benign"
+      ],
+      "source_refs": [
+        "obs-463"
+      ]
+    }
+  ],
+  "expectations": [
+    {
+      "id": "exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-web_request-we1149srv",
+      "owner_explanation_id": "hypo-hunt-botsv1-web-01-active",
+      "evidence_requirement": "web_request",
+      "test_status": "refuted",
+      "predicted_observation": "Inbound HTTP/web requests targeting www.imreallynotbatman.com (site='imreallynotbatman.com')",
+      "falsification_condition": "web and HTTP stream logs confirm zero matching requests to target web host/URI"
+    },
+    {
+      "id": "exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-process_ancestry-we1149srv",
+      "owner_explanation_id": "hypo-hunt-botsv1-web-01-active",
+      "evidence_requirement": "process_ancestry",
+      "test_status": "confirmed",
+      "predicted_observation": "Anomalous process execution or command shell spawned by web server or user process matching: Attacker compromised web www.imreallynotbatman.com",
+      "falsification_condition": "endpoint telemetry verifies zero anomalous child processes spawned by web server"
+    },
+    {
+      "id": "exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-file_modification-we1149srv",
+      "owner_explanation_id": "hypo-hunt-botsv1-web-01-active",
+      "evidence_requirement": "file_modification",
+      "test_status": "refuted",
+      "predicted_observation": "Web shell or suspicious script file written to web application directory matching: Attacker compromised web www.imreallynotbatman.com",
+      "falsification_condition": "filesystem change logs show no new executable or script files in web directories"
+    },
+    {
+      "id": "exp-hypo-hunt-botsv1-web-01-benign-req-hunt-botsv1-web-01-baseline-we1149srv",
+      "owner_explanation_id": "hypo-hunt-botsv1-web-01-benign",
+      "evidence_requirement": "scope_records",
+      "test_status": "refuted",
+      "predicted_observation": "Verified operational telemetry baseline: Attacker compromised web www.imreallynotbatman.com",
+      "falsification_condition": "telemetry gap or unobservable audit partition"
+    },
+    {
+      "id": "exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-web_request-splunk-02",
+      "owner_explanation_id": "hypo-hunt-botsv1-web-01-active",
+      "evidence_requirement": "web_request",
+      "test_status": "confirmed",
+      "predicted_observation": "Inbound HTTP/web requests targeting www.imreallynotbatman.com (site='imreallynotbatman.com')",
+      "falsification_condition": "web and HTTP stream logs confirm zero matching requests to target web host/URI"
+    },
+    {
+      "id": "exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-process_ancestry-splunk-02",
+      "owner_explanation_id": "hypo-hunt-botsv1-web-01-active",
+      "evidence_requirement": "process_ancestry",
+      "test_status": "inconclusive",
+      "predicted_observation": "Anomalous process execution or command shell spawned by web server or user process matching: Attacker compromised web www.imreallynotbatman.com",
+      "falsification_condition": "endpoint telemetry verifies zero anomalous child processes spawned by web server"
+    },
+    {
+      "id": "exp-hypo-hunt-botsv1-web-01-active-req-hunt-botsv1-web-01-file_modification-splunk-02",
+      "owner_explanation_id": "hypo-hunt-botsv1-web-01-active",
+      "evidence_requirement": "file_modification",
+      "test_status": "inconclusive",
+      "predicted_observation": "Web shell or suspicious script file written to web application directory matching: Attacker compromised web www.imreallynotbatman.com",
+      "falsification_condition": "filesystem change logs show no new executable or script files in web directories"
+    },
+    {
+      "id": "exp-hypo-hunt-botsv1-web-01-benign-req-hunt-botsv1-web-01-baseline-splunk-02",
+      "owner_explanation_id": "hypo-hunt-botsv1-web-01-benign",
+      "evidence_requirement": "scope_records",
+      "test_status": "confirmed",
+      "predicted_observation": "Verified operational telemetry baseline: Attacker compromised web www.imreallynotbatman.com",
+      "falsification_condition": "telemetry gap or unobservable audit partition"
+    }
+  ]
+}

@@ -1,147 +1,109 @@
 # AI Agent Hunting
 
-> **Architecture status:** `01–04` now describe the v4 hypothesis-driven hunt
-> target. The CLI examples below are the legacy alert-oriented MVP until the
-> v4 migration checklist is implemented. Do not treat the current runtime as
-> v4-complete.
+This repository implements a bounded, evidence-grounded, hypothesis-driven
+threat-hunting engine. The core hunt starts from a hypothesis/TTP/IOC/CVE/CTI
+question or natural-language request; it does not require an alert or a PoC.
 
-[![Tests](https://img.shields.io/badge/tests-legacy%20MVP%20suite-brightgreen.svg)]()
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
-[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)]()
+## Current status
 
-**AI Agent Hunting** is a deterministic, evidence-grounded, hypothesis-driven
-threat-hunting engine architecture. It provides bounded, auditable and
-replayable hunts without trusting generative models to execute actions or
-compute outcomes.
+The verified runtime supports:
 
----
+- deterministic CDB/SQLite replay;
+- live Splunk REST/oneshot queries, including BOTSv1;
+- semantic compilation through an explicitly configured LLM API;
+- typed requirements/expectations, safe native query compilation, evidence
+  cards, bounded action control, coverage-aware stopping and cost accounting.
 
-## 📖 Key Architectural Principles
+EDR and IDS are provider extension contracts. Live EDR/IDS adapters are not
+implemented in the current repository.
 
-1. **M4 Controller in Strict Control**: The LLM (M2 Abduction Engine) is treated as an untrusted hypothesis generator. The LLM never makes queries, mutates investigation state, controls actions, evaluates stopping conditions, or determines the final disposition.
-2. **The Universal Cell Model**: A unit of telemetry addressability is strictly:
-   $$\text{Cell} = (\text{ProviderScope}, \text{entity} \mid \text{ANY}, \text{time\_bucket})$$
-   There is **no** artificial `event_family` axis. Known scopes without an adapter are explicitly tracked as `UNQUERYABLE` coverage gaps.
-3. **Negative Evidence Licensing**: Absence of evidence only refutes a hypothesis if three independent control queries pass:
-   - **`ScopeHealthControl`**: Telemetry ingestion lag is bounded and provider is operational.
-   - **`AnyRecordInScope`**: Telemetry exists in the target partition (sensor is active).
-   - **`PredicateObservabilityControl`**: The queried fields are actively extracted and observable.
-4. **Non-Erasure & Taint Propagation**: Unknown native event types are preserved as valid observations (`semantic_type = None`). Attacker-influenced alert fields are deterministically tainted and cannot exhaust investigation budgets.
-5. **Separate Coverage Accounting**: Investigation accounts explicitly partition:
-   - **Wildcard Coverage** (known partition cells explored via `BroadSweep` / `SAMPLE`).
-   - **Instance Coverage** (cells discovered via entity pivot `EXPAND`).
-   - **Requirement Coverage** (evidence requirement satisfaction & attempted query audit).
-6. **Mandatory Analyst Confirmation**: High-impact states (`MALICIOUS`, `CONFLICTED`, `STOP_BOUNDED`) enforce analyst confirmation before a final disposition is emitted.
+The canonical documents are:
 
----
+- [01_FINAL-ARCHITECTURE.md](01_FINAL-ARCHITECTURE.md) — architecture;
+- [02_METHOD-AND-IMPLEMENTATION-PLAN.md](02_METHOD-AND-IMPLEMENTATION-PLAN.md) — executable method;
+- [03_LITERATURE-AND-TRACEABILITY.md](03_LITERATURE-AND-TRACEABILITY.md) — sources and provenance;
+- [04-IMPLEMENTATION-CHECKLIST.md](04-IMPLEMENTATION-CHECKLIST.md) — tests and remaining gates;
+- [docs/01-REAL-PROVIDER-SPECIFICATIONS.md](docs/01-REAL-PROVIDER-SPECIFICATIONS.md) — provider contracts.
 
-## 🚀 Quickstart Guide
-
-### 1. Installation
+## Installation
 
 ```bash
-git clone https://github.com/aki-ops/AI_Agent_Hunting.git
-cd AI_Agent_Hunting
-
 python -m venv .venv
-# On Windows PowerShell:
+# Windows PowerShell
 .venv\Scripts\Activate.ps1
-# On Linux / macOS:
+# Linux/macOS
 source .venv/bin/activate
-
 pip install -e ".[dev]"
 ```
 
-### 2. Seed Sample Telemetry
-
-Generate a sample SQLite database (`data/cdb_sample.sqlite`) preloaded with realistic Windows & Sysmon attack telemetry (phishing PowerShell invocation, C2 network beaconing, registry persistence):
+## Local CDB replay
 
 ```bash
 python scripts/seed_cdb.py
+python main.py --provider cdb --cve CVE-2024-21887 --host WEB-IVANTI-01
 ```
 
-### 3. Run Investigation via CLI
+Known CVE/TTP/IOC/template requests use deterministic compilation and do not
+need an LLM.
 
-The CLI provides four distinct modes of operation:
+## Free-text hypothesis
 
-#### A. Ingest Alert from File
-```bash
-python main.py --alert tests/fixtures/alert_entity_bearing.json --output report.md
+Free text must use the semantic compiler API. The API returns structured
+hypotheses and evidence requirements; it does not execute queries.
+
+```env
+LLM_ENDPOINT=https://your-llm-service/v1/chat/completions
+LLM_MODEL=your-model
+LLM_API_KEY=your-api-key
+LLM_TIMEOUT=30
 ```
 
-#### B. Ingest Ad-hoc Alert from CLI Flags
 ```bash
-python main.py --host DESKTOP-VICTIM1 --user "CORP\alice" --source EDR --output report.md
+python main.py --provider cdb --llm api \
+  --hypothesis "Attacker compromised web www.imreallynotbatman.com"
 ```
 
-#### C. Ingest Alert via Stdin Pipe
+The shared usage tracker enforces three calls and 12,000 total tokens by
+default. It records calls, tokens, latency, model and estimated USD cost.
+
+`--llm stub` is offline deterministic mode for structured/deterministic
+requests. It does not interpret arbitrary free text; such input stops safely
+as `STOP_INSUFFICIENT`. Test-only semantic fixtures are selected explicitly by
+scenario in the test suite.
+
+## Live Splunk BOTSv1
+
+Default credentials and URL can be overridden with `SPLUNK_URL`,
+`SPLUNK_USER`, `SPLUNK_PASSWORD` and `SPLUNK_INDEX`.
+
 ```bash
-cat tests/fixtures/alert_entity_bearing.json | python main.py --output report.md
+python main.py --provider splunk --splunk-index botsv1 --llm api \
+  --hypothesis "Attacker compromised web www.imreallynotbatman.com"
 ```
 
-#### D. Interactive Mode
-```bash
-python main.py -i
-```
+The adapter discovers capabilities, applies the configured manifest when
+available, compiles bounded SPL, preserves native fields, applies the L+1
+completeness rule and reports incomplete/unreachable scopes explicitly.
 
----
-
-## 🤖 LLM Abduction Engine Configuration
-
-The M2 Abduction Engine proposes explanations and testable expectations from unexplained observations:
-
-- **Offline Deterministic Stub (Default)**:
-  ```bash
-  python main.py --alert tests/fixtures/alert_entity_bearing.json --llm stub
-  ```
-  Runs 100% offline without network calls, suitable for CI/CD, benchmarks, and regression testing.
-
-- **External OpenAI-Compatible API**:
-  Create or edit `.env`:
-  ```env
-  LLM_ENDPOINT=https://your-llm-service/v1/chat/completions
-  LLM_MODEL=hermes-3-llama-3.1-8b
-  LLM_API_KEY=your_api_key_here
-  LLM_TIMEOUT=30
-  ```
-  Run with:
-  ```bash
-  python main.py --alert tests/fixtures/alert_entity_bearing.json --llm api
-  ```
-
----
-
-## 🏢 Enterprise Real-Provider Specifications
-
-The architecture connects to production enterprise telemetry backends via provider adapters. Detailed integration contracts, native partition boundaries, pagination mechanics, and negative controls are documented in:
-
-- **[Real-Provider Gate Specifications](docs/01-REAL-PROVIDER-SPECIFICATIONS.md)**:
-  - **Splunk SIEM**: Native `(index, sourcetype, source)` partition scopes, search-time field extraction, parameterized SPL allowlist, and $L+1$ completeness.
-  - **EDR (CrowdStrike / Defender)**: Dataset/tenant/endpoint scopes isolated from operational workflows, cursor pagination, and rate limit backoff.
-  - **IDS (Suricata / Zeek)**: Sensor/interface/stream scopes, non-destructive evolving JSON schema retention, and packet drop monitoring.
-
----
-
-## 🧪 Verification & Test Suite
-
-Run the full test suite (100 tests covering contracts, invariants, scenarios, orchestrator, CLI, and real-provider specifications):
+## Tests
 
 ```bash
-python -m pytest tests/ -v
-```
-
-Check code style and linting with Ruff:
-
-```bash
+python -m pytest tests/ -q
 ruff check .
+python -m compileall -q src scripts main.py
 ```
 
----
+The live Splunk tests require `https://localhost:8089` with accessible
+credentials. A real LLM API run is intentionally a separate gate because it
+can incur cost and must produce captured usage metadata.
 
-## 📚 Technical Documentation
+## Non-negotiable invariants
 
-- [`01_FINAL-ARCHITECTURE.md`](01_FINAL-ARCHITECTURE.md) — Frozen architectural boundaries and module interfaces.
-- [`02_METHOD-AND-IMPLEMENTATION-PLAN.md`](02_METHOD-AND-IMPLEMENTATION-PLAN.md) — Algorithms, data contracts, and formal proofs.
-- [`03_LITERATURE-AND-TRACEABILITY.md`](03_LITERATURE-AND-TRACEABILITY.md) — Provenance mapping and citations.
-- [`04-IMPLEMENTATION-CHECKLIST.md`](04-IMPLEMENTATION-CHECKLIST.md) — Executable milestone checklist and definition of done.
-- [`docs/01-REAL-PROVIDER-SPECIFICATIONS.md`](docs/01-REAL-PROVIDER-SPECIFICATIONS.md) — Splunk, EDR, and IDS provider adapter architecture.
+- `Cell = (ProviderScope, entity | ANY, time_bucket)`; no `event_family` axis.
+- Native event types and unknown records are preserved.
+- Natural-language words cannot classify evidence or hypotheses.
+- `search_hints` are query constraints, never evidence or confirmed Cells.
+- Incomplete, unobservable, unsupported or unreachable data cannot license a
+  benign conclusion.
+- The LLM cannot execute queries, mutate state, select actions or determine
+  final disposition.

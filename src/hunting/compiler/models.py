@@ -20,6 +20,7 @@ class BehaviorCategory(str, Enum):
     NETWORK = "network"
     FILE = "file"
     PERSISTENCE = "persistence"
+    WEB = "web"
 
 
 @dataclass(frozen=True)
@@ -83,9 +84,62 @@ class BehaviorTemplate:
             raise ValueError("BehaviorTemplate.required_fields must not be empty")
 
 
+
+@dataclass(frozen=True)
+class NormalizedClaim:
+    """Normalized claim extracted from free-text request."""
+    text: str
+    status: str = "UNVERIFIED"
+
+
+@dataclass(frozen=True)
+class SemanticEntity:
+    """Structured entity extracted during semantic compilation."""
+    type: str  # "domain" | "host" | "user" | "ip" | "file"
+    value: str
+    role: str = "unknown"  # "target" | "actor" | "infrastructure" | "unknown"
+
+
+@dataclass(frozen=True)
+class SemanticRequirement:
+    """Semantic evidence requirement with intent and isolated search hints."""
+    id: str
+    semantic_intent: str
+    necessity: str = "CRITICAL"  # "CRITICAL" | "SUPPORTING"
+    search_hints: tuple[str, ...] = field(default_factory=tuple)
+    falsification_condition: str = ""
+    description: str = ""
+    source_refs: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class SemanticHypothesis:
+    """Competing hypothesis proposed with explicit assumptions."""
+    id: str
+    statement: str
+    hypothesis_class: str = "unclassified"
+    assumptions: tuple[str, ...] = field(default_factory=tuple)
+    requirements: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class SemanticCompilationResult:
+    """Complete structured output from semantic analysis of free-text request."""
+    claim: NormalizedClaim
+    entities: tuple[SemanticEntity, ...]
+    mechanism_status: str  # "KNOWN" | "UNKNOWN"
+    hypotheses: tuple[SemanticHypothesis, ...]
+    requirements: tuple[SemanticRequirement, ...]
+
+
 __all__ = [
     "BehaviorCategory",
     "CVEPhases",
     "KnowledgeRecord",
     "BehaviorTemplate",
+    "NormalizedClaim",
+    "SemanticEntity",
+    "SemanticRequirement",
+    "SemanticHypothesis",
+    "SemanticCompilationResult",
 ]

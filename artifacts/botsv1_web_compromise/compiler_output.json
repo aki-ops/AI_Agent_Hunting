@@ -1,0 +1,105 @@
+{
+  "hypotheses": [
+    {
+      "id": "hypo-hunt-botsv1-web-01-active",
+      "statement": "Attacker compromised web www.imreallynotbatman.com",
+      "origin": "INPUT",
+      "status": "SUPPORTED",
+      "source_refs": [],
+      "requirements": [
+        "req-hunt-botsv1-web-01-web_request",
+        "req-hunt-botsv1-web-01-process_ancestry",
+        "req-hunt-botsv1-web-01-file_modification"
+      ]
+    },
+    {
+      "id": "hypo-hunt-botsv1-web-01-benign",
+      "statement": "Telemetry reflects normal operational baseline; refuted hypothesis: 'Attacker compromised web www.imreallynotbatman.com'",
+      "origin": "RULE",
+      "status": "REFUTED",
+      "source_refs": [],
+      "requirements": [
+        "req-hunt-botsv1-web-01-baseline"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "req-hunt-botsv1-web-01-web_request",
+      "description": "Inbound HTTP/web requests targeting www.imreallynotbatman.com (site='imreallynotbatman.com')",
+      "evidence_type": "web_request",
+      "entity_scope": {
+        "kind": "domain",
+        "name": "www.imreallynotbatman.com"
+      },
+      "time_scope": "",
+      "predicate": {
+        "field": "site",
+        "op": "contains",
+        "value": "imreallynotbatman.com"
+      },
+      "supports": [],
+      "contradicts": [],
+      "falsification_condition": "web and HTTP stream logs confirm zero matching requests to target web host/URI",
+      "source_refs": [
+        "MITRE-T1190",
+        "CISA-AA24-010A"
+      ],
+      "status": "VALIDATED"
+    },
+    {
+      "id": "req-hunt-botsv1-web-01-process_ancestry",
+      "description": "Anomalous process execution or command shell spawned by web server or user process matching: Attacker compromised web www.imreallynotbatman.com",
+      "evidence_type": "process_ancestry",
+      "entity_scope": "ANY",
+      "time_scope": "",
+      "predicate": {
+        "field": "cmdline",
+        "op": "exists",
+        "value": ""
+      },
+      "supports": [],
+      "contradicts": [],
+      "falsification_condition": "endpoint telemetry verifies zero anomalous child processes spawned by web server",
+      "source_refs": [
+        "MITRE-T1059",
+        "SIGMA-proc-web-child"
+      ],
+      "status": "VALIDATED"
+    },
+    {
+      "id": "req-hunt-botsv1-web-01-file_modification",
+      "description": "Web shell or suspicious script file written to web application directory matching: Attacker compromised web www.imreallynotbatman.com",
+      "evidence_type": "file_modification",
+      "entity_scope": "ANY",
+      "time_scope": "",
+      "predicate": {
+        "field": "file_path",
+        "op": "exists",
+        "value": ""
+      },
+      "supports": [],
+      "contradicts": [],
+      "falsification_condition": "filesystem change logs show no new executable or script files in web directories",
+      "source_refs": [
+        "MITRE-T1505.003"
+      ],
+      "status": "VALIDATED"
+    },
+    {
+      "id": "req-hunt-botsv1-web-01-baseline",
+      "description": "Verified operational telemetry baseline: Attacker compromised web www.imreallynotbatman.com",
+      "evidence_type": "scope_records",
+      "entity_scope": "ANY",
+      "time_scope": "",
+      "predicate": null,
+      "supports": [],
+      "contradicts": [],
+      "falsification_condition": "telemetry gap or unobservable audit partition",
+      "source_refs": [
+        "SENSOR_BASELINE"
+      ],
+      "status": "VALIDATED"
+    }
+  ]
+}

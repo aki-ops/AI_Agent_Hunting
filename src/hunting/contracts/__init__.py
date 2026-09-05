@@ -1,5 +1,11 @@
 """Canonical and operational hunting contracts."""
 from hunting.contracts.abduction import AbductionRuntime
+from hunting.contracts.capabilities import (
+    CapabilityDescriptor,
+    CapabilityMatcher,
+    MatchResult,
+    ProviderCapabilityCatalog,
+)
 from hunting.contracts.cells import Cell, CellState, ProviderScope
 from hunting.contracts.conflicts import Conflict, HumanInput
 from hunting.contracts.coverage import CoverageBound, RequirementCoverage, SamplingStats
@@ -31,6 +37,7 @@ from hunting.contracts.explanations import (
     ExplanationStatus,
 )
 from hunting.contracts.hunt import (
+    EvidenceAssessment,
     EvidenceCard,
     EvidenceRequirementSpec,
     EvidenceRequirementV4,
@@ -43,6 +50,8 @@ from hunting.contracts.hunt import (
     Hypothesis,
     HypothesisOrigin,
     HypothesisStatus,
+    LogicalQueryPlan,
+    NativeQueryPlan,
     QueryPlan,
     RequirementStatus,
     StoppingDecision,
@@ -87,7 +96,10 @@ __all__ = [
     "EvidenceRequirementSpec",
     "RequirementStatus",
     "QueryPlan",
+    "LogicalQueryPlan",
+    "NativeQueryPlan",
     "EvidenceCard",
+    "EvidenceAssessment",
     "HuntOutcome",
     "StoppingDecision",
     "HuntState",
@@ -124,6 +136,10 @@ __all__ = [
     "Conflict",
     "HumanInput",
     "AbductionRuntime",
+    "CapabilityDescriptor",
+    "ProviderCapabilityCatalog",
+    "CapabilityMatcher",
+    "MatchResult",
     # Entities
     "EntityRef",
     "EntityKind",

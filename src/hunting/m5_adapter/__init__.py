@@ -11,6 +11,7 @@ from hunting.m5_adapter.controls import (
     execute_scope_health_control,
     license_valid_negative,
 )
+from hunting.m5_adapter.splunk_adapter import SplunkLiveAdapter
 
 __all__ = [
     "validate_operation_id",
@@ -22,4 +23,5 @@ __all__ = [
     "execute_predicate_observability_control",
     "license_valid_negative",
     "CdbAdapter",
+    "SplunkLiveAdapter",
 ]

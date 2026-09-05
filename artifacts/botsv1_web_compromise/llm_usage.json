@@ -1,0 +1,11 @@
+{
+  "model": "stub",
+  "max_calls_budget": 3,
+  "calls_made": 0,
+  "is_exhausted": false,
+  "total_prompt_tokens": 0,
+  "total_completion_tokens": 0,
+  "total_tokens": 0,
+  "estimated_cost_usd": 0,
+  "calls": []
+}

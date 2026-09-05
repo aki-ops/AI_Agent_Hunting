@@ -98,7 +98,7 @@ def build_final_hunt_account(
         for req in state.requirements:
             if req.id not in req_cov.attempted_requirements:
                 req_cov.attempted_requirements.append(req.id)
-            if req.status == RequirementStatus.VALIDATED and req.id not in req_cov.satisfied_requirements:
+            if req.status in (RequirementStatus.CONFIRMED, RequirementStatus.VALIDATED) and req.id not in req_cov.satisfied_requirements:
                 req_cov.satisfied_requirements.append(req.id)
             elif req.status == RequirementStatus.UNSUPPORTED and req.id not in req_cov.unsupported_requirements:
                 req_cov.unsupported_requirements.append(req.id)
@@ -130,6 +130,7 @@ def build_final_hunt_account(
             "operation_id": q.operation_id,
             "completeness_contract": q.completeness_contract,
             "is_targeted": getattr(q, "is_targeted", False),
+            "query_text": q.parameters.get("query_text", ""),
         })
 
     # Cited observations

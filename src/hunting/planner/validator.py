@@ -13,9 +13,10 @@ from __future__ import annotations
 import re
 
 from hunting.capabilities.models import VersionedCapabilityDescriptor
+from hunting.contracts.capabilities import ProviderCapabilityCatalog
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.entities import EntityRef
-from hunting.contracts.hunt import QueryPlan
+from hunting.contracts.hunt import LogicalQueryPlan, NativeQueryPlan, QueryPlan
 from hunting.contracts.queries import Diagnostic
 
 
@@ -68,8 +69,13 @@ class QueryValidator:
                     return False, Diagnostic.SOURCE_UNAVAILABLE
 
         # 3. Validate Observable Fields
+        allowlisted_param_keys = (
+            "window", "limit", "offset", "host", "user", "ip", "path", "domain",
+            "custom_field", "custom_query", "query", "raw", "extracted_fields",
+            "filter", "sourcetype", "field", "value", "op", "search_hints",
+        )
         for param_key in plan.parameters:
-            if param_key in ("window", "limit", "offset", "host", "user", "ip", "path", "domain"):
+            if param_key in allowlisted_param_keys:
                 continue
             if param_key not in descriptor.observable_fields:
                 return False, Diagnostic.UNSUPPORTED_REQUIREMENT
@@ -94,6 +100,64 @@ class QueryValidator:
             if isinstance(v, str) and re.search(r"('|\bUNION\b|\bDROP\b|;)", v, re.IGNORECASE):
                 return False
         return True
+
+    def validate_logical_plan(
+        self,
+        plan: LogicalQueryPlan,
+        catalog: ProviderCapabilityCatalog | None = None,
+    ) -> tuple[bool, Diagnostic | None]:
+        """Validate LogicalQueryPlan against discovered catalog or descriptors."""
+        if catalog is not None:
+            if catalog.status == "UNREACHABLE":
+                return False, Diagnostic.UNREACHABLE
+            if catalog.status == "UNSUPPORTED":
+                return False, Diagnostic.UNSUPPORTED_REQUIREMENT
+
+            # Validate requirement evidence type
+            ev_type = (getattr(plan, "evidence_type", None) or plan.requirement_id).lower()
+            req_type = plan.requirement_id.lower()
+            matching_supported = False
+            for st in catalog.supported_evidence_types:
+                st_lower = st.lower()
+                if st_lower == ev_type or st_lower in ev_type or ev_type in st_lower or st_lower in req_type or req_type in st_lower:
+                    matching_supported = True
+                    break
+                if ("proc" in ev_type and "proc" in st_lower) or \
+                   ("web" in ev_type and "web" in st_lower) or \
+                   ("file" in ev_type and "file" in st_lower) or \
+                   ("auth" in ev_type and "auth" in st_lower) or \
+                   ("net" in ev_type and "net" in st_lower):
+                    matching_supported = True
+                    break
+            if "baseline" in ev_type or "scope" in ev_type or "baseline" in req_type or "scope" in req_type:
+                matching_supported = True
+
+            if not matching_supported:
+                return False, Diagnostic.UNSUPPORTED_REQUIREMENT
+
+            # Validate observable fields in filters
+            for f in plan.filters:
+                fn = str(f.get("field", "")).strip().lower()
+                if fn and catalog.observable_fields and fn not in catalog.observable_fields:
+                    return False, Diagnostic.UNSUPPORTED_REQUIREMENT
+
+        return True, None
+
+    def validate_native_plan(
+        self,
+        plan: NativeQueryPlan,
+        catalog: ProviderCapabilityCatalog | None = None,
+    ) -> tuple[bool, Diagnostic | None]:
+        """Validate NativeQueryPlan before execution."""
+        if not plan.native_query or not plan.native_query.strip():
+            return False, Diagnostic.QUERY_FAILED
+
+        # Prevent destructive keywords or raw shell injection
+        forbidden = re.search(r"\b(delete|drop|shutdown|truncate|rm\s+-rf)\b", plan.native_query, re.IGNORECASE)
+        if forbidden:
+            return False, Diagnostic.UNQUERYABLE
+
+        return True, None
 
 
 __all__ = ["QueryValidator", "QueryValidationError"]

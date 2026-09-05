@@ -1,167 +1,206 @@
-# 02 — METHOD AND IMPLEMENTATION PLAN (v4)
+# 02 — METHOD AND IMPLEMENTATION PLAN (v4.1)
 
-**Source of truth for algorithms and acceptance criteria.** Architecture is in
-`01`; references are in `03`; executable work is in `04`.
+`01_FINAL-ARCHITECTURE.md` defines WHAT the system is. This file defines the
+current executable HOW. `03` contains sources and traceability; `04` records
+tests and remaining gates.
 
-## 1. Canonical lifecycle
+## 1. End-to-end lifecycle
 
 ```text
 HuntRequest
-→ HuntObjective
-→ Hypothesis + EvidenceRequirements
-→ CapabilityBinding
-→ Cell/search frame
-→ QueryPlan
-→ validated QueryResult
-→ Observation
-→ EvidenceFact/EvidenceGroup
-→ hypothesis compatibility update
-→ TEST/EXPAND/DISCOVER/PIVOT/REFINE
-→ coverage-aware FinalHuntAccount
+  → KnowledgeBehaviorCompiler
+  → HuntObjective + Hypothesis[] + EvidenceRequirementV4[]
+  → Provider capability discovery/validation
+  → Cell registration and Expectation instantiation
+  → QueryTemplate or validated LLM fallback
+  → LogicalQueryPlan → NativeQueryPlan
+  → provider QueryResult
+  → ObservationLedger
+  → deterministic fact extraction and EvidenceCard grouping
+  → expectation status and hypothesis reasoning
+  → ActionController action selection
+  → coverage-aware FinalHuntAccount and Markdown report
 ```
 
-## 2. Input and behavior compilation
+The engine can start with only `HuntRequest.content`. Explicit entities create
+targeted Cells; no entity creates a wildcard Cell and may lead to bounded
+DISCOVER/PIVOT actions.
 
-Use this order:
+## 2. Compilation
 
-```text
-structured input/template
-→ trusted knowledge retrieval
-→ LLM normalization only when needed
-→ deterministic source/schema validation
-```
+### 2.1 Deterministic paths
 
-Trusted knowledge includes CVE/NVD, vendor advisory, CISA KEV, MITRE
-techniques/data components/detection strategies, CTI and versioned internal
-behavior templates. A PoC may improve specificity but is never required.
+Known CVE records use the versioned knowledge base and separate exposure,
+preconditions, exploitation indicators, post-exploitation and gaps. Known TTP
+and IOC requests use registered behavior templates and provider-neutral
+requirements. Structured YAML/JSON hypotheses are parsed directly.
 
-For CVE input, separate:
+These paths do not call an LLM.
 
-```text
-exposure → preconditions → exploitation indicators → post-exploitation → gaps
-```
+### 2.2 Free-text semantic path
 
-Unsupported behavior is reported as unsupported; the system never invents an
-exploit path.
+For unstructured `HYPOTHESIS` and `NL_QUESTION` requests:
 
-## 3. Requirement and expectation generation
+1. The semantic compiler receives the request text.
+2. It returns an unverified claim, semantic entities, mechanism status,
+   competing hypotheses, assumptions and requirements.
+3. `validate_compiler_llm_output` accepts only allowed semantic intents,
+   evidence types, citations, descriptions and falsification conditions.
+4. Search hints become query constraints only. They do not create evidence or
+   confirmed Cells.
+5. Invalid, missing or unavailable semantic compilation produces
+   `INSUFFICIENTLY_SPECIFIED` and `STOP_INSUFFICIENT`.
 
-Requirements are question-side concepts such as:
+There is no natural-language keyword fallback. A hypothesis statement cannot
+classify an evidence card merely because it contains a word such as “web” or
+“process”. Compatibility requires typed expectations; unresolved cards may be
+sent to one bounded batch evaluator.
 
-```text
-process_execution, remote_authentication, destination_activity,
-network_connection, software_version, vulnerability_exposure,
-post_exploitation_behavior
-```
+## 3. Requirements and expectations
 
-Runtime observations first use existing predicates and behavior fingerprints.
-Only an unmatched, high-value, batched behavior may trigger one LLM proposal for
-a new requirement. The proposal requires source references, rationale,
-predicate, falsification condition and required fields, then M3 validates it.
+`EvidenceRequirementV4` is question-side and provider-neutral. It contains an
+evidence type/semantic intent, necessity, predicate, falsification condition,
+source references and optional search hints.
 
-## 4. Capability binding and query planning
+`Expectation` binds one requirement to one concrete entity, provider scope and
+time window. The engine creates expectations from explicit entities and from
+entities discovered by bounded sweep/pivot actions. Hypothesis-to-requirement
+binding uses requirement IDs, `supports` and the typed hypothesis class—not
+hypothesis or requirement name matching.
+
+## 4. Capability and query planning
 
 ```text
 EvidenceRequirement
-→ CapabilityDescriptor
-→ CapabilityBinding
-→ QueryTemplate or validated LLM fallback
-→ QueryPlan
+  → provider VersionedCapabilityDescriptor
+  → CapabilityBinding
+  → QueryTemplate (preferred)
+  → QueryPlan validation
+  → LogicalQueryPlan
+  → provider NativeQueryPlan
 ```
 
-Hard filters:
+Validation checks provider/scope, entity kind, time window, permissions,
+observable fields, query limits and completeness contract. Missing capability
+is returned as `UNSUPPORTED_REQUIREMENT`; unreachable scope is returned as
+`UNREACHABLE`.
 
-- requirement, entity and time are supported;
-- required fields are observable or explicitly unknown;
-- scope and permission are valid;
-- pagination and completeness semantics exist;
-- budget permits execution.
+If no query template exists and an LLM planner is configured, it may propose
+structured query parameters or custom native text. The result is parsed,
+allowlisted, dry-run validated and compiled before execution. The LLM never
+executes a query and cannot select a controller action.
 
-Rank remaining plans lexicographically:
+Current implementations:
 
-```text
-EXACT > PARTIAL
-template > generated fallback
-targeted > broad
-strong completeness contract > weak contract
-lower estimated cost > higher cost
-```
+- `CdbAdapter`: local SQLite replay/test backend.
+- `SplunkLiveAdapter`: live Splunk REST/oneshot search backend, using
+  `configs/splunk_botsv1.yaml` when available or discovery mode otherwise.
 
-No event-family or event-code catalogue is required for querying.
+EDR and IDS are extension contracts, not current live adapters.
 
 ## 5. Execution and completeness
 
-Adapters validate scope, parameters, time and provider syntax before execution.
-`complete=False` is never a negative result. Prefer cursor pagination; use time
-splitting as fallback. A truncated parent is audit-only and never subsumes child
-cells.
+Adapters return a `QueryResult` envelope containing execution status, rows,
+native query, provider/scope information, observed fields, native types,
+cursor and explicit `complete`.
 
-An empty result can license negative evidence only after scope health, record
-existence and predicate observability controls pass.
+For the current Splunk adapter, the search job endpoint is called in oneshot
+mode. The adapter normalizes provider rows and applies an L+1 limit: returning
+more than the requested limit yields `complete=False` and a bounded cursor;
+otherwise the result is complete. A partial result cannot license negative
+evidence.
 
-## 6. Evidence compression and evaluation
+Negative evidence additionally requires:
 
-```text
-QueryResult
-→ normalized fact
-→ fingerprint/group
-→ EvidenceCard
-→ compatibility matrix
-```
+1. `ScopeHealthControl` passes;
+2. `AnyRecordInScope` confirms active telemetry; and
+3. `PredicateObservabilityControl` confirms the queried predicate is
+   observable.
 
-The ledger is append-only storage, not prompt context. Deterministic evaluation
-handles predicates, versions, entity links, time relations, completeness and
-coverage. LLM semantic evaluation is only for unmapped/ambiguous groups and
-receives the current hypothesis set plus the new delta.
+Controls produce diagnostics; they do not create observations.
 
-The same evidence may be compatible with multiple hypotheses. “Consistent with
-H1” is not “proves H1”.
+## 6. Observation and evidence processing
 
-## 7. State and controller
+Each returned row is stored as an append-only `Observation` with native type,
+native fields, provider scope, timestamp and normalized entities. Unknown
+native types are retained.
 
-`HuntState` stores hypotheses, requirements, expectations, facts, evidence cards,
-queries, Cells, coverage, unresolved groups, pivots and budgets. Only the Action
-Controller changes state.
+Deterministic fact extraction recognizes process execution, web request, DNS,
+authentication, file modification, persistence and network facts according to
+available fields/native provider mappings. Relationships and timestamps are
+preserved for correlation.
 
-Default action order:
+`EvidenceGroupBuilder` fingerprints repeated facts and produces compact
+`EvidenceCard` records with counts, representative observation IDs, entity/time
+summaries, field summaries, relations and completeness. LLM contexts contain
+cards/deltas, never the raw ledger.
+
+## 7. Evidence evaluation and reasoning
+
+The deterministic evaluator checks:
+
+- evidence type against the expectation type;
+- entity compatibility;
+- field predicates (`EQUALS`, `CONTAINS`, `EXISTS`, `ABSENT`); and
+- temporal/entity correlation for multi-stage chains.
+
+Without an expectation, the compatibility result is empty/unknown. If an
+evaluator caller is configured, unresolved cards can be sent together in one
+structured batch, and returned hypothesis IDs are schema-filtered against the
+active set. This is advisory; status changes still follow deterministic
+expectation results and controller rules.
+
+Competing hypotheses remain active until their own expectations are concluded.
+For a typed web-request attack chain, web, process/artifact evidence must be
+co-located and temporally correlated before the chain is considered supported.
+
+## 8. Controller and actions
+
+The Action Controller chooses the first available action in this order:
 
 ```text
 TEST → CONTROL → EXPAND → DISCOVER → PIVOT → REFINE → STOP
 ```
 
-The order and thresholds are provisional engineering parameters and must be
-measured rather than presented as scientific facts.
+- `TEST`: execute an untested expectation.
+- `CONTROL`: run telemetry health/record/observability controls.
+- `EXPAND`: execute a requirement against a discovered concrete entity.
+- `DISCOVER`: bounded wildcard/scope sweep.
+- `PIVOT`: investigate bounded entities extracted from returned rows.
+- `REFINE`: batch unresolved evidence for advisory semantic evaluation.
+- `STOP`: emit the account after deterministic stopping evaluation.
 
-## 8. Cost control
+The budget ledger defaults to 15 turns, 60 queries, 3 LLM calls, 100 scan
+Cells and 300 seconds. LLM usage additionally tracks prompt/completion tokens,
+latency, model and estimated USD cost.
 
-```python
-if matches_known_rule(observation) or is_duplicate_group(observation):
-    no_llm()
-elif unresolved_batch_is_small_and_low_value():
-    defer()
-elif epoch_has_llm_call:
-    defer()
-else:
-    call_bounded_llm()
+## 9. Reporting and outcomes
+
+`FinalHuntAccount` cites hypotheses, requirements, cards, observations,
+queries, diagnostics, residuals and coverage. It distinguishes:
+
+```text
+SUPPORTED / CONTRADICTED / INCONCLUSIVE / UNKNOWN /
+UNREACHABLE / INSUFFICIENTLY_SPECIFIED / UNSUPPORTED
 ```
 
-Record calls, tokens, latency, retries, query count and groups per call. When
-the LLM budget is exhausted, return `STOP_EXHAUSTED_BY_BUDGET` safely.
+`NO_EVIDENCE_FOUND` is a rendering of an unresolved/unknown hunt, not proof of
+benign behavior. Scope coverage, requirement coverage, unobservable data,
+unqueryable providers and incomplete results remain separate.
 
-## 9. Experiments
+## 10. Current verification plan
 
-| ID | Question | Metric |
-|---|---|---|
-| EXP-01 | sparse hypothesis compiles | valid objective rate |
-| EXP-02 | capability matching is executable | bind/execution success |
-| EXP-03 | templates reduce LLM use | calls, tokens and cost |
-| EXP-04 | grouping preserves recall | grouped-vs-row recall |
-| EXP-05 | escalation targets hard cases | escalation precision/recall |
-| EXP-06 | unknown records survive | retention rate |
-| EXP-07 | incomplete results never become negative | critical error rate |
-| EXP-08 | competing hypotheses are retained | premature rejection rate |
-| EXP-09 | controller avoids loops | turn/query compliance |
-| EXP-10 | hunt works without PoC | useful evidence discovery |
-| EXP-11 | provider extension is adapter-only | cross-provider contract pass |
-| EXP-12 | cost-quality trade-off is acceptable | recall, calls, tokens, latency |
-| EXP-13 | prompt injection is contained | attack success rate |
+The verified local/live path is:
+
+```text
+semantic fixture or structured request
+  → CDB replay or Splunk BOTSv1
+  → query/result envelope
+  → observation/cards
+  → bounded action loop
+  → account/report
+```
+
+The semantic fixture validates contracts but has zero monetary cost. A real
+LLM API run is a separate integration gate because model quality, latency,
+token usage and provider policy must be measured independently.

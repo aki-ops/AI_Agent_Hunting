@@ -110,6 +110,8 @@ class CdbAdapter:
             ProviderOperation("cdb_persistence_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_file_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_dns_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("cdb_web_requests", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("cdb_web_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
         )
 
         bindings = (
@@ -120,6 +122,7 @@ class CdbAdapter:
             CapabilityBinding(EvidenceRequirement.PERSISTENCE_CHANGE, "cdb", "cdb_persistence_search", confidence="EXACT"),
             CapabilityBinding(EvidenceRequirement.FILE_MODIFICATION, "cdb", "cdb_file_search", confidence="EXACT"),
             CapabilityBinding(EvidenceRequirement.DNS_ACTIVITY, "cdb", "cdb_dns_search", confidence="EXACT"),
+            CapabilityBinding(EvidenceRequirement.WEB_REQUEST, "cdb", "cdb_web_requests", confidence="EXACT"),
         )
 
         return CapabilityDescriptor(
@@ -138,6 +141,7 @@ class CdbAdapter:
         limit: int = 100,
         offset: int = 0,
         query_id: str = "q-001",
+        native_query: str | None = None,
     ) -> QueryResult:
         """Execute a parameterized query over SQLite events table with EOF completeness check."""
         params = {"window": window, "limit": limit}
@@ -174,16 +178,32 @@ class CdbAdapter:
         # Predicate filtering
         if predicate:
             fn = predicate.field.strip().lower()
-            if predicate.op == FieldOp.EQUALS:
-                conditions.append(f"{fn} = ?")
-                sql_params.append(predicate.value)
-            elif predicate.op == FieldOp.CONTAINS:
-                conditions.append(f"{fn} LIKE ?")
-                sql_params.append(f"%{predicate.value}%")
-            elif predicate.op == FieldOp.EXISTS:
-                conditions.append(f"{fn} IS NOT NULL AND {fn} != ''")
-            elif predicate.op == FieldOp.ABSENT:
-                conditions.append(f"({fn} IS NULL OR {fn} = '')")
+            field_map = {
+                "destination_port": "port",
+                "source_port": "port",
+                "destination_ip": "ip",
+                "source_ip": "ip",
+                "command_line": "cmdline",
+                "process_id": "pid",
+                "parent_process_id": "ppid",
+            }
+            fn = field_map.get(fn, fn)
+            valid_cols = {
+                "id", "timestamp", "event_id", "native_type", "host", "user",
+                "pid", "ppid", "cmdline", "image", "ip", "port",
+                "domain", "file_path", "action", "status", "raw_ref",
+            }
+            if fn in valid_cols:
+                if predicate.op == FieldOp.EQUALS:
+                    conditions.append(f"{fn} = ?")
+                    sql_params.append(predicate.value)
+                elif predicate.op == FieldOp.CONTAINS:
+                    conditions.append(f"{fn} LIKE ?")
+                    sql_params.append(f"%{predicate.value}%")
+                elif predicate.op == FieldOp.EXISTS:
+                    conditions.append(f"{fn} IS NOT NULL AND {fn} != ''")
+                elif predicate.op == FieldOp.ABSENT:
+                    conditions.append(f"({fn} IS NULL OR {fn} = '')")
 
         # Specific operation constraints
         if operation_id in ("cdb_process_search", "cdb_process_lineage"):
@@ -196,11 +216,22 @@ class CdbAdapter:
             conditions.append("file_path IS NOT NULL")
         elif operation_id in ("cdb_dns_search", "cdb_dns_queries"):
             conditions.append("domain IS NOT NULL")
+        elif operation_id in ("cdb_web_search", "cdb_web_requests"):
+            conditions.append("(uri IS NOT NULL OR site IS NOT NULL OR http_method IS NOT NULL)")
+        elif operation_id == "custom_operation" and native_query:
+            import re
+            for col in ("cmdline", "image", "user", "ip", "port", "domain", "file_path", "site", "uri"):
+                m = re.search(rf"\b{col}\b\s*(?:=|LIKE)\s*['\"]?([^'\",\)]+)['\"]?", native_query, re.IGNORECASE)
+                if m:
+                    val = m.group(1).strip("%").strip("*")
+                    conditions.append(f"{col} LIKE ?")
+                    sql_params.append(f"%{val}%")
 
         where_clause = " AND ".join(conditions)
         # Fetch limit + 1 to establish EOF rigorously
         sql = f"SELECT * FROM events WHERE {where_clause} ORDER BY timestamp ASC LIMIT ? OFFSET ?"
         sql_params.extend([limit + 1, offset])
+        self.last_query_text = sql
 
         try:
             cur = self._conn.execute(sql, sql_params)

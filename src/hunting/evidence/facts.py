@@ -82,7 +82,90 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
             )
         )
 
-    # 2. Network connection fact & destination relationship
+    # 2. Web request fact (Layer 7 HTTP/Web)
+    elif (
+        fields.get("uri")
+        or fields.get("cs_uri_stem")
+        or fields.get("http_method")
+        or fields.get("cs_method")
+        or fields.get("site")
+        or (observation.native_type and any(k in str(observation.native_type).lower() for k in ("http", "iis", "web")))
+    ):
+        site_val = fields.get("site") or fields.get("domain") or str(host_name)
+        web_entity = Domain(name=str(site_val))
+        relations.append(EntityRelation(source_entity=host_entity, relation_type="served_web_request", target_entity=web_entity))
+
+        facts.append(
+            EvidenceFact(
+                observation_id=observation.id,
+                fact_type="web_request",
+                timestamp=timestamp,
+                primary_entity=web_entity,
+                fields={
+                    k: v for k, v in fields.items()
+                    if k in ("uri", "site", "http_method", "client_ip", "server_ip", "c_ip", "s_ip", "status", "destination_ip", "dest_ip", "dest_headers")
+                    and v is not None
+                },
+                relations=tuple(relations),
+            )
+        )
+
+    # 3. DNS query fact (Layer 7 DNS)
+    elif (
+        fields.get("query")
+        or fields.get("query_type")
+        or (observation.native_type and "dns" in str(observation.native_type).lower())
+        or (fields.get("domain") and not fields.get("uri") and not fields.get("http_method"))
+    ):
+        dom = fields.get("query") or fields.get("domain")
+        domain_entity = Domain(name=str(dom))
+        relations.append(EntityRelation(source_entity=host_entity, relation_type="resolved_domain", target_entity=domain_entity))
+
+        facts.append(
+            EvidenceFact(
+                observation_id=observation.id,
+                fact_type="dns_activity",
+                timestamp=timestamp,
+                primary_entity=domain_entity,
+                fields={k: v for k, v in fields.items() if k in ("query", "domain", "query_type", "response") and v is not None},
+                relations=tuple(relations),
+            )
+        )
+
+    # 4. Authentication fact
+    elif fields.get("user") and (fields.get("logon_type") or fields.get("status")):
+        user_entity = Account(username=str(fields["user"]))
+        relations.append(EntityRelation(source_entity=user_entity, relation_type="authenticated_on", target_entity=host_entity))
+
+        facts.append(
+            EvidenceFact(
+                observation_id=observation.id,
+                fact_type="authentication_activity",
+                timestamp=timestamp,
+                primary_entity=user_entity,
+                fields={k: v for k, v in fields.items() if k in ("user", "logon_type", "source_ip", "status") and v is not None},
+                relations=tuple(relations),
+            )
+        )
+
+    # 5. File modification fact
+    elif fields.get("file_path") or fields.get("path"):
+        path = fields.get("file_path") or fields.get("path")
+        file_entity = File(host=str(host_name), path=str(path))
+        relations.append(EntityRelation(source_entity=host_entity, relation_type="wrote_file", target_entity=file_entity))
+
+        facts.append(
+            EvidenceFact(
+                observation_id=observation.id,
+                fact_type="file_modification",
+                timestamp=timestamp,
+                primary_entity=file_entity,
+                fields={k: v for k, v in fields.items() if k in ("file_path", "path", "action", "hash") and v is not None},
+                relations=tuple(relations),
+            )
+        )
+
+    # 6. Network connection fact & destination relationship (Layer 4 IP/Port)
     elif fields.get("destination_ip") or fields.get("remote_ip") or fields.get("ip"):
         dst_ip = fields.get("destination_ip") or fields.get("remote_ip") or fields.get("ip")
         ip_entity = IPAddress(address=str(dst_ip))
@@ -101,56 +184,6 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
                 timestamp=timestamp,
                 primary_entity=ip_entity,
                 fields=net_fields,
-                relations=tuple(relations),
-            )
-        )
-
-    # 3. Authentication fact
-    elif fields.get("user") and (fields.get("logon_type") or fields.get("status")):
-        user_entity = Account(username=str(fields["user"]))
-        relations.append(EntityRelation(source_entity=user_entity, relation_type="authenticated_on", target_entity=host_entity))
-
-        facts.append(
-            EvidenceFact(
-                observation_id=observation.id,
-                fact_type="authentication_activity",
-                timestamp=timestamp,
-                primary_entity=user_entity,
-                fields={k: v for k, v in fields.items() if k in ("user", "logon_type", "source_ip", "status") and v is not None},
-                relations=tuple(relations),
-            )
-        )
-
-    # 4. File modification fact
-    elif fields.get("file_path") or fields.get("path"):
-        path = fields.get("file_path") or fields.get("path")
-        file_entity = File(host=str(host_name), path=str(path))
-        relations.append(EntityRelation(source_entity=host_entity, relation_type="wrote_file", target_entity=file_entity))
-
-        facts.append(
-            EvidenceFact(
-                observation_id=observation.id,
-                fact_type="file_modification",
-                timestamp=timestamp,
-                primary_entity=file_entity,
-                fields={k: v for k, v in fields.items() if k in ("file_path", "path", "action", "hash") and v is not None},
-                relations=tuple(relations),
-            )
-        )
-
-    # 5. DNS query fact
-    elif fields.get("query") or fields.get("domain"):
-        dom = fields.get("query") or fields.get("domain")
-        domain_entity = Domain(name=str(dom))
-        relations.append(EntityRelation(source_entity=host_entity, relation_type="resolved_domain", target_entity=domain_entity))
-
-        facts.append(
-            EvidenceFact(
-                observation_id=observation.id,
-                fact_type="dns_activity",
-                timestamp=timestamp,
-                primary_entity=domain_entity,
-                fields={k: v for k, v in fields.items() if k in ("query", "domain", "query_type", "response") and v is not None},
                 relations=tuple(relations),
             )
         )

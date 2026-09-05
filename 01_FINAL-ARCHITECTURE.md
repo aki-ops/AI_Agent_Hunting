@@ -1,78 +1,47 @@
-# 01 — FINAL ARCHITECTURE (v4)
+# 01 — FINAL ARCHITECTURE (v4.1)
 
-**CANONICAL SOURCE OF TRUTH.** This document defines a pure hypothesis-driven
-threat-hunting engine. `02` defines algorithms, `03` records evidence and
-sources, and `04` is the implementation gate.
+**Canonical architecture source of truth.** `02` describes the executable
+method, `03` records literature and implementation traceability, and `04` is
+the verified implementation gate.
 
-## 1. Goal
+## 1. Purpose and boundary
 
-Start from a short hunt hypothesis or hunt question and produce an auditable
-account of supporting, contradicting, unknown and unreachable evidence. The
-engine is not alert-triage and does not require a CVE PoC.
+The system is a hypothesis-driven threat-hunting engine. It accepts a short
+hypothesis, TTP, IOC, CVE, CTI question or natural-language hunt request and
+returns an auditable account of evidence, uncertainty and coverage.
 
-It must:
-
-- turn a hypothesis into testable evidence requirements;
-- discover configured provider capabilities and execute bounded queries;
-- work across heterogeneous SIEM, EDR, IDS, identity and cloud telemetry;
-- discover entities without a predeclared event taxonomy;
-- evaluate evidence against competing hypotheses;
-- keep raw observations out of repeated LLM contexts;
-- stop with explicit coverage and uncertainty bounds.
-
-## 2. Scope
-
-```text
-HYPOTHESIS / TTP / IOC / CVE / CTI / NL QUESTION
-→ evidence-driven hunting
-```
-
-An alert can be converted by an external integration into a hypothesis, but the
-core engine has no alert-investigation mode. Active exploitation/pentesting is
-out of scope.
-
-## 3. Architecture
+It is not an alert-triage workflow and does not require an alert or a CVE PoC.
+An external alert integration may convert an alert into a hypothesis, but the
+core engine does not depend on that conversion.
 
 ```text
 HuntRequest
-    ↓
-Knowledge / Behavior Compiler
-    ↓
-Hypothesis + EvidenceRequirements
-    ↓
-Capability Registry + Runtime Validation
-    ↓
-Query Planner + Query Validator
-    ↓
-Provider Adapters / Query Execution
-    ↓
-Observation Ledger
-    ↓
-Evidence Fact + Evidence Group Builder
-    ↓
-Compatibility / Evidence Evaluator
-    ↓
-HuntState
-    ↓
-Deterministic Action Controller
-    ├── TEST / EXPAND / DISCOVER / PIVOT / REFINE
-    └── STOP
-    ↓
-Final Hunt Account
+  → semantic / knowledge compilation
+  → typed hypotheses and evidence requirements
+  → provider capability validation
+  → safe logical and native query plans
+  → bounded provider execution
+  → observations and evidence cards
+  → deterministic testing and controller actions
+  → coverage-aware FinalHuntAccount
 ```
 
-`HuntState` is data, not a second controller.
+## 2. Components
 
-| Component | Responsibility | LLM |
+| Component | Responsibility | LLM boundary |
 |---|---|---|
-| Knowledge/Behavior Compiler | Normalize request and derive behavior candidates | optional, bounded |
-| Capability/Adapter Layer | Describe and execute provider operations | no state authority |
-| Query Planner/Validator | Bind evidence to safe queries | templates first; fallback only |
-| Observation/Evidence Layer | Preserve, compress and evaluate evidence | semantic fallback only |
-| Hunt Controller | Own transitions, budgets, coverage and stopping | forbidden |
-| Account Renderer | Produce structured account and optional prose | optional |
+| Knowledge/Behavior Compiler | Converts typed knowledge or free text into hypotheses and requirements | Known CVE/TTP/IOC/templates: none; unstructured free text: at most one semantic call |
+| Capability and Adapter Layer | Discovers scopes, fields, operations, retention and provider health; executes queries | None |
+| Query Planner and Validator | Binds requirements to templates/capabilities and compiles safe native queries | Only fallback when no template exists and a caller is configured |
+| Observation and Evidence Layer | Preserves native records, extracts facts, groups evidence and evaluates typed expectations | Only bounded batch refinement for unresolved groups |
+| Action Controller | Owns TEST/CONTROL/EXPAND/DISCOVER/PIVOT/REFINE/STOP, budgets and stopping | None |
+| Account Builder/Renderer | Builds the final structured account and Markdown report | Narrative LLM is not used by the current runtime |
 
-## 4. Input and output
+`HuntState` is the data container. The controller API is the intended state
+transition boundary; engine initialization/final usage attachment remains an
+implementation detail covered by the current tests.
+
+## 3. Input and output
 
 ```python
 HuntRequest = {
@@ -80,14 +49,16 @@ HuntRequest = {
     "kind": "HYPOTHESIS" | "TTP" | "IOC" | "CVE" | "CTI_REPORT" |
             "NL_QUESTION" | "SCHEDULED",
     "content": str,
-    "entities": list[EntityRef],
+    "entities": list[EntityRef],       # optional explicit targets
     "time_policy": TimePolicy | None,
     "provider_hints": list[str],
 }
 ```
 
-Entities, time and provider hints are optional. Missing values use an explicit
-deployment policy and are never silently treated as facts.
+The request may contain only `content`. An absent entity means a wildcard
+population hunt, not a fabricated entity. Entities returned by semantic
+compilation are hints for interpretation/query filtering; they are not
+automatically confirmed Cells.
 
 ```python
 FinalHuntAccount = {
@@ -95,7 +66,7 @@ FinalHuntAccount = {
     "objective": HuntObjective,
     "hypotheses": list[Hypothesis],
     "evidence_cards": list[EvidenceCard],
-    "queries": list[QueryRecord],
+    "queries": list[dict],
     "supporting": list[str],
     "contradicting": list[str],
     "unknown": list[str],
@@ -106,126 +77,136 @@ FinalHuntAccount = {
 }
 ```
 
-## 5. Core contracts
+## 4. Semantic model
+
+The compiler has two safe paths:
+
+1. Versioned CVE/TTP/IOC/behavior templates compile deterministically.
+2. Unstructured `HYPOTHESIS`/`NL_QUESTION` input is sent to the bounded
+   semantic compiler when `--llm api` is configured. The result is validated by
+   `validate_compiler_llm_output`. If the API is unavailable, not configured or
+   returns an invalid schema, the hunt stops as `STOP_INSUFFICIENT`.
+
+The semantic schema contains:
 
 ```python
-Hypothesis = {
-    "id": str,
-    "statement": str,
-    "origin": "INPUT" | "LLM_PROPOSAL" | "RULE" | "HUMAN",
-    "status": "LIVE" | "SUPPORTED" | "WEAKENED" | "REFUTED" | "UNTESTABLE",
-    "source_refs": list[str],
-    "requirements": list[str],
-}
-
-EvidenceRequirement = {
-    "id": str,
-    "description": str,
-    "evidence_type": str,
-    "entity_scope": EntityRef | "ANY" | "POPULATION",
-    "time_scope": TimeWindow,
-    "predicate": Predicate | None,
-    "supports": list[str],
-    "contradicts": list[str],
-    "falsification_condition": str,
-    "source_refs": list[str],
-    "status": "PROPOSED" | "VALIDATED" | "UNSUPPORTED" | "REJECTED",
+SemanticCompilationResult = {
+    "normalized_claim": {"text": str, "status": "UNVERIFIED"},
+    "entities": [{"type": str, "value": str, "role": str}],
+    "mechanism_status": "KNOWN" | "UNKNOWN",
+    "hypotheses": [{
+        "id": str, "statement": str, "class": str,
+        "assumptions": list[str], "requirements": list[str]
+    }],
+    "requirements": [{
+        "id": str, "semantic_intent": str,
+        "necessity": "CRITICAL" | "SUPPORTING",
+        "search_hints": list[str],
+        "falsification_condition": str,
+        "description": str, "source_refs": list[str]
+    }]
 }
 ```
 
-`EvidenceRequirement` is reusable. `Expectation` instantiates it for a
-particular entity/time/predicate. `QueryPlan` is provider-specific:
+There is no natural-language keyword classifier. Evidence attribution cannot
+be triggered by words in a hypothesis statement. It requires a typed
+`Expectation`, or a single bounded LLM batch when the card is genuinely
+ambiguous. `search_hints` are query constraints only; they are not evidence,
+Cells or confirmed entities.
+
+## 5. Provider-neutral coverage model
 
 ```text
-EvidenceRequirement → Expectation → QueryPlan → QueryResult
+Cell = (ProviderScope, entity | ANY, time_bucket)
 ```
 
-```python
-ProviderScope = {
-    "provider_id": str,
-    "scope_id": str,
-    "native_partition": dict[str, str],
-    "coverage_start": datetime,
-    "coverage_end": datetime | None,
-    "retention_days": int | None,
-    "known_gaps": list[Gap],
-}
-
-Cell = {
-    "provider_scope": ProviderScope,
-    "entity": EntityRef | ANY,
-    "time_bucket": TimeBucket,
-}
-```
-
-`Cell` is a coverage address only. It has no `event_family`, `event_code`,
-intent or operation axis. Native types remain in observations; semantic mapping
-is optional.
-
-```python
-EvidenceCard = {
-    "id": str,
-    "fingerprint": str,
-    "representative_observation_ids": list[str],
-    "count": int,
-    "entity_summary": dict,
-    "time_summary": dict,
-    "field_summary": dict,
-    "fact_type": str,
-    "completeness": str,
-    "relations": list[EvidenceRelation],
-}
-```
-
-The ledger stores every observation. The LLM receives bounded cards and deltas,
-not every raw row.
-
-## 6. LLM boundary and cost policy
-
-LLM calls are conditional gates:
-
-| Gate | Trigger | MVP limit |
-|---|---|---:|
-| Objective compilation | Unstructured or novel input | 1 |
-| Query fallback | No validated template | 1 per requirement/provider/schema |
-| Ambiguous evidence | Rules cannot discriminate hypotheses | 1 per epoch |
-| Narrative | Explicit analyst request | 1, optional |
-
-```python
-max_llm_calls_per_hunt = 3
-max_llm_calls_per_epoch = 1
-max_retries = 1
-max_dynamic_requirements = 5
-```
-
-Known predicates, grouping, correlation, capability selection, coverage, state
-and stopping are deterministic. A known or duplicate observation never triggers
-an LLM call.
-
-## 7. Outcomes and stopping
+`Cell` has no `event_family`, `event_code`, semantic intent or operation axis.
+Provider-native event types are retained in `Observation.native_type`; an
+unknown native record may have `semantic_type=None` and must not be dropped.
 
 ```text
-SUPPORTED       — evidence satisfies the hypothesis requirements
-CONTRADICTED    — complete and observable evidence refutes it
-INCONCLUSIVE    — evidence is insufficient or ambiguous
-UNKNOWN         — required meaning/data cannot be established
-UNREACHABLE     — provider/scope/telemetry cannot be queried
+EvidenceRequirement
+    → Expectation(entity, time, predicate)
+    → QueryPlan(provider operation)
+    → QueryResult(complete/partial/diagnostic)
 ```
+
+`ProviderScope` retains the native partition, coverage interval, retention and
+known gaps. `ProviderOperation` declares provider behavior, fields,
+pagination and completeness. Scope coverage and requirement coverage are
+reported separately.
+
+## 6. Query and execution boundary
+
+The planner uses a validated template first. If no template exists, a
+configured planner LLM may propose structured parameters or custom query text;
+the parser, provider allowlist, dry-run validation and native compiler must
+accept it before execution. The semantic compiler never emits raw SPL/SQL.
+
+The current live adapter is Splunk (`SplunkLiveAdapter`) and the local replay
+adapter is CDB (`CdbAdapter`). EDR and IDS contracts are designed as extension
+points, but no live EDR/IDS adapter is part of the current implementation.
+
+## 7. Evidence and epistemic rules
+
+- Raw observations are append-only and auditable.
+- Fact extraction and temporal/entity correlation are deterministic.
+- Repeated records become compressed `EvidenceCard` groups.
+- A card may be compatible with multiple hypotheses.
+- No expectation means no deterministic attribution; the result remains
+  unknown or goes to one bounded ambiguity batch.
+- `complete=False`, `UNREACHABLE`, `UNSUPPORTED`, `INCONCLUSIVE` and
+  `UNKNOWN` never become a benign conclusion.
+- Negative evidence is licensed only after scope health, any-record and
+  predicate-observability controls pass.
+
+## 8. LLM and resource policy
+
+The current CLI/API wiring shares an `LLMUsageTracker` with a hard default of
+three calls and 12,000 total tokens per hunt. The controller also enforces:
 
 ```text
-STOP_RESOLVED | STOP_BOUNDED | STOP_EXHAUSTED_BY_BUDGET
+max_turns = 15
+max_queries = 60
+max_llm_calls = 3
+max_scan_cells = 100
+max_runtime_seconds = 300
 ```
 
-`NO_EVIDENCE_FOUND` is a report result, not `BENIGN`. The account must state the
-searched frame, incomplete regions and unobservable requirements.
+The semantic compiler is at most one call per free-text compilation. Query
+fallback is used only when a template is absent. Evidence refinement is one
+batch per evaluator instance/epoch and receives cards, not the raw ledger.
+The offline `StubSemanticCompiler` is a test fixture selected explicitly by
+scenario; it is not evidence of model quality or API cost.
 
-## 8. Basis and limitations
+## 9. Actions and stopping
 
-The architecture adapts the knowledge–hypothesis–action model from *Evidential
-Cyber Threat Hunting*, adaptive targeted collection and hypothesis testing from
-ATHAFI, and behavior-to-query synthesis from ThreatRaptor. MITRE’s methodology
-separates hypothesis development, data requirements and collection gaps.
+The controller selects actions in this order when their preconditions exist:
 
-The exact Cell model, EvidenceCard compression, compatibility semantics,
-bounded LLM gates and coverage-aware stopping are thesis engineering decisions,
-not claims that a paper proved the exact implementation. See `03` and `02`.
+```text
+TEST → CONTROL → EXPAND → DISCOVER → PIVOT → REFINE → STOP
+```
+
+Terminal decisions include:
+
+```text
+STOP_RESOLVED
+STOP_BOUNDED
+STOP_EXHAUSTED_BY_BUDGET
+STOP_INSUFFICIENT
+STOP_UNSUPPORTED
+STOP_UNREACHABLE
+```
+
+`STOP_RESOLVED` requires concluded expectations, resolved hypotheses and no
+unexplored targeted instance Cell. `STOP_BOUNDED` means the controller has no
+safe next action but the evidence is not a complete resolution.
+
+## 10. Implementation and research boundary
+
+The knowledge–hypothesis–action loop is adapted from evidential cyber threat
+hunting and adaptive hypothesis testing. Behavior-to-query compilation,
+provider capability validation, evidence grouping and bounded LLM escalation
+are thesis engineering compositions. They require replay and live-provider
+experiments; they are not claimed to be directly proven by any single paper.
+See `03_LITERATURE-AND-TRACEABILITY.md`.

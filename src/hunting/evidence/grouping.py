@@ -46,21 +46,37 @@ class EvidenceGroupBuilder:
                 entities_seen["users"].add(str(o.fields["user"]))
             if "destination_ip" in o.fields and o.fields["destination_ip"]:
                 entities_seen["destination_ips"].add(str(o.fields["destination_ip"]))
+            if "domain" in o.fields and o.fields["domain"]:
+                entities_seen["domains"].add(str(o.fields["domain"]))
+            if "site" in o.fields and o.fields["site"]:
+                entities_seen["domains"].add(str(o.fields["site"]))
 
         entity_summary = {k: list(v) for k, v in entities_seen.items()}
         time_summary = {"earliest": earliest, "latest": latest, "span_events": count}
 
-        # Field summary (sample of distinct commands, paths, domains)
+        # Field summary (sample of distinct commands, paths, domains, uris, sites)
         field_summary: dict[str, list[str]] = {}
         cmdlines = {str(o.fields.get("cmdline")) for o in group_obs if o.fields.get("cmdline")}
         if cmdlines:
             field_summary["cmdlines"] = list(cmdlines)[:5]
+        images = {str(o.fields.get("image")) for o in group_obs if o.fields.get("image")}
+        if images:
+            field_summary["images"] = list(images)[:5]
+        parent_images = {str(o.fields.get("parent_image")) for o in group_obs if o.fields.get("parent_image")}
+        if parent_images:
+            field_summary["parent_images"] = list(parent_images)[:5]
         file_paths = {str(o.fields.get("file_path")) for o in group_obs if o.fields.get("file_path")}
         if file_paths:
             field_summary["file_paths"] = list(file_paths)[:5]
         domains = {str(o.fields.get("domain") or o.fields.get("query")) for o in group_obs if o.fields.get("domain") or o.fields.get("query")}
         if domains:
             field_summary["domains"] = list(domains)[:5]
+        uris = {str(o.fields.get("uri")) for o in group_obs if o.fields.get("uri")}
+        if uris:
+            field_summary["uris"] = list(uris)[:5]
+        sites = {str(o.fields.get("site")) for o in group_obs if o.fields.get("site")}
+        if sites:
+            field_summary["sites"] = list(sites)[:5]
 
         relations_summary = []
         if facts and facts[0].relations:
@@ -133,9 +149,11 @@ class EvidenceGroupBuilder:
         dst_ip = str(observation.fields.get("destination_ip", "")).strip()
         path = str(observation.fields.get("file_path", "")).strip().lower()
         task = str(observation.fields.get("task_name", "")).strip().lower()
+        uri = str(observation.fields.get("uri", "")).strip().lower()
+        site = str(observation.fields.get("site", "")).strip().lower()
 
         # Build stable raw signature
-        raw_sig = f"{scope_id}|{native_type}|{semantic_val}|{image}|{cmd}|{dst_ip}|{path}|{task}"
+        raw_sig = f"{scope_id}|{native_type}|{semantic_val}|{image}|{cmd}|{dst_ip}|{path}|{task}|{uri}|{site}"
         return hashlib.sha256(raw_sig.encode("utf-8")).hexdigest()
 
 

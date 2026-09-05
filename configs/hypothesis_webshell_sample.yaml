@@ -1,0 +1,31 @@
+# Custom Threat Hunting Hypothesis Definition (Mode: Structured Hypothesis)
+# File: configs/hypothesis_webshell_sample.yaml
+
+id: "hypo-custom-webshell-001"
+statement: "Kẻ tấn công khai thác lỗ hổng web để tải webshell và thực thi lệnh cmdline trái phép"
+
+entities:
+  - kind: "host"
+    value: "we1149srv"
+
+requirements:
+  - id: "req-webshell-proc"
+    description: "Thực thi tiến trình shell (cmd.exe, powershell.exe) từ web server (w3wp.exe/joomla)"
+    evidence_type: "process_ancestry"
+    predicate:
+      field: "cmdline"
+      op: "EXISTS"
+    falsification_condition: "Không có tiến trình shell con nào được tạo ra bởi web service"
+    source_refs:
+      - "MITRE-T1059.003"
+      - "CVE-2016-10033"
+
+  - id: "req-webshell-file"
+    description: "Tạo hoặc sửa đổi file script web (.php, .aspx) trong thư mục web root"
+    evidence_type: "file_modification"
+    predicate:
+      field: "file_path"
+      op: "EXISTS"
+    falsification_condition: "Không có file mã nguồn web nào bị ghi trái phép"
+    source_refs:
+      - "MITRE-T1505.003"

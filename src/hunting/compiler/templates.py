@@ -32,7 +32,7 @@ def build_default_templates() -> dict[str, BehaviorTemplate]:
                 predicate=FieldPredicate(field="parent_image", op=FieldOp.CONTAINS, value="w3wp"),
                 falsification_condition="no process creation logged with matching parent under verified sensor health",
                 source_refs=["MITRE-T1059", "SIGMA-proc-web-child"],
-                status=RequirementStatus.VALIDATED,
+                status=RequirementStatus.DEFINED,
             )
         ],
         required_fields=["image", "parent_image", "cmdline", "pid"],
@@ -54,7 +54,7 @@ def build_default_templates() -> dict[str, BehaviorTemplate]:
                 predicate=FieldPredicate(field="logon_type", op=FieldOp.EQUALS, value="3"),
                 falsification_condition="no network authentication logged from external or untrusted source",
                 source_refs=["MITRE-T1078", "MITRE-T1021"],
-                status=RequirementStatus.VALIDATED,
+                status=RequirementStatus.DEFINED,
             )
         ],
         required_fields=["user", "source_ip", "logon_type", "status"],
@@ -76,7 +76,7 @@ def build_default_templates() -> dict[str, BehaviorTemplate]:
                 predicate=FieldPredicate(field="destination_port", op=FieldOp.CONTAINS, value="443"),
                 falsification_condition="egress netflow shows zero connection attempts to candidate remote IP/domain",
                 source_refs=["MITRE-T1071.001", "REF-THREATRAPTOR"],
-                status=RequirementStatus.VALIDATED,
+                status=RequirementStatus.DEFINED,
             )
         ],
         required_fields=["destination_ip", "destination_port", "protocol", "bytes_out"],
@@ -98,7 +98,7 @@ def build_default_templates() -> dict[str, BehaviorTemplate]:
                 predicate=FieldPredicate(field="file_path", op=FieldOp.CONTAINS, value="web"),
                 falsification_condition="filesystem change records confirm zero file writes matching extension/path",
                 source_refs=["MITRE-T1505.003", "CISA-AA24-010A"],
-                status=RequirementStatus.VALIDATED,
+                status=RequirementStatus.DEFINED,
             )
         ],
         required_fields=["file_path", "action", "file_hash", "process_id"],
@@ -120,12 +120,55 @@ def build_default_templates() -> dict[str, BehaviorTemplate]:
                 predicate=FieldPredicate(field="task_name", op=FieldOp.EXISTS),
                 falsification_condition="task scheduler registry and event logs verify zero task creation records",
                 source_refs=["MITRE-T1053.005", "SIGMA-task-creation"],
-                status=RequirementStatus.VALIDATED,
+                status=RequirementStatus.DEFINED,
             )
         ],
         required_fields=["task_name", "action_payload", "user", "trigger"],
         falsification_condition="scheduler logs and persistence registry keys reflect clean configuration without additions",
         source_citations=["https://attack.mitre.org/techniques/T1053/005/"],
+    )
+
+    # 6. WEB APPLICATION COMPROMISE
+    templates["tmpl-web-compromise"] = BehaviorTemplate(
+        id="tmpl-web-compromise",
+        category=BehaviorCategory.WEB,
+        name="Web Application Compromise and Post-Exploitation",
+        description="Detection of web exploitation, web shell placement, and anomalous child process execution.",
+        requirements=[
+            EvidenceRequirementV4(
+                id="er-web-req-01",
+                description="Inbound HTTP/web requests targeting web application or URI endpoints",
+                evidence_type="web_request",
+                predicate=FieldPredicate(field="uri", op=FieldOp.EXISTS),
+                falsification_condition="web and HTTP stream logs confirm zero matching requests to target web host/URI",
+                source_refs=["MITRE-T1190", "CISA-AA24-010A"],
+                status=RequirementStatus.DEFINED,
+            ),
+            EvidenceRequirementV4(
+                id="er-web-proc-02",
+                description="Anomalous process execution or command shell spawned by web server or user process",
+                evidence_type="process_ancestry",
+                predicate=FieldPredicate(field="cmdline", op=FieldOp.EXISTS),
+                falsification_condition="endpoint telemetry verifies zero anomalous child processes spawned by web server",
+                source_refs=["MITRE-T1059", "SIGMA-proc-web-child"],
+                status=RequirementStatus.DEFINED,
+            ),
+            EvidenceRequirementV4(
+                id="er-web-file-03",
+                description="Web shell or suspicious script file written to web application directory",
+                evidence_type="file_modification",
+                predicate=FieldPredicate(field="file_path", op=FieldOp.EXISTS),
+                falsification_condition="filesystem change logs show no new executable or script files in web directories",
+                source_refs=["MITRE-T1505.003"],
+                status=RequirementStatus.DEFINED,
+            ),
+        ],
+        required_fields=["uri", "cmdline", "file_path"],
+        falsification_condition="telemetry confirms zero unauthorized web requests, child processes, or file modifications",
+        source_citations=[
+            "https://attack.mitre.org/tactics/TA0001/",
+            "https://attack.mitre.org/techniques/T1190/",
+        ],
     )
 
     return templates

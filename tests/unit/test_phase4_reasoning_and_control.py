@@ -74,10 +74,30 @@ def test_2_evidence_compatible_with_multiple_hypotheses():
         fact_type="process_execution",
     )
 
-    # Card matches both H1 (powershell/process) and H2 (administrative process activity)
-    compat = engine.evaluate_compatibility(card, [h1, h2])
+    expectations = [
+        Expectation(
+            id="exp-h1", owner_explanation_id=h1.id,
+            evidence_requirement=EvidenceRequirement.PROCESS_ANCESTRY,
+            predicted_observation="Process execution", entity_ref=Host(name="host-1"),
+            field_predicate=None, provider_scope_id="p1", time_window="2026-09-01/2026-09-02",
+            falsification_condition="No process telemetry",
+        ),
+        Expectation(
+            id="exp-h2", owner_explanation_id=h2.id,
+            evidence_requirement=EvidenceRequirement.PROCESS_ANCESTRY,
+            predicted_observation="Process execution", entity_ref=Host(name="host-1"),
+            field_predicate=None, provider_scope_id="p1", time_window="2026-09-01/2026-09-02",
+            falsification_condition="No process telemetry",
+        ),
+    ]
+    # Typed expectations, rather than statement keywords, make the card
+    # compatible with both hypotheses.
+    compat = engine.evaluate_compatibility(card, [h1, h2], expectations)
     assert compat[h1.id] is True
     assert compat[h2.id] is True
+
+    # Without typed expectations, no hypothesis may be selected by guessing.
+    assert engine.evaluate_compatibility(card, [h1, h2]) == {h1.id: False, h2.id: False}
 
 
 def test_3_semantic_llm_output_is_advisory_and_m3_validated():

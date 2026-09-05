@@ -5,7 +5,7 @@ branches in the planner.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from hunting.contracts.cells import ProviderScope
@@ -21,6 +21,19 @@ class CapabilityDescriptor:
     scopes: tuple[ProviderScope, ...]
     operations: tuple[ProviderOperation, ...]
     bindings: tuple[CapabilityBinding, ...]
+
+
+@dataclass
+class ProviderCapabilityCatalog:
+    """Discovered runtime telemetry capability catalog from provider."""
+    provider_id: str
+    status: str = "ONLINE"  # "ONLINE", "UNREACHABLE", "UNSUPPORTED"
+    indices: list[str] = field(default_factory=list)
+    sourcetypes: dict[str, int] = field(default_factory=dict)
+    supported_evidence_types: list[str] = field(default_factory=list)
+    observable_fields: list[str] = field(default_factory=list)
+    retention_days: int = 4000
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -92,4 +105,4 @@ class CapabilityMatcher:
         return MatchResult(binding=binding, operation=operation, diagnostic=None)
 
 
-__all__ = ["CapabilityDescriptor", "CapabilityMatcher", "MatchResult"]
+__all__ = ["CapabilityDescriptor", "ProviderCapabilityCatalog", "CapabilityMatcher", "MatchResult"]

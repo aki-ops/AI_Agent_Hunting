@@ -121,6 +121,13 @@ class QueryResult:
     native_types: list[str] = field(default_factory=list)
     cursor: str | None = None
     truncation_reason: str | None = None
+    logical_plan_id: str | None = None
+    native_query: str | None = None
+    provider: str | None = None
+    index: str | None = None
+    sourcetype: str | None = None
+    execution_time_ms: float = 0.0
+    row_count: int = 0
 
 
 @dataclass

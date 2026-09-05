@@ -193,3 +193,33 @@ def test_cli_hypothesis_hunt_with_query(tmp_path):
     content = out_report.read_text(encoding="utf-8")
     assert "Threat Hunting Investigation Final Account" in content
 
+
+def test_cli_hypothesis_hunt_confirmation_gate(tmp_path):
+    """Test analyst decision gates during hypothesis hunting with --no-auto-confirm."""
+    parser = build_parser()
+
+    # Decline gate -> returns code 2
+    args_decline = parser.parse_args([
+        "--cve", "CVE-2024-21887",
+        "--host", "WEB-IVANTI-01",
+        "--time-window", "2026-02-01T00:00:00Z/P1D",
+        "--no-auto-confirm",
+    ])
+    with patch("builtins.input", return_value="n"):
+        exit_code = run_cli(args_decline)
+        assert exit_code == 2
+
+    # Accept gate -> returns code 0 and produces report
+    out_report = tmp_path / "confirmed_hunt.md"
+    args_accept = parser.parse_args([
+        "--cve", "CVE-2024-21887",
+        "--host", "WEB-IVANTI-01",
+        "--time-window", "2026-02-01T00:00:00Z/P1D",
+        "--output", str(out_report),
+        "--no-auto-confirm",
+    ])
+    with patch("builtins.input", return_value="y"):
+        exit_code = run_cli(args_accept)
+        assert exit_code == 0
+        assert out_report.exists()
+
