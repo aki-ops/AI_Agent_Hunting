@@ -13,6 +13,7 @@ from typing import Any
 from hunting.contracts.entities import (
     Account,
     Domain,
+    EmailAddress,
     EntityRef,
     File,
     Host,
@@ -78,6 +79,47 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
                 timestamp=timestamp,
                 primary_entity=proc_entity,
                 fields={k: v for k, v in fields.items() if k in ("image", "cmdline", "parent_image", "user") and v is not None},
+                relations=tuple(relations),
+            )
+        )
+
+    # 1.5 Message / Email activity fact (Layer 7 Email/SMTP)
+    elif (
+        fields.get("sender_email")
+        or fields.get("receiver_email")
+        or (fields.get("sender") and "@" in str(fields.get("sender", "")))
+        or (fields.get("receiver") and "@" in str(fields.get("receiver", "")))
+        or fields.get("msg_id")
+        or (observation.native_type and any(k in str(observation.native_type).lower() for k in ("smtp", "mail", "o365")))
+    ):
+        from email.utils import parseaddr
+        s_raw = str(fields.get("sender_email") or fields.get("sender") or "")
+        _, sender_addr = parseaddr(s_raw)
+        if not sender_addr and "@" in s_raw:
+            sender_addr = s_raw.strip()
+        email_entity = EmailAddress(address=str(sender_addr or "unknown_sender"))
+
+        r_raw = str(fields.get("receiver_email") or fields.get("receiver") or "")
+        _, receiver_addr = parseaddr(r_raw)
+        if not receiver_addr and "@" in r_raw:
+            receiver_addr = r_raw.strip()
+        recip_entity = EmailAddress(address=str(receiver_addr or "unknown_recipient"))
+
+        relations.append(EntityRelation(source_entity=host_entity, relation_type="transmitted_message", target_entity=email_entity))
+        if receiver_addr:
+            relations.append(EntityRelation(source_entity=email_entity, relation_type="sent_to", target_entity=recip_entity))
+
+        facts.append(
+            EvidenceFact(
+                observation_id=observation.id,
+                fact_type="message_activity",
+                timestamp=timestamp,
+                primary_entity=email_entity,
+                fields={
+                    k: v for k, v in fields.items()
+                    if k in ("sender", "sender_email", "receiver", "receiver_email", "subject", "msg_id", "message_id", "src_ip", "dest_ip", "timestamp")
+                    and v is not None
+                },
                 relations=tuple(relations),
             )
         )

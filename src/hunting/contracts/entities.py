@@ -11,6 +11,7 @@ class EntityKind(str, Enum):
     IP = "ip"
     FILE = "file"
     DOMAIN = "domain"
+    EMAIL = "email"
     ANY = "ANY"
 
 
@@ -54,6 +55,12 @@ class Domain:
 
 
 @dataclass(frozen=True)
+class EmailAddress:
+    kind: EntityKind = EntityKind.EMAIL
+    address: str = ""   # normalized email address, e.g. "aturing@froth.ly"
+
+
+@dataclass(frozen=True)
 class AnyEntity:
     """Wildcard entity — used ONLY in Cell.entity for BroadSweep wildcard queries.
 
@@ -72,6 +79,9 @@ ANY = AnyEntity()
 # Account alias
 User = Account
 
+# Email alias
+Email = EmailAddress
+
 # All valid entity reference types (including wildcard)
-EntityRef = Host | Account | Process | IPAddress | File | Domain | AnyEntity
+EntityRef = Host | Account | Process | IPAddress | File | Domain | EmailAddress | AnyEntity
 

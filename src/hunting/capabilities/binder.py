@@ -143,7 +143,7 @@ class CapabilityBinder:
                 first_name = clean_val.split()[0] if clean_val else clean_val
                 return (
                     f'search index="{index}" (sourcetype="stream:smtp" OR sourcetype="stream:ldap" OR sourcetype="*security*" OR sourcetype="wineventlog:security") '
-                    f'("{clean_val}" OR "{first_name}" OR TargetUserName="*{first_name}*" OR "*aturing*") '
+                    f'("{clean_val}" OR "{first_name}" OR TargetUserName="*{first_name}*") '
                     f'| head {limit} '
                     f'| table _time, host, ComputerName, TargetUserName, user, sender, sender_email, receiver, receiver_email, IpAddress, WorkstationName, LogonType, _raw'
                 )
@@ -160,11 +160,11 @@ class CapabilityBinder:
 
             if op == "find_outbound_message_metadata":
                 # Search SMTP streams for outbound email sent by this identity
+                eff_limit = max(limit, 500)
                 return (
                     f'search index="{index}" sourcetype="stream:smtp" '
-                    f'("{clean_val}" OR "*amber*" OR "*aturing*") '
-                    f'("berkbeer" OR "ceo" OR "competitor" OR "external" OR "Amber from Froth.ly") '
-                    f'| head {limit} '
+                    f'(sender="*{clean_val}*" OR sender_email="*{clean_val}*" OR "{clean_val}") '
+                    f'| head {eff_limit} '
                     f'| table _time, host, sender, sender_email, receiver, receiver_email, subject, msg_id, src_ip, dest_ip, _raw'
                 )
 
@@ -172,7 +172,7 @@ class CapabilityBinder:
                 # Extract and verify the recipient identity from message metadata
                 return (
                     f'search index="{index}" sourcetype="stream:smtp" '
-                    f'("{clean_val}" OR "mberk@berkbeer.com" OR "Amber from Froth.ly") '
+                    f'(msg_id="{clean_val}" OR message_id="{clean_val}" OR "{clean_val}") '
                     f'| head {limit} '
                     f'| table _time, host, sender, sender_email, receiver, receiver_email, subject, msg_id, _raw'
                 )
@@ -180,8 +180,8 @@ class CapabilityBinder:
             if op == "resolve_role_identity":
                 # Verify recipient corporate role or executive title
                 return (
-                    f'search index="{index}" (sourcetype="stream:smtp" OR sourcetype="*active_directory*" OR sourcetype="*ldap*") '
-                    f'("{clean_val}" OR "CEO" OR "chief executive" OR "executive") '
+                    f'search index="{index}" (sourcetype="*active_directory*" OR sourcetype="*ldap*" OR sourcetype="stream:ldap") '
+                    f'("{clean_val}") '
                     f'| head {limit} '
                     f'| table _time, host, sender, receiver, subject, title, role, department, _raw'
                 )

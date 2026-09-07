@@ -18,9 +18,8 @@ from hunting.contracts.investigation_model import (
     RelationGraph,
     RelationType,
 )
+from hunting.evidence.relation_verifier import KNOWN_WEB_SERVERS, is_prohibited_server
 from hunting.m1_ledger.ledger import ObservationLedger
-
-KNOWN_WEB_SERVERS = {"jabbah", "we1149srv", "web01", "iis01"}
 
 
 @dataclass
@@ -82,7 +81,7 @@ class InvestigationAdjudicator:
             and tgt_node.type in (NodeType.HOST.value, NodeType.ENDPOINT.value)
         ):
             host_val = tgt_node.value.lower()
-            if host_val in KNOWN_WEB_SERVERS:
+            if is_prohibited_server(host_val):
                 violations.append(
                     f"Web server host '{host_val}' cannot be bound as user endpoint for {src_node.value}."
                 )

@@ -7,7 +7,9 @@ before minting RelationProofs and updating graph state.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
+from email.utils import parseaddr
 
 from hunting.contracts.case_graph import (
     GraphEdge,
@@ -145,26 +147,23 @@ class RelationVerifier:
 
             # 0. Person -> Account verification
             if src_type == "person" and tgt_type == "account":
-                first_name = src_val.split()[0] if src_val else src_val
+                first_name = src_val.split()[0].lower() if src_val else ""
+                last_name = src_val.split()[-1].lower() if src_val and len(src_val.split()) > 1 else ""
                 matched_user = None
-                for uf in (*self.USER_FIELDS, "sender", "receiver", "sender_email", "receiver_email"):
+                for uf in (*self.USER_FIELDS, "sender", "receiver", "sender_email", "receiver_email", "displayName"):
                     val = str(fields.get(uf, "")).lower()
-                    if src_val in val or (first_name and first_name in val):
+                    if val and (src_val.lower() in val or (first_name and first_name in val) or (last_name and last_name in val)):
                         raw_match = fields.get(uf)
-                        import re
                         m = re.search(r'[\w\.-]+@[\w\.-]+', str(raw_match))
                         if m:
                             matched_user = m.group(0).split('@')[0].lower()
                         elif uf in self.USER_FIELDS:
                             matched_user = str(raw_match)
                         break
-                if not matched_user:
+                if not matched_user and first_name:
                     h_val = str(fields.get("host", "")).lower()
-                    if "wrk-" in h_val and (first_name in h_val or "aturing" in h_val):
+                    if "wrk-" in h_val and (first_name in h_val or (last_name and last_name in h_val)):
                         matched_user = h_val.split("wrk-")[-1].split(".")[0]
-
-                if not matched_user and ("amber" in src_val or "turing" in src_val):
-                    matched_user = "aturing"
 
                 if matched_user:
                     discovered_target_val = matched_user
@@ -176,17 +175,41 @@ class RelationVerifier:
             # 0.1 Account -> Email Address verification
             elif (src_type == "account" and tgt_type == "email_address") or edge.relation_type in ("has_email", RelationType.HAS_EMAIL):
                 matched_email = None
-                user_prefix = src_val.split('@')[0].split('.')[0] if '.' in src_val else src_val
-                for obs_field in ("sender_email", "sender", "receiver_email", "receiver", "user"):
-                    val = fields.get(obs_field, "")
-                    if isinstance(val, str) and (src_val in val.lower() or user_prefix in val.lower()):
-                        import re
-                        m = re.search(r'[\w\.-]+@[\w\.-]+', val)
-                        if m:
-                            matched_email = m.group(0).lower()
+                user_tokens = [t for t in re.split(r'[\._\s]+', src_val.lower()) if len(t) > 1]
+                user_prefix = src_val.split('@')[0].split('.')[0].lower() if '.' in src_val else src_val.lower()
+
+                # Try structured sender and receiver pairs first
+                for disp_k, mail_k in [("sender", "sender_email"), ("receiver", "receiver_email")]:
+                    disp_v = str(fields.get(disp_k) or "").strip()
+                    mail_v = str(fields.get(mail_k) or "").strip()
+                    d_name, parsed = parseaddr(disp_v)
+                    eff_email = parsed or mail_v
+                    eff_name = d_name or disp_v
+                    if eff_email and "@" in eff_email:
+                        if src_val.lower() in eff_email.lower() or user_prefix in eff_email.lower():
+                            matched_email = eff_email.lower()
                             break
-                if not matched_email and ("amber" in src_val or "aturing" in src_val):
-                    matched_email = "aturing@froth.ly"
+                        if eff_name and user_tokens and all(tok in eff_name.lower() for tok in user_tokens):
+                            matched_email = eff_email.lower()
+                            break
+
+                # Fallback to scanning individual fields
+                if not matched_email:
+                    for obs_field in ("sender_email", "sender", "receiver_email", "receiver", "mail", "userPrincipalName", "user"):
+                        val = str(fields.get(obs_field, "") or "")
+                        if val:
+                            d_name, email_parsed = parseaddr(val)
+                            if email_parsed and "@" in email_parsed:
+                                if src_val.lower() in email_parsed.lower() or user_prefix in email_parsed.lower():
+                                    matched_email = email_parsed.lower()
+                                    break
+                                if d_name and user_tokens and all(tok in d_name.lower() for tok in user_tokens):
+                                    matched_email = email_parsed.lower()
+                                    break
+                            m = re.search(r'[\w\.-]+@[\w\.-]+', val)
+                            if m and (src_val.lower() in m.group(0).lower() or user_prefix in m.group(0).lower()):
+                                matched_email = m.group(0).lower()
+                                break
 
                 if matched_email:
                     discovered_target_val = matched_email
@@ -197,89 +220,113 @@ class RelationVerifier:
 
             # 0.2 Email -> Outbound Message verification
             elif (src_type == "email_address" and tgt_type == "message") or edge.relation_type in ("sent_message", RelationType.SENT_MESSAGE):
-                best_obs = None
-                best_score = -1
-                for obs_item in candidate_obs:
-                    raw_f = obs_item.fields
-                    s_email = str(raw_f.get("sender_email", "") or raw_f.get("sender", "")).lower()
-                    r_email = str(raw_f.get("receiver_email", "") or raw_f.get("receiver", "")).lower()
-                    s_subj = str(raw_f.get("subject", "")).lower()
-                    if src_val in s_email or (("aturing" in src_val or "amber" in src_val) and "froth.ly" in s_email) or not src_val:
-                        score = 1
-                        if "froth.ly" not in r_email and "@" in r_email:
-                            score += 10
-                        if "berkbeer" in r_email:
-                            score += 20
-                        if "mberk" in r_email or "berk@" in r_email:
-                            score += 50
-                        if "amber" in s_subj or "froth" in s_subj:
-                            score += 15
-                        if score > best_score:
-                            best_score = score
-                            best_obs = obs_item
+                matched_obs = None
+                pred = edge.acceptance_predicate or {}
+                external_only = bool(pred.get("recipient_external") or pred.get("external"))
 
-                if best_obs:
-                    msg_id = best_obs.fields.get("msg_id") or best_obs.fields.get("message_id") or f"msg-{best_obs.id}"
+                # Sort candidate observations chronologically to inspect initial messages
+                sorted_candidates = sorted(
+                    candidate_obs,
+                    key=lambda o: str(o.timestamp or o.fields.get("timestamp") or o.fields.get("_time") or "")
+                )
+                has_any_msg_id = any(bool(o.fields.get("msg_id") or o.fields.get("message_id")) for o in sorted_candidates)
+                for obs_item in sorted_candidates:
+                    raw_f = obs_item.fields
+                    msg_id_val = raw_f.get("msg_id") or raw_f.get("message_id")
+                    if has_any_msg_id and not msg_id_val:
+                        # Skip telemetry that lacks a message identifier when actual message events are present
+                        continue
+
+                    s_raw = str(raw_f.get("sender_email", "") or raw_f.get("sender", "")).strip().lower()
+                    _, s_email = parseaddr(s_raw)
+                    if not s_email:
+                        m = re.search(r'[\w\.-]+@[\w\.-]+', s_raw)
+                        s_email = m.group(0).lower() if m else s_raw
+
+                    if not src_val or (s_email and src_val.lower() in s_email) or (s_email and s_email in src_val.lower()):
+                        if external_only:
+                            r_raw = str(raw_f.get("receiver_email", "") or raw_f.get("receiver", "")).strip().lower()
+                            _, r_email = parseaddr(r_raw)
+                            if not r_email:
+                                m = re.search(r'[\w\.-]+@[\w\.-]+', r_raw)
+                                r_email = m.group(0).lower() if m else ""
+                            s_dom = s_email.split("@")[-1] if "@" in s_email else ""
+                            r_dom = r_email.split("@")[-1] if "@" in r_email else ""
+                            if not r_dom or (s_dom and r_dom == s_dom):
+                                continue
+
+                        matched_obs = obs_item
+                        break
+
+                if matched_obs:
+                    msg_id = matched_obs.fields.get("msg_id") or matched_obs.fields.get("message_id") or f"msg-{matched_obs.id}"
                     discovered_target_val = str(msg_id)
-                    matching_obs_ids.append(best_obs.id)
-                    field_matches["sender"] = str(best_obs.fields.get("sender") or best_obs.fields.get("sender_email"))
+                    matching_obs_ids.append(matched_obs.id)
+                    field_matches["sender"] = str(matched_obs.fields.get("sender") or matched_obs.fields.get("sender_email"))
                     field_matches["message_id"] = str(msg_id)
-                    if best_obs.fields.get("subject"):
-                        field_matches["subject"] = str(best_obs.fields.get("subject"))
+                    if matched_obs.fields.get("subject"):
+                        field_matches["subject"] = str(matched_obs.fields.get("subject"))
                     break
 
             # 0.3 Message -> Recipient Identity verification
             elif (src_type == "message" and tgt_type in ("email_address", "person")) or edge.relation_type in ("received_message", RelationType.RECEIVED_MESSAGE):
                 matched_obs = None
                 for obs_item in candidate_obs:
-                    m_id = str(obs_item.fields.get("msg_id") or obs_item.fields.get("message_id") or "").lower().strip()
-                    if src_val and m_id and (src_val in m_id or m_id in src_val):
+                    m_id = str(obs_item.fields.get("msg_id") or obs_item.fields.get("message_id") or f"msg-{obs_item.id}").lower().strip()
+                    if src_val and (src_val.lower() == m_id or src_val.lower() in m_id or m_id in src_val.lower()):
                         matched_obs = obs_item
                         break
-                if not matched_obs:
-                    for obs_item in candidate_obs:
-                        r_val = str(obs_item.fields.get("receiver_email") or obs_item.fields.get("receiver") or "").lower()
-                        if "mberk" in r_val or "berkbeer" in r_val:
-                            matched_obs = obs_item
-                            break
-                if not matched_obs:
-                    for obs_item in candidate_obs:
-                        r_val = str(obs_item.fields.get("receiver_email") or obs_item.fields.get("receiver") or "").lower()
-                        if "@" in r_val and "ubuntu" not in r_val and "compute.amazonaws" not in r_val:
-                            matched_obs = obs_item
-                            break
+
                 if not matched_obs and candidate_obs:
-                    matched_obs = candidate_obs[0]
+                    for obs_item in candidate_obs:
+                        r_f = str(obs_item.fields.get("receiver_email") or obs_item.fields.get("receiver") or "")
+                        if "@" in r_f:
+                            matched_obs = obs_item
+                            break
 
                 if matched_obs:
                     re_val = matched_obs.fields.get("receiver_email") or matched_obs.fields.get("receiver")
-                    if re_val:
-                        if isinstance(re_val, list):
-                            re_val = re_val[0]
-                        import re
-                        m = re.search(r'[\w\.-]+@[\w\.-]+', str(re_val))
-                        clean_recip = m.group(0) if m else str(re_val).strip()
-                        discovered_target_val = clean_recip
-                        matching_obs_ids.append(matched_obs.id)
-                        field_matches["recipient_email"] = clean_recip
-                        if "mberk" in clean_recip.lower():
-                            field_matches["recipient_name"] = "Martin Berk"
-                        elif "hbernhard" in clean_recip.lower():
-                            field_matches["recipient_name"] = "Heinz Bernhard"
-                        if matched_obs.fields.get("subject"):
-                            field_matches["subject"] = str(matched_obs.fields.get("subject"))
-                        break
+                    if isinstance(re_val, list):
+                        re_val = re_val[0]
+                    re_str = str(re_val or "").strip()
+                    parsed_name, parsed_email = parseaddr(re_str)
+                    if not parsed_email:
+                        m = re.search(r'[\w\.-]+@[\w\.-]+', re_str)
+                        parsed_email = m.group(0) if m else re_str
+
+                    if not parsed_name and matched_obs.fields.get("receiver"):
+                        rec_sec = str(matched_obs.fields.get("receiver") or "").strip()
+                        sec_name, _ = parseaddr(rec_sec)
+                        if sec_name:
+                            parsed_name = sec_name
+
+                    discovered_target_val = parsed_email.strip()
+                    matching_obs_ids.append(matched_obs.id)
+                    field_matches["recipient_email"] = parsed_email.strip()
+                    clean_name = parsed_name.strip().strip("'\"") if parsed_name else ""
+                    if clean_name and "@" not in clean_name and clean_name.lower() != parsed_email.lower():
+                        field_matches["recipient_name"] = clean_name
+                    if matched_obs.fields.get("subject"):
+                        field_matches["subject"] = str(matched_obs.fields.get("subject"))
+                    break
 
             # 0.4 Recipient -> Role verification
             elif tgt_type == "role" or edge.relation_type in ("holds_role", RelationType.HOLDS_ROLE):
-                title_val = fields.get("title") or fields.get("role") or fields.get("department")
-                if title_val and ("ceo" in str(title_val).lower() or "executive" in str(title_val).lower()):
-                    discovered_target_val = str(title_val)
-                    matching_obs_ids.append(obs.id)
-                    field_matches["role"] = str(title_val)
-                    break
+                title_val = fields.get("title") or fields.get("role") or fields.get("department") or fields.get("job_title")
+                if title_val:
+                    if target_node.value and target_node.value != "?":
+                        if target_node.value.lower() in str(title_val).lower():
+                            discovered_target_val = str(title_val)
+                            matching_obs_ids.append(obs.id)
+                            field_matches["role"] = str(title_val)
+                            break
+                    else:
+                        discovered_target_val = str(title_val)
+                        matching_obs_ids.append(obs.id)
+                        field_matches["role"] = str(title_val)
+                        break
                 else:
-                    diagnostic_violations.append(f"Recipient executive role for '{src_val}' cannot be verified from message telemetry alone.")
+                    diagnostic_violations.append(f"Recipient executive role for '{src_val}' cannot be verified from message telemetry alone without directory/LDAP evidence.")
 
             # A. Person/Account -> Endpoint logon verification
             elif src_type in ("person", "account") and tgt_type in ("endpoint", "host"):
@@ -359,10 +406,8 @@ class RelationVerifier:
                             if not noise_matches:
                                 if target_node.value and target_node.value != "?" and target_node.value.lower() in dval_clean:
                                     priority = 0
-                                elif any(kw in dval_clean for kw in ("beer", "competitor", "brew")):
-                                    priority = 1
                                 else:
-                                    priority = 2
+                                    priority = 1
                                 domain_candidates.append((priority, str(dval).strip(), obs.id, str(matched_ip or src_val)))
 
         if domain_candidates and not discovered_target_val:

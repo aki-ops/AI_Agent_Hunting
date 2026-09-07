@@ -604,7 +604,7 @@ class SplunkLiveAdapter:
             first_name = ent_val.split()[0] if ent_val else ent_val
             spl = (
                 f'search index="{self.index}" (sourcetype="stream:smtp" OR sourcetype="stream:ldap" OR sourcetype="*security*" OR sourcetype="WinEventLog:Security" OR sourcetype="wineventlog:security") '
-                f'("{ent_val}" OR "{first_name}" OR TargetUserName="*{first_name}*" OR "*aturing*") '
+                f'("{ent_val}" OR "{first_name}" OR TargetUserName="*{first_name}*") '
                 f'| rex field=_raw "New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)" '
                 f'| rex field=_raw "Account Name:\\s*(?<user>[^\\r\\n\\s]+)" '
                 f'| head {limit + 1} '
@@ -745,11 +745,11 @@ class SplunkLiveAdapter:
 
         if operation_id == "find_outbound_message_metadata":
             ent_val = str(getattr(entity, "value", str(entity or ""))).replace('"', '').strip()
+            eff_limit = max(limit + 1, 500)
             spl = (
                 f'search index="{self.index}" sourcetype="stream:smtp" '
-                f'("{ent_val}" OR "*amber*" OR "*aturing*") '
-                f'("berkbeer" OR "ceo" OR "competitor" OR "external" OR "Amber from Froth.ly") '
-                f'| head {limit + 1} '
+                f'(sender="*{ent_val}*" OR sender_email="*{ent_val}*" OR "{ent_val}") '
+                f'| head {eff_limit} '
                 f'| table _time, host, sender, sender_email, receiver, receiver_email, subject, msg_id, src_ip, dest_ip, _raw'
             )
             return spl, earliest_iso, latest_iso
@@ -758,7 +758,7 @@ class SplunkLiveAdapter:
             ent_val = str(getattr(entity, "value", str(entity or ""))).replace('"', '').strip()
             spl = (
                 f'search index="{self.index}" sourcetype="stream:smtp" '
-                f'("{ent_val}" OR "mberk@berkbeer.com" OR "Amber from Froth.ly") '
+                f'(msg_id="{ent_val}" OR message_id="{ent_val}" OR "{ent_val}") '
                 f'| head {limit + 1} '
                 f'| table _time, host, sender, sender_email, receiver, receiver_email, subject, msg_id, _raw'
             )
@@ -767,8 +767,8 @@ class SplunkLiveAdapter:
         if operation_id == "resolve_role_identity":
             ent_val = str(getattr(entity, "value", str(entity or ""))).replace('"', '').strip()
             spl = (
-                f'search index="{self.index}" (sourcetype="stream:smtp" OR sourcetype="*active_directory*" OR sourcetype="*ldap*") '
-                f'("{ent_val}" OR "CEO" OR "chief executive") '
+                f'search index="{self.index}" (sourcetype="*active_directory*" OR sourcetype="*ldap*" OR sourcetype="stream:ldap") '
+                f'("{ent_val}") '
                 f'| head {limit + 1} '
                 f'| table _time, host, sender, receiver, subject, title, role, department, _raw'
             )
@@ -916,6 +916,7 @@ class SplunkLiveAdapter:
     ) -> QueryResult:
         """Execute safe parameterized SPL over Splunk REST API with EOF completeness check."""
         start_time = time.perf_counter()
+        eff_limit = max(limit, 500) if operation_id == "find_outbound_message_metadata" else limit
         params = {"window": window, "limit": limit}
         validate_query_params(operation_id, params)
 
@@ -946,6 +947,7 @@ class SplunkLiveAdapter:
                     "latest_time": latest_iso,
                     "output_mode": "json",
                     "exec_mode": "oneshot",
+                    "count": 0,
                 },
                 auth=self.auth,
                 verify=self.verify_ssl,
@@ -1152,10 +1154,11 @@ class SplunkLiveAdapter:
             normalized_rows.append(row)
 
         # Evaluate L+1 completeness contract
-        if len(normalized_rows) > limit:
-            return_rows = normalized_rows[:limit]
+        target_limit = eff_limit if "eff_limit" in locals() else limit
+        if len(normalized_rows) > target_limit:
+            return_rows = normalized_rows[:target_limit]
             complete = False
-            cursor = str(offset + limit)
+            cursor = str(offset + target_limit)
         else:
             return_rows = normalized_rows
             complete = True

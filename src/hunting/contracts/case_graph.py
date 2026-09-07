@@ -165,6 +165,9 @@ class GraphEdge:
     target_id: str
     target_entity_type: NodeType | str
     required_field_roles: dict[str, FieldRole | str] = field(default_factory=dict)
+    source_field_bindings: dict[str, str] = field(default_factory=dict)
+    required_native_types: list[str] = field(default_factory=list)
+    acceptance_predicate: dict[str, Any] = field(default_factory=dict)
     time_constraints: dict[str, Any] = field(default_factory=dict)
     acceptable_operations: list[str] = field(default_factory=list)
     status: RelationStatus = RelationStatus.UNPROVEN
@@ -185,6 +188,9 @@ class GraphEdge:
                 k: (v.value if isinstance(v, Enum) else str(v))
                 for k, v in self.required_field_roles.items()
             },
+            "source_field_bindings": dict(self.source_field_bindings),
+            "required_native_types": list(self.required_native_types),
+            "acceptance_predicate": dict(self.acceptance_predicate),
             "time_constraints": dict(self.time_constraints),
             "acceptable_operations": list(self.acceptable_operations),
             "status": self.status.value if isinstance(self.status, Enum) else str(self.status),
@@ -222,6 +228,9 @@ class GraphEdge:
             target_id=str(data.get("target_id", "")).strip(),
             target_entity_type=tgt_t,
             required_field_roles=req_roles,
+            source_field_bindings=dict(data.get("source_field_bindings", {})),
+            required_native_types=list(data.get("required_native_types", [])),
+            acceptance_predicate=dict(data.get("acceptance_predicate", {})),
             time_constraints=dict(data.get("time_constraints", {})),
             acceptable_operations=list(data.get("acceptable_operations", [])),
             status=status,
@@ -668,6 +677,7 @@ def build_investigation_case_from_intent(
             status=RelationStatus.UNPROVEN,
         )
         # 3. Email sent Message
+        is_external_intent = any(k in intent_text for k in ("competitor", "external", "third party", "đối thủ", "ngoài"))
         e3 = GraphEdge(
             id="edge-email-sent-message",
             source_id=email_node.id,
@@ -678,6 +688,7 @@ def build_investigation_case_from_intent(
             required_field_roles={"source": FieldRole.SENDER_EMAIL, "target": FieldRole.MESSAGE_ID},
             acceptable_operations=["find_outbound_message_metadata"],
             status=RelationStatus.UNPROVEN,
+            acceptance_predicate={"recipient_external": True} if is_external_intent else {},
         )
         # 4. Message received by Recipient
         e4 = GraphEdge(

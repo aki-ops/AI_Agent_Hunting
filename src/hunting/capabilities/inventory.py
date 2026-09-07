@@ -128,6 +128,21 @@ class RuntimeSourceInventory:
             )
         )
 
+    def introspect_provider(self, adapter: Any) -> None:
+        """Dynamically discover provider sources and update schemas from live adapter."""
+        if hasattr(adapter, "discovered_sourcetypes") and adapter.discovered_sourcetypes:
+            for st, count in adapter.discovered_sourcetypes.items():
+                if st in self.sources:
+                    self.sources[st].event_count = count
+                else:
+                    schema = SourceSchema(
+                        source_name=st,
+                        event_count=count,
+                        available_fields=set(),
+                        field_role_mappings={},
+                    )
+                    self.register_source(schema)
+
     def register_source(self, schema: SourceSchema) -> None:
         """Register or update a source schema in the inventory."""
         self.sources[schema.source_name] = schema
