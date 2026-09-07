@@ -130,6 +130,10 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
         ans_val = account.answer.get("value")
         ans_q = account.answer.get("question", "")
         lines.append(f"- **Investigative Finding / Resolved Answer:** `{ans_val}` (Question: *\"{ans_q}\"*)")
+    if account.answer_status:
+        ans_stat_val = account.answer_status.value if hasattr(account.answer_status, "value") else str(account.answer_status)
+        if ans_stat_val != "UNANSWERED":
+            lines.append(f"- **Answer Completeness Status:** `{ans_stat_val}`")
     lines.extend([
         "",
         "---",
@@ -381,6 +385,28 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
         f"- **Competing Viable (Live) Hypotheses:** {competing_live if competing_live else '[]'}",
         f"- **Refuted Hypotheses:** {competing_ref if competing_ref else '[]'}",
     ])
+
+    if account.claim_verdicts:
+        lines.extend([
+            "",
+            "### Claims Evaluation",
+            "",
+            "| Claim ID | Statement | Required Capability | Status | Limitations |",
+            "|---|---|---|---|---|",
+        ])
+        for cv in account.claim_verdicts:
+            lims = "; ".join(cv.limitations) if cv.limitations else "None"
+            stmt = cv.statement.replace("|", "\\|")
+            lines.append(f"| `{cv.claim_id}` | {stmt} | `{cv.required_capability}` | **`{cv.status}`** | {lims} |")
+
+    if account.limitations:
+        lines.extend([
+            "",
+            "### Epistemic Limitations",
+            "",
+        ])
+        for lim in account.limitations:
+            lines.append(f"- {lim}")
 
     # Proven Relation Chain & Unresolved Unknowns (v5.0 Case Graph)
     case = getattr(account, "case", None)
@@ -778,6 +804,10 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             f"- **Wildcard Scope Coverage:** `{w_pct:.1f}%` ({cb.explored_cells_wildcard}/{cb.known_cells_wildcard} broadsweep cells)",
             f"- **Instance Cell Coverage:** `{i_pct:.1f}%` ({cb.explored_cells_instance}/{cb.known_cells_instance} concrete entity cells)",
         ])
+    if account.answer_status:
+        ans_stat_val = account.answer_status.value if hasattr(account.answer_status, "value") else str(account.answer_status)
+        if ans_stat_val != "UNANSWERED":
+            lines.extend(["", f"**Answer Status:** `{ans_stat_val}`"])
     if answer.get("status") == "ANSWERED":
         lines.extend([
             "",
@@ -878,6 +908,27 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             "**Current Uncertainties / Gaps:**",
             *(f"- {u}" for u in intent.uncertainties),
         ])
+
+    if account.claim_verdicts:
+        lines.extend([
+            "",
+            "### Claims Evaluation",
+            "",
+            "| Claim | Required Capability | Status |",
+            "|---|---|---|",
+        ])
+        for cv in account.claim_verdicts:
+            stmt = cv.statement.replace("|", "\\|")
+            lines.append(f"| {stmt} | `{cv.required_capability}` | **`{cv.status}`** |")
+
+    if account.limitations:
+        lines.extend([
+            "",
+            "### Limitations",
+            "",
+        ])
+        for lim in account.limitations:
+            lines.append(f"- {lim}")
 
     lines.extend(["", "## 3. Evidence and explanation", ""])
     cards = list(account.evidence_cards)

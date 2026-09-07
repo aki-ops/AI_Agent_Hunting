@@ -70,6 +70,9 @@ ALLOWED_EVIDENCE_TYPES = {
     "scope_records",
     "dns_query",
     "dns_activity",
+    "email_outbound",
+    "outbound_message_metadata",
+    "message_metadata",
 }
 
 SEMANTIC_INTENT_TO_EVIDENCE_TYPE = {
@@ -85,6 +88,11 @@ SEMANTIC_INTENT_TO_EVIDENCE_TYPE = {
     "dns_resolution": "dns_activity",
     "dns_query": "dns_activity",
     "operational_baseline": "scope_records",
+    "outbound_message_metadata": "email_outbound",
+    "email_outbound": "email_outbound",
+    "email_communication": "email_outbound",
+    "message_metadata": "email_outbound",
+    "recipient_identity": "email_outbound",
 }
 ALLOWED_SEMANTIC_INTENTS = set(SEMANTIC_INTENT_TO_EVIDENCE_TYPE.keys())
 
@@ -208,6 +216,8 @@ def parse_and_validate_semantic_intent(
             pred = FieldPredicate(field="user", op=FieldOp.EXISTS)
         elif evidence_type == "persistence_change":
             pred = FieldPredicate(field="registry_key", op=FieldOp.EXISTS)
+        elif evidence_type in ("email_outbound", "outbound_message_metadata", "message_metadata"):
+            pred = FieldPredicate(field="sender_email", op=FieldOp.EXISTS)
 
         requirements.append(
             EvidenceRequirementV4(
@@ -681,7 +691,8 @@ class KnowledgeBehaviorCompiler:
             "- remote_authentication\n"
             "- network_c2_communication\n"
             "- dns_resolution\n"
-            "- operational_baseline\n\n"
+            "- operational_baseline\n"
+            "- outbound_message_metadata\n\n"
             f"Request Content: {request.content}\n\n"
             "Respond strictly with a JSON object matching this schema:\n"
             "{\n"
@@ -691,7 +702,7 @@ class KnowledgeBehaviorCompiler:
             "  },\n"
             '  "entities": [\n'
             "    {\n"
-            '      "type": "domain" | "host" | "user" | "ip" | "file",\n'
+            '      "type": "domain" | "host" | "user" | "person" | "email_address" | "ip" | "file",\n'
             '      "value": "extracted entity value",\n'
             '      "role": "target" | "actor" | "infrastructure" | "unknown"\n'
             "    }\n"

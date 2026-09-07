@@ -29,6 +29,12 @@ class FieldRole(str, Enum):
     COMMAND_LINE = "command_line"
     URI_PATH = "uri_path"
     QUERY_PARAM = "query_param"
+    SENDER_EMAIL = "sender_email"
+    RECIPIENT_EMAIL = "recipient_email"
+    MESSAGE_ID = "message_id"
+    SUBJECT = "subject"
+    RECIPIENT_NAME = "recipient_name"
+    ROLE_NAME = "role_name"
 
 
 class NodeType(str, Enum):
@@ -45,6 +51,10 @@ class NodeType(str, Enum):
     SOFTWARE = "software"
     CVE = "cve"
     EVENT = "event"
+    EMAIL_ADDRESS = "email_address"
+    MESSAGE = "message"
+    ORGANIZATION = "organization"
+    ROLE = "role"
 
 
 class RelationType(str, Enum):
@@ -62,6 +72,11 @@ class RelationType(str, Enum):
     SPAWNED = "spawned"
     MODIFIED = "modified"
     WROTE = "wrote"
+    HAS_EMAIL = "has_email"
+    SENT_MESSAGE = "sent_message"
+    RECEIVED_MESSAGE = "received_message"
+    HOLDS_ROLE = "holds_role"
+    BELONGS_TO_ORG = "belongs_to_org"
 
 
 class NodeStatus(str, Enum):
@@ -562,7 +577,183 @@ def build_investigation_case_from_intent(
     )
     graph.add_node(target_node)
 
-    if subj_type in ("person", "user"):
+    intent_text = (
+        getattr(intent, "original_request", "")
+        + " "
+        + getattr(intent, "question", "")
+        + " "
+        + getattr(intent, "behavior", "")
+    ).lower()
+    is_email = (
+        any(k in intent_text for k in ("email", "mail", "message", "gửi mail", "thư", "recipient", "inbox", "smtp", "o365"))
+        or any(k in req_obj_type_raw for k in ("email", "recipient", "message"))
+        or any(getattr(r, "semantic_intent", "") in ("email_outbound", "message_communication", "outbound_message_metadata") for r in requirements)
+    )
+
+    if is_email and subj_type in ("person", "user"):
+        subj_node = GraphNode(
+            id="node-subject-person",
+            type=NodeType.PERSON,
+            value=subj_val,
+            status=NodeStatus.KNOWN,
+            source="intent",
+            field_role=FieldRole.PERSON_NAME,
+        )
+        acct_node = GraphNode(
+            id="node-subject-account",
+            type=NodeType.ACCOUNT,
+            value="?",
+            status=NodeStatus.UNKNOWN,
+            source="intent",
+            field_role=FieldRole.ACCOUNT_NAME,
+        )
+        email_node = GraphNode(
+            id="node-subject-email",
+            type=NodeType.EMAIL_ADDRESS,
+            value="?",
+            status=NodeStatus.UNKNOWN,
+            source="intent",
+            field_role=FieldRole.SENDER_EMAIL,
+        )
+        msg_node = GraphNode(
+            id="node-outbound-message",
+            type=NodeType.MESSAGE,
+            value="?",
+            status=NodeStatus.UNKNOWN,
+            source="intent",
+            field_role=FieldRole.MESSAGE_ID,
+        )
+        recipient_node = GraphNode(
+            id="node-target-recipient",
+            type=NodeType.EMAIL_ADDRESS,
+            value="?",
+            status=NodeStatus.UNKNOWN,
+            source="intent",
+            field_role=FieldRole.RECIPIENT_EMAIL,
+        )
+        role_node = GraphNode(
+            id="node-target-role",
+            type=NodeType.ROLE,
+            value="?",
+            status=NodeStatus.UNKNOWN,
+            source="intent",
+            field_role=FieldRole.ROLE_NAME,
+        )
+
+        for n in (subj_node, acct_node, email_node, msg_node, recipient_node, role_node):
+            graph.add_node(n)
+
+        # 1. Person owns Account
+        e1 = GraphEdge(
+            id="edge-person-owns-account",
+            source_id=subj_node.id,
+            source_entity_type=NodeType.PERSON,
+            relation_type=RelationType.OWNS,
+            target_id=acct_node.id,
+            target_entity_type=NodeType.ACCOUNT,
+            required_field_roles={"source": FieldRole.PERSON_NAME, "target": FieldRole.ACCOUNT_NAME},
+            acceptable_operations=["resolve_person_to_account"],
+            status=RelationStatus.UNPROVEN,
+        )
+        # 2. Account has Email Address
+        e2 = GraphEdge(
+            id="edge-account-has-email",
+            source_id=acct_node.id,
+            source_entity_type=NodeType.ACCOUNT,
+            relation_type=RelationType.HAS_EMAIL,
+            target_id=email_node.id,
+            target_entity_type=NodeType.EMAIL_ADDRESS,
+            required_field_roles={"source": FieldRole.ACCOUNT_NAME, "target": FieldRole.SENDER_EMAIL},
+            acceptable_operations=["resolve_account_to_email"],
+            status=RelationStatus.UNPROVEN,
+        )
+        # 3. Email sent Message
+        e3 = GraphEdge(
+            id="edge-email-sent-message",
+            source_id=email_node.id,
+            source_entity_type=NodeType.EMAIL_ADDRESS,
+            relation_type=RelationType.SENT_MESSAGE,
+            target_id=msg_node.id,
+            target_entity_type=NodeType.MESSAGE,
+            required_field_roles={"source": FieldRole.SENDER_EMAIL, "target": FieldRole.MESSAGE_ID},
+            acceptable_operations=["find_outbound_message_metadata"],
+            status=RelationStatus.UNPROVEN,
+        )
+        # 4. Message received by Recipient
+        e4 = GraphEdge(
+            id="edge-message-received-by",
+            source_id=msg_node.id,
+            source_entity_type=NodeType.MESSAGE,
+            relation_type=RelationType.RECEIVED_MESSAGE,
+            target_id=recipient_node.id,
+            target_entity_type=NodeType.EMAIL_ADDRESS,
+            required_field_roles={"source": FieldRole.MESSAGE_ID, "target": FieldRole.RECIPIENT_EMAIL},
+            acceptable_operations=["resolve_recipient_identity"],
+            status=RelationStatus.UNPROVEN,
+        )
+        # 5. Recipient holds Role
+        e5 = GraphEdge(
+            id="edge-recipient-holds-role",
+            source_id=recipient_node.id,
+            source_entity_type=NodeType.EMAIL_ADDRESS,
+            relation_type=RelationType.HOLDS_ROLE,
+            target_id=role_node.id,
+            target_entity_type=NodeType.ROLE,
+            required_field_roles={"source": FieldRole.RECIPIENT_EMAIL, "target": FieldRole.ROLE_NAME},
+            acceptable_operations=["resolve_role_identity"],
+            status=RelationStatus.UNPROVEN,
+        )
+
+        for e in (e1, e2, e3, e4, e5):
+            graph.add_edge(e)
+
+        unknowns.extend([
+            InvestigationUnknown(
+                id="unk-account",
+                entity_type=NodeType.ACCOUNT,
+                variable_name=f"account_for_{subj_val}",
+                description=f"Identify account username for {subj_val}",
+                resolving_edge_id=e1.id,
+            ),
+            InvestigationUnknown(
+                id="unk-email",
+                entity_type=NodeType.EMAIL_ADDRESS,
+                variable_name=f"email_for_{subj_val}",
+                description=f"Identify email address for {subj_val}",
+                resolving_edge_id=e2.id,
+            ),
+            InvestigationUnknown(
+                id="unk-message",
+                entity_type=NodeType.MESSAGE,
+                variable_name=f"outbound_message_from_{subj_val}",
+                description=f"Identify outbound message from {subj_val}",
+                resolving_edge_id=e3.id,
+            ),
+            InvestigationUnknown(
+                id="unk-recipient",
+                entity_type=NodeType.EMAIL_ADDRESS,
+                variable_name="recipient_identity",
+                description="Identify recipient email and identity",
+                resolving_edge_id=e4.id,
+            ),
+            InvestigationUnknown(
+                id="unk-role",
+                entity_type=NodeType.ROLE,
+                variable_name="recipient_role",
+                description="Verify whether recipient holds executive/competitor role",
+                resolving_edge_id=e5.id,
+            ),
+        ])
+
+        goals.extend([
+            EvidenceGoal(id="goal-acct", target_edge_id=e1.id, description=f"Resolve account for {subj_val}"),
+            EvidenceGoal(id="goal-email", target_edge_id=e2.id, description=f"Resolve email address for {subj_val}"),
+            EvidenceGoal(id="goal-message", target_edge_id=e3.id, description="Find outbound message metadata"),
+            EvidenceGoal(id="goal-recipient", target_edge_id=e4.id, description="Resolve recipient identity"),
+            EvidenceGoal(id="goal-role", target_edge_id=e5.id, description="Verify recipient executive role"),
+        ])
+
+    elif subj_type in ("person", "user"):
         subj_node = GraphNode(
             id="node-subject-person",
             type=NodeType.PERSON,

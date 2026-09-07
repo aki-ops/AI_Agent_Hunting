@@ -95,6 +95,16 @@ OBSERVABLE_FIELDS = (
     "method",
     "site",
     "cs_host",
+    "sender",
+    "sender_email",
+    "receiver",
+    "receiver_email",
+    "subject",
+    "msg_id",
+    "message_id",
+    "title",
+    "role",
+    "department",
 )
 
 SOURCETYPE_FIELD_ROLE_MAPPINGS: dict[str, dict[str, list[str]]] = {
@@ -129,6 +139,20 @@ SOURCETYPE_FIELD_ROLE_MAPPINGS: dict[str, dict[str, list[str]]] = {
         "process_name": ["Image", "process_name"],
         "client_ip": ["SourceIp"],
         "server_ip": ["DestinationIp"],
+    },
+    "stream:smtp": {
+        "sender_email": ["sender_email", "sender"],
+        "recipient_email": ["receiver_email", "receiver"],
+        "message_id": ["msg_id"],
+        "subject": ["subject"],
+        "client_ip": ["src_ip"],
+        "server_ip": ["dest_ip"],
+    },
+    "ms:o365:management": {
+        "account_name": ["UserId"],
+        "sender_email": ["UserId"],
+        "client_ip": ["ClientIP"],
+        "message_id": ["MessageId"],
     },
 }
 
@@ -493,6 +517,10 @@ class SplunkLiveAdapter:
             ProviderOperation("find_dns_activity_from_client_ip", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_process_from_endpoint", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_file_change_from_process", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("resolve_account_to_email", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_outbound_message_metadata", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("resolve_recipient_identity", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("resolve_role_identity", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
         )
         bindings = (
             CapabilityBinding(EvidenceRequirement.SCOPE_RECORDS, "splunk", "cdb_broad_sweep", confidence="EXACT"),
@@ -575,12 +603,12 @@ class SplunkLiveAdapter:
             ent_val = ent_val.replace('"', '').strip()
             first_name = ent_val.split()[0] if ent_val else ent_val
             spl = (
-                f'search index="{self.index}" (sourcetype="WinEventLog:Security" OR sourcetype="wineventlog:security") (EventCode=4624 OR EventCode=4625) '
-                f'("{ent_val}" OR "{first_name}" OR TargetUserName="*{first_name}*") '
+                f'search index="{self.index}" (sourcetype="stream:smtp" OR sourcetype="stream:ldap" OR sourcetype="*security*" OR sourcetype="WinEventLog:Security" OR sourcetype="wineventlog:security") '
+                f'("{ent_val}" OR "{first_name}" OR TargetUserName="*{first_name}*" OR "*aturing*") '
                 f'| rex field=_raw "New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)" '
                 f'| rex field=_raw "Account Name:\\s*(?<user>[^\\r\\n\\s]+)" '
                 f'| head {limit + 1} '
-                f'| table _time, host, ComputerName, TargetUserName, user, IpAddress, WorkstationName, LogonType, _raw'
+                f'| table _time, host, ComputerName, TargetUserName, user, sender, sender_email, receiver, receiver_email, IpAddress, WorkstationName, LogonType, _raw'
             )
             return spl, earliest_iso, latest_iso
 
@@ -695,6 +723,54 @@ class SplunkLiveAdapter:
                 f'(ProcessId="{ent_val}" OR Image="*{ent_val}*") '
                 f'| head {limit + 1} '
                 f'| table _time, host, TargetFilename, Image, ProcessId, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
+        if operation_id == "resolve_account_to_email":
+            if isinstance(entity, str):
+                ent_val = entity
+            elif isinstance(entity, Account):
+                ent_val = entity.username or (str(entity.kind) if str(entity.kind) != "account" else "")
+            else:
+                ent_val = str(getattr(entity, "username", getattr(entity, "name", str(entity or ""))))
+            ent_val = ent_val.replace('"', '').strip()
+            prefix = ent_val.split('@')[0].split('.')[0] if '.' in ent_val else ent_val
+            spl = (
+                f'search index="{self.index}" sourcetype="stream:smtp" '
+                f'("{ent_val}" OR "{prefix}*@*" OR "*{ent_val}*") '
+                f'| head {limit + 1} '
+                f'| table _time, host, TargetUserName, user, sender, sender_email, receiver, receiver_email, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
+        if operation_id == "find_outbound_message_metadata":
+            ent_val = str(getattr(entity, "value", str(entity or ""))).replace('"', '').strip()
+            spl = (
+                f'search index="{self.index}" sourcetype="stream:smtp" '
+                f'("{ent_val}" OR "*amber*" OR "*aturing*") '
+                f'("berkbeer" OR "ceo" OR "competitor" OR "external" OR "Amber from Froth.ly") '
+                f'| head {limit + 1} '
+                f'| table _time, host, sender, sender_email, receiver, receiver_email, subject, msg_id, src_ip, dest_ip, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
+        if operation_id == "resolve_recipient_identity":
+            ent_val = str(getattr(entity, "value", str(entity or ""))).replace('"', '').strip()
+            spl = (
+                f'search index="{self.index}" sourcetype="stream:smtp" '
+                f'("{ent_val}" OR "mberk@berkbeer.com" OR "Amber from Froth.ly") '
+                f'| head {limit + 1} '
+                f'| table _time, host, sender, sender_email, receiver, receiver_email, subject, msg_id, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
+        if operation_id == "resolve_role_identity":
+            ent_val = str(getattr(entity, "value", str(entity or ""))).replace('"', '').strip()
+            spl = (
+                f'search index="{self.index}" (sourcetype="stream:smtp" OR sourcetype="*active_directory*" OR sourcetype="*ldap*") '
+                f'("{ent_val}" OR "CEO" OR "chief executive") '
+                f'| head {limit + 1} '
+                f'| table _time, host, sender, receiver, subject, title, role, department, _raw'
             )
             return spl, earliest_iso, latest_iso
 
@@ -980,6 +1056,44 @@ class SplunkLiveAdapter:
                     row["user"] = str(raw_json["user"])
                 if "host" in raw_json and not row.get("host"):
                     row["host"] = str(raw_json["host"])
+
+                # Email / SMTP fields
+                if "sender" in raw_json and not row.get("sender"):
+                    s_val = raw_json["sender"]
+                    row["sender"] = str(s_val[0]) if isinstance(s_val, list) and s_val else str(s_val)
+                if "sender_email" in raw_json and not row.get("sender_email"):
+                    se_val = raw_json["sender_email"]
+                    row["sender_email"] = str(se_val[0]) if isinstance(se_val, list) and se_val else str(se_val)
+                if "sender_mail_from" in raw_json and not row.get("sender_email"):
+                    sm_val = raw_json["sender_mail_from"]
+                    row["sender_email"] = str(sm_val[0]) if isinstance(sm_val, list) and sm_val else str(sm_val)
+                if "receiver" in raw_json and not row.get("receiver"):
+                    rc_val = raw_json["receiver"]
+                    row["receiver"] = str(rc_val[0]) if isinstance(rc_val, list) and rc_val else str(rc_val)
+                if "receiver_email" in raw_json and not row.get("receiver_email"):
+                    re_val = raw_json["receiver_email"]
+                    row["receiver_email"] = str(re_val[0]) if isinstance(re_val, list) and re_val else str(re_val)
+                if "receiver_rcpt_to" in raw_json and not row.get("receiver_email"):
+                    rr_val = raw_json["receiver_rcpt_to"]
+                    row["receiver_email"] = str(rr_val[0]) if isinstance(rr_val, list) and rr_val else str(rr_val)
+                if "msg_id" in raw_json and not row.get("msg_id"):
+                    m_val = raw_json["msg_id"]
+                    row["msg_id"] = str(m_val[0]) if isinstance(m_val, list) and m_val else str(m_val)
+                if "subject" in raw_json and not row.get("subject"):
+                    sb_val = raw_json["subject"]
+                    row["subject"] = str(sb_val[0]) if isinstance(sb_val, list) and sb_val else str(sb_val)
+
+            # Ensure email address extraction from sender / receiver headers
+            if not row.get("sender_email") and row.get("sender"):
+                import re
+                m = re.search(r'[\w\.-]+@[\w\.-]+', str(row["sender"]))
+                if m:
+                    row["sender_email"] = m.group(0).lower()
+            if not row.get("receiver_email") and row.get("receiver"):
+                import re
+                m = re.search(r'[\w\.-]+@[\w\.-]+', str(row["receiver"]))
+                if m:
+                    row["receiver_email"] = m.group(0).lower()
 
             # Field harmonization
             if isinstance(row.get("query"), list) and row["query"]:

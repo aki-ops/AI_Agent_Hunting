@@ -669,7 +669,7 @@ def run_cli(args: argparse.Namespace) -> int:
             entities=entities,
         )
         compiler = KnowledgeBehaviorCompiler()
-        default_window = "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z" if getattr(args, "provider", "auto") in ("splunk", "auto") else "NOW-14d/NOW"
+        default_window = ("2017-08-01T00:00:00Z/2017-08-31T23:59:59Z" if "botsv2" in str(getattr(args, "splunk_index", "")).lower() else "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z") if getattr(args, "provider", "auto") in ("splunk", "auto") else "NOW-14d/NOW"
         time_win = args.time_window or default_window
         objective, hypotheses, requirements = compiler.compile(req, time_window=time_win)
         render_hunt_playbook(req, objective, hypotheses, requirements, time_win, args.output)
@@ -868,6 +868,8 @@ def run_cli(args: argparse.Namespace) -> int:
         )
         default_window = "NOW-14d/NOW"
         if selected_provider == "splunk":
+            is_botsv2 = "botsv2" in str(selected_index).lower()
+            fallback_splunk_win = "2017-08-01T00:00:00Z/2017-08-31T23:59:59Z" if is_botsv2 else "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z"
             if auto_discovered_index_info and auto_discovered_index_info.get("min_time") and auto_discovered_index_info.get("max_time"):
                 try:
                     s_dt = datetime.fromisoformat(auto_discovered_index_info["min_time"])
@@ -876,9 +878,9 @@ def run_cli(args: argparse.Namespace) -> int:
                         e_dt = s_dt + timedelta(days=1)
                     default_window = f"{s_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}/{e_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}"
                 except Exception:
-                    default_window = "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z"
+                    default_window = fallback_splunk_win
             else:
-                default_window = "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z"
+                default_window = fallback_splunk_win
 
         time_win = args.time_window or default_window
         if not args.time_window and selected_provider == "splunk":

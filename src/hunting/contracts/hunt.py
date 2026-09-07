@@ -154,6 +154,30 @@ class RequirementStatus(str, Enum):
     REJECTED = "REJECTED"
     PROPOSED = "PROPOSED"
     VALIDATED = "VALIDATED"
+    # Epistemic status hierarchy (v5.1)
+    UNMAPPED = "UNMAPPED"
+    UNOBSERVABLE = "UNOBSERVABLE"
+    UNTESTED = "UNTESTED"
+    NO_EVIDENCE_FOUND = "NO_EVIDENCE_FOUND"
+
+
+class AnswerStatus(str, Enum):
+    """Forensic answer completeness status."""
+    FULLY_ANSWERED = "FULLY_ANSWERED"
+    PARTIALLY_ANSWERED = "PARTIALLY_ANSWERED"
+    UNANSWERED = "UNANSWERED"
+    INCONCLUSIVE = "INCONCLUSIVE"
+
+
+@dataclass
+class ClaimVerdict:
+    """Evaluation result for a discrete sub-claim of a hunt hypothesis."""
+    claim_id: str
+    statement: str
+    required_capability: str
+    status: str  # SUPPORTED, UNKNOWN, NO_EVIDENCE_FOUND, UNOBSERVABLE, UNMAPPED
+    limitations: list[str] = field(default_factory=list)
+    cited_evidence_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -388,6 +412,9 @@ class FinalHuntAccount:
     relation_graph: RelationGraph | None = None
     case: Any | None = None
     provenance_chain: list[Any] = field(default_factory=list)
+    answer_status: AnswerStatus | str = AnswerStatus.UNANSWERED
+    claim_verdicts: list[ClaimVerdict] = field(default_factory=list)
+    limitations: list[str] = field(default_factory=list)
 
     @property
     def outcome(self) -> HuntOutcome:
@@ -415,6 +442,9 @@ class FinalHuntAccount:
             if any(h.id in self.supporting for h in attack_hypos):
                 return HuntOutcome.SUPPORTED_WITH_LIMITATIONS
             return HuntOutcome.INCONCLUSIVE_BUDGET_EXHAUSTED
+
+        if self.answer_status in (AnswerStatus.PARTIALLY_ANSWERED, "PARTIALLY_ANSWERED"):
+            return HuntOutcome.SUPPORTED_WITH_LIMITATIONS
 
         if any(h.id in self.supporting for h in attack_hypos):
             return HuntOutcome.SUPPORTED

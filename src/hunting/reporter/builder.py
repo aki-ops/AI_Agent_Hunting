@@ -12,10 +12,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from hunting.contracts.case_graph import RelationStatus
+from hunting.contracts.case_graph import NodeStatus, RelationStatus
 from hunting.contracts.cells import CellState
 from hunting.contracts.coverage import CoverageBound, RequirementCoverage
 from hunting.contracts.hunt import (
+    AnswerStatus,
+    ClaimVerdict,
     FinalHuntAccount,
     HuntObjective,
     HuntState,
@@ -384,11 +386,32 @@ def build_final_hunt_account(
             "answer_type": (obj.answer_spec or {}).get("answer_type", answer.get("answer_type", "value")),
         }
 
+    limitations: list[str] = []
+    claim_verdicts: list[ClaimVerdict] = []
+    ans_status = AnswerStatus.UNANSWERED
+
     if not answer or answer.get("status") != "ANSWERED":
         case = getattr(state, "case", None)
         if case and getattr(case, "graph", None):
+            recipient_node = case.graph.get_node("node-target-recipient")
             target_node = case.graph.get_node("node-target-object")
-            if target_node and target_node.value and target_node.value != "?":
+
+            if recipient_node and recipient_node.value and recipient_node.value != "?":
+                q_text = (obj.answer_spec or {}).get("question") or obj.statement
+                target_card_ids = [
+                    c.id for c in state.evidence_cards
+                    if c.id.startswith("card-edge-") or recipient_node.value in str(c.field_summary)
+                ]
+                ans_val = recipient_node.value
+                answer = {
+                    "status": "ANSWERED",
+                    "answer_type": "recipient_email",
+                    "question": q_text,
+                    "value": ans_val,
+                    "candidates": [{"value": ans_val, "weight": 100, "card_ids": target_card_ids}],
+                    "card_ids": target_card_ids,
+                }
+            elif target_node and target_node.value and target_node.value != "?":
                 q_text = (obj.answer_spec or {}).get("question") or obj.statement
                 target_card_ids = [
                     c.id for c in state.evidence_cards
@@ -402,6 +425,74 @@ def build_final_hunt_account(
                     "candidates": [{"value": target_node.value, "weight": 100, "card_ids": target_card_ids}],
                     "card_ids": target_card_ids,
                 }
+
+    if answer.get("status") == "ANSWERED":
+        ans_status = AnswerStatus.FULLY_ANSWERED
+
+    # Evaluate claim-level status and limitations for email/composite cases
+    case = getattr(state, "case", None)
+    if case and getattr(case, "graph", None):
+        recipient_node = case.graph.get_node("node-target-recipient")
+        role_node = case.graph.get_node("node-target-role")
+
+        if recipient_node and recipient_node.value and recipient_node.value != "?":
+            if role_node and (not role_node.value or role_node.value == "?" or role_node.status != NodeStatus.KNOWN):
+                ans_status = AnswerStatus.PARTIALLY_ANSWERED
+                limitations.append("Chưa chứng minh được người nhận là CEO từ dữ liệu telemetry.")
+                limitations.append("Chưa có bằng chứng đủ mạnh về việc email thực sự do đối tượng trực tiếp soạn thảo.")
+
+        intent_claims = getattr(getattr(state, "semantic_intent", None), "claims", [])
+        if intent_claims:
+            for sc in intent_claims:
+                c_status = "UNKNOWN"
+                c_cits: list[str] = []
+                if "sent" in sc.id or "message" in sc.id:
+                    edge = case.graph.get_edge("edge-email-sent-message")
+                    if edge and edge.status == RelationStatus.VERIFIED:
+                        c_status = "SUPPORTED"
+                        c_cits = edge.citations
+                elif "recipient" in sc.id:
+                    edge = case.graph.get_edge("edge-message-received-by")
+                    if edge and edge.status == RelationStatus.VERIFIED:
+                        c_status = "SUPPORTED"
+                        c_cits = edge.citations
+                elif "role" in sc.id or "ceo" in sc.id:
+                    edge = case.graph.get_edge("edge-recipient-holds-role")
+                    if edge and edge.status == RelationStatus.VERIFIED:
+                        c_status = "SUPPORTED"
+                        c_cits = edge.citations
+                    else:
+                        c_status = "UNKNOWN"
+                claim_verdicts.append(ClaimVerdict(
+                    claim_id=sc.id,
+                    statement=sc.statement,
+                    required_capability=sc.required_capability,
+                    status=c_status,
+                    limitations=list(limitations) if c_status == "UNKNOWN" else [],
+                    cited_evidence_ids=c_cits,
+                ))
+        elif recipient_node and recipient_node.value and recipient_node.value != "?":
+            send_edge = case.graph.get_edge("edge-email-sent-message")
+            send_ok = send_edge and send_edge.status == RelationStatus.VERIFIED
+            claim_verdicts.append(ClaimVerdict(
+                claim_id="claim-email-sent",
+                statement=f"Email sent from {state.identity_mapping.get('account', 'subject')}",
+                required_capability="outbound_message_metadata",
+                status="SUPPORTED" if send_ok else "UNKNOWN",
+            ))
+            claim_verdicts.append(ClaimVerdict(
+                claim_id="claim-recipient",
+                statement=f"Recipient email is {recipient_node.value}",
+                required_capability="recipient_identity",
+                status="SUPPORTED",
+            ))
+            claim_verdicts.append(ClaimVerdict(
+                claim_id="claim-ceo",
+                statement="The recipient was the competitor's CEO",
+                required_capability="role_identity",
+                status="UNKNOWN",
+                limitations=["Chưa chứng minh được người nhận là CEO."],
+            ))
 
     # Guard: Cannot conclude NOT_FOUND if identity is required but unresolved, queries incomplete, or execution halted before search
     if answer.get("status") == "NOT_FOUND":
@@ -448,6 +539,9 @@ def build_final_hunt_account(
         relation_graph=state.relation_graph,
         case=getattr(state, "case", None),
         provenance_chain=list(getattr(getattr(state, "case", None), "graph", state.relation_graph).proofs.values()) if hasattr(getattr(state, "case", None), "graph") and hasattr(getattr(state, "case", None).graph, "proofs") else [],
+        answer_status=ans_status,
+        claim_verdicts=claim_verdicts,
+        limitations=limitations,
     )
 
 

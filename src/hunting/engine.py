@@ -13,6 +13,7 @@ Coordinates:
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -75,6 +76,8 @@ from hunting.planner.planner import CanonicalQueryPlanner
 from hunting.reporter.builder import build_final_hunt_account
 from hunting.reporter.renderer import render_analyst_report
 from hunting.validator.investigation_validator import InvestigationValidator
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_USERS = {
     "system", "local service", "network service", "anonymous logon",
@@ -555,9 +558,16 @@ class HypothesisHuntEngine:
                         elif "owns" in edge.id or "owns" in rel_type_str:
                             if r_et in ("authentication_activity", "identity") or any(k in r_desc for k in ("account", "user", "person", "identity")):
                                 turn_reqs.append(req)
+                        elif any(k in edge.id or k in rel_type_str for k in ("message", "email", "recipient", "role")):
+                            if r_et in ("outbound_message_metadata", "email", "message", "communication") or any(k in r_desc for k in ("email", "mail", "message", "recipient", "sender", "outbound", "ceo")):
+                                turn_reqs.append(req)
 
                     if not turn_reqs and state.requirements:
-                        unexec = [r for r in state.requirements if r.status in (RequirementStatus.DEFINED, RequirementStatus.PLANNED)]
+                        unexec = [
+                            r for r in state.requirements
+                            if r.status in (RequirementStatus.DEFINED, RequirementStatus.PLANNED)
+                            and ("email" in r.evidence_type.lower() or "mail" in r.description.lower()) == any(k in edge.id for k in ("email", "message", "recipient", "role"))
+                        ]
                         if unexec:
                             turn_reqs.append(unexec[0])
 
@@ -598,6 +608,13 @@ class HypothesisHuntEngine:
                         elif tgt_type_str in ("ip", "client_ip"):
                             state.identity_mapping["client_ip"] = tgt_node.value
                             state.identity_resolved = True
+                        elif tgt_type_str in ("email_address", "email"):
+                            state.identity_mapping["email"] = tgt_node.value
+                            state.identity_resolved = True
+                        elif tgt_type_str in ("message", "msg"):
+                            state.identity_mapping["message_id"] = tgt_node.value
+                        elif tgt_type_str in ("recipient", "role"):
+                            state.identity_mapping[tgt_type_str] = tgt_node.value
 
                         delta_cards = self.group_builder.ingest_delta(new_obs_list)
                         self.controller.set_evidence_cards(state, self.group_builder.build_cards())
@@ -636,7 +653,12 @@ class HypothesisHuntEngine:
                                 "entity": str(src_node.value),
                             })
                         tgt_type_str = tgt_node.type if isinstance(tgt_node.type, str) else tgt_node.type.value
-                        if tgt_type_str in ("account", "user", "endpoint", "host"):
+                        if tgt_type_str == "role" or "role" in edge.id:
+                            # Non-fatal limitation: recipient identity was proven, but executive role cannot be confirmed
+                            logger.info(f"Recipient role '{src_node.value}' -> Role remains UNKNOWN (telemetry limitation).")
+                            self.controller.set_stopping_decision(state, StoppingDecision.STOP_RESOLVED)
+                            break
+                        elif tgt_type_str in ("account", "user", "endpoint", "host"):
                             self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED)
                         else:
                             self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)

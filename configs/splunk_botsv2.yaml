@@ -71,8 +71,20 @@ bindings:
       http_method: "http_method"
       site: "site"
 
+  outbound_message_metadata:
+    sourcetype: "stream:smtp"
+    event_filter: "*"
+    extractions:
+      sender: "sender"
+      sender_email: "sender_email"
+      receiver: "receiver"
+      receiver_email: "receiver_email"
+      msg_id: "msg_id"
+      subject: "subject"
+
   scope_records:
     sourcetype: "*"
     event_filter: "*"
     extractions: {}
+
 

@@ -1,4 +1,4 @@
-﻿"""Semantic Hunt Intent Contracts.
+"""Semantic Hunt Intent Contracts.
 
 Defines provider-neutral, strictly validated semantic intent emitted by LLM compiler.
 The LLM describes what needs to be verified without raw SPL, index, host, or sourcetype.
@@ -70,6 +70,61 @@ class SemanticEvidenceRequirement:
 
 
 @dataclass
+class SemanticCapabilityProposal:
+    """Vendor-neutral capability specification proposed for an unmapped requirement."""
+    capability_name: str
+    required_roles: list[str]
+    optional_roles: list[str] = field(default_factory=list)
+    description: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "capability_name": self.capability_name,
+            "required_roles": list(self.required_roles),
+            "optional_roles": list(self.optional_roles),
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SemanticCapabilityProposal:
+        return cls(
+            capability_name=str(data.get("capability_name", "")).strip().lower(),
+            required_roles=[str(r).strip().lower() for r in data.get("required_roles", []) if str(r).strip()],
+            optional_roles=[str(r).strip().lower() for r in data.get("optional_roles", []) if str(r).strip()],
+            description=str(data.get("description", "")).strip(),
+        )
+
+
+@dataclass
+class SemanticClaim:
+    """A discrete verifiable claim comprising a hunt hypothesis."""
+    id: str
+    statement: str
+    required_capability: str
+    status: str = "UNTESTED"  # UNMAPPED, UNSUPPORTED, UNOBSERVABLE, UNTESTED, NO_EVIDENCE_FOUND, SUPPORTED
+    cited_evidence_ids: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "statement": self.statement,
+            "required_capability": self.required_capability,
+            "status": self.status,
+            "cited_evidence_ids": list(self.cited_evidence_ids),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SemanticClaim:
+        return cls(
+            id=str(data.get("id", "")).strip(),
+            statement=str(data.get("statement", "")).strip(),
+            required_capability=str(data.get("required_capability", "")).strip().lower(),
+            status=str(data.get("status", "UNTESTED")).strip().upper(),
+            cited_evidence_ids=[str(cid).strip() for cid in data.get("cited_evidence_ids", []) if str(cid).strip()],
+        )
+
+
+@dataclass
 class SemanticHuntIntent:
     """Canonical semantic analysis emitted by the LLM for unstructured hunt requests."""
     original_request: str
@@ -78,6 +133,8 @@ class SemanticHuntIntent:
     requested_object: RequestedObject
     behavior: str
     evidence_requirements: list[SemanticEvidenceRequirement] = field(default_factory=list)
+    capability_proposals: list[SemanticCapabilityProposal] = field(default_factory=list)
+    claims: list[SemanticClaim] = field(default_factory=list)
     required_correlations: list[str] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
     uncertainties: list[str] = field(default_factory=list)
@@ -105,6 +162,8 @@ class SemanticHuntIntent:
             "requested_object": self.requested_object.to_dict(),
             "behavior": self.behavior,
             "evidence_requirements": [r.to_dict() for r in self.evidence_requirements],
+            "capability_proposals": [cp.to_dict() for cp in self.capability_proposals],
+            "claims": [c.to_dict() for c in self.claims],
             "required_correlations": list(self.required_correlations),
             "assumptions": list(self.assumptions),
             "uncertainties": list(self.uncertainties),
@@ -133,6 +192,16 @@ class SemanticHuntIntent:
             for r in data.get("evidence_requirements", [])
             if isinstance(r, dict)
         ]
+        proposals = [
+            SemanticCapabilityProposal.from_dict(p)
+            for p in data.get("capability_proposals", [])
+            if isinstance(p, dict)
+        ]
+        claims = [
+            SemanticClaim.from_dict(c)
+            for c in data.get("claims", [])
+            if isinstance(c, dict)
+        ]
 
         return cls(
             original_request=str(data.get("original_request", "")).strip(),
@@ -141,6 +210,8 @@ class SemanticHuntIntent:
             requested_object=req_obj,
             behavior=str(data.get("behavior", "")).strip(),
             evidence_requirements=reqs,
+            capability_proposals=proposals,
+            claims=claims,
             required_correlations=[str(c).strip() for c in data.get("required_correlations", []) if str(c).strip()],
             assumptions=[str(a).strip() for a in data.get("assumptions", []) if str(a).strip()],
             uncertainties=[str(u).strip() for u in data.get("uncertainties", []) if str(u).strip()],
@@ -151,5 +222,7 @@ __all__ = [
     "SubjectEntity",
     "RequestedObject",
     "SemanticEvidenceRequirement",
+    "SemanticCapabilityProposal",
+    "SemanticClaim",
     "SemanticHuntIntent",
 ]

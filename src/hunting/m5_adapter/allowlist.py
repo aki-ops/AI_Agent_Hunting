@@ -47,6 +47,10 @@ _ALLOWLISTED_OPERATIONS = frozenset({
     "find_dns_activity_from_client_ip",
     "find_process_from_endpoint",
     "find_file_change_from_process",
+    "resolve_account_to_email",
+    "find_outbound_message_metadata",
+    "resolve_recipient_identity",
+    "resolve_role_identity",
 })
 
 _ALLOWLISTED_FIELDS = frozenset({
@@ -102,6 +106,16 @@ _ALLOWLISTED_FIELDS = frozenset({
     "cs_host",
     "cs_uri_stem",
     "cs_method",
+    "sender",
+    "sender_email",
+    "receiver",
+    "receiver_email",
+    "subject",
+    "msg_id",
+    "message_id",
+    "title",
+    "role",
+    "department",
 })
 
 
