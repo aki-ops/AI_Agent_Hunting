@@ -12,11 +12,24 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Callable
+from typing import Any, Callable
 
 from hunting.compiler.knowledge_base import build_default_knowledge_base
 from hunting.compiler.models import BehaviorTemplate, KnowledgeRecord
 from hunting.compiler.templates import build_default_templates
+from hunting.contracts.case_graph import (
+    EvidenceGoal,
+    GraphEdge,
+    GraphNode,
+    InvestigationCase,
+    InvestigationGraph,
+    InvestigationUnknown,
+    NodeStatus,
+    NodeType,
+    RelationStatus,
+    RelationType,
+    build_investigation_case_from_intent,
+)
 from hunting.contracts.expectations import FieldOp, FieldPredicate
 from hunting.contracts.hunt import (
     EvidenceRequirementV4,
@@ -27,6 +40,15 @@ from hunting.contracts.hunt import (
     HypothesisOrigin,
     HypothesisStatus,
     RequirementStatus,
+)
+from hunting.contracts.investigation_model import (
+    build_investigation_model_from_intent,
+)
+from hunting.contracts.semantic_intent import (
+    RequestedObject,
+    SemanticEvidenceRequirement,
+    SemanticHuntIntent,
+    SubjectEntity,
 )
 
 # Common prompt injection signatures targeting security agents
@@ -52,19 +74,65 @@ ALLOWED_EVIDENCE_TYPES = {
 
 SEMANTIC_INTENT_TO_EVIDENCE_TYPE = {
     "web_request_activity": "web_request",
+    "web_navigation": "web_request",
     "server_side_execution": "process_ancestry",
     "process_execution": "process_ancestry",
     "file_artifact": "file_modification",
     "remote_authentication": "authentication_activity",
+    "identity_binding": "authentication_activity",
     "network_c2_communication": "network_connection",
+    "network_traffic": "network_connection",
     "dns_resolution": "dns_activity",
+    "dns_query": "dns_activity",
     "operational_baseline": "scope_records",
 }
 ALLOWED_SEMANTIC_INTENTS = set(SEMANTIC_INTENT_TO_EVIDENCE_TYPE.keys())
 
+DISALLOWED_SPL_PATTERNS = [
+    re.compile(r"\bindex\s*=", re.IGNORECASE),
+    re.compile(r"\bsourcetype\s*=", re.IGNORECASE),
+    re.compile(r"\|\s*(table|stats|eval|rex|where|rename|dedup|head)\b", re.IGNORECASE),
+]
 
-def validate_compiler_llm_output(data: dict | str) -> tuple[list[Hypothesis], list[EvidenceRequirementV4]]:
-    """Strictly validate LLM output for hypotheses and evidence requirements with semantic schema support."""
+DISALLOWED_VENDOR_TERMS = [
+    "sysmon",
+    "wineventlog",
+    "pan:traffic",
+    "stream:http",
+    "stream:dns",
+    "crowdstrike",
+]
+
+
+def validate_compiler_output_integrity(data: dict) -> list[str]:
+    """Strictly prohibit raw SPL, vendor terms, or fabricated bindings in compiler output."""
+    violations: list[str] = []
+
+    def scan_val(val: Any, path: str = "") -> None:
+        if isinstance(val, str):
+            for pat in DISALLOWED_SPL_PATTERNS:
+                if pat.search(val):
+                    violations.append(f"Raw SPL syntax detected at {path}: '{val}'")
+            val_lower = val.lower()
+            for v_term in DISALLOWED_VENDOR_TERMS:
+                if v_term in val_lower:
+                    violations.append(f"Vendor-specific telemetry term '{v_term}' detected at {path}: '{val}'")
+        elif isinstance(val, dict):
+            for k, v in val.items():
+                scan_val(v, f"{path}.{k}" if path else str(k))
+        elif isinstance(val, list):
+            for i, elem in enumerate(val):
+                scan_val(elem, f"{path}[{i}]")
+
+    scan_val(data)
+    return violations
+
+
+def parse_and_validate_semantic_intent(
+    data: dict | str,
+    original_request: str = "",
+) -> tuple[list[Hypothesis], list[EvidenceRequirementV4], SemanticHuntIntent]:
+    """Strictly validate LLM output for hypotheses, evidence requirements, and semantic hunt intent."""
     if isinstance(data, str):
         raw_text = data.strip()
         if raw_text.startswith("```"):
@@ -81,6 +149,10 @@ def validate_compiler_llm_output(data: dict | str) -> tuple[list[Hypothesis], li
 
     if not isinstance(data, dict):
         raise ValueError("LLM output must be a JSON object")
+
+    violations = validate_compiler_output_integrity(data)
+    if violations:
+        raise ValueError(f"Compiler output validation failure: {'; '.join(violations)}")
 
     requirements: list[EvidenceRequirementV4] = []
     for r in data.get("requirements", []):
@@ -165,6 +237,14 @@ def validate_compiler_llm_output(data: dict | str) -> tuple[list[Hypothesis], li
         req_ids = [str(rid).strip() for rid in h.get("requirements", []) if str(rid).strip()]
         if not req_ids and requirements:
             req_ids = [r.id for r in requirements]
+        edge_ids = [str(eid).strip() for eid in h.get("required_edges", h.get("required_edge_ids", [])) if str(eid).strip()]
+        ev_types = [str(et).strip() for et in h.get("required_evidence", h.get("required_evidence_types", [])) if str(et).strip()]
+
+        # Invariant: website browsing or information lookup claims must never be classified as benign_baseline
+        if h_class == "benign_baseline" and any(
+            word in statement.lower() for word in ("visit", "brows", "navigat", "domain", "lookup")
+        ):
+            h_class = "unclassified"
 
         status = HypothesisStatus.LIVE if requirements else HypothesisStatus.INSUFFICIENTLY_SPECIFIED
         hypotheses.append(
@@ -176,9 +256,71 @@ def validate_compiler_llm_output(data: dict | str) -> tuple[list[Hypothesis], li
                 requirements=req_ids,
                 assumptions=assumptions,
                 hypothesis_class=h_class,
+                required_edge_ids=edge_ids,
+                required_evidence_types=ev_types,
             )
         )
 
+    # Parse or derive SemanticHuntIntent
+    intent_raw = data.get("semantic_intent")
+    if isinstance(intent_raw, dict):
+        intent = SemanticHuntIntent.from_dict(intent_raw)
+        if not intent.original_request and original_request:
+            intent.original_request = original_request
+    else:
+        # Reconstruct SemanticHuntIntent from available fields
+        subj = SubjectEntity(type="unknown", value="")
+        entities = data.get("entities", [])
+        if isinstance(entities, list) and entities:
+            first_ent = entities[0]
+            if isinstance(first_ent, dict):
+                subj = SubjectEntity(
+                    type=str(first_ent.get("type", "unknown")),
+                    value=str(first_ent.get("value", "")),
+                )
+        req_obj = RequestedObject(type="unknown", role="answer")
+        ans_spec = data.get("answer_spec", {})
+        if isinstance(ans_spec, dict) and ans_spec.get("answer_type"):
+            req_obj = RequestedObject(type=str(ans_spec["answer_type"]), role="answer")
+
+        claim_text = ""
+        norm_claim = data.get("normalized_claim")
+        if isinstance(norm_claim, dict):
+            claim_text = str(norm_claim.get("text", ""))
+
+        sem_reqs = [
+            SemanticEvidenceRequirement(
+                semantic_intent=r.semantic_intent or r.evidence_type,
+                required_fields=[],
+                necessity=r.necessity,
+                description=r.description,
+            )
+            for r in requirements
+        ]
+
+        intent = SemanticHuntIntent(
+            original_request=original_request or claim_text,
+            question=str(ans_spec.get("question", original_request or claim_text)) if isinstance(ans_spec, dict) else (original_request or claim_text),
+            subject=subj,
+            requested_object=req_obj,
+            behavior=claim_text,
+            evidence_requirements=sem_reqs,
+            required_correlations=[],
+            assumptions=[a for h in hypotheses for a in h.assumptions],
+            uncertainties=[],
+        )
+
+    # Provider isolation validation
+    leaks = intent.validate_provider_isolation()
+    if leaks:
+        raise ValueError(f"Provider isolation violation in semantic compiler output: {'; '.join(leaks)}")
+
+    return hypotheses, requirements, intent
+
+
+def validate_compiler_llm_output(data: dict | str) -> tuple[list[Hypothesis], list[EvidenceRequirementV4]]:
+    """Strictly validate LLM output for hypotheses and evidence requirements with semantic schema support."""
+    hypotheses, requirements, _ = parse_and_validate_semantic_intent(data)
     return hypotheses, requirements
 
 
@@ -290,17 +432,158 @@ class KnowledgeBehaviorCompiler:
                 status=RequirementStatus.DEFINED,
             )
 
+            inv_case = self._build_cve_case(cve_id, record, request, [hypo_exploited, hypo_benign], [req_exploit, req_post])
             objective = HuntObjective(
                 request_id=request.id,
                 target_hypotheses=[hypo_exploited.id, hypo_benign.id],
                 time_window=time_window,
                 target_scopes=request.provider_hints or ["cdb_native_scope"],
+                kind=request.kind,
+                statement=request.content,
+                case=inv_case,
+                case_graph=inv_case.graph,
             )
 
             return objective, [hypo_exploited, hypo_benign], [req_exploit, req_post, req_baseline]
         else:
             # Unknown CVE without template -> fallback or general structured
             return self._compile_general_structured(request, time_window)
+
+    def _build_cve_case(
+        self,
+        cve_id: str,
+        record: KnowledgeRecord,
+        request: HuntRequest,
+        hypotheses: list[Hypothesis],
+        requirements: list[EvidenceRequirementV4],
+    ) -> InvestigationCase:
+        graph = InvestigationGraph()
+        n_endpoint = GraphNode(id="node-endpoint", type=NodeType.ENDPOINT, value="?", status=NodeStatus.UNKNOWN)
+        n_proc = GraphNode(
+            id="node-exploit-proc",
+            type=NodeType.PROCESS,
+            value="python" if any("python" in ind.lower() for ind in getattr(record.phases, "exploitation_indicators", [])) else "?",
+            status=NodeStatus.UNKNOWN,
+        )
+        n_file = GraphNode(id="node-webshell-file", type=NodeType.FILE, value="?", status=NodeStatus.UNKNOWN)
+
+        graph.add_node(n_endpoint)
+        graph.add_node(n_proc)
+        graph.add_node(n_file)
+
+        e1 = GraphEdge(
+            id=f"edge-{cve_id}-spawn",
+            source_id="node-endpoint",
+            source_entity_type=NodeType.ENDPOINT,
+            relation_type=RelationType.SPAWNED,
+            target_id="node-exploit-proc",
+            target_entity_type=NodeType.PROCESS,
+            acceptable_operations=["find_process_from_endpoint"],
+            status=RelationStatus.UNPROVEN,
+        )
+        e2 = GraphEdge(
+            id=f"edge-{cve_id}-write",
+            source_id="node-exploit-proc",
+            source_entity_type=NodeType.PROCESS,
+            relation_type=RelationType.WROTE,
+            target_id="node-webshell-file",
+            target_entity_type=NodeType.FILE,
+            acceptable_operations=["find_file_change_from_process"],
+            status=RelationStatus.UNPROVEN,
+        )
+        graph.add_edge(e1)
+        graph.add_edge(e2)
+
+        unknowns = [
+            InvestigationUnknown(
+                id="unk-cve-proc",
+                entity_type=NodeType.PROCESS,
+                variable_name="exploit_process",
+                description=f"Exploitation child process execution for {cve_id}",
+                resolving_edge_id=e1.id,
+            ),
+            InvestigationUnknown(
+                id="unk-cve-file",
+                entity_type=NodeType.FILE,
+                variable_name="webshell_artifact",
+                description=f"Web shell file modification for {cve_id}",
+                resolving_edge_id=e2.id,
+            ),
+        ]
+        goals = [
+            EvidenceGoal(id="goal-cve-proc", target_edge_id=e1.id, description=f"Prove anomalous process lineage for {cve_id}"),
+            EvidenceGoal(id="goal-cve-file", target_edge_id=e2.id, description=f"Prove unauthorized file writes for {cve_id}"),
+        ]
+        claims = [
+            {"claim_id": h.id, "statement": h.statement, "hypothesis_class": getattr(h, "hypothesis_class", "unclassified")}
+            for h in hypotheses
+        ]
+        return InvestigationCase(
+            id=f"case-{cve_id}",
+            request_content=request.content,
+            question=f"Was {cve_id} exploited in the monitored scope?",
+            graph=graph,
+            claims=claims,
+            unknowns=unknowns,
+            evidence_goals=goals,
+            acceptance_criteria=[
+                {"criterion": f"Multi-stage process-to-file correlation verified for {cve_id}."}
+            ],
+            status="READY_FOR_DISCOVERY",
+        )
+
+    def _build_ttp_case(
+        self,
+        request: HuntRequest,
+        hypotheses: list[Hypothesis],
+        requirements: list[EvidenceRequirementV4],
+    ) -> InvestigationCase:
+        graph = InvestigationGraph()
+        n_endpoint = GraphNode(id="node-endpoint", type=NodeType.ENDPOINT, value="?", status=NodeStatus.UNKNOWN)
+        n_activity = GraphNode(id="node-activity", type=NodeType.EVENT, value="?", status=NodeStatus.UNKNOWN)
+        graph.add_node(n_endpoint)
+        graph.add_node(n_activity)
+
+        e1 = GraphEdge(
+            id=f"edge-{request.id}-activity",
+            source_id="node-endpoint",
+            source_entity_type=NodeType.ENDPOINT,
+            relation_type=RelationType.CONNECTED_TO,
+            target_id="node-activity",
+            target_entity_type=NodeType.EVENT,
+            status=RelationStatus.UNPROVEN,
+        )
+        graph.add_edge(e1)
+
+        unknowns = [
+            InvestigationUnknown(
+                id=f"unk-{request.id}-act",
+                entity_type=NodeType.EVENT,
+                variable_name="observed_behavior",
+                description=f"Observable behavioral event matching {request.content}",
+                resolving_edge_id=e1.id,
+            ),
+        ]
+        goals = [
+            EvidenceGoal(id=f"goal-{request.id}-act", target_edge_id=e1.id, description=f"Prove behavioral event for {request.content}"),
+        ]
+        claims = [
+            {"claim_id": h.id, "statement": h.statement, "hypothesis_class": getattr(h, "hypothesis_class", "unclassified")}
+            for h in hypotheses
+        ]
+        return InvestigationCase(
+            id=f"case-{request.id}",
+            request_content=request.content,
+            question=request.content,
+            graph=graph,
+            claims=claims,
+            unknowns=unknowns,
+            evidence_goals=goals,
+            acceptance_criteria=[
+                {"criterion": f"Behavioral correlation verified for {request.content}."}
+            ],
+            status="READY_FOR_DISCOVERY",
+        )
 
     def _compile_ttp_or_ioc(
         self,
@@ -342,11 +625,16 @@ class KnowledgeBehaviorCompiler:
 
         requirements = template.requirements if template else []
 
+        inv_case = self._build_ttp_case(request, [hypo_attack, hypo_benign], requirements)
         objective = HuntObjective(
             request_id=request.id,
             target_hypotheses=[hypo_attack.id, hypo_benign.id],
             time_window=time_window,
             target_scopes=request.provider_hints or ["cdb_native_scope"],
+            kind=request.kind,
+            statement=request.content,
+            case=inv_case,
+            case_graph=inv_case.graph,
         )
 
         return objective, [hypo_attack, hypo_benign], requirements
@@ -370,6 +658,8 @@ class KnowledgeBehaviorCompiler:
                 target_hypotheses=[hypo_insufficient.id],
                 time_window=time_window,
                 target_scopes=request.provider_hints or ["cdb_native_scope"],
+                kind=request.kind,
+                statement=request.content,
             )
             return objective, [hypo_insufficient], []
 
@@ -407,6 +697,12 @@ class KnowledgeBehaviorCompiler:
             "    }\n"
             "  ],\n"
             '  "mechanism_status": "KNOWN" | "UNKNOWN",\n'
+            '  "answer_spec": {\n'
+            '    "mode": "lookup" | "hunt",\n'
+            '    "answer_type": "semantic type of the requested answer; do not restrict it to a fixed vocabulary",\n'
+            '    "evidence_types": ["web_request", "dns_activity"],\n'
+            '    "question": "The exact information the hunt must answer"\n'
+            "  },\n"
             '  "hypotheses": [\n'
             "    {\n"
             '      "id": "hypo-1",\n'
@@ -435,7 +731,26 @@ class KnowledgeBehaviorCompiler:
 
         # Parse and validate JSON schema strictly
         try:
-            hypotheses, requirements = validate_compiler_llm_output(raw_resp)
+            try:
+                raw_json = json.loads(raw_resp) if isinstance(raw_resp, str) else raw_resp
+            except (TypeError, json.JSONDecodeError):
+                raw_json = {}
+            answer_spec = raw_json.get("answer_spec", {}) if isinstance(raw_json, dict) else {}
+            if not isinstance(answer_spec, dict):
+                answer_spec = {}
+            answer_type = str(answer_spec.get("answer_type", "unspecified")).strip().lower() or "unspecified"
+            answer_evidence_types = [
+                str(value).strip()
+                for value in answer_spec.get("evidence_types", [])
+                if str(value).strip() in ALLOWED_EVIDENCE_TYPES
+            ]
+            normalized_answer_spec = {
+                "mode": "lookup" if str(answer_spec.get("mode", "hunt")).lower() == "lookup" else "hunt",
+                "answer_type": answer_type,
+                "evidence_types": answer_evidence_types,
+                "question": str(answer_spec.get("question", request.content)).strip() or request.content,
+            }
+            hypotheses, requirements, intent = parse_and_validate_semantic_intent(raw_resp, request.content)
             if not hypotheses or all(h.status == HypothesisStatus.INSUFFICIENTLY_SPECIFIED for h in hypotheses):
                 hypo_insufficient = Hypothesis(
                     id=f"hypo-{request.id}-insufficient",
@@ -449,27 +764,23 @@ class KnowledgeBehaviorCompiler:
                     target_hypotheses=[hypo_insufficient.id],
                     time_window=time_window,
                     target_scopes=request.provider_hints or ["cdb_native_scope"],
+                    kind=request.kind,
+                    statement=request.content,
+                    semantic_intent=intent,
                 )
                 return objective, [hypo_insufficient], []
 
-            # Enrich web/dns requirements with site predicate based on domain search hints
-            domain_matches = re.findall(r"(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}", request.content)
-            extracted_domain = domain_matches[0] if domain_matches else None
+            # Set domain predicate strictly from LLM-provided search hints (NO regex on request.content)
             for r in requirements:
-                if r.evidence_type in ("web_request", "dns_activity", "dns_query"):
+                if r.evidence_type in ("web_request", "dns_activity", "dns_query") and r.search_hints:
                     dom = None
-                    if r.search_hints:
-                        for hint in r.search_hints:
-                            if "." in hint and not hint.startswith("*"):
-                                dom = hint
-                                break
-                    if not dom and extracted_domain:
-                        dom = extracted_domain
+                    for hint in r.search_hints:
+                        if "." in hint and not hint.startswith("*") and not hint.endswith(".exe"):
+                            dom = hint
+                            break
                     if dom:
                         root_domain = dom[4:] if dom.lower().startswith("www.") else dom
                         r.predicate = FieldPredicate(field="site", op=FieldOp.CONTAINS, value=root_domain)
-                        if not r.search_hints:
-                            r.search_hints = [dom, root_domain]
 
             # Add baseline requirement if competing benign hypothesis exists
             if any(h.hypothesis_class == "benign_baseline" for h in hypotheses):
@@ -490,11 +801,20 @@ class KnowledgeBehaviorCompiler:
                             if req_baseline.id not in h.requirements:
                                 h.requirements.append(req_baseline.id)
 
+            inv_model = build_investigation_model_from_intent(intent, hypotheses, requirements)
+            inv_case = build_investigation_case_from_intent(intent, hypotheses, requirements)
             objective = HuntObjective(
                 request_id=request.id,
                 target_hypotheses=[h.id for h in hypotheses],
                 time_window=time_window,
                 target_scopes=request.provider_hints or ["cdb_native_scope"],
+                kind=request.kind,
+                statement=request.content,
+                answer_spec=normalized_answer_spec,
+                semantic_intent=intent,
+                investigation_model=inv_model,
+                case=inv_case,
+                case_graph=inv_case.graph,
             )
 
             return objective, hypotheses, requirements
@@ -584,6 +904,8 @@ class KnowledgeBehaviorCompiler:
                     target_hypotheses=[hypo_active.id, hypo_benign.id],
                     time_window=time_window,
                     target_scopes=request.provider_hints or ["cdb_native_scope"],
+                    kind=request.kind,
+                    statement=request.content,
                 )
                 return objective, [hypo_active, hypo_benign], [*custom_reqs, req_baseline]
         except Exception:
@@ -617,6 +939,8 @@ class KnowledgeBehaviorCompiler:
             target_hypotheses=[hypo_insufficient.id],
             time_window=time_window,
             target_scopes=request.provider_hints or ["cdb_native_scope"],
+            kind=request.kind,
+            statement=request.content,
         )
         return objective, [hypo_insufficient], []
 
@@ -640,4 +964,8 @@ class KnowledgeBehaviorCompiler:
         return f"NOW-{lookback}d/NOW"
 
 
-__all__ = ["KnowledgeBehaviorCompiler", "validate_compiler_llm_output"]
+__all__ = [
+    "KnowledgeBehaviorCompiler",
+    "parse_and_validate_semantic_intent",
+    "validate_compiler_llm_output",
+]

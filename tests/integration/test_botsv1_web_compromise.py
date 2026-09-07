@@ -17,7 +17,17 @@ def is_splunk_available(host: str = "localhost", port: int = 8089, timeout: floa
         return False
 
 
-@pytest.mark.skipif(not is_splunk_available(), reason="Splunk not available at localhost:8089")
+def is_botsv1_available() -> bool:
+    if not is_splunk_available():
+        return False
+    try:
+        ad = SplunkLiveAdapter(splunk_url="https://localhost:8089", auth=("admin", "12345678"), verify_ssl=False)
+        return "botsv1" in [i["name"] for i in ad.list_indexes()]
+    except Exception:
+        return False
+
+
+@pytest.mark.skipif(not is_botsv1_available(), reason="Splunk index 'botsv1' not available at localhost:8089")
 def test_botsv1_web_compromise_live_replay():
     urllib3.disable_warnings()
 

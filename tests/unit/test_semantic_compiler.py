@@ -24,6 +24,49 @@ from hunting.m2_abduction.provider import StubSemanticCompiler
 from hunting.m5_adapter import CdbAdapter
 
 
+def test_nl_lookup_compiles_explicit_answer_spec():
+    """Information questions carry a typed answer target into reporting."""
+    def lookup_llm(prompt: str) -> str:
+        return """{
+          "normalized_claim": {"text": "Find the website domain visited", "status": "UNVERIFIED"},
+          "mechanism_status": "UNKNOWN",
+          "answer_spec": {
+            "mode": "lookup",
+            "answer_type": "domain",
+            "evidence_types": ["web_request", "dns_activity"],
+            "question": "What is the website domain that she visited?"
+          },
+          "hypotheses": [{
+            "id": "hypo-lookup",
+            "statement": "Amber Turing visited a website represented in web or DNS telemetry.",
+            "class": "unclassified",
+            "assumptions": [],
+            "requirements": ["req-web"]
+          }],
+          "requirements": [{
+            "id": "req-web",
+            "semantic_intent": "web_request_activity",
+            "necessity": "CRITICAL",
+            "search_hints": [],
+            "falsification_condition": "No matching web or DNS record exists",
+            "description": "Find the visited website domain",
+            "source_refs": ["USER_QUESTION"]
+          }]
+        }"""
+
+    compiler = KnowledgeBehaviorCompiler(llm_caller=lookup_llm)
+    request = HuntRequest(
+        id="hunt-lookup",
+        kind=HuntRequestKind.HYPOTHESIS,
+        content="Amber Turing visited a website. What is the website domain?",
+    )
+    objective, _, _ = compiler.compile(request)
+
+    assert objective.answer_spec["mode"] == "lookup"
+    assert objective.answer_spec["answer_type"] == "domain"
+    assert objective.answer_spec["evidence_types"] == ["web_request", "dns_activity"]
+
+
 def test_1_known_cve_zero_llm():
     """1. Known CVE compiles with exactly 0 LLM calls into 5-phase requirements."""
     compiler = KnowledgeBehaviorCompiler()

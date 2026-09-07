@@ -33,6 +33,16 @@ def load_dotenv(path: str = ".env") -> dict[str, str]:
     return env
 
 
+class LLMTimeoutError(TimeoutError):
+    """Raised when request to LLM API times out."""
+    pass
+
+
+class LLMCommunicationError(ConnectionError):
+    """Raised when request to LLM API fails due to network/server errors."""
+    pass
+
+
 @dataclass(frozen=True)
 class ApiLLMConfig:
     """External LLM API configuration and secrets.
@@ -46,24 +56,47 @@ class ApiLLMConfig:
     max_tokens: int = 2000
     api_key: str = "secret-token-env"
 
+    @property
+    def is_anthropic(self) -> bool:
+        """Return True if endpoint targets an Anthropic Messages API."""
+        return "messages" in self.endpoint.lower() or "anthropic" in self.endpoint.lower()
+
     @classmethod
     def from_env(cls, env_path: str = ".env") -> ApiLLMConfig:
         """Load configuration from .env and environment variables."""
         file_env = load_dotenv(env_path)
         combined = {**file_env, **os.environ}
 
-        base_url = combined.get("HERMES_API_BASE_URL", "")
-        default_endpoint = (
-            f"{base_url.rstrip('/')}/chat/completions"
-            if base_url
-            else "https://api.openai.com/v1/chat/completions"
-        )
+        anthropic_base = combined.get("ANTHROPIC_BASE_URL", "")
+        hermes_base = combined.get("HERMES_API_BASE_URL", "")
+
+        if anthropic_base:
+            default_endpoint = f"{anthropic_base.rstrip('/')}/messages"
+        elif hermes_base:
+            default_endpoint = f"{hermes_base.rstrip('/')}/chat/completions"
+        else:
+            default_endpoint = "https://api.openai.com/v1/chat/completions"
 
         endpoint = combined.get("LLM_ENDPOINT", default_endpoint)
-        api_key = combined.get("LLM_API_KEY", combined.get("HERMES_API_KEY", combined.get("OPENAI_API_KEY", "secret-token-env")))
-        model = combined.get("LLM_MODEL", combined.get("HERMES_MODEL_NAME", "1/grok-4.6"))
-        timeout = int(combined.get("LLM_TIMEOUT", 30))
-        max_tokens = int(combined.get("LLM_MAX_TOKENS", 2000))
+        api_key = combined.get(
+            "LLM_API_KEY",
+            combined.get(
+                "ANTHROPIC_API_KEY",
+                combined.get("HERMES_API_KEY", combined.get("OPENAI_API_KEY", "secret-token-env")),
+            ),
+        )
+        model = combined.get(
+            "LLM_MODEL",
+            combined.get(
+                "ANTHROPIC_MODEL",
+                combined.get(
+                    "CLAUDE_MODEL",
+                    combined.get("HERMES_MODEL_NAME", "1/gemini-flash-3.8-high-omni"),
+                ),
+            ),
+        )
+        timeout = int(combined.get("LLM_TIMEOUT", 120))
+        max_tokens = int(combined.get("LLM_MAX_TOKENS", 4000))
 
         return cls(
             endpoint=endpoint,
@@ -211,20 +244,33 @@ class ApiLLMProvider(LLMProvider):
 
 
 
-        payload = {
-            "model": self.config.model,
-            "messages": [
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": json.dumps(prompt_context, indent=2)},
-            ],
-            "temperature": 0.0,
-            "max_tokens": self.config.max_tokens,
-            "stream": False,
-        }
+        if self.config.is_anthropic:
+            payload = {
+                "model": self.config.model,
+                "max_tokens": self.config.max_tokens,
+                "system": system_instruction,
+                "messages": [
+                    {"role": "user", "content": json.dumps(prompt_context, indent=2)},
+                ],
+                "temperature": 0.0,
+            }
+        else:
+            payload = {
+                "model": self.config.model,
+                "messages": [
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": json.dumps(prompt_context, indent=2)},
+                ],
+                "temperature": 0.0,
+                "max_tokens": self.config.max_tokens,
+                "stream": False,
+            }
 
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.config.api_key}",
+            "x-api-key": self.config.api_key,
+            "anthropic-version": "2023-06-01",
             "User-Agent": "AI-Agent-Hunting/1.0",
         }
 
@@ -235,60 +281,91 @@ class ApiLLMProvider(LLMProvider):
             method="POST",
         )
 
-        try:
-            with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
-                content_type = resp.headers.get("Content-Type", "")
-                if "text/event-stream" in content_type:
-                    # Gateway returned Server-Sent Events (SSE) stream
-                    chunks: list[str] = []
-                    for line in resp:
-                        line_str = line.decode("utf-8", errors="replace").strip()
-                        if line_str == "data: [DONE]":
-                            break
-                        if line_str.startswith("data:"):
-                            try:
-                                chunk_json = json.loads(line_str[5:].strip())
-                                for choice in chunk_json.get("choices", []):
-                                    delta = choice.get("delta", {})
-                                    if "content" in delta and delta["content"]:
-                                        chunks.append(delta["content"])
-                            except Exception:
-                                continue
-                    content = "".join(chunks).strip()
+        max_retries = 2
+        last_err: Exception | None = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
+                    content_type = resp.headers.get("Content-Type", "")
+                    if "text/event-stream" in content_type:
+                        # Gateway returned Server-Sent Events (SSE) stream
+                        chunks: list[str] = []
+                        for line in resp:
+                            line_str = line.decode("utf-8", errors="replace").strip()
+                            if line_str == "data: [DONE]":
+                                break
+                            if line_str.startswith("data:"):
+                                try:
+                                    chunk_json = json.loads(line_str[5:].strip())
+                                    for choice in chunk_json.get("choices", []):
+                                        delta = choice.get("delta", {})
+                                        if "content" in delta and delta["content"]:
+                                            chunks.append(delta["content"])
+                                except Exception:
+                                    continue
+                        content = "".join(chunks).strip()
+                    else:
+                        resp_bytes = resp.read()
+                        resp_json = json.loads(resp_bytes.decode("utf-8"))
+                        if isinstance(resp_json.get("content"), list):
+                            content = "".join(
+                                b.get("text", "") for b in resp_json["content"]
+                                if isinstance(b, dict) and b.get("type") == "text"
+                            ).strip()
+                        else:
+                            choices = resp_json.get("choices", [])
+                            if not choices:
+                                raise ValueError(f"LLM API returned no choices: {resp_json}")
+                            content = str(choices[0].get("message", {}).get("content", "")).strip()
+
+                    # Strip reasoning / thinking blocks (<think>...</think>)
+                    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+
+                    # Strip markdown code fences if model enclosed JSON in ```json ... ```
+                    if content.startswith("```json"):
+                        content = content[7:]
+                    elif content.startswith("```"):
+                        content = content[3:]
+                    if content.endswith("```"):
+                        content = content[:-3]
+                    content = content.strip()
+
+                    # Extract JSON object substring if model added conversational preamble
+                    if not content.startswith("{") and "{" in content and "}" in content:
+                        start_idx = content.find("{")
+                        end_idx = content.rfind("}") + 1
+                        content = content[start_idx:end_idx].strip()
+
+                    return content
+
+            except urllib.error.HTTPError as http_err:
+                error_body = http_err.read().decode("utf-8", errors="replace")
+                last_err = LLMCommunicationError(f"LLM API HTTP {http_err.code} error: {error_body}")
+                if http_err.code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                    import time as _t
+                    _t.sleep(1.5 * attempt)
+                    continue
+                raise last_err from http_err
+            except (urllib.error.URLError, TimeoutError) as url_err:
+                reason = getattr(url_err, "reason", str(url_err))
+                if "timed out" in str(reason).lower() or isinstance(url_err, TimeoutError) or "timeout" in str(url_err).lower():
+                    last_err = LLMTimeoutError(f"LLM API request timed out after {self.config.timeout_seconds}s: {reason}")
                 else:
-                    resp_bytes = resp.read()
-                    resp_json = json.loads(resp_bytes.decode("utf-8"))
-                    choices = resp_json.get("choices", [])
-                    if not choices:
-                        raise ValueError(f"LLM API returned no choices: {resp_json}")
-                    content = str(choices[0].get("message", {}).get("content", "")).strip()
-
-                # Strip reasoning / thinking blocks (<think>...</think>)
-                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-
-                # Strip markdown code fences if model enclosed JSON in ```json ... ```
-                if content.startswith("```json"):
-                    content = content[7:]
-                elif content.startswith("```"):
-                    content = content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                content = content.strip()
-
-                # Extract JSON object substring if model added conversational preamble
-                if not content.startswith("{") and "{" in content and "}" in content:
-                    start_idx = content.find("{")
-                    end_idx = content.rfind("}") + 1
-                    content = content[start_idx:end_idx].strip()
-
-                return content
-
-
-        except urllib.error.HTTPError as http_err:
-            error_body = http_err.read().decode("utf-8", errors="replace")
-            raise ConnectionError(f"LLM API HTTP {http_err.code} error: {error_body}") from http_err
-        except urllib.error.URLError as url_err:
-            raise ConnectionError(f"LLM API network connection failed: {url_err.reason}") from url_err
+                    last_err = LLMCommunicationError(f"LLM API network error: {reason}")
+                if attempt < max_retries:
+                    import time as _t
+                    _t.sleep(1.5 * attempt)
+                    continue
+                raise last_err from url_err
+            except Exception as e:
+                last_err = e
+                if attempt < max_retries:
+                    import time as _t
+                    _t.sleep(1.0)
+                    continue
+                raise
+        if last_err:
+            raise last_err
 
     def call_raw(self, prompt: str, system_instruction: str | None = None) -> str:
         """Execute HTTP POST request for generic prompt to external LLM API and return response text."""
@@ -296,20 +373,33 @@ class ApiLLMProvider(LLMProvider):
             system_instruction
             or "You are an expert Threat Hunting AI Agent. Return structured JSON matching the requested format."
         )
-        payload = {
-            "model": self.config.model,
-            "messages": [
-                {"role": "system", "content": sys_inst},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.0,
-            "max_tokens": self.config.max_tokens,
-            "stream": False,
-        }
+        if self.config.is_anthropic:
+            payload = {
+                "model": self.config.model,
+                "max_tokens": self.config.max_tokens,
+                "system": sys_inst,
+                "messages": [
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.0,
+            }
+        else:
+            payload = {
+                "model": self.config.model,
+                "messages": [
+                    {"role": "system", "content": sys_inst},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.0,
+                "max_tokens": self.config.max_tokens,
+                "stream": False,
+            }
 
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.config.api_key}",
+            "x-api-key": self.config.api_key,
+            "anthropic-version": "2023-06-01",
             "User-Agent": "AI-Agent-Hunting/1.0",
         }
 
@@ -320,62 +410,102 @@ class ApiLLMProvider(LLMProvider):
             method="POST",
         )
 
-        try:
-            with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
-                content_type = resp.headers.get("Content-Type", "")
-                if "text/event-stream" in content_type:
-                    chunks: list[str] = []
-                    for line in resp:
-                        line_str = line.decode("utf-8", errors="replace").strip()
-                        if line_str == "data: [DONE]":
-                            break
-                        if line_str.startswith("data:"):
-                            try:
-                                chunk_json = json.loads(line_str[5:].strip())
-                                for choice in chunk_json.get("choices", []):
-                                    delta = choice.get("delta", {})
-                                    if "content" in delta and delta["content"]:
-                                        chunks.append(delta["content"])
-                            except Exception:
-                                continue
-                    content = "".join(chunks).strip()
+        max_retries = 2
+        last_err: Exception | None = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
+                    content_type = resp.headers.get("Content-Type", "")
+                    if "text/event-stream" in content_type:
+                        chunks: list[str] = []
+                        for line in resp:
+                            line_str = line.decode("utf-8", errors="replace").strip()
+                            if line_str == "data: [DONE]":
+                                break
+                            if line_str.startswith("data:"):
+                                try:
+                                    chunk_json = json.loads(line_str[5:].strip())
+                                    for choice in chunk_json.get("choices", []):
+                                        delta = choice.get("delta", {})
+                                        if "content" in delta and delta["content"]:
+                                            chunks.append(delta["content"])
+                                except Exception:
+                                    continue
+                        content = "".join(chunks).strip()
+                    else:
+                        resp_bytes = resp.read()
+                        resp_json = json.loads(resp_bytes.decode("utf-8"))
+                        # Extract usage metadata (OpenAI, Gemini, or Anthropic format)
+                        usage = resp_json.get("usage") or resp_json.get("usageMetadata") or {}
+                        p_tok = (
+                            usage.get("prompt_tokens")
+                            or usage.get("promptTokenCount")
+                            or usage.get("input_tokens")
+                        )
+                        c_tok = (
+                            usage.get("completion_tokens")
+                            or usage.get("candidatesTokenCount")
+                            or usage.get("output_tokens")
+                        )
+                        self.last_usage = {
+                            "prompt_tokens": int(p_tok) if p_tok is not None else None,
+                            "completion_tokens": int(c_tok) if c_tok is not None else None,
+                        }
+                        if isinstance(resp_json.get("content"), list):
+                            content = "".join(
+                                b.get("text", "") for b in resp_json["content"]
+                                if isinstance(b, dict) and b.get("type") == "text"
+                            ).strip()
+                        else:
+                            choices = resp_json.get("choices", [])
+                            if not choices:
+                                raise ValueError(f"LLM API returned no choices: {resp_json}")
+                            content = str(choices[0].get("message", {}).get("content", "")).strip()
+
+                    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                    if content.startswith("```json"):
+                        content = content[7:]
+                    elif content.startswith("```"):
+                        content = content[3:]
+                    if content.endswith("```"):
+                        content = content[:-3]
+                    content = content.strip()
+
+                    if not content.startswith("{") and "{" in content and "}" in content:
+                        start_idx = content.find("{")
+                        end_idx = content.rfind("}") + 1
+                        content = content[start_idx:end_idx].strip()
+
+                    return content
+
+            except urllib.error.HTTPError as http_err:
+                error_body = http_err.read().decode("utf-8", errors="replace")
+                last_err = LLMCommunicationError(f"LLM API HTTP {http_err.code} error: {error_body}")
+                if http_err.code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                    import time as _t
+                    _t.sleep(1.5 * attempt)
+                    continue
+                raise last_err from http_err
+            except (urllib.error.URLError, TimeoutError) as url_err:
+                reason = getattr(url_err, "reason", str(url_err))
+                if "timed out" in str(reason).lower() or isinstance(url_err, TimeoutError) or "timeout" in str(url_err).lower():
+                    last_err = LLMTimeoutError(f"LLM API request timed out after {self.config.timeout_seconds}s: {reason}")
                 else:
-                    resp_bytes = resp.read()
-                    resp_json = json.loads(resp_bytes.decode("utf-8"))
-                    # Extract usage metadata (OpenAI or Gemini format)
-                    usage = resp_json.get("usage") or resp_json.get("usageMetadata") or {}
-                    p_tok = usage.get("prompt_tokens") or usage.get("promptTokenCount")
-                    c_tok = usage.get("completion_tokens") or usage.get("candidatesTokenCount")
-                    self.last_usage = {
-                        "prompt_tokens": int(p_tok) if p_tok is not None else None,
-                        "completion_tokens": int(c_tok) if c_tok is not None else None,
-                    }
-                    choices = resp_json.get("choices", [])
-                    if not choices:
-                        raise ValueError(f"LLM API returned no choices: {resp_json}")
-                    content = str(choices[0].get("message", {}).get("content", "")).strip()
-
-                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-                if content.startswith("```json"):
-                    content = content[7:]
-                elif content.startswith("```"):
-                    content = content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                content = content.strip()
-
-                if not content.startswith("{") and "{" in content and "}" in content:
-                    start_idx = content.find("{")
-                    end_idx = content.rfind("}") + 1
-                    content = content[start_idx:end_idx].strip()
-
-                return content
-
-        except urllib.error.HTTPError as http_err:
-            error_body = http_err.read().decode("utf-8", errors="replace")
-            raise ConnectionError(f"LLM API HTTP {http_err.code} error: {error_body}") from http_err
-        except urllib.error.URLError as url_err:
-            raise ConnectionError(f"LLM API network connection failed: {url_err.reason}") from url_err
+                    last_err = LLMCommunicationError(f"LLM API network error: {reason}")
+                if attempt < max_retries:
+                    import time as _t
+                    _t.sleep(1.5 * attempt)
+                    continue
+                raise last_err from url_err
+            except Exception as e:
+                last_err = e
+                if attempt < max_retries:
+                    import time as _t
+                    _t.sleep(1.0)
+                    continue
+                raise
+        if last_err:
+            raise last_err
 
 
 def create_llm_caller(
@@ -385,13 +515,13 @@ def create_llm_caller(
 ) -> Callable[[str], str]:
     """Factory creating a tracked, bounded LLM caller function for engine components."""
     import logging
+    import sys
     import time
     logger = logging.getLogger(__name__)
 
     def caller(prompt: str) -> str:
         if tracker is not None and tracker.is_exhausted:
-            logger.warning(f"LLM budget exhausted for component '{component}' - using deterministic fallback")
-            return "{}"
+            raise RuntimeError(f"LLM budget exhausted for component '{component}' - maximum {tracker.max_calls} calls exceeded")
         t0 = time.perf_counter()
         resp = "{}"
         try:
@@ -402,6 +532,22 @@ def create_llm_caller(
             else:
                 resp = "{}"
         except Exception as err:
+            is_timeout = (
+                isinstance(err, (TimeoutError, LLMTimeoutError))
+                or "timed out" in str(err).lower()
+                or "timeout" in str(err).lower()
+            )
+            if is_timeout:
+                print(f"\n[-] [LLM ERROR] Request timed out for component '{component}': {err}", file=sys.stderr)
+                logger.error(f"LLM request timed out for component '{component}': {err}")
+                raise LLMTimeoutError(f"LLM API request timed out for component '{component}': {err}") from err
+
+            if component == "compiler":
+                print(f"\n[-] [LLM ERROR] Compilation request failed for component 'compiler': {err}", file=sys.stderr)
+                logger.error(f"LLM compilation request failed: {err}")
+                raise
+
+            print(f"[-] [AI SUB-SYSTEM WARNING] LLM call failed for component '{component}': {err}", file=sys.stderr)
             logger.warning(f"LLM call failed for component '{component}': {err} - falling back to deterministic processing")
             return "{}"
 
@@ -438,7 +584,7 @@ class StubSemanticCompiler:
     """
 
     def __init__(self, scenario: str = "generic") -> None:
-        allowed = {"generic", "database", "web"}
+        allowed = {"generic", "database", "web", "amber", "lookup"}
         if scenario not in allowed:
             raise ValueError(f"Unsupported semantic fixture scenario: {scenario}")
         self.scenario = scenario
@@ -456,6 +602,90 @@ class StubSemanticCompiler:
         else:
             content = prompt.strip()
 
+        # Explicit fixture: Amber Turing / person investigation
+        if self.scenario in ("amber", "lookup") or "amber" in content.lower():
+            data = {
+                "normalized_claim": {
+                    "text": "Amber Turing visited an external website",
+                    "status": "UNVERIFIED",
+                },
+                "entities": [
+                    {"type": "user", "value": "Amber Turing", "role": "actor"}
+                ],
+                "mechanism_status": "UNKNOWN",
+                "answer_spec": {
+                    "mode": "lookup",
+                    "answer_type": "website_domain",
+                    "evidence_types": ["web_request", "dns_activity"],
+                    "question": "What website domain did Amber Turing visit?",
+                },
+                "semantic_intent": {
+                    "original_request": content,
+                    "question": "What website domain did Amber Turing visit?",
+                    "subject": {"type": "person", "value": "Amber Turing"},
+                    "requested_object": {"type": "website_domain", "role": "answer"},
+                    "behavior": "visited a website to find executive contact information",
+                    "evidence_requirements": [
+                        {
+                            "semantic_intent": "identity_binding",
+                            "required_fields": ["user", "host", "src_ip"],
+                            "necessity": "CRITICAL",
+                            "description": "Correlate Amber Turing to workstation endpoint and client IP",
+                        },
+                        {
+                            "semantic_intent": "web_navigation",
+                            "required_fields": ["site", "uri", "query", "src_ip"],
+                            "necessity": "CRITICAL",
+                            "description": "Web or DNS requests originating from Amber Turing's client IP",
+                        },
+                    ],
+                    "required_correlations": [
+                        "person_to_endpoint",
+                        "endpoint_to_client_ip",
+                        "client_ip_to_web_or_dns_event",
+                    ],
+                    "assumptions": ["Amber Turing used corporate network infrastructure"],
+                    "uncertainties": ["User endpoint hostname unknown", "Client IP address unassigned"],
+                },
+                "hypotheses": [
+                    {
+                        "id": "hypo-amber-visit",
+                        "statement": "Amber Turing navigated to a website represented in web or DNS telemetry",
+                        "class": "unclassified",
+                        "assumptions": ["Amber Turing initiated outbound browsing session"],
+                        "requirements": ["req-amber-identity", "req-amber-web"],
+                    },
+                    {
+                        "id": "hypo-amber-no-visit",
+                        "statement": "Amber Turing did not initiate external website navigation in the monitored period",
+                        "class": "unclassified",
+                        "assumptions": ["No external DNS/HTTP sessions tied to Amber Turing"],
+                        "requirements": ["req-amber-identity"],
+                    },
+                ],
+                "requirements": [
+                    {
+                        "id": "req-amber-identity",
+                        "semantic_intent": "identity_binding",
+                        "necessity": "CRITICAL",
+                        "search_hints": ["Amber Turing", "aturing", "Amber"],
+                        "falsification_condition": "no authentication or host logon records associated with Amber Turing",
+                        "description": "Identify workstation hostname or client IP used by Amber Turing",
+                        "source_refs": ["DIRECTORY_SERVICE"],
+                    },
+                    {
+                        "id": "req-amber-web",
+                        "semantic_intent": "web_navigation",
+                        "necessity": "CRITICAL",
+                        "search_hints": [],
+                        "falsification_condition": "no outbound HTTP requests or DNS queries recorded from user workstation",
+                        "description": "Identify external domains accessed from Amber Turing's workstation",
+                        "source_refs": ["PROXY_DNS_TELEMETRY"],
+                    },
+                ],
+            }
+            return json.dumps(data)
+
         # Explicit fixture: database compromise
         if self.scenario == "database":
             data = {
@@ -467,6 +697,21 @@ class StubSemanticCompiler:
                     {"type": "host", "value": "db01", "role": "target"}
                 ],
                 "mechanism_status": "UNKNOWN",
+                "semantic_intent": {
+                    "original_request": content,
+                    "question": "Did attacker compromise database db01?",
+                    "subject": {"type": "host", "value": "db01"},
+                    "requested_object": {"type": "database_compromise", "role": "answer"},
+                    "behavior": "unauthorized database access",
+                    "evidence_requirements": [
+                        {"semantic_intent": "remote_authentication", "required_fields": ["user", "host"], "necessity": "CRITICAL", "description": "Audit authentication events for database host db01"},
+                        {"semantic_intent": "server_side_execution", "required_fields": ["cmdline", "host"], "necessity": "SUPPORTING", "description": "Audit process lineage for database server db01"},
+                        {"semantic_intent": "operational_baseline", "required_fields": ["host"], "necessity": "SUPPORTING", "description": "Verified operational telemetry baseline for database host"},
+                    ],
+                    "required_correlations": ["host_to_process", "host_to_authentication"],
+                    "assumptions": ["Attacker acquired database administrative credentials"],
+                    "uncertainties": [],
+                },
                 "hypotheses": [
                     {
                         "id": "hypo-db-cred",
@@ -530,6 +775,20 @@ class StubSemanticCompiler:
                     {"type": "domain", "value": extracted_domain, "role": "target"}
                 ],
                 "mechanism_status": "UNKNOWN",
+                "semantic_intent": {
+                    "original_request": content,
+                    "question": f"Did attacker gain access to {extracted_domain}?",
+                    "subject": {"type": "domain", "value": extracted_domain},
+                    "requested_object": {"type": "web_compromise", "role": "answer"},
+                    "behavior": f"external adversary web compromise of {extracted_domain}",
+                    "evidence_requirements": [
+                        {"semantic_intent": "web_request_activity", "required_fields": ["uri", "client_ip"], "necessity": "CRITICAL", "description": f"Inbound HTTP/web requests targeting {extracted_domain}"},
+                        {"semantic_intent": "server_side_execution", "required_fields": ["cmdline", "host"], "necessity": "CRITICAL", "description": f"Process execution and server-side lineage audit associated with {extracted_domain}"},
+                    ],
+                    "required_correlations": ["client_ip_to_web_request", "web_request_to_process"],
+                    "assumptions": ["Web service exposed externally with exploitable vulnerability"],
+                    "uncertainties": [],
+                },
                 "hypotheses": [
                     {
                         "id": "hypo-web-exploit",

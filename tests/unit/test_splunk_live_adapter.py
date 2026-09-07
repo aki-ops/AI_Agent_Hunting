@@ -159,35 +159,44 @@ bindings:
 
 @pytest.mark.skipif(not SPLUNK_AVAILABLE, reason="Splunk Docker container is not reachable on localhost:8089")
 class TestSplunkLiveAdapterIntegration:
-    """Live integration tests executing queries against running Splunk Docker container with BOTSv1."""
+    """Live integration tests executing queries against running Splunk Docker container with BOTS."""
 
     @pytest.fixture
     def live_adapter(self) -> SplunkLiveAdapter:
+        selected = SplunkLiveAdapter.auto_select_index("https://localhost:8089", verify_ssl=False)
+        target_index = selected["name"]
+        manifest = f"configs/splunk_{target_index}.yaml" if Path(f"configs/splunk_{target_index}.yaml").exists() else "configs/splunk_botsv2.yaml"
         adapter = SplunkLiveAdapter(
             splunk_url="https://localhost:8089",
             auth=("admin", "12345678"),
-            index="botsv1",
-            manifest_path="configs/splunk_botsv1.yaml",
+            index=target_index,
+            manifest_path=manifest,
             verify_ssl=False,
         )
         adapter.validate_index()
         return adapter
 
+    @pytest.fixture
+    def live_env(self, live_adapter: SplunkLiveAdapter) -> dict[str, str]:
+        if live_adapter.index == "botsv2":
+            return {"host": "venus", "window": "2017-08-01T00:00:00Z/2018-10-29T23:59:59Z"}
+        return {"host": "we1149srv", "window": "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z"}
+
     def test_live_list_indexes(self, live_adapter: SplunkLiveAdapter) -> None:
-        """Verify list_indexes returns active botsv1 index."""
+        """Verify list_indexes returns active BOTS index."""
         indexes = live_adapter.list_indexes()
         assert len(indexes) > 0
-        botsv1_entry = next((i for i in indexes if i["name"] == "botsv1"), None)
-        assert botsv1_entry is not None
-        assert botsv1_entry["total_events"] > 30_000_000
-        assert botsv1_entry["disabled"] is False
+        bots_entry = next((i for i in indexes if i["name"] in ("botsv1", "botsv2")), None)
+        assert bots_entry is not None
+        assert bots_entry["total_events"] > 30_000_000
+        assert bots_entry["disabled"] is False
 
-    def test_live_process_ancestry_query(self, live_adapter: SplunkLiveAdapter) -> None:
-        """Verify live Sysmon process execution query on we1149srv returns normalized fields."""
+    def test_live_process_ancestry_query(self, live_adapter: SplunkLiveAdapter, live_env: dict[str, str]) -> None:
+        """Verify live Sysmon process execution query returns normalized fields."""
         qr = live_adapter.execute_query(
             operation_id="cdb_process_lineage",
-            entity=Host(name="we1149srv"),
-            window="2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+            entity=Host(name=live_env["host"]),
+            window=live_env["window"],
             limit=5,
         )
         assert qr.executed_ok is True
@@ -200,14 +209,14 @@ class TestSplunkLiveAdapterIntegration:
         assert "timestamp" in first
         assert "host" in first
         assert "image" in first
-        assert first["host"].lower() == "we1149srv"
+        assert first["host"].lower() == live_env["host"].lower()
 
-    def test_live_network_connection_query(self, live_adapter: SplunkLiveAdapter) -> None:
+    def test_live_network_connection_query(self, live_adapter: SplunkLiveAdapter, live_env: dict[str, str]) -> None:
         """Verify live Sysmon network connection query returns destination_ip."""
         qr = live_adapter.execute_query(
             operation_id="cdb_network_connections",
-            entity=Host(name="we1149srv"),
-            window="2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+            entity=Host(name=live_env["host"]),
+            window=live_env["window"],
             limit=5,
         )
         assert qr.executed_ok is True
@@ -216,9 +225,9 @@ class TestSplunkLiveAdapterIntegration:
         first = qr.rows[0]
         assert "destination_ip" in first or "destination_port" in first
 
-    def test_live_negative_controls(self, live_adapter: SplunkLiveAdapter) -> None:
+    def test_live_negative_controls(self, live_adapter: SplunkLiveAdapter, live_env: dict[str, str]) -> None:
         """Verify live negative controls evaluate correctly."""
-        window = "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z"
+        window = live_env["window"]
         ctrl_health = live_adapter.control_health(window)
         assert ctrl_health.executed_ok is True
 
@@ -239,9 +248,9 @@ class TestSplunkLiveAdapterIntegration:
         assert SplunkLiveAdapter.is_available("https://localhost:9999", timeout=1) is False
 
     def test_live_auto_select_index(self) -> None:
-        """Verify auto_select_index discovers botsv1 as the primary telemetry index."""
+        """Verify auto_select_index discovers active BOTS as the primary telemetry index."""
         selected = SplunkLiveAdapter.auto_select_index("https://localhost:8089", verify_ssl=False)
-        assert selected["name"] == "botsv1"
+        assert selected["name"] in ("botsv1", "botsv2")
         assert selected["total_events"] > 1000000
         assert "min_time" in selected and "max_time" in selected
 
@@ -250,17 +259,17 @@ class TestSplunkLiveAdapterIntegration:
         catalog = live_adapter.discover_full_capabilities()
         assert catalog.provider_id == "splunk"
         assert catalog.status == "ONLINE"
-        assert "botsv1" in catalog.indices
+        assert any(idx in catalog.indices for idx in ("botsv1", "botsv2"))
         assert "process_ancestry" in catalog.supported_evidence_types
         assert "web_request" in catalog.supported_evidence_types
         assert "file_modification" in catalog.supported_evidence_types
 
-    def test_live_web_request_query(self, live_adapter: SplunkLiveAdapter) -> None:
+    def test_live_web_request_query(self, live_adapter: SplunkLiveAdapter, live_env: dict[str, str]) -> None:
         """Verify live web_request query fetches stream:http data."""
         qr = live_adapter.execute_query(
             operation_id="cdb_web_requests",
             entity=None,
-            window="2016-08-01T00:00:00Z/2016-08-29T23:59:59Z",
+            window=live_env["window"],
             limit=5,
         )
         assert qr.executed_ok is True

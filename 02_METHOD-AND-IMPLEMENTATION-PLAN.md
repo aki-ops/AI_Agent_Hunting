@@ -1,206 +1,220 @@
-# 02 — METHOD AND IMPLEMENTATION PLAN (v4.1)
+# 02 — METHOD AND IMPLEMENTATION PLAN (v5.0)
 
 `01_FINAL-ARCHITECTURE.md` defines WHAT the system is. This file defines the
-current executable HOW. `03` contains sources and traceability; `04` records
-tests and remaining gates.
+executable HOW. `03` contains literature sources and traceability; `04` records
+the active implementation checklist and test gates.
 
-## 1. End-to-end lifecycle
+---
+
+## 1. End-to-End Execution Flow [Tags: REF-ECTH, REF-TAHITI, REF-PEAK, REF-SLEUTH]
 
 ```text
-HuntRequest
-  → KnowledgeBehaviorCompiler
-  → HuntObjective + Hypothesis[] + EvidenceRequirementV4[]
-  → Provider capability discovery/validation
-  → Cell registration and Expectation instantiation
-  → QueryTemplate or validated LLM fallback
-  → LogicalQueryPlan → NativeQueryPlan
-  → provider QueryResult
-  → ObservationLedger
-  → deterministic fact extraction and EvidenceCard grouping
-  → expectation status and hypothesis reasoning
-  → ActionController action selection
-  → coverage-aware FinalHuntAccount and Markdown report
+HuntRequest (NL Question, CTI, CVE, TTP, IOC)
+    │
+    ▼ Step 1: Compilation
+SemanticCaseCompiler
+    │  ├─ Free-text input: Bounded LLM API generates InvestigationCase schema
+    │  └─ CVE/TTP/IOC input: Deterministic knowledge templates generate Behavior Graph
+    ▼
+InvestigationCase (Nodes, Directed Edges, Mandatory Unknowns, Acceptance Criteria)
+    │
+    ▼ Step 2: Dependency Analysis & Action Selection [REF-PROVSEEK, REF-HOLMES]
+Relation-Aware Action Planner
+    │  ├─ Scans unproven mandatory edges whose source node is KNOWN
+    │  └─ Prioritizes entity/identity resolution over traffic testing
+    ▼
+ActionCandidate (e.g. resolve_person_to_account, resolve_account_to_endpoint)
+    │
+    ▼ Step 3: Capability Binding [REF-AIQL, REF-MITRE-ANALYTICS]
+CapabilityBinder
+    │  ├─ Matches logical operation to provider capability catalog
+    │  └─ Validates observable fields, scope partitions, and permissions
+    ▼
+LogicalQueryPlan → NativeQueryPlan (SPL, SQL, API request)
+    │
+    ▼ Step 4: Parameterized Execution [REF-OCSF, REF-MICROSOFT]
+Provider Adapter (SplunkLiveAdapter / CdbAdapter)
+    │  ├─ Executes search with L+1 limit for completeness detection
+    │  └─ Records QueryResult envelope (status, rows, cursor, complete)
+    ▼
+ObservationLedger (Append-only storage; preserves native_type and raw fields) [REF-OMEGALOG]
+    │
+    ▼ Step 5: Deterministic Relation Verification [REF-HUNTERAGENT, REF-FOR508, REF-FOR572]
+RelationVerifier
+    │  ├─ Audits observation citations
+    │  ├─ Enforces strict field roles (client_ip ≠ server_ip; rejects web servers as endpoints)
+    │  └─ Mints verified RelationProof; promotes target node to KNOWN
+    ▼
+Updated InvestigationGraph (Graph state transitions; cycle repeats if edges remain)
+    │
+    ▼ Step 6: Evidence Subgraph Extraction & Narrative Reporting [REF-RAG-SEC, REF-EXCYTIN]
+Grounded Report Generator
+    │  ├─ Extracts minimal EvidenceSubgraph for proven causal path
+    │  ├─ Generates grounded LLM explanation bounded strictly to subgraph
+    │  └─ Emits FinalHuntAccount and Section 2 Provenance Chain
+    ▼
+StoppingDecision & Detection/Knowledge Feedback [REF-TAHITI]
 ```
 
-The engine can start with only `HuntRequest.content`. Explicit entities create
-targeted Cells; no entity creates a wildcard Cell and may lead to bounded
-DISCOVER/PIVOT actions.
+---
 
-## 2. Compilation
+## 2. Compilation and Graph Synthesis [Tags: REF-HUNTERAGENT, REF-THREATRAPTOR, REF-MITRE-DC]
 
-### 2.1 Deterministic paths
+### 2.1 Deterministic Paths
+Known CVE records use versioned knowledge templates separating exposure, preconditions,
+exploitation indicators, post-exploitation, and coverage gaps. Known TTPs and IOCs
+compile directly into typed behavior graphs. These paths do not call an LLM.
 
-Known CVE records use the versioned knowledge base and separate exposure,
-preconditions, exploitation indicators, post-exploitation and gaps. Known TTP
-and IOC requests use registered behavior templates and provider-neutral
-requirements. Structured YAML/JSON hypotheses are parsed directly.
-
-These paths do not call an LLM.
-
-### 2.2 Free-text semantic path
-
+### 2.2 Free-Text Semantic Path
 For unstructured `HYPOTHESIS` and `NL_QUESTION` requests:
+1. The request text is dispatched to the semantic compiler with a strict JSON schema.
+2. The schema enforces:
+   - `known_entities`: Seed nodes extracted from input (e.g. `Person: "Amber Turing"`).
+   - `claims`: Core behaviors asserted in the request.
+   - `mandatory_unknowns`: Required missing nodes (e.g. endpoint host, client IP).
+   - `required_relation_paths`: Sequence of typed edges required to prove the claim.
+   - `acceptance_criteria`: Logical criteria required to resolve or refute the hunt.
+3. `InvestigationValidator` deterministically audits the compiled model:
+   - Blocks raw SPL, index names, or provider-specific keywords.
+   - Mandates that any `Person` subject without a pre-linked workstation produces a mandatory `unknown` for `endpoint` and sets state to `READY_FOR_DISCOVERY`.
+   - If the API times out, fails, or violates schema, the engine raises `LLMTimeoutError` or stops with `STOP_INSUFFICIENT`; fabrication is strictly barred.
 
-1. The semantic compiler receives the request text.
-2. It returns an unverified claim, semantic entities, mechanism status,
-   competing hypotheses, assumptions and requirements.
-3. `validate_compiler_llm_output` accepts only allowed semantic intents,
-   evidence types, citations, descriptions and falsification conditions.
-4. Search hints become query constraints only. They do not create evidence or
-   confirmed Cells.
-5. Invalid, missing or unavailable semantic compilation produces
-   `INSUFFICIENTLY_SPECIFIED` and `STOP_INSUFFICIENT`.
+---
 
-There is no natural-language keyword fallback. A hypothesis statement cannot
-classify an evidence card merely because it contains a word such as “web” or
-“process”. Compatibility requires typed expectations; unresolved cards may be
-sent to one bounded batch evaluator.
+## 3. Case Graph Dependency Analysis & Edge Selection [Tags: REF-SLEUTH, REF-HOLMES, REF-PROVSEEK]
 
-## 3. Requirements and expectations
+The action planner evaluates the `InvestigationGraph` using backward and forward dependency chaining:
 
-`EvidenceRequirementV4` is question-side and provider-neutral. It contains an
-evidence type/semantic intent, necessity, predicate, falsification condition,
-source references and optional search hints.
+1. **Find Actionable Edges**: Identify directed edges where:
+   - `status == UNPROVEN`
+   - `source_node.status == KNOWN`
+   - Edge is marked `MANDATORY`
+2. **The Amber Turing Invariant** (`REF-FOR508`, `REF-FOR572`):
+   - Path: $	ext{Person(Amber)} ightarrow 	ext{Account} ightarrow 	ext{Endpoint} ightarrow 	ext{Client IP} ightarrow 	ext{Web Activity} ightarrow 	ext{Domain}$.
+   - While $	ext{Person} ightarrow 	ext{Account}$ or $	ext{Account} ightarrow 	ext{Endpoint}$ is unproven:
+     The planner **only** permits `RESOLVE_ENTITY` actions targeting identity.
+   - Global or wildcard web queries (`sourcetype="stream:http"`, `sourcetype="iis"`) are **prohibited**.
 
-`Expectation` binds one requirement to one concrete entity, provider scope and
-time window. The engine creates expectations from explicit entities and from
-entities discovered by bounded sweep/pivot actions. Hypothesis-to-requirement
-binding uses requirement IDs, `supports` and the typed hypothesis class—not
-hypothesis or requirement name matching.
+---
 
-## 4. Capability and query planning
+## 4. Capability Binding & Logical Operations [Tags: REF-AIQL, REF-MITRE-ANALYTICS, REF-MICROSOFT]
 
+Logical operations express provider-neutral forensic intents:
+- `resolve_person_to_account`: Queries directory or authentication services.
+- `resolve_account_to_endpoint`: Queries endpoint logon events (e.g. Windows Event ID 4624).
+- `resolve_endpoint_to_client_ip`: Queries DHCP, network interface, or local IP bindings.
+- `find_web_activity_from_client_ip`: Queries web proxy or HTTP stream logs for requests originating from the client IP.
+- `find_dns_activity_from_client_ip`: Queries DNS resolver logs for queries originating from the client IP.
+- `find_process_from_endpoint`: Queries process creation telemetry (Sysmon Event ID 1, EDR).
+- `find_file_change_from_process`: Queries file creation/modification telemetry.
+
+The `CapabilityBinder` matches an actionable edge to the provider's registered operations based on
+target entity type, observable field roles, and required time window.
+
+---
+
+## 5. Execution, Completeness & Negative Controls [Tags: REF-OCSF, REF-MICROSOFT, REF-TAHITI]
+
+Providers return a `QueryResult` envelope with native records, execution status, and explicit `complete: bool`.
+
+### 5.1 The L+1 Completeness Rule
+The adapter queries for $L + 1$ records where $L$ is the configured row limit (e.g. 100).
+- If $> L$ rows are returned: Adapter returns $L$ rows, sets `complete = False`, and provides a continuation cursor.
+- If $\le L$ rows are returned: Adapter sets `complete = True`.
+- **Epistemic Rule**: A partial query (`complete = False`) can **never** license negative evidence or refute a hypothesis.
+
+### 5.2 Negative Controls
+To conclude absence of activity, three deterministic controls must pass:
+1. `ScopeHealthControl`: Provider and scope are online and reachable.
+2. `AnyRecordInScope`: Baseline telemetry confirms the scope was actively logging during the target window.
+3. `PredicateObservabilityControl`: The queried field exists and is observable in the provider catalog.
+
+### 5.3 Cell Lifecycle & Triple Coverage Accounting
+Each query execution updates or instantiates a concrete `Cell(scope, entity, time_bucket)`:
+- `complete == True` $\rightarrow$ `CellState.EXPLORED`.
+- `complete == False` $\rightarrow$ `CellState.PARTIAL`.
+- Query execution error $\rightarrow$ `CellState.UNQUERYABLE` or `UNREACHABLE`.
+- Wildcard scope cells (`entity == ANY`) remain unsearched during targeted instance resolution.
+
+Coverage is computed and reported via three independent dimensions:
+1. **Causal Path Coverage**: Verified causal edges / total required causal edges.
+2. **Wildcard Scope Coverage**: Explored wildcard cells / total wildcard cells (remains 0.0% during targeted resolution).
+3. **Instance Cell Coverage**: Explored instance cells / total instance cells (100.0% when all targeted entity coordinates are completed).
+
+---
+
+## 6. Observation Ledger & Fact Extraction [Tags: REF-OMEGALOG, REF-OCSF]
+
+Every raw provider row is stored immutably in the `ObservationLedger`:
+- Assigns unique `observation_id` (e.g. `obs-splunk-104`).
+- Preserves native provider fields and original `native_type`.
+- Extracts normalized facts with explicit field roles:
+  - `client_ip`: Originating client IP address.
+  - `server_ip`: Target server IP address.
+  - `endpoint_host`: Host machine executing the action or hosting the session.
+  - `account_name`: Authenticated username.
+  - `uri_stem`, `domain_name`, `process_name`, `command_line`.
+
+---
+
+## 7. Deterministic Relation Verification & Provenance Graph [Tags: REF-HUNTERAGENT, REF-SLEUTH, REF-FOR572]
+
+The `RelationVerifier` audits candidate edges against ledger observations before state transitions occur:
+
+1. **Citation Integrity**: Each asserted edge must cite valid `observation_id`s in the ledger.
+2. **Field Role Isolation**:
+   - Matches for `person` or `account` must occur strictly in user identity fields (`user`, `Account_Name`).
+   - Matches for `endpoint` must occur in computer name fields (`host`, `ComputerName`).
+   - Rejects web servers: Server hostnames (`jabbah`, `we1149srv`, IIS instances) are permanently prohibited from being bound as user endpoints.
+   - Rejects destination IPs: `destination_ip` and `server_ip` cannot satisfy a `client_ip` requirement.
+3. **Promotion**: Upon successful verification, the verifier mints an immutable `RelationProof`, marks the edge as `VERIFIED`, and transitions the target node to `KNOWN`.
+
+---
+
+## 8. Action Controller & Epistemic State Loop [Tags: REF-PROVSEEK, REF-CASCADE, REF-CDB]
+
+The controller drives the iterative investigation loop under strict budget limits:
 ```text
-EvidenceRequirement
-  → provider VersionedCapabilityDescriptor
-  → CapabilityBinding
-  → QueryTemplate (preferred)
-  → QueryPlan validation
-  → LogicalQueryPlan
-  → provider NativeQueryPlan
+max_turns = 15
+max_queries = 60
+max_llm_calls = 3
+max_scan_cells = 100
+max_runtime_seconds = 300
 ```
 
-Validation checks provider/scope, entity kind, time window, permissions,
-observable fields, query limits and completeness contract. Missing capability
-is returned as `UNSUPPORTED_REQUIREMENT`; unreachable scope is returned as
-`UNREACHABLE`.
+Action precedence:
+$$\text{RESOLVE\_ENTITY} \rightarrow \text{TEST} \rightarrow \text{CORRELATE} \rightarrow \text{EXPAND} \rightarrow \text{DISCOVER} \rightarrow \text{PIVOT} \rightarrow \text{REFINE} \rightarrow \text{STOP}$$
 
-If no query template exists and an LLM planner is configured, it may propose
-structured query parameters or custom native text. The result is parsed,
-allowlisted, dry-run validated and compiled before execution. The LLM never
-executes a query and cannot select a controller action.
+If the controller runs out of actions or exhausts budget:
+- If mandatory identity edge is unproven $\rightarrow$ `STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED`.
+- If intermediate causal edge is unproven $\rightarrow$ `STOP_INCONCLUSIVE_RELATION_UNPROVEN`.
+- If coverage was incomplete or scope missing $\rightarrow$ `STOP_INCONCLUSIVE_COVERAGE_GAP`.
+- If all acceptance criteria satisfied $\rightarrow$ `STOP_RESOLVED`.
 
-Current implementations:
+---
 
-- `CdbAdapter`: local SQLite replay/test backend.
-- `SplunkLiveAdapter`: live Splunk REST/oneshot search backend, using
-  `configs/splunk_botsv1.yaml` when available or discovery mode otherwise.
+## 9. Grounded Reporting & Feedback [Tags: REF-RAG-SEC, REF-EXCYTIN, REF-TAHITI]
 
-EDR and IDS are extension contracts, not current live adapters.
+The analyst-facing report (`report.md`) is structured into five concise sections:
+1. **Hypothesis / Question**: Seed request, subject, requested object, triple coverage metrics (Causal Path, Wildcard Scope, Instance Cell), and deterministic verdict.
+2. **Hypothesis Analysis & Provenance Graph**:
+   - Competing hypotheses adjudicated individually (supported vs unknown/weakened).
+   - Proven Relation Chain: Causal path $\text{Person} \rightarrow \text{Account} \rightarrow \text{Endpoint} \rightarrow \text{Client IP} \rightarrow \text{Request} \rightarrow \text{Domain}$ with citations.
+   - Unresolved Mandatory Unknowns: Explicit listing of unproven variables if inconclusive.
+3. **Evidence and Explanation**:
+   - Two-Layer Separation: Raw forensic records preserved in `ObservationLedger` (audit layer); LLM evaluator receives bounded `EvidenceSubgraph` (max 20 cards) with noise domains (CDNs, ads, telemetry trackers) stripped.
+   - Robust Parser & Graceful Degradation: Markdown code fences stripped, `{...}` JSON substring extracted, with explicit `ParseStatus` tracking (`SUCCESS`, `INVALID_JSON`, `SCHEMA_REJECTED`, `TIMEOUT`, `PROVIDER_ERROR`).
+   - If LLM narrative is unavailable, deterministic graph resolution (`target_node.value`) is reported directly.
+4. **Queries Used**: Parameterized queries, semantic reasons, and completeness status.
+5. **Resource & Cost Accounting**: Calls, tokens, latency, and estimated USD cost.
 
-## 5. Execution and completeness
+---
 
-Adapters return a `QueryResult` envelope containing execution status, rows,
-native query, provider/scope information, observed fields, native types,
-cursor and explicit `complete`.
+## 10. Verification Plan & Benchmark Strategy [Tags: REF-CDB, REF-EXCYTIN]
 
-For the current Splunk adapter, the search job endpoint is called in oneshot
-mode. The adapter normalizes provider rows and applies an L+1 limit: returning
-more than the requested limit yields `complete=False` and a bounded cursor;
-otherwise the result is complete. A partial result cannot license negative
-evidence.
-
-Negative evidence additionally requires:
-
-1. `ScopeHealthControl` passes;
-2. `AnyRecordInScope` confirms active telemetry; and
-3. `PredicateObservabilityControl` confirms the queried predicate is
-   observable.
-
-Controls produce diagnostics; they do not create observations.
-
-## 6. Observation and evidence processing
-
-Each returned row is stored as an append-only `Observation` with native type,
-native fields, provider scope, timestamp and normalized entities. Unknown
-native types are retained.
-
-Deterministic fact extraction recognizes process execution, web request, DNS,
-authentication, file modification, persistence and network facts according to
-available fields/native provider mappings. Relationships and timestamps are
-preserved for correlation.
-
-`EvidenceGroupBuilder` fingerprints repeated facts and produces compact
-`EvidenceCard` records with counts, representative observation IDs, entity/time
-summaries, field summaries, relations and completeness. LLM contexts contain
-cards/deltas, never the raw ledger.
-
-## 7. Evidence evaluation and reasoning
-
-The deterministic evaluator checks:
-
-- evidence type against the expectation type;
-- entity compatibility;
-- field predicates (`EQUALS`, `CONTAINS`, `EXISTS`, `ABSENT`); and
-- temporal/entity correlation for multi-stage chains.
-
-Without an expectation, the compatibility result is empty/unknown. If an
-evaluator caller is configured, unresolved cards can be sent together in one
-structured batch, and returned hypothesis IDs are schema-filtered against the
-active set. This is advisory; status changes still follow deterministic
-expectation results and controller rules.
-
-Competing hypotheses remain active until their own expectations are concluded.
-For a typed web-request attack chain, web, process/artifact evidence must be
-co-located and temporally correlated before the chain is considered supported.
-
-## 8. Controller and actions
-
-The Action Controller chooses the first available action in this order:
-
-```text
-TEST → CONTROL → EXPAND → DISCOVER → PIVOT → REFINE → STOP
-```
-
-- `TEST`: execute an untested expectation.
-- `CONTROL`: run telemetry health/record/observability controls.
-- `EXPAND`: execute a requirement against a discovered concrete entity.
-- `DISCOVER`: bounded wildcard/scope sweep.
-- `PIVOT`: investigate bounded entities extracted from returned rows.
-- `REFINE`: batch unresolved evidence for advisory semantic evaluation.
-- `STOP`: emit the account after deterministic stopping evaluation.
-
-The budget ledger defaults to 15 turns, 60 queries, 3 LLM calls, 100 scan
-Cells and 300 seconds. LLM usage additionally tracks prompt/completion tokens,
-latency, model and estimated USD cost.
-
-## 9. Reporting and outcomes
-
-`FinalHuntAccount` cites hypotheses, requirements, cards, observations,
-queries, diagnostics, residuals and coverage. It distinguishes:
-
-```text
-SUPPORTED / CONTRADICTED / INCONCLUSIVE / UNKNOWN /
-UNREACHABLE / INSUFFICIENTLY_SPECIFIED / UNSUPPORTED
-```
-
-`NO_EVIDENCE_FOUND` is a rendering of an unresolved/unknown hunt, not proof of
-benign behavior. Scope coverage, requirement coverage, unobservable data,
-unqueryable providers and incomplete results remain separate.
-
-## 10. Current verification plan
-
-The verified local/live path is:
-
-```text
-semantic fixture or structured request
-  → CDB replay or Splunk BOTSv1
-  → query/result envelope
-  → observation/cards
-  → bounded action loop
-  → account/report
-```
-
-The semantic fixture validates contracts but has zero monetary cost. A real
-LLM API run is a separate integration gate because model quality, latency,
-token usage and provider policy must be measured independently.
+1. **Unit Test Suite**: Known-answer tests for contracts, verifier, capability binder, and action planner.
+2. **Amber Vertical Slice**: Proves the complete causal path on Splunk BOTSv2 without global web traffic sweeps or server host confusion.
+3. **Multi-Dataset Replay**:
+   - Splunk BOTSv2 (Enterprise SIEM & network stream logs; live-validated against Amber Turing scenario).
+   - OTRF Security-Datasets (Sysmon, Windows Security, Active Directory).
+   - DARPA Transparent Computing / Provenance datasets (System-level causal graphs).

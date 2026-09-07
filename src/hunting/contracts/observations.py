@@ -60,6 +60,8 @@ class Observation:
     raw_ref: str | None = None
     attributed_by: list[str] = field(default_factory=list)
     demanding: bool = False
+    raw_event: dict[str, Any] = field(default_factory=dict)
+    query_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.id.strip():

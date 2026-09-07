@@ -28,9 +28,25 @@ class EvidenceGroupBuilder:
         rep_ids = [o.id for o in group_obs[: self.max_representative_ids]]
         count = len(group_obs)
 
-        # Determine primary fact type from first observation
+        # Determine primary fact type
         facts = extract_facts(group_obs[0])
-        primary_fact_type = facts[0].fact_type if facts else "telemetry"
+        primary_fact_type = facts[0].fact_type if facts else "generic_telemetry"
+
+        # Check if fields permit classifying away from generic_telemetry
+        if primary_fact_type in ("telemetry", "generic_telemetry"):
+            sample_f = group_obs[0].fields
+            if sample_f.get("image") or sample_f.get("cmdline") or sample_f.get("parent_image"):
+                primary_fact_type = "process_execution"
+            elif sample_f.get("uri") or sample_f.get("http_method") or sample_f.get("site"):
+                primary_fact_type = "web_request"
+            elif sample_f.get("file_path") or sample_f.get("path"):
+                primary_fact_type = "file_modification"
+            elif sample_f.get("query") or sample_f.get("domain"):
+                primary_fact_type = "dns_activity"
+            elif sample_f.get("destination_ip") or sample_f.get("dest_ip") or sample_f.get("remote_ip"):
+                primary_fact_type = "network_connection"
+            elif sample_f.get("user") and (sample_f.get("logon_type") or sample_f.get("action")):
+                primary_fact_type = "authentication_activity"
 
         # Summaries
         timestamps = [o.timestamp for o in group_obs if o.timestamp]
@@ -46,37 +62,50 @@ class EvidenceGroupBuilder:
                 entities_seen["users"].add(str(o.fields["user"]))
             if "destination_ip" in o.fields and o.fields["destination_ip"]:
                 entities_seen["destination_ips"].add(str(o.fields["destination_ip"]))
+            if "dest_ip" in o.fields and o.fields["dest_ip"]:
+                entities_seen["destination_ips"].add(str(o.fields["dest_ip"]))
             if "domain" in o.fields and o.fields["domain"]:
                 entities_seen["domains"].add(str(o.fields["domain"]))
             if "site" in o.fields and o.fields["site"]:
                 entities_seen["domains"].add(str(o.fields["site"]))
 
-        entity_summary = {k: list(v) for k, v in entities_seen.items()}
+        entity_summary = {k: sorted(list(v)) for k, v in entities_seen.items()}
         time_summary = {"earliest": earliest, "latest": latest, "span_events": count}
 
         # Field summary (sample of distinct commands, paths, domains, uris, sites)
         field_summary: dict[str, list[str]] = {}
-        cmdlines = {str(o.fields.get("cmdline")) for o in group_obs if o.fields.get("cmdline")}
-        if cmdlines:
-            field_summary["cmdlines"] = list(cmdlines)[:5]
+
+        # Preserve order of commands while deduplicating
+        cmd_list: list[str] = []
+        seen_cmds: set[str] = set()
+        for o in group_obs:
+            c_val = o.fields.get("cmdline")
+            if c_val:
+                c_str = str(c_val).strip()
+                if c_str and c_str not in seen_cmds:
+                    seen_cmds.add(c_str)
+                    cmd_list.append(c_str)
+        if cmd_list:
+            field_summary["cmdlines"] = cmd_list[:20]
+
         images = {str(o.fields.get("image")) for o in group_obs if o.fields.get("image")}
         if images:
-            field_summary["images"] = list(images)[:5]
+            field_summary["images"] = sorted(list(images))[:5]
         parent_images = {str(o.fields.get("parent_image")) for o in group_obs if o.fields.get("parent_image")}
         if parent_images:
-            field_summary["parent_images"] = list(parent_images)[:5]
+            field_summary["parent_images"] = sorted(list(parent_images))[:5]
         file_paths = {str(o.fields.get("file_path")) for o in group_obs if o.fields.get("file_path")}
         if file_paths:
-            field_summary["file_paths"] = list(file_paths)[:5]
+            field_summary["file_paths"] = sorted(list(file_paths))[:5]
         domains = {str(o.fields.get("domain") or o.fields.get("query")) for o in group_obs if o.fields.get("domain") or o.fields.get("query")}
         if domains:
-            field_summary["domains"] = list(domains)[:5]
+            field_summary["domains"] = sorted(list(domains))[:5]
         uris = {str(o.fields.get("uri")) for o in group_obs if o.fields.get("uri")}
         if uris:
-            field_summary["uris"] = list(uris)[:5]
+            field_summary["uris"] = sorted(list(uris))[:5]
         sites = {str(o.fields.get("site")) for o in group_obs if o.fields.get("site")}
         if sites:
-            field_summary["sites"] = list(sites)[:5]
+            field_summary["sites"] = sorted(list(sites))[:5]
 
         relations_summary = []
         if facts and facts[0].relations:
@@ -87,9 +116,102 @@ class EvidenceGroupBuilder:
                     "target": str(rel.target_entity),
                 })
 
+        # Query IDs and Replay
+        query_ids = sorted(list({o.query_id for o in group_obs if o.query_id}))
+        replay_cmd = f"python -m hunting.cli show-observation --observation-id {rep_ids[0]}" if rep_ids else ""
+        replay = {
+            "artifact": "observations.jsonl",
+            "query_ids": query_ids,
+            "command": replay_cmd,
+        }
+
+        # Human-readable summary & why_it_matters
+        hosts_list = entity_summary.get("hosts", [])
+        host_label = hosts_list[0] if hosts_list else "endpoint"
+
+        if primary_fact_type == "process_execution":
+            parents = field_summary.get("parent_images", [])
+            imgs = field_summary.get("images", [])
+            if parents and imgs:
+                summary = f"{parents[0]} spawned {imgs[0]} on {host_label}"
+            elif imgs:
+                summary = f"Execution of {imgs[0]} on {host_label}"
+            else:
+                summary = f"Process execution observed on {host_label}"
+
+            # Assess suspicious web server / script runner spawning shell
+            suspicious_parents = ("php-cgi", "w3wp", "httpd", "nginx", "apache", "tomcat")
+            interactive_shells = ("cmd.exe", "powershell", "powershell.exe", "sh", "bash", "cscript", "wscript")
+            is_suspicious_lineage = any(
+                any(sp in p.lower() for sp in suspicious_parents) for p in parents
+            ) and any(
+                any(ish in im.lower() for ish in interactive_shells) for im in imgs
+            )
+            if is_suspicious_lineage:
+                why_it_matters = (
+                    "High-fidelity indicator of remote code execution / web shell activity: "
+                    "web worker process spawned an interactive command shell."
+                )
+                confidence = "HIGH"
+            else:
+                why_it_matters = "Observed process execution providing evidence of code execution on endpoint."
+                confidence = "MEDIUM"
+
+        elif primary_fact_type == "web_request":
+            doms = entity_summary.get("domains", [])
+            uris = field_summary.get("uris", [])
+            target_site = doms[0] if doms else host_label
+            uri_part = f" ({uris[0]})" if uris else ""
+            summary = f"Web request to {target_site}{uri_part}"
+            why_it_matters = (
+                "Represents incoming HTTP activity targeting web application services, "
+                "potentially correlating with exploitation attempts or web access."
+            )
+            confidence = "MEDIUM"
+
+        elif primary_fact_type == "file_modification":
+            fps = field_summary.get("file_paths", [])
+            f_label = fps[0] if fps else "file"
+            summary = f"File modification on {host_label}: {f_label}"
+            why_it_matters = "Observed disk write activity, indicating payload delivery, persistence creation, or artifact modification."
+            confidence = "MEDIUM"
+
+        elif primary_fact_type == "dns_activity":
+            doms = field_summary.get("domains", [])
+            d_label = doms[0] if doms else "external domain"
+            summary = f"DNS query resolution for {d_label}"
+            why_it_matters = "Domain lookup that may indicate external infrastructure resolution or beaconing."
+            confidence = "MEDIUM"
+
+        elif primary_fact_type == "network_connection":
+            ips = entity_summary.get("destination_ips", [])
+            ip_label = ips[0] if ips else "remote IP"
+            summary = f"Network connection established to {ip_label}"
+            why_it_matters = "Observed network communication which may indicate command-and-control (C2) channel or external data exfiltration."
+            confidence = "MEDIUM"
+
+        elif primary_fact_type == "authentication_activity":
+            users = entity_summary.get("users", [])
+            u_label = users[0] if users else "account"
+            summary = f"Authentication event for {u_label} on {host_label}"
+            why_it_matters = "Observed credential validation or session initiation on the target system."
+            confidence = "MEDIUM"
+
+        else:
+            summary = f"Telemetry observations ({count} events on {host_label})"
+            why_it_matters = "Observed operational telemetry within the monitored scope."
+            confidence = "LOW"
+
         return EvidenceCard(
             id=f"card-{fp[:12]}",
             fingerprint=fp,
+            summary=summary,
+            why_it_matters=why_it_matters,
+            hypotheses=[],
+            requirements=[],
+            confidence=confidence,
+            query_ids=query_ids,
+            replay=replay,
             representative_observation_ids=rep_ids,
             count=count,
             entity_summary=entity_summary,
@@ -130,8 +252,8 @@ class EvidenceGroupBuilder:
     def compute_fingerprint(self, observation: Observation) -> str:
         """Compute an invariant semantic fingerprint for an observation.
 
-        Attack-relevant fields (distinct commandlines, distinct destinations)
-        produce distinct fingerprints, preserving malicious-event recall.
+        Process executions collapse command line variations under the same parent/image/host,
+        while distinct processes, files, web endpoints, and network destinations form distinct cards.
         """
         scope_id = observation.provider_scope.scope_id if observation.provider_scope else ""
         native_type = observation.native_type or ""
@@ -143,17 +265,36 @@ class EvidenceGroupBuilder:
                 else str(observation.semantic_type)
             )
 
-        # Key attack-discriminating attributes
-        cmd = str(observation.fields.get("cmdline", "")).strip().lower()
-        image = str(observation.fields.get("image", "")).strip().lower()
-        dst_ip = str(observation.fields.get("destination_ip", "")).strip()
-        path = str(observation.fields.get("file_path", "")).strip().lower()
-        task = str(observation.fields.get("task_name", "")).strip().lower()
-        uri = str(observation.fields.get("uri", "")).strip().lower()
-        site = str(observation.fields.get("site", "")).strip().lower()
+        fields = observation.fields
+        host = str(fields.get("host", "")).strip().lower()
+        image = str(fields.get("image", "")).strip().lower()
+        parent_image = str(fields.get("parent_image", "")).strip().lower()
+        dst_ip = str(fields.get("destination_ip") or fields.get("dest_ip") or fields.get("remote_ip") or "").strip()
+        path = str(fields.get("file_path") or fields.get("path") or "").strip().lower()
+        uri = str(fields.get("uri") or fields.get("cs_uri_stem") or "").strip().lower()
+        site = str(fields.get("site") or fields.get("domain") or "").strip().lower()
+        user = str(fields.get("user", "")).strip().lower()
+        cmd = str(fields.get("cmdline", "")).strip().lower()
 
-        # Build stable raw signature
-        raw_sig = f"{scope_id}|{native_type}|{semantic_val}|{image}|{cmd}|{dst_ip}|{path}|{task}|{uri}|{site}"
+        # For process executions: collapse command line variations under same parent_image + image + host
+        if image or parent_image:
+            fact_key = f"proc|{host}|{parent_image}|{image}"
+        elif cmd:
+            cmd_token = cmd.split()[0] if cmd.split() else ""
+            fact_key = f"proc|{host}||{cmd_token}"
+        elif uri or site or (native_type and any(k in str(native_type).lower() for k in ("http", "iis", "web"))):
+            fact_key = f"web|{host}|{site}|{uri}"
+        elif path:
+            fact_key = f"file|{host}|{path}"
+        elif dst_ip:
+            fact_key = f"net|{host}|{dst_ip}"
+        elif user and (fields.get("logon_type") or fields.get("action")):
+            fact_key = f"auth|{host}|{user}"
+        else:
+            task = str(fields.get("task_name", "")).strip().lower()
+            fact_key = f"telemetry|{host}|{task}|{scope_id}"
+
+        raw_sig = f"{scope_id}|{native_type}|{semantic_val}|{fact_key}"
         return hashlib.sha256(raw_sig.encode("utf-8")).hexdigest()
 
 

@@ -13,6 +13,16 @@ from hunting.cli import (
 )
 
 
+def test_cli_defaults_to_api_and_auto_discovers_provider():
+    """A normal hypothesis invocation must use API LLM and provider discovery."""
+    args = build_parser().parse_args([
+        "--hypothesis", "Attacker compromised a web server",
+    ])
+    assert args.llm == "api"
+    assert args.provider == "auto"
+    assert args.splunk_index == "auto"
+
+
 def test_parse_alert_from_file_or_content(tmp_path):
     # From JSON string
     alert_json = json.dumps({
@@ -50,6 +60,7 @@ def test_cli_execution_with_alert_file(tmp_path):
     out_report = tmp_path / "out_report.md"
 
     args = parser.parse_args([
+        "--llm", "stub",
         "--alert", str(fixture_alert),
         "--manifest", str(fixture_manifest),
         "--db", "data/cdb_sample.sqlite",
@@ -71,6 +82,7 @@ def test_cli_execution_with_adhoc_flags(tmp_path):
     out_report = tmp_path / "adhoc_report.md"
 
     args = parser.parse_args([
+        "--llm", "stub",
         "--host", "DESKTOP-VICTIM1",
         "--user", "CORP\\alice",
         "--manifest", str(fixture_manifest),
@@ -97,6 +109,7 @@ def test_cli_execution_with_stdin_pipe(tmp_path):
     })
 
     args = parser.parse_args([
+        "--llm", "stub",
         "--manifest", str(fixture_manifest),
         "--db", "data/cdb_sample.sqlite",
         "--output", str(out_report),
@@ -115,6 +128,7 @@ def test_cli_confirmation_decline_and_accept(tmp_path):
 
     # Test 1: Declined confirmation on MALICIOUS alert -> exits with code 2
     args_decline = parser.parse_args([
+        "--llm", "stub",
         "--host", "HOST-01",
         "--manifest", str(fixture_manifest),
         "--db", "data/cdb_sample.sqlite",
@@ -127,6 +141,7 @@ def test_cli_confirmation_decline_and_accept(tmp_path):
     # Test 2: Accepted confirmation on MALICIOUS alert -> exits with code 0
     out_report = tmp_path / "confirmed_report.md"
     args_accept = parser.parse_args([
+        "--llm", "stub",
         "--host", "HOST-01",
         "--manifest", str(fixture_manifest),
         "--db", "data/cdb_sample.sqlite",
@@ -145,6 +160,7 @@ def test_cli_hypothesis_hunt_with_cve(tmp_path):
     out_report = tmp_path / "cve_report.md"
 
     args = parser.parse_args([
+        "--llm", "stub",
         "--cve", "CVE-2024-21887",
         "--host", "WEB-IVANTI-01",
         "--time-window", "2026-02-01T00:00:00Z/P1D",
@@ -155,7 +171,7 @@ def test_cli_hypothesis_hunt_with_cve(tmp_path):
     assert exit_code == 0
     assert out_report.exists()
     content = out_report.read_text(encoding="utf-8")
-    assert "Threat Hunting Investigation Final Account" in content
+    assert "# Hunt Report" in content
     assert "CVE-2024-21887" in content
 
 
@@ -165,6 +181,7 @@ def test_cli_hypothesis_hunt_with_ttp_and_entity(tmp_path):
     out_report = tmp_path / "ttp_report.md"
 
     args = parser.parse_args([
+        "--llm", "stub",
         "--ttp", "T1059.001",
         "--host", "WORKSTATION-01",
         "--output", str(out_report),
@@ -174,7 +191,7 @@ def test_cli_hypothesis_hunt_with_ttp_and_entity(tmp_path):
     assert exit_code == 0
     assert out_report.exists()
     content = out_report.read_text(encoding="utf-8")
-    assert "Threat Hunting Investigation Final Account" in content
+    assert "# Hunt Report" in content
 
 
 def test_cli_hypothesis_hunt_with_query(tmp_path):
@@ -183,6 +200,7 @@ def test_cli_hypothesis_hunt_with_query(tmp_path):
     out_report = tmp_path / "nl_report.md"
 
     args = parser.parse_args([
+        "--llm", "stub",
         "--query", "Investigate abnormal python executions on web servers",
         "--output", str(out_report),
     ])
@@ -191,7 +209,7 @@ def test_cli_hypothesis_hunt_with_query(tmp_path):
     assert exit_code == 0
     assert out_report.exists()
     content = out_report.read_text(encoding="utf-8")
-    assert "Threat Hunting Investigation Final Account" in content
+    assert "# Hunt Report" in content
 
 
 def test_cli_hypothesis_hunt_confirmation_gate(tmp_path):
@@ -200,6 +218,7 @@ def test_cli_hypothesis_hunt_confirmation_gate(tmp_path):
 
     # Decline gate -> returns code 2
     args_decline = parser.parse_args([
+        "--llm", "stub",
         "--cve", "CVE-2024-21887",
         "--host", "WEB-IVANTI-01",
         "--time-window", "2026-02-01T00:00:00Z/P1D",
@@ -212,6 +231,7 @@ def test_cli_hypothesis_hunt_confirmation_gate(tmp_path):
     # Accept gate -> returns code 0 and produces report
     out_report = tmp_path / "confirmed_hunt.md"
     args_accept = parser.parse_args([
+        "--llm", "stub",
         "--cve", "CVE-2024-21887",
         "--host", "WEB-IVANTI-01",
         "--time-window", "2026-02-01T00:00:00Z/P1D",
@@ -222,4 +242,3 @@ def test_cli_hypothesis_hunt_confirmation_gate(tmp_path):
         exit_code = run_cli(args_accept)
         assert exit_code == 0
         assert out_report.exists()
-

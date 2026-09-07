@@ -112,6 +112,13 @@ class CdbAdapter:
             ProviderOperation("cdb_dns_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_web_requests", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_web_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("resolve_person_to_account", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("resolve_account_to_endpoint", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("resolve_endpoint_to_client_ip", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_web_activity_from_client_ip", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_dns_activity_from_client_ip", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_process_from_endpoint", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_file_change_from_process", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
         )
 
         bindings = (
@@ -157,20 +164,24 @@ class CdbAdapter:
         # Entity filtering
         if entity and entity != ANY:
             if isinstance(entity, Host):
+                h = entity.name or (str(entity.kind) if str(entity.kind) != "host" else "")
                 conditions.append("host = ?")
-                sql_params.append(entity.name)
+                sql_params.append(h)
             elif isinstance(entity, Account):
+                u = entity.username or (str(entity.kind) if str(entity.kind) != "account" else "")
                 conditions.append("user = ?")
-                sql_params.append(entity.username)
+                sql_params.append(u)
             elif isinstance(entity, Process):
                 conditions.append("host = ? AND pid = ?")
                 sql_params.extend([entity.host, entity.pid])
             elif isinstance(entity, IPAddress):
+                ip_val = entity.address or (str(entity.kind) if str(entity.kind) != "ip" else "")
                 conditions.append("ip = ?")
-                sql_params.append(entity.address)
+                sql_params.append(ip_val)
             elif isinstance(entity, Domain):
+                domain_val = entity.name or (str(entity.kind) if str(entity.kind) != "domain" else "")
                 conditions.append("domain = ?")
-                sql_params.append(entity.name)
+                sql_params.append(domain_val)
             elif isinstance(entity, File):
                 conditions.append("host = ? AND file_path = ?")
                 sql_params.extend([entity.host, entity.path])
@@ -217,7 +228,19 @@ class CdbAdapter:
         elif operation_id in ("cdb_dns_search", "cdb_dns_queries"):
             conditions.append("domain IS NOT NULL")
         elif operation_id in ("cdb_web_search", "cdb_web_requests"):
-            conditions.append("(uri IS NOT NULL OR site IS NOT NULL OR http_method IS NOT NULL)")
+            conditions.append("(domain IS NOT NULL OR native_type LIKE '%http%' OR native_type LIKE '%web%')")
+        elif operation_id in ("resolve_person_to_account", "resolve_account_to_endpoint"):
+            conditions.append("(user IS NOT NULL OR event_id IN ('4624', '4625') OR action = 'logon')")
+        elif operation_id == "resolve_endpoint_to_client_ip":
+            conditions.append("(host IS NOT NULL AND ip IS NOT NULL)")
+        elif operation_id == "find_web_activity_from_client_ip":
+            conditions.append("(domain IS NOT NULL OR native_type LIKE '%http%' OR native_type LIKE '%web%')")
+        elif operation_id == "find_dns_activity_from_client_ip":
+            conditions.append("(domain IS NOT NULL OR native_type LIKE '%dns%')")
+        elif operation_id == "find_process_from_endpoint":
+            conditions.append("(pid IS NOT NULL OR image IS NOT NULL OR cmdline IS NOT NULL)")
+        elif operation_id == "find_file_change_from_process":
+            conditions.append("(file_path IS NOT NULL OR action LIKE '%write%' OR action LIKE '%create%')")
         elif operation_id == "custom_operation" and native_query:
             import re
             for col in ("cmdline", "image", "user", "ip", "port", "domain", "file_path", "site", "uri"):

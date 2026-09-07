@@ -5,7 +5,7 @@ Supports:
   2. Ingest alert from CLI ad-hoc flags (--host, --user, --ip, --time)
   3. Ingest alert via standard input pipe (cat alert.json | python -m hunting.cli)
   4. Interactive prompt mode (-i, --interactive)
-  5. Configurable LLM provider: stub (default, deterministic offline) or api (external LLM)
+  5. Configurable LLM provider: api (default, external LLM) or stub (explicit offline test mode)
   6. Human confirmation enforcement (--auto-confirm vs console prompt)
   7. Exporting Markdown investigation reports (--output <path>)
 """
@@ -28,9 +28,11 @@ from hunting.contracts.state import Alert
 from hunting.controller.cost import LLMUsageTracker
 from hunting.engine import HypothesisHuntEngine
 from hunting.evidence.evaluator import EvidenceEvaluator
+from hunting.m1_ledger.store import ObservationStore
 from hunting.m2_abduction.provider import (
     ApiLLMConfig,
     ApiLLMProvider,
+    LLMTimeoutError,
     StubAbductionProvider,
     create_llm_caller,
 )
@@ -164,10 +166,10 @@ def render_hunt_playbook(
     output_path: str | None,
 ) -> None:
     """Print an offline Threat Hunting Playbook & Query Plan to stdout and file."""
-    manifest_file = "configs/splunk_botsv1.yaml" if Path("configs/splunk_botsv1.yaml").exists() else None
+    manifest_file = "configs/splunk_botsv2.yaml" if Path("configs/splunk_botsv2.yaml").exists() else None
     offline_adapter = SplunkLiveAdapter(
         splunk_url="http://offline",
-        index="botsv1",
+        index="botsv2",
         manifest_path=manifest_file,
         verify_ssl=False,
     )
@@ -293,6 +295,7 @@ def render_hunt_terminal_summary(
     cb = account.coverage_bound
     w_pct = (cb.explored_cells_wildcard / cb.known_cells_wildcard * 100) if cb.known_cells_wildcard > 0 else 0.0
     i_pct = (cb.explored_cells_instance / cb.known_cells_instance * 100) if cb.known_cells_instance > 0 else 0.0
+    c_pct = cb.causal_path_coverage * 100.0
 
     print("\n" + "=" * 72)
     print("                THREAT HUNTING ACCOUNT SUMMARY")
@@ -321,7 +324,7 @@ def render_hunt_terminal_summary(
     print(f" Evidence Cards:  {len(account.evidence_cards)} cards")
     print(f" Ledger Events:   {len(result.ledger.observations)} observations")
     print(f" Queries Run:     {len(account.queries)} queries")
-    print(f" Coverage:        Wildcard: {w_pct:.1f}%, Instance: {i_pct:.1f}%")
+    print(f" Coverage:        Causal Path: {c_pct:.1f}%, Wildcard Scope: {w_pct:.1f}%, Instance: {i_pct:.1f}%")
     llm_info = getattr(result.state, "llm_usage", {})
     if llm_info:
         calls = llm_info.get("calls_made", 0)
@@ -333,6 +336,124 @@ def render_hunt_terminal_summary(
     if output_path:
         print(f" Full threat hunt report written to: {output_path}")
     print()
+
+
+def handle_show_observation(hunt_id: str | None, obs_id: str) -> int:
+    """Forensic lookup: load observation from isolated artifacts and print full raw event."""
+    artifacts_root = Path("artifacts")
+    if not artifacts_root.exists():
+        print(f"[-] No artifacts directory found at {artifacts_root.resolve()}", file=sys.stderr)
+        return 1
+
+    target_dir: Path | None = None
+    if hunt_id:
+        cand = artifacts_root / hunt_id
+        if cand.exists():
+            target_dir = cand
+    else:
+        hunt_dirs = [d for d in artifacts_root.iterdir() if d.is_dir()]
+        if hunt_dirs:
+            hunt_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+            target_dir = hunt_dirs[0]
+
+    if target_dir is None:
+        print(f"[-] Hunt artifact directory not found for hunt ID: {hunt_id}", file=sys.stderr)
+        return 1
+
+    obs_file = target_dir / "observations.jsonl"
+    if not obs_file.exists():
+        print(f"[-] observations.jsonl not found in {target_dir}", file=sys.stderr)
+        return 1
+
+    records = ObservationStore.load_jsonl(obs_file)
+    target_record = None
+    for r in records:
+        if r.get("observation_id") == obs_id or r.get("id") == obs_id:
+            target_record = r
+            break
+
+    if target_record is None:
+        print(f"[-] Observation ID '{obs_id}' not found in {obs_file}", file=sys.stderr)
+        return 1
+
+    print("\n" + "=" * 80)
+    print(f"                   OBSERVATION FORENSIC INSPECTION: {obs_id}")
+    print("=" * 80)
+    print(f"Hunt ID:        {target_dir.name}")
+    print(f"Timestamp:      {target_record.get('timestamp', 'N/A')}")
+    print(f"Native Type:    {target_record.get('native_type', 'N/A')}")
+    print(f"Provider Scope: {target_record.get('scope_id', 'N/A')}")
+    print(f"Query ID:       {target_record.get('query_id', 'N/A')}")
+    print("-" * 80)
+    print("MAPPED FIELDS:")
+    print(json.dumps(target_record.get("fields", {}), indent=2, ensure_ascii=False))
+    print("-" * 80)
+    print("RAW PROVIDER EVENT (Forensic Ground Truth):")
+    print(json.dumps(target_record.get("raw_event", {}), indent=2, ensure_ascii=False))
+    print("=" * 80 + "\n")
+    return 0
+
+
+def handle_replay_query(hunt_id: str | None, query_id: str) -> int:
+    """Forensic replay: load native query from artifacts and display/replay it."""
+    artifacts_root = Path("artifacts")
+    if not artifacts_root.exists():
+        print(f"[-] No artifacts directory found at {artifacts_root.resolve()}", file=sys.stderr)
+        return 1
+
+    target_dir: Path | None = None
+    if hunt_id:
+        cand = artifacts_root / hunt_id
+        if cand.exists():
+            target_dir = cand
+    else:
+        hunt_dirs = [d for d in artifacts_root.iterdir() if d.is_dir()]
+        if hunt_dirs:
+            hunt_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+            target_dir = hunt_dirs[0]
+
+    if target_dir is None:
+        print(f"[-] Hunt artifact directory not found for hunt ID: {hunt_id}", file=sys.stderr)
+        return 1
+
+    queries_file = target_dir / "queries.json"
+    if not queries_file.exists():
+        print(f"[-] queries.json not found in {target_dir}", file=sys.stderr)
+        return 1
+
+    with open(queries_file, "r", encoding="utf-8") as f:
+        queries = json.load(f)
+
+    target_query = None
+    for q in queries:
+        if q.get("query_id") == query_id:
+            target_query = q
+            break
+
+    if target_query is None:
+        print(f"[-] Query ID '{query_id}' not found in {queries_file}", file=sys.stderr)
+        return 1
+
+    qtext = target_query.get("query_text", "")
+    opid = target_query.get("operation_id", "N/A")
+    pid = target_query.get("provider_id", "N/A")
+    rid = target_query.get("requirement_id", "N/A")
+
+    print("\n" + "=" * 80)
+    print(f"                     QUERY FORENSIC REPLAY: {query_id}")
+    print("=" * 80)
+    print(f"Hunt ID:        {target_dir.name}")
+    print(f"Provider:       {pid}")
+    print(f"Operation:      {opid}")
+    print(f"Requirement:    {rid}")
+    print("-" * 80)
+    print("PARAMETERS:")
+    print(json.dumps(target_query.get("parameters", {}), indent=2, ensure_ascii=False))
+    print("-" * 80)
+    print("EXECUTABLE NATIVE QUERY STATEMENT:")
+    print(qtext or "(No native query statement recorded)")
+    print("=" * 80 + "\n")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -372,19 +493,39 @@ def build_parser() -> argparse.ArgumentParser:
     env_group.add_argument("--splunk-user", type=str, default=os.getenv("SPLUNK_USER", "admin"), help="Splunk admin username [default: admin]")
     env_group.add_argument("--splunk-pass", type=str, default=os.getenv("SPLUNK_PASSWORD", "12345678"), help="Splunk password [default: 12345678]")
     env_group.add_argument("--splunk-index", type=str, default=os.getenv("SPLUNK_INDEX", "auto"), help="Target Splunk index name or 'auto' for automated discovery [default: auto]")
-    env_group.add_argument("--splunk-manifest", type=str, default=None, help="Path to declarative YAML mapping manifest [default: configs/splunk_botsv1.yaml]")
+    env_group.add_argument("--splunk-manifest", type=str, default=None, help="Path to declarative YAML mapping manifest [default: configs/splunk_botsv2.yaml]")
     env_group.add_argument("--manifest", "-m", type=str, default="tests/fixtures/registry_cdb.yaml", help="Path to ProviderScope registry YAML")
     env_group.add_argument("--db", type=str, default="data/cdb_sample.sqlite", help="Path to SQLite CDB database")
     env_group.add_argument("--output", "-o", type=str, default="report.md", help="Path to output Markdown report file")
 
     # LLM & Human Loop
     loop_group = parser.add_argument_group("LLM & Human-in-the-Loop")
-    loop_group.add_argument("--llm", choices=["stub", "api"], default="stub", help="LLM engine: 'stub' (offline deterministic) or 'api' (external HTTP)")
+    loop_group.add_argument("--llm", choices=["stub", "api"], default="api", help="LLM engine: 'api' (default, external HTTP) or 'stub' (explicit offline test mode)")
     loop_group.add_argument("--llm-model", type=str, default=None, help="LLM model name (e.g. gemini-2.5-flash, gpt-4o, 1/grok-4.6) [default: from env or config]")
     loop_group.add_argument("--llm-endpoint", type=str, default=None, help="LLM REST endpoint URL [default: from env or config]")
     loop_group.add_argument("--api-key", type=str, default=None, help="LLM API authorization key [default: from env]")
     loop_group.add_argument("--auto-confirm", dest="auto_confirm", action="store_true", default=True, help="Automatically sign-off mandatory analyst confirmation")
     loop_group.add_argument("--no-auto-confirm", dest="auto_confirm", action="store_false", help="Prompt analyst interactively on console for mandatory confirmation")
+
+    # Forensic Audit & Replay Flags
+    forensic_group = parser.add_argument_group("Forensic Audit & Replay")
+    forensic_group.add_argument("--hunt-id", type=str, default=None, help="Target hunt ID for artifact inspection or query replay")
+    forensic_group.add_argument("--show-observation", type=str, default=None, help="Observation ID to inspect from hunt artifacts")
+    forensic_group.add_argument("--observation-id", type=str, default=None, help="Observation ID to inspect")
+    forensic_group.add_argument("--replay-query", type=str, default=None, help="Query ID to inspect or replay from hunt artifacts")
+    forensic_group.add_argument("--query-id", type=str, default=None, help="Query ID to inspect or replay")
+
+    # Forensic Subparsers
+    subparsers = parser.add_subparsers(dest="subcommand", help="Forensic subcommands")
+    obs_sub = subparsers.add_parser("show-observation", help="Inspect complete observation details including raw event")
+    obs_sub.add_argument("--hunt-id", type=str, default=None, help="Target hunt ID")
+    obs_sub.add_argument("--observation-id", type=str, default=None, help="Observation ID to inspect")
+    obs_sub.add_argument("obs_id_pos", nargs="?", default=None, help="Positional observation ID")
+
+    rep_sub = subparsers.add_parser("replay-query", help="Inspect or replay executable native query")
+    rep_sub.add_argument("--hunt-id", type=str, default=None, help="Target hunt ID")
+    rep_sub.add_argument("--query-id", type=str, default=None, help="Query ID to replay")
+    rep_sub.add_argument("query_id_pos", nargs="?", default=None, help="Positional query ID")
 
     return parser
 
@@ -397,6 +538,44 @@ def run_cli(args: argparse.Namespace) -> int:
             sys.stderr.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
+
+    # Check if hypothesis threat hunting mode is triggered
+    is_hypothesis_hunt = bool(
+        getattr(args, "cve", None)
+        or getattr(args, "ttp", None)
+        or getattr(args, "ioc", None)
+        or getattr(args, "threat_actor", None)
+        or getattr(args, "campaign", None)
+        or getattr(args, "query", None)
+        or getattr(args, "hypothesis", None)
+        or getattr(args, "hypothesis_file", None)
+    )
+
+    # 0. Handle forensic subcommands / lookup flags
+    subcmd = getattr(args, "subcommand", None)
+    hunt_id = getattr(args, "hunt_id", None)
+
+    obs_target = (
+        getattr(args, "observation_id", None)
+        or getattr(args, "show_observation", None)
+        or getattr(args, "obs_id_pos", None)
+    )
+    if subcmd == "show-observation" or (obs_target and not is_hypothesis_hunt and not getattr(args, "alert", None)):
+        if not obs_target:
+            print("[-] Error: --observation-id is required for show-observation", file=sys.stderr)
+            return 1
+        return handle_show_observation(hunt_id, obs_target)
+
+    query_target = (
+        getattr(args, "query_id", None)
+        or getattr(args, "replay_query", None)
+        or getattr(args, "query_id_pos", None)
+    )
+    if subcmd == "replay-query" or (query_target and not is_hypothesis_hunt and not getattr(args, "alert", None)):
+        if not query_target:
+            print("[-] Error: --query-id is required for replay-query", file=sys.stderr)
+            return 1
+        return handle_replay_query(hunt_id, query_target)
 
     # Handle index exploration
     if getattr(args, "list_indexes", False):
@@ -532,15 +711,18 @@ def run_cli(args: argparse.Namespace) -> int:
                     verify_ssl=False,
                 )
                 selected_index = auto_discovered_index_info["name"]
-            except Exception:
-                selected_index = "botsv1"
+            except Exception as auto_err:
+                raise RuntimeError(
+                    f"Auto-discovery failed: No active telemetry index could be selected on Splunk server ({auto_err}). "
+                    f"Please specify --splunk-index explicitly (e.g. --splunk-index botsv2)."
+                ) from auto_err
 
         manifest_file = args.splunk_manifest
         if manifest_file and manifest_file.lower() in ("none", "null", "discovery", "auto", "mode1"):
             manifest_file = None
         elif manifest_file is None:
             idx_manifest = Path(f"configs/splunk_{selected_index}.yaml")
-            default_cfg = Path("configs/splunk_botsv1.yaml")
+            default_cfg = Path("configs/splunk_botsv2.yaml")
             if idx_manifest.exists():
                 manifest_file = str(idx_manifest)
             elif default_cfg.exists():
@@ -701,7 +883,7 @@ def run_cli(args: argparse.Namespace) -> int:
         time_win = args.time_window or default_window
         if not args.time_window and selected_provider == "splunk":
             print(f"[+] [ENVIRONMENT AUDIT] Auto-aligned hunt time window: {time_win}")
-        if not entities:
+        if not entities and not (args.query or args.hypothesis or args.cve or args.ttp or args.ioc):
             print(f"[+] [ENVIRONMENT AUDIT] Target entity unassigned -> Executing Population Sweep across '{getattr(adapter, 'index', 'telemetry')}'")
 
         display_content = content
@@ -796,11 +978,16 @@ def run_cli(args: argparse.Namespace) -> int:
                 step_callback=cli_step_logger,
                 analyst_confirm_callback=cli_analyst_confirm,
             )
+        except (LLMTimeoutError, TimeoutError) as te:
+            print(f"\n[-] Error: LLM API request timed out: {te}", file=sys.stderr)
+            print("[-] Threat hunt aborted. No report generated to prevent fabricated conclusions.", file=sys.stderr)
+            return 1
         except PermissionError as pe:
             print(f"\n[-] Investigation halted: {pe}", file=sys.stderr)
             return 2
         except Exception as e:
-            print(f"[-] Threat hunt execution failed: {e}", file=sys.stderr)
+            print(f"\n[-] Threat hunt execution failed: {e}", file=sys.stderr)
+            print("[-] Threat hunt aborted. No report generated to prevent fabricated conclusions.", file=sys.stderr)
             return 1
 
         if args.output:

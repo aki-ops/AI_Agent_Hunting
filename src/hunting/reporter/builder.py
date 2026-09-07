@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from hunting.contracts.case_graph import RelationStatus
 from hunting.contracts.cells import CellState
 from hunting.contracts.coverage import CoverageBound, RequirementCoverage
 from hunting.contracts.hunt import (
@@ -23,6 +24,61 @@ from hunting.contracts.hunt import (
     StoppingDecision,
 )
 from hunting.m1_ledger.ledger import ObservationLedger
+
+
+def _derive_answer(objective: HuntObjective, cards: list[Any]) -> dict[str, Any]:
+    """Derive a bounded lookup answer from typed evidence, never from free-text keywords."""
+    spec = objective.answer_spec or {}
+    if spec.get("mode") != "lookup" or spec.get("answer_type") in (None, "none"):
+        return {}
+
+    answer_type = str(spec.get("answer_type", "text"))
+    evidence_types = set(spec.get("evidence_types", []))
+    if not evidence_types:
+        evidence_types = {"web_request", "dns_activity"} if answer_type == "domain" else set()
+
+    field_names = {
+        "domain": ("domains", "sites"),
+        "host": ("hosts",),
+        "ip": ("destination_ips", "dest_ips", "ips"),
+        "user": ("users",),
+        "file": ("file_paths", "files"),
+        "url": ("urls",),
+    }.get(answer_type, ())
+    candidates: dict[str, dict[str, Any]] = {}
+    for card in cards:
+        if evidence_types and card.fact_type not in evidence_types:
+            continue
+        values: list[str] = []
+        for field_name in field_names:
+            raw_values = card.field_summary.get(field_name, [])
+            if isinstance(raw_values, str):
+                raw_values = [raw_values]
+            values.extend(str(value).strip() for value in raw_values if str(value).strip())
+        for value in set(values):
+            item = candidates.setdefault(value, {"value": value, "weight": 0, "card_ids": [], "query_ids": []})
+            item["weight"] += max(1, int(card.count))
+            if card.id not in item["card_ids"]:
+                item["card_ids"].append(card.id)
+            for query_id in card.query_ids:
+                if query_id not in item["query_ids"]:
+                    item["query_ids"].append(query_id)
+
+    ranked = sorted(candidates.values(), key=lambda item: (-item["weight"], item["value"]))
+    if not ranked:
+        return {
+            "status": "NOT_FOUND",
+            "answer_type": answer_type,
+            "question": spec.get("question", objective.statement),
+            "candidates": [],
+        }
+    return {
+        "status": "ANSWERED",
+        "answer_type": answer_type,
+        "question": spec.get("question", objective.statement),
+        "value": ranked[0]["value"],
+        "candidates": ranked[:10],
+    }
 
 
 def build_final_hunt_account(
@@ -92,14 +148,52 @@ def build_final_hunt_account(
         cov.unqueryable_cells_instance = max(cov.unqueryable_cells_instance, inst_unqueryable)
         cov.unreachable_cells_instance = max(cov.unreachable_cells_instance, inst_unreachable)
 
+    cov.wildcard_scope_coverage = (
+        (cov.explored_cells_wildcard / cov.known_cells_wildcard)
+        if cov.known_cells_wildcard > 0
+        else 0.0
+    )
+    cov.instance_cell_coverage = (
+        (cov.explored_cells_instance / cov.known_cells_instance)
+        if cov.known_cells_instance > 0
+        else 0.0
+    )
+
+    case = getattr(state, "case", None)
+    case_graph = getattr(case, "graph", None) if case else None
+    if case_graph and case_graph.edges:
+        mandatory_edges = list(case_graph.edges.values())
+        verified_edges = [
+            e for e in mandatory_edges
+            if getattr(e, "status", None) in (RelationStatus.VERIFIED, "verified", "KNOWN")
+        ]
+        cov.causal_path_total_edges = len(mandatory_edges)
+        cov.causal_path_verified_edges = len(verified_edges)
+        cov.causal_path_coverage = (
+            len(verified_edges) / len(mandatory_edges)
+            if mandatory_edges
+            else 0.0
+        )
+
     # Reconcile requirement coverage
     if state.requirements:
         req_cov = cov.requirement_coverage if cov.requirement_coverage else RequirementCoverage()
         for req in state.requirements:
+            # If in v5 case graph: reconcile requirements from verified causal edges and cards
+            if case_graph and case_graph.edges:
+                has_card = any(req.id in getattr(c, "requirements", []) for c in state.evidence_cards)
+                has_query = any(getattr(q, "requirement_id", None) == req.id for q in state.queries)
+                if has_card and req.status in (RequirementStatus.DEFINED, RequirementStatus.PLANNED, RequirementStatus.EXECUTED):
+                    req.status = RequirementStatus.CONFIRMED
+                elif has_query and req.status in (RequirementStatus.DEFINED, RequirementStatus.PLANNED):
+                    req.status = RequirementStatus.EXECUTED
+
             if req.id not in req_cov.attempted_requirements:
                 req_cov.attempted_requirements.append(req.id)
             if req.status in (RequirementStatus.CONFIRMED, RequirementStatus.VALIDATED) and req.id not in req_cov.satisfied_requirements:
                 req_cov.satisfied_requirements.append(req.id)
+            elif req.status == RequirementStatus.EXECUTED and req.id not in req_cov.partial_requirements:
+                req_cov.partial_requirements.append(req.id)
             elif req.status == RequirementStatus.UNSUPPORTED and req.id not in req_cov.unsupported_requirements:
                 req_cov.unsupported_requirements.append(req.id)
         cov.requirement_coverage = req_cov
@@ -119,18 +213,80 @@ def build_final_hunt_account(
         else:
             unknown.append(h.id)
 
-    # Audited query records
+    # Audited query records (strictly joined with QueryResult by query_id)
     query_records: list[dict[str, Any]] = []
+    qr_by_id: dict[str, Any] = {}
+    for qr in state.query_results:
+        if getattr(qr, "query_id", None):
+            qr_by_id[qr.query_id] = qr
+        if getattr(qr, "logical_plan_id", None):
+            qr_by_id[qr.logical_plan_id] = qr
+
+    nqp_by_id: dict[str, str] = {}
+    for nqp in getattr(state, "native_query_plans", []):
+        if getattr(nqp, "id", None):
+            nqp_by_id[nqp.id] = nqp.native_query
+        if getattr(nqp, "logical_plan_id", None):
+            nqp_by_id[nqp.logical_plan_id] = nqp.native_query
+
+    req_by_id = {r.id: r for r in state.requirements}
+
     for q in state.queries:
+        qid = getattr(q, "id", "q-unknown")
+        rid = getattr(q, "requirement_id", "req-unknown")
+        req = req_by_id.get(rid)
+
+        qr = qr_by_id.get(qid)
+        if not qr and hasattr(q, "parameters") and isinstance(q.parameters, dict) and "query_id" in q.parameters:
+            qr = qr_by_id.get(q.parameters["query_id"])
+
+        hypo_ids: list[str] = []
+        if req:
+            for h in state.hypotheses:
+                if req.id in h.requirements or h.id in req.supports:
+                    if h.id not in hypo_ids:
+                        hypo_ids.append(h.id)
+        if not hypo_ids and state.hypotheses:
+            hypo_ids = [state.hypotheses[0].id]
+
+        semantic_intent = getattr(req, "semantic_intent", "") or (req.evidence_type if req else "")
+        purpose = getattr(req, "description", "") or q.operation_id
+        entity_binding = str(getattr(q, "entity", "") or (q.parameters.get("entity") if hasattr(q, "parameters") and isinstance(q.parameters, dict) else ""))
+        expected_fields = list(getattr(req, "required_fields", [])) if req and hasattr(req, "required_fields") else ["host", "timestamp"]
+        provider = getattr(q, "provider_id", "splunk")
+
+        # Native query MUST be sourced directly from QueryResult.native_query
+        native_q = ""
+        if qr and getattr(qr, "native_query", None):
+            native_q = str(qr.native_query).strip()
+        elif qid in nqp_by_id:
+            native_q = nqp_by_id[qid]
+        elif hasattr(q, "parameters") and isinstance(q.parameters, dict) and q.parameters.get("query_text"):
+            native_q = str(q.parameters["query_text"]).strip()
+
+        rows_count = len(getattr(qr, "rows", [])) if qr and hasattr(qr, "rows") else 0
+        complete = getattr(qr, "complete", True) if qr else True
+        result_summary = f"{rows_count} rows returned; complete={complete}" if qr else "No execution record"
+
         query_records.append({
-            "query_id": q.id,
-            "requirement_id": q.requirement_id,
-            "provider_id": q.provider_id,
-            "scope_id": q.scope_id,
-            "operation_id": q.operation_id,
-            "completeness_contract": q.completeness_contract,
+            "query_id": qid,
+            "requirement_id": rid,
+            "hypothesis_ids": hypo_ids,
+            "semantic_intent": semantic_intent,
+            "purpose": purpose,
+            "entity_binding": entity_binding,
+            "expected_fields": expected_fields,
+            "provider": provider,
+            "provider_id": provider,
+            "native_query": native_q,
+            "query_text": native_q,
+            "rows_count": rows_count,
+            "complete": complete,
+            "result_summary": result_summary,
+            "completeness_contract": getattr(q, "completeness_contract", "L_PLUS_1"),
             "is_targeted": getattr(q, "is_targeted", False),
-            "query_text": q.parameters.get("query_text", ""),
+            "operation_id": getattr(q, "operation_id", ""),
+            "scope_id": getattr(q, "scope_id", ""),
         })
 
     # Cited observations
@@ -218,6 +374,56 @@ def build_final_hunt_account(
     if cov.windows_never_covered:
         residual_list.append(f"Time windows never covered: {', '.join(cov.windows_never_covered)}")
 
+    answer = _derive_answer(obj, state.evidence_cards)
+    semantic_analysis = dict(state.semantic_analysis)
+    llm_answer = semantic_analysis.get("answer") if isinstance(semantic_analysis.get("answer"), dict) else {}
+    if llm_answer.get("status") in {"ANSWERED", "NOT_FOUND", "INCONCLUSIVE"}:
+        answer = {
+            **answer,
+            **llm_answer,
+            "answer_type": (obj.answer_spec or {}).get("answer_type", answer.get("answer_type", "value")),
+        }
+
+    if not answer or answer.get("status") != "ANSWERED":
+        case = getattr(state, "case", None)
+        if case and getattr(case, "graph", None):
+            target_node = case.graph.get_node("node-target-object")
+            if target_node and target_node.value and target_node.value != "?":
+                q_text = (obj.answer_spec or {}).get("question") or obj.statement
+                target_card_ids = [
+                    c.id for c in state.evidence_cards
+                    if c.id.startswith("card-edge-") or target_node.value in str(c.field_summary)
+                ]
+                answer = {
+                    "status": "ANSWERED",
+                    "answer_type": str((obj.answer_spec or {}).get("answer_type", getattr(target_node, "type", "value"))),
+                    "question": q_text,
+                    "value": target_node.value,
+                    "candidates": [{"value": target_node.value, "weight": 100, "card_ids": target_card_ids}],
+                    "card_ids": target_card_ids,
+                }
+
+    # Guard: Cannot conclude NOT_FOUND if identity is required but unresolved, queries incomplete, or execution halted before search
+    if answer.get("status") == "NOT_FOUND":
+        if stopping_dec == StoppingDecision.STOP_INSUFFICIENT or not state.queries:
+            answer["status"] = "INCONCLUSIVE"
+            answer["reason"] = "EXECUTION_HALTED_BEFORE_SEARCH"
+            answer["explanation"] = "Cannot conclude NOT_FOUND: Investigation was halted before telemetry search could be executed."
+        else:
+            identity_required = False
+            if obj.semantic_intent and getattr(obj.semantic_intent.subject, "type", "") == "person":
+                identity_required = True
+            all_queries_complete = all(getattr(qr, "complete", True) for qr in state.query_results) if state.query_results else True
+
+            if identity_required and not getattr(state, "identity_resolved", False):
+                answer["status"] = "INCONCLUSIVE"
+                answer["reason"] = "IDENTITY_UNRESOLVED"
+                answer["explanation"] = "Cannot conclude NOT_FOUND: Subject person identity could not be bound to an endpoint or client IP."
+            elif not all_queries_complete:
+                answer["status"] = "INCONCLUSIVE"
+                answer["reason"] = "COVERAGE_INCOMPLETE"
+                answer["explanation"] = "Cannot conclude NOT_FOUND: One or more telemetry queries were incomplete or truncated."
+
     return FinalHuntAccount(
         request_id=obj.request_id,
         objective=obj,
@@ -234,6 +440,14 @@ def build_final_hunt_account(
         observation_citations=obs_ids,
         diagnostics=diag_records,
         gap_breakdown=gap_breakdown,
+        answer=answer,
+        llm_usage=dict(state.llm_usage),
+        semantic_analysis=semantic_analysis,
+        evidence_assessments=list(state.evidence_assessments),
+        investigation_model=state.investigation_model,
+        relation_graph=state.relation_graph,
+        case=getattr(state, "case", None),
+        provenance_chain=list(getattr(getattr(state, "case", None), "graph", state.relation_graph).proofs.values()) if hasattr(getattr(state, "case", None), "graph") and hasattr(getattr(state, "case", None).graph, "proofs") else [],
     )
 
 

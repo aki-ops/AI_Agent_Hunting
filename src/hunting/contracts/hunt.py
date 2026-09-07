@@ -22,8 +22,20 @@ from hunting.contracts.cells import Cell
 from hunting.contracts.coverage import CoverageBound
 from hunting.contracts.entities import AnyEntity, EntityRef
 from hunting.contracts.expectations import Expectation, FieldPredicate
+from hunting.contracts.investigation_model import (
+    GraphEdge,
+    GraphNode,
+    InvestigationModel,
+    RelationGraph,
+)
 from hunting.contracts.observations import Observation
 from hunting.contracts.queries import QueryResult
+from hunting.contracts.semantic_intent import (
+    RequestedObject,
+    SemanticEvidenceRequirement,
+    SemanticHuntIntent,
+    SubjectEntity,
+)
 
 
 class HuntRequestKind(str, Enum):
@@ -77,6 +89,14 @@ class HuntObjective:
     statement: str = ""
     entities: list[EntityRef] = field(default_factory=list)
     time_policy: TimePolicy | None = None
+    # For NL questions, this describes the value the hunt must answer
+    # (for example: {"answer_type": "domain", "evidence_types": ["web_request", "dns_activity"]}).
+    # It is intentionally structured so reporting does not guess from keywords.
+    answer_spec: dict[str, Any] = field(default_factory=dict)
+    semantic_intent: SemanticHuntIntent | None = None
+    investigation_model: InvestigationModel | None = None
+    case: Any | None = None
+    case_graph: Any | None = None
 
     def __post_init__(self) -> None:
         if not self.request_id.strip():
@@ -113,6 +133,8 @@ class Hypothesis:
     requirements: list[str] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
     hypothesis_class: str = ""
+    required_edge_ids: list[str] = field(default_factory=list)
+    required_evidence_types: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -218,6 +240,9 @@ class EvidenceAssessment:
     reason: str = ""
     missing_evidence: list[str] = field(default_factory=list)
     source_refs: list[str] = field(default_factory=list)
+    interpretation: str = ""
+    answer_candidates: list[str] = field(default_factory=list)
+    contradicting_hypotheses: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -249,6 +274,13 @@ class EvidenceCard:
     """
     id: str
     fingerprint: str
+    summary: str = ""
+    why_it_matters: str = ""
+    hypotheses: list[str] = field(default_factory=list)
+    requirements: list[str] = field(default_factory=list)
+    confidence: str = "MEDIUM"
+    query_ids: list[str] = field(default_factory=list)
+    replay: dict[str, Any] = field(default_factory=dict)
     representative_observation_ids: list[str] = field(default_factory=list)
     count: int = 1
     entity_summary: dict[str, Any] = field(default_factory=dict)
@@ -268,8 +300,11 @@ class EvidenceCard:
 class HuntOutcome(str, Enum):
     """Canonical epistemic outcomes for threat hunting hypotheses."""
     SUPPORTED = "SUPPORTED"
+    SUPPORTED_WITH_LIMITATIONS = "SUPPORTED_WITH_LIMITATIONS"
     CONTRADICTED = "CONTRADICTED"
     INCONCLUSIVE = "INCONCLUSIVE"
+    INCONCLUSIVE_BUDGET_EXHAUSTED = "INCONCLUSIVE_BUDGET_EXHAUSTED"
+    NO_EVIDENCE_FOUND = "NO_EVIDENCE_FOUND"
     UNKNOWN = "UNKNOWN"
     UNREACHABLE = "UNREACHABLE"
     INSUFFICIENTLY_SPECIFIED = "INSUFFICIENTLY_SPECIFIED"
@@ -279,10 +314,16 @@ class HuntOutcome(str, Enum):
 class StoppingDecision(str, Enum):
     """Deterministic terminal stopping decisions."""
     STOP_RESOLVED = "STOP_RESOLVED"
-    STOP_BOUNDED = "STOP_BOUNDED"
+    STOP_REFUTED = "STOP_REFUTED"
+    STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED = "STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED"
+    STOP_INCONCLUSIVE_RELATION_UNPROVEN = "STOP_INCONCLUSIVE_RELATION_UNPROVEN"
+    STOP_INCONCLUSIVE_COVERAGE_GAP = "STOP_INCONCLUSIVE_COVERAGE_GAP"
     STOP_EXHAUSTED_BY_BUDGET = "STOP_EXHAUSTED_BY_BUDGET"
+    STOP_BUDGET_EXHAUSTED = "STOP_EXHAUSTED_BY_BUDGET"
+    STOP_BOUNDED = "STOP_BOUNDED"
     STOP_INSUFFICIENT = "STOP_INSUFFICIENT"
     STOP_UNSUPPORTED = "STOP_UNSUPPORTED"
+    STOP_UNSUPPORTED_CAPABILITY = "STOP_UNSUPPORTED_CAPABILITY"
     STOP_UNREACHABLE = "STOP_UNREACHABLE"
 
 
@@ -305,6 +346,13 @@ class HuntState:
     native_query_plans: list[NativeQueryPlan] = field(default_factory=list)
     capability_catalog: Any | None = None
     evidence_assessments: list[EvidenceAssessment] = field(default_factory=list)
+    semantic_analysis: dict[str, Any] = field(default_factory=dict)
+    semantic_intent: SemanticHuntIntent | None = None
+    investigation_model: InvestigationModel | None = None
+    relation_graph: RelationGraph | None = None
+    case: Any | None = None
+    identity_resolved: bool = False
+    identity_mapping: dict[str, str] = field(default_factory=dict)
     llm_usage: dict[str, Any] = field(default_factory=dict)
     cells: list[Cell] = field(default_factory=list)
     coverage: CoverageBound = field(default_factory=CoverageBound)
@@ -331,19 +379,42 @@ class FinalHuntAccount:
     observation_citations: list[str] = field(default_factory=list)
     diagnostics: list[dict[str, Any]] = field(default_factory=list)
     gap_breakdown: dict[str, list[str]] = field(default_factory=dict)
+    answer: dict[str, Any] = field(default_factory=dict)
+    llm_usage: dict[str, Any] = field(default_factory=dict)
+    semantic_analysis: dict[str, Any] = field(default_factory=dict)
+    semantic_intent: SemanticHuntIntent | None = None
+    evidence_assessments: list[EvidenceAssessment] = field(default_factory=list)
+    investigation_model: InvestigationModel | None = None
+    relation_graph: RelationGraph | None = None
+    case: Any | None = None
+    provenance_chain: list[Any] = field(default_factory=list)
 
     @property
     def outcome(self) -> HuntOutcome:
         """Derive canonical outcome from supporting / contradicting / unreachable."""
         if self.stopping_decision == StoppingDecision.STOP_INSUFFICIENT:
             return HuntOutcome.INSUFFICIENTLY_SPECIFIED
-        if self.stopping_decision == StoppingDecision.STOP_UNSUPPORTED:
+        if self.stopping_decision in (StoppingDecision.STOP_UNSUPPORTED, StoppingDecision.STOP_UNSUPPORTED_CAPABILITY):
             return HuntOutcome.UNSUPPORTED
         if self.stopping_decision == StoppingDecision.STOP_UNREACHABLE:
             return HuntOutcome.UNREACHABLE
+        if self.stopping_decision == StoppingDecision.STOP_REFUTED:
+            return HuntOutcome.CONTRADICTED
+        if self.stopping_decision in (
+            StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED,
+            StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN,
+            StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP,
+        ):
+            return HuntOutcome.INCONCLUSIVE
+
         attack_hypos = [h for h in self.hypotheses if h.hypothesis_class != "benign_baseline"]
         if not attack_hypos:
             attack_hypos = self.hypotheses
+
+        if self.stopping_decision in (StoppingDecision.STOP_EXHAUSTED_BY_BUDGET, StoppingDecision.STOP_BUDGET_EXHAUSTED):
+            if any(h.id in self.supporting for h in attack_hypos):
+                return HuntOutcome.SUPPORTED_WITH_LIMITATIONS
+            return HuntOutcome.INCONCLUSIVE_BUDGET_EXHAUSTED
 
         if any(h.id in self.supporting for h in attack_hypos):
             return HuntOutcome.SUPPORTED
@@ -355,7 +426,9 @@ class FinalHuntAccount:
             return HuntOutcome.UNREACHABLE
         if any(h.id in self.contradicting for h in attack_hypos):
             return HuntOutcome.INCONCLUSIVE
-        return HuntOutcome.UNKNOWN  # Rendered as NO_EVIDENCE_FOUND in final report
+        if self.evidence_cards:
+            return HuntOutcome.INCONCLUSIVE
+        return HuntOutcome.UNKNOWN
 
 
 __all__ = [
@@ -379,4 +452,12 @@ __all__ = [
     "StoppingDecision",
     "HuntState",
     "FinalHuntAccount",
+    "SubjectEntity",
+    "RequestedObject",
+    "SemanticEvidenceRequirement",
+    "SemanticHuntIntent",
+    "InvestigationModel",
+    "RelationGraph",
+    "GraphNode",
+    "GraphEdge",
 ]

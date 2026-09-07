@@ -297,7 +297,7 @@ class CanonicalQueryPlanner:
                 st = "WinEventLog:Security"
             elif "dns" in ev_type:
                 st = "stream:dns"
-            index = getattr(scope, "native_partition", {}).get("index", "botsv1") if hasattr(scope, "native_partition") else "botsv1"
+            index = getattr(scope, "native_partition", {}).get("index", "botsv2") if hasattr(scope, "native_partition") else "botsv2"
             data_sources.append({"index": index, "sourcetype": st})
         else:
             data_sources.append({"table": ev_type})
@@ -335,10 +335,14 @@ class CanonicalQueryPlanner:
 
         if getattr(requirement, "search_hints", None):
             constraints["search_hints"] = list(requirement.search_hints)
-            if "domain" not in constraints:
+            if "domain" not in constraints and any(k in ev_type for k in ("web", "http", "dns", "net", "network")):
                 for h in requirement.search_hints:
-                    if "." in str(h) and not str(h).startswith("*"):
-                        constraints["domain"] = str(h)
+                    h_str = str(h).strip()
+                    if (
+                        re.match(r"^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$", h_str)
+                        and not h_str.lower().endswith((".exe", ".dll", ".ps1", ".bat", ".vbs", ".sh", ".log", ".txt", ".json", ".xml", ".csv"))
+                    ):
+                        constraints["domain"] = h_str
                         break
 
         is_targeted = entity is not None and not isinstance(entity, (AnyEntity, type(ANY)))

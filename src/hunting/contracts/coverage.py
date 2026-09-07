@@ -72,6 +72,13 @@ class CoverageBound:
     unqueryable_cells_instance: int = 0
     unreachable_cells_instance: int = 0
 
+    # --- Causal Path & Summary Metrics ---
+    causal_path_total_edges: int = 0
+    causal_path_verified_edges: int = 0
+    causal_path_coverage: float = 0.0
+    wildcard_scope_coverage: float = 0.0
+    instance_cell_coverage: float = 0.0
+
     # --- Additional context ---
     scopes_never_queried: list[str] = field(default_factory=list)
     unknown_sources: list[str] = field(default_factory=list)  # reported, strictly outside denominator

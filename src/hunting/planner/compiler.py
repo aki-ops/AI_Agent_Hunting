@@ -35,7 +35,7 @@ class NativeQueryCompiler(ABC):
 class SplunkQueryCompiler(NativeQueryCompiler):
     """Compiles LogicalQueryPlan into safe, parameterized SPL for Splunk."""
 
-    def __init__(self, default_index: str = "botsv1") -> None:
+    def __init__(self, default_index: str = "botsv2") -> None:
         self.default_index = default_index
 
     def compile(self, plan: LogicalQueryPlan) -> NativeQueryPlan:
@@ -147,6 +147,13 @@ class SplunkQueryCompiler(NativeQueryCompiler):
                     spl_parts.append(f'("{d_name}")')
             elif isinstance(entity, File):
                 spl_parts.append(f'host="{entity.host}" ("{entity.path}")')
+
+        # User / identity filtering from constraints - ONLY for auth/identity queries
+        if any(k in ev_type for k in ("auth", "ident")) and plan.constraints.get("search_hints"):
+            u_hints = [str(h).strip() for h in plan.constraints["search_hints"] if str(h).strip()]
+            if u_hints and not (entity and isinstance(entity, Account)):
+                clauses = [f'"{uh}"' for uh in u_hints]
+                spl_parts.append(f"({' OR '.join(clauses)})")
 
         # Domain filtering from constraints or filters - ONLY for web/net/dns queries
         is_web_or_net = any(k in ev_type for k in ("web", "http", "net", "network", "beacon", "dns"))

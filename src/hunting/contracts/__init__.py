@@ -6,6 +6,22 @@ from hunting.contracts.capabilities import (
     MatchResult,
     ProviderCapabilityCatalog,
 )
+from hunting.contracts.case_graph import (
+    ActionCandidate,
+    EvidenceGoal,
+    EvidenceSubgraph,
+    FieldRole,
+    GraphEdge,
+    GraphNode,
+    InvestigationCase,
+    InvestigationGraph,
+    InvestigationUnknown,
+    NodeStatus,
+    NodeType,
+    RelationProof,
+    RelationStatus,
+    RelationType,
+)
 from hunting.contracts.cells import Cell, CellState, ProviderScope
 from hunting.contracts.conflicts import Conflict, HumanInput
 from hunting.contracts.coverage import CoverageBound, RequirementCoverage, SamplingStats
@@ -53,8 +69,12 @@ from hunting.contracts.hunt import (
     LogicalQueryPlan,
     NativeQueryPlan,
     QueryPlan,
+    RequestedObject,
     RequirementStatus,
+    SemanticEvidenceRequirement,
+    SemanticHuntIntent,
     StoppingDecision,
+    SubjectEntity,
     TimePolicy,
 )
 from hunting.contracts.observations import (
@@ -84,6 +104,21 @@ from hunting.contracts.state import (
 )
 
 __all__ = [
+    # v5 Investigation Case Graph Contracts
+    "InvestigationCase",
+    "InvestigationGraph",
+    "GraphNode",
+    "GraphEdge",
+    "FieldRole",
+    "NodeType",
+    "RelationType",
+    "NodeStatus",
+    "RelationStatus",
+    "InvestigationUnknown",
+    "EvidenceGoal",
+    "ActionCandidate",
+    "RelationProof",
+    "EvidenceSubgraph",
     # v4 Canonical Hunt Contracts
     "HuntRequest",
     "HuntRequestKind",
@@ -160,4 +195,8 @@ __all__ = [
     "Disposition",
     "TerminalState",
     "DarkSource",
+    "SubjectEntity",
+    "RequestedObject",
+    "SemanticEvidenceRequirement",
+    "SemanticHuntIntent",
 ]

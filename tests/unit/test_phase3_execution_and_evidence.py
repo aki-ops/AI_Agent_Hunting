@@ -18,7 +18,7 @@ import pytest
 
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.entities import ANY
-from hunting.contracts.hunt import Hypothesis
+from hunting.contracts.hunt import EvidenceCard, Hypothesis
 from hunting.contracts.observations import EpistemicType, Observation
 from hunting.contracts.queries import Diagnostic, QueryOutcome, QueryResult
 from hunting.evidence import (
@@ -283,3 +283,49 @@ def test_8_ambiguous_groups_are_batched_no_per_event_llm_call():
     assert result["card-01"] == ["hypo-01"]
     assert result["card-02"] == ["hypo-01"]
     assert result["card-03"] == []
+
+
+def test_9_llm_interprets_cards_and_invalid_citations_are_removed():
+    """LLM explains evidence in one batch, but cannot invent local IDs."""
+    def mock_evidence_analysis(prompt: str) -> str:
+        return json.dumps({
+            "answer": {
+                "status": "ANSWERED",
+                "value": "store.froth.ly",
+                "explanation": "The web request card contains the requested domain.",
+                "card_ids": ["card-domain", "card-not-real"],
+                "observation_ids": ["obs-domain", "obs-not-real"],
+            },
+            "evaluations": [{
+                "card_id": "card-domain",
+                "interpretation": "Direct web telemetry contains the domain.",
+                "supporting_hypotheses": ["hypo-lookup", "hypo-not-real"],
+                "contradicting_hypotheses": [],
+                "confidence": 0.9,
+                "answer_candidates": ["store.froth.ly"],
+                "missing_evidence": [],
+                "observation_ids": ["obs-domain", "obs-not-real"],
+            }],
+            "missing_evidence": ["Direct identity mapping is not available."],
+            "next_action": "STOP_RESOLVED",
+        })
+
+    card = EvidenceCard(
+        id="card-domain",
+        fingerprint="fp-domain",
+        fact_type="web_request",
+        field_summary={"domains": ["store.froth.ly"]},
+        representative_observation_ids=["obs-domain"],
+    )
+    evaluator = EvidenceEvaluator(llm_caller=mock_evidence_analysis)
+    result = evaluator.analyze_batch(
+        [card],
+        [Hypothesis(id="hypo-lookup", statement="A user visited a website")],
+        question="What domain was visited?",
+    )
+
+    assert result["answer"]["status"] == "ANSWERED"
+    assert result["answer"]["card_ids"] == ["card-domain"]
+    assert result["answer"]["observation_ids"] == ["obs-domain"]
+    assert result["evaluations"][0]["supporting_hypotheses"] == ["hypo-lookup"]
+    assert result["evaluations"][0]["observation_ids"] == ["obs-domain"]

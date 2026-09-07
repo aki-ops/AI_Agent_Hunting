@@ -116,7 +116,7 @@ def build_default_capability_registry() -> dict[str, VersionedCapabilityDescript
     splunk_scope = ProviderScope(
         provider_id="splunk",
         scope_id="splunk_live",
-        native_partition={"index": "botsv1"},
+        native_partition={"index": "botsv2"},
         coverage_start="2016-01-01T00:00:00Z",
         retention_days=4000,
     )

@@ -187,6 +187,7 @@ def test_compiler_llm_decomposition_active():
                 "id": "req-web-http",
                 "description": "Inbound HTTP requests to web application",
                 "evidence_type": "web_request",
+                "search_hints": ["www.imreallynotbatman.com"],
                 "falsification_condition": "no HTTP requests",
                 "source_refs": ["MITRE-T1190"]
             },

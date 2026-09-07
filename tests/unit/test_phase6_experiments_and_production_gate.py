@@ -75,7 +75,7 @@ def test_1_hypothesis_only_hunt_runs_without_alert_or_poc():
     # 4. Exploited hypothesis is supported
     assert any("exploited" in h.id and h.status == HypothesisStatus.SUPPORTED for h in result.account.hypotheses)
     # 5. Report renders cleanly with citations
-    assert "Threat Hunting Investigation Final Account" in result.report
+    assert "# Hunt Report" in result.report
     assert "WEB-IVANTI-01" in result.report
 
 

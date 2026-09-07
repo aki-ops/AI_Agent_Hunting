@@ -1,49 +1,33 @@
-# Repository Working Rules
+# Repository Working Rules (v5.0)
 
-Read `context.md` first, then use `01_FINAL-ARCHITECTURE.md` as the canonical
-architecture, `02_METHOD-AND-IMPLEMENTATION-PLAN.md` as the method, `03` for
-source traceability and `04` for implementation status.
+Read `context.md` first, then use `01_FINAL-ARCHITECTURE.md` as canonical
+architecture, `02` for executable method, `03` for literature traceability,
+and `04` for verified checklist gates.
 
-## Architecture rules
+---
 
-- `Cell` is exactly `(ProviderScope, entity | ANY, time_bucket)`.
-- Never add `event_family`, `event_code` or operation as a Cell axis.
-- `ProviderScope` and `ProviderOperation` are separate contracts.
-- `EvidenceRequirement` describes the question; adapters answer it.
-- Preserve native types and unknown native records.
-- `search_hints` are query constraints, never evidence, confirmed entities or
-  coverage addresses.
-- Scope coverage and requirement coverage are separate.
-- A complete targeted query does not establish full scope coverage.
+## Core Architectural Invariants
 
-## Determinism and LLM boundary
+- The reasoning unit is the **Investigation Case Graph**.
+- `Cell` is strictly `(ProviderScope, entity | ANY, time_bucket)` for execution coverage, never an ontology or thinking graph.
+- **Relation-First Rule**: Unresolved edge with known source entity $\rightarrow$ valid provider operation $\rightarrow$ verified relation $\rightarrow$ pivot.
+- Never execute broad/wildcard network queries before human subject identity is verified.
+- Strict field role isolation: `client_ip` ≠ `server_ip`, `endpoint_host` ≠ `server_host`, `account_name` ≠ `person`.
+- Never bind web servers (`jabbah`, `we1149srv`, IIS) as client workstations.
 
-- Known CVE/TTP/IOC/template inputs compile deterministically.
-- Free-text semantic compilation requires the configured API LLM or stops as
-  `STOP_INSUFFICIENT`.
-- No natural-language keyword fallback or statement/ID keyword attribution.
-- Query templates and allowlists run before any planner fallback.
-- Fact extraction, predicates, correlation, controls, action selection,
-  stopping and final disposition are deterministic.
-- LLM output is schema-validated and advisory. It cannot execute a query,
-  mutate state, select an action or determine final disposition.
-- Group evidence before LLM refinement; never call once per raw observation.
+---
 
-## Security and provenance
+## LLM & Verification Boundary
 
-- Raw log content is untrusted and must not be placed in repeated LLM context.
-- Incomplete, stale, unsupported or unreachable results cannot license a
-  negative conclusion.
-- Every report claim cites query/observation/card IDs and a coverage bound.
-- Keep literature-derived principles separate from thesis engineering choices
-  and measured implementation results.
-- Audit records are append-only.
+- Free-text semantic compilation: at most 1 call. Must emit schema-strict `InvestigationCase`. Zero raw SPL.
+- Known CVE/TTP/IOC inputs compile deterministically (zero LLM calls).
+- Grounded explanation receives **only** the verified `EvidenceSubgraph`.
+- Relation verification is 100% deterministic (citations, field roles, temporal checks).
+- Incomplete telemetry, timeouts, or unproven edges stop as `STOP_INCONCLUSIVE_*`, never `NOT_FOUND`.
 
-## Testing rules
+---
 
-- Every contract and state transition needs a known-answer test.
-- Test sparse and entity-bearing hypotheses, unknown native records, partial
-  results, stale scopes, unsupported requirements and prompt-injection payloads.
-- CDB and Splunk are the current executable providers.
-- Real LLM API, EDR and IDS execution evidence is required before production
-  claims for those paths.
+## Documentation Integrity
+
+- `report.md` is an ephemeral per-hunt output artifact, **not** an architecture document.
+- Every architectural change must update `01`, `02`, `03`, `04`, and `docs/01` first.

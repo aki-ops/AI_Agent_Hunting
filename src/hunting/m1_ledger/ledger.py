@@ -11,6 +11,8 @@ Responsibilities:
 """
 from __future__ import annotations
 
+from typing import Any
+
 from hunting.contracts.cells import Cell, CellState
 from hunting.contracts.coverage import CoverageBound
 from hunting.contracts.entities import ANY, AnyEntity, EntityRef
@@ -22,12 +24,14 @@ from hunting.contracts.queries import (
     QueryResult,
 )
 from hunting.contracts.validators import validate_cell, validate_observation
+from hunting.m1_ledger.store import ObservationStore
 
 
 class ObservationLedger:
     """The append-only Observation Ledger."""
 
     def __init__(self) -> None:
+        self.store: ObservationStore = ObservationStore()
         self._observations: list[Observation] = []
         self._observation_by_id: dict[str, Observation] = {}
         self._query_results: list[QueryResult] = []
@@ -60,6 +64,7 @@ class ObservationLedger:
 
         self._observations.append(obs)
         self._observation_by_id[obs.id] = obs
+        self.store.add_observation(obs)
 
         # Record observed fields for this (scope, native_type) pair
         scope_key = (obs.provider_scope.scope_id, obs.native_type)
@@ -74,6 +79,18 @@ class ObservationLedger:
         # Track unmapped
         if obs.is_unmapped and obs.id not in self._unmapped_ids:
             self._unmapped_ids.append(obs.id)
+
+    def get_raw_event(self, obs_id: str) -> dict[str, Any] | None:
+        """Retrieve raw provider event from observation store."""
+        return self.store.get_raw_event(obs_id)
+
+    def get_trace(self, obs_id: str, state: Any | None = None) -> dict[str, Any]:
+        """Retrieve full bi-directional trace for an observation."""
+        return self.store.get_trace(obs_id, state=state)
+
+    def export_observations_jsonl(self, path: str) -> None:
+        """Export ledger observations to JSONL format."""
+        self.store.export_jsonl(path)
 
     @property
     def observations(self) -> list[Observation]:

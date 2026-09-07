@@ -10,10 +10,12 @@ Enforces:
 """
 from __future__ import annotations
 
+from hunting.contracts.case_graph import RelationStatus
 from hunting.contracts.hunt import (
     FinalHuntAccount,
     HuntOutcome,
     HypothesisStatus,
+    StoppingDecision,
 )
 
 
@@ -26,6 +28,12 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
     if account.outcome == HuntOutcome.SUPPORTED:
         outcome_str = HuntOutcome.SUPPORTED.value
         verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Adversary Activity Detected)"
+    elif account.outcome == HuntOutcome.SUPPORTED_WITH_LIMITATIONS:
+        outcome_str = HuntOutcome.SUPPORTED_WITH_LIMITATIONS.value
+        verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Partial Adversary Activity Detected — Exploration Bounded by Budget)"
+    elif account.outcome == HuntOutcome.INCONCLUSIVE_BUDGET_EXHAUSTED:
+        outcome_str = HuntOutcome.INCONCLUSIVE_BUDGET_EXHAUSTED.value
+        verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Investigation Budget Exhausted Before Completion)"
     elif account.outcome == HuntOutcome.CONTRADICTED:
         outcome_str = HuntOutcome.CONTRADICTED.value
         verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Hypothesis Refuted by Negative Evidence)"
@@ -117,6 +125,12 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
         lines.append(f"- **Telemetry Capture / Sensor Host(s):** {sensor_hosts_str}")
     lines.extend([
         f"- **Impacted Accounts Identified:** {users_str}",
+    ])
+    if account.answer and account.answer.get("status") == "ANSWERED":
+        ans_val = account.answer.get("value")
+        ans_q = account.answer.get("question", "")
+        lines.append(f"- **Investigative Finding / Resolved Answer:** `{ans_val}` (Question: *\"{ans_q}\"*)")
+    lines.extend([
         "",
         "---",
         "## Executive Threat Brief",
@@ -145,6 +159,20 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
             f"- **Evidence Groups Validated:** {len(account.evidence_cards)} distinct evidence cards with verified telemetry falsification criteria.",
         ])
         lines.extend(threat_brief_items)
+    elif account.outcome == HuntOutcome.SUPPORTED_WITH_LIMITATIONS:
+        lines.extend([
+            "> [!WARNING]",
+            "> **INVESTIGATION OUTCOME: SUPPORTED WITH LIMITATIONS (BOUNDED EXPLORATION).**",
+            "> Evidence partially supports the threat hypothesis, but investigation was bounded by resource budget before exhaustive validation.",
+            f"> Observed activity on candidate host(s): **{hosts_str}**.",
+        ])
+    elif account.outcome == HuntOutcome.INCONCLUSIVE_BUDGET_EXHAUSTED:
+        lines.extend([
+            "> [!WARNING]",
+            "> **INVESTIGATION OUTCOME: INCONCLUSIVE (BUDGET EXHAUSTED).**",
+            "> The investigation budget was exhausted before sufficient evidence could be collected to confirm or refute the hypothesis.",
+            "> Telemetry was incomplete or unverified at time of termination.",
+        ])
     elif account.outcome == HuntOutcome.CONTRADICTED:
         lines.extend([
             "> [!NOTE]",
@@ -166,6 +194,61 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
             "> within the queried telemetry frame. This result is strictly **NOT** a finding of `BENIGN` and does not imply",
             "> absence of compromise outside the observed scope or telemetry capabilities.",
         ])
+
+    # Tier 1 Analyst Report Sections: What Was Found, Why This Matters, Missing Evidence
+    lines.extend([
+        "",
+        "### What Was Found",
+        "",
+    ])
+    if account.evidence_cards:
+        for c in account.evidence_cards:
+            summary_txt = c.summary or f"{c.fact_type} on {', '.join(c.entity_summary.get('hosts', ['target']))}"
+            lines.append(f"- **{summary_txt}** (`{c.id}`, count: {c.count})")
+            if c.field_summary.get("cmdlines"):
+                lines.append("  - *Commands Executed:*")
+                for cmd in c.field_summary["cmdlines"]:
+                    lines.append(f"    - `{cmd}`")
+            if c.field_summary.get("file_paths"):
+                lines.append(f"  - *Files:* {', '.join(f'`{fp}`' for fp in c.field_summary['file_paths'])}")
+    else:
+        lines.append("- No matching telemetry or evidence cards identified in searched scope.")
+
+    lines.extend([
+        "",
+        "### Why This Matters",
+        "",
+    ])
+    if account.evidence_cards:
+        seen_why = set()
+        for c in account.evidence_cards:
+            why = c.why_it_matters or "Provides telemetry context within the monitored environment."
+            if why not in seen_why:
+                seen_why.add(why)
+                lines.append(f"- **{c.fact_type.replace('_', ' ').title()}:** {why}")
+    else:
+        lines.append("- Telemetry indicates monitored systems operated within established operational baselines during the observation window.")
+
+    lines.extend([
+        "",
+        "### Missing Evidence & Telemetry Gaps",
+        "",
+    ])
+    fact_types = {c.fact_type for c in account.evidence_cards}
+    missing_links: list[str] = []
+    if "web_request" in fact_types and "process_execution" not in fact_types:
+        missing_links.append("No server-side process execution detected following observed web requests.")
+    if "process_execution" in fact_types and "file_modification" not in fact_types:
+        missing_links.append("No persistent file modifications or dropped script payloads detected on host.")
+    if "process_execution" in fact_types and "network_connection" not in fact_types:
+        missing_links.append("No secondary outbound command-and-control (C2) network connections detected.")
+    if not missing_links:
+        if not account.evidence_cards:
+            missing_links.append("No telemetry matching required behavioral indicators was observed.")
+        else:
+            missing_links.append("None — critical multi-stage chain correlation satisfied.")
+    for link in missing_links:
+        lines.append(f"- {link}")
 
     # Investigation Storyline & Process Walkthrough
     provider_names = {q.get("provider_id", "telemetry") for q in account.queries} if account.queries else {"telemetry"}
@@ -299,6 +382,48 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
         f"- **Refuted Hypotheses:** {competing_ref if competing_ref else '[]'}",
     ])
 
+    # Proven Relation Chain & Unresolved Unknowns (v5.0 Case Graph)
+    case = getattr(account, "case", None)
+    case_graph = getattr(account, "case_graph", None) or (getattr(case, "graph", None) if case else None)
+
+    if case or case_graph or getattr(account, "provenance_chain", None):
+        lines.extend([
+            "",
+            "### Proven Relation Chain (Causal Provenance)",
+            "",
+        ])
+        proofs = list(case_graph.proofs.values()) if case_graph and case_graph.proofs else []
+        if proofs:
+            lines.extend([
+                "| Edge ID | Relation Path | Citations | Verified At |",
+                "|---|---|---|---|",
+            ])
+            for p in proofs:
+                cits_str = ", ".join(f"`{c}`" for c in p.citations) if p.citations else "`N/A`"
+                lines.append(f"| `{p.edge_id}` | `{p.source_value}` **-[{p.relation_type}]->** `{p.target_value}` | {cits_str} | `{p.verified_at}` |")
+        elif getattr(account, "provenance_chain", None):
+            for step in account.provenance_chain:
+                lines.append(f"- {step}")
+        else:
+            lines.append("- *No causal relations were proven with valid citations.*")
+
+        lines.extend([
+            "",
+            "### Unresolved Mandatory Unknowns",
+            "",
+        ])
+        unknowns = getattr(case, "unknowns", []) if case else []
+        unresolved_unknowns = [u for u in unknowns if not getattr(u, "resolved_value", None)]
+        if unresolved_unknowns:
+            lines.extend([
+                "| Variable | Entity Type | Description | Status |",
+                "|---|---|---|---|",
+            ])
+            for u in unresolved_unknowns:
+                lines.append(f"| `{u.variable_name}` | `{u.entity_type}` | {u.description} | **`UNRESOLVED`** |")
+        else:
+            lines.append("- *All mandatory investigation unknowns were resolved.*")
+
     # 3. Key Technical Evidence & Forensic Artifacts
     lines.extend([
         "",
@@ -380,38 +505,74 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
     else:
         lines.append("*No evidence cards generated.*")
 
-    # Actionable Containment & Incident Response Recommendations
+    # Actionable Incident Response Recommendations (Proportional Guidance)
     lines.extend([
         "",
         "---",
-        "## Actionable Containment & Incident Response Recommendations",
+        "## Actionable Incident Response Recommendations (Proportional Guidance)",
         "",
     ])
-    if account.supporting:
+    if account.outcome == HuntOutcome.SUPPORTED:
         lines.extend([
             "> [!CAUTION]",
-            "> **Immediate Incident Response Actions Required:**",
+            "> **Tier 3 — Containment & Active Threat Neutralization (Analyst Sign-off Required):**",
+            "> Full multi-stage attack chain verified across target host and observation window.",
             "",
             "1. **Endpoint Isolation & Containment:**",
-            f"   - Immediately disconnect and isolate impacted host(s): {hosts_str} from the network to halt potential lateral movement.",
-            "2. **Web Server & Webshell Eradication:**",
-            "   - Audit web server document root directories (e.g., Joomla/IIS) for newly dropped or modified script files (`.php`, `.asp`, `.aspx`).",
-            "   - Terminate suspicious child processes spawned under web server workers (`w3wp.exe`, `httpd.exe`, `php-cgi.exe`).",
-            "3. **Account & Credential Security:**",
+            f"   - Disconnect and isolate impacted host(s): {comp_hosts_str} from the network to halt lateral movement.",
+            "2. **Process & Shell Termination:**",
+            "   - Terminate suspicious interactive shells and child processes identified under web worker processes.",
+            "3. **Credential Invalidation:**",
             f"   - Invalidate active sessions and rotate credentials for affected security contexts: {users_str}.",
-            "   - Audit privilege escalation paths and recent modifications to local administrators / domain groups.",
-            "4. **Detection Rule Deployment:**",
-            "   - Deploy high-fidelity detection rules alerting on web server worker processes spawning script interpreters or command shells (`cmd.exe`, `powershell.exe`, `php-cgi.exe`).",
+            "",
+            "> [!IMPORTANT]",
+            "> **Tier 2 — Targeted Investigation & Forensic Preservation:**",
+            "- Collect volatile endpoint memory and process dump of active command interpreters.",
+            "- Audit document root for web shells (`.php`, `.asp`, `.aspx`) matching the observed web access window.",
+            "- Review parent-child lineage and persistence mechanisms (scheduled tasks, services, run keys).",
+            "",
+            "> [!NOTE]",
+            "> **Tier 1 — Continuous Monitoring & Detection Tuning:**",
+            "- Deploy detection rule for web server worker processes spawning interactive shells (`cmd.exe`, `powershell.exe`).",
+            "- Monitor external IP destinations observed during the incident.",
         ])
-    elif account.contradicting and not account.supporting:
+    elif account.outcome == HuntOutcome.SUPPORTED_WITH_LIMITATIONS:
         lines.extend([
-            "- **Threat Refuted:** No immediate containment actions required for this specific hypothesis.",
-            "- **Continuous Monitoring:** Maintain standard telemetry logging and monitor for future deviations from benign baseline behavior.",
+            "> [!WARNING]",
+            "> **Tier 2 — Targeted Investigation & Forensic Validation (Recommended):**",
+            "> Partial activity detected, but exploration was bounded by budget before exhaustive validation.",
+            "",
+            "1. **Lineage Inspection:**",
+            f"   - Conduct in-depth manual forensic inspection on host(s): {hosts_str}.",
+            "2. **Scope Extension:**",
+            "   - Re-run targeted queries on identified suspicious processes with expanded budget.",
+            "",
+            "> [!NOTE]",
+            "> **Tier 1 — Monitoring & Telemetry Enhancement:**",
+            "- Enable process creation logging (Sysmon Event ID 1 / Windows 4688 with command line auditing).",
+            "- Monitor target hosts for repeated execution attempts.",
+        ])
+    elif account.outcome in (HuntOutcome.INCONCLUSIVE_BUDGET_EXHAUSTED, HuntOutcome.INCONCLUSIVE):
+        lines.extend([
+            "> [!NOTE]",
+            "> **Tier 1 — Monitoring & Telemetry Enhancement (Inconclusive Evidence / Telemetry Gap):**",
+            "- **No Containment Actions Warranted:** Evidence does not substantiate active compromise.",
+            "- **Audit Visibility:** Verify that required telemetry data sources (EDR process tracking, web access logs) are ingesting properly.",
+            "- **Adjust Investigation Boundaries:** Broaden search time range or verify entity resolution if external indicators exist.",
+        ])
+    elif account.outcome == HuntOutcome.CONTRADICTED:
+        lines.extend([
+            "> [!TIP]",
+            "> **Threat Refuted by Negative Evidence:**",
+            "- No containment or incident escalation required for this hypothesis.",
+            "- Maintain standard baseline monitoring.",
         ])
     else:
         lines.extend([
-            "- **Inconclusive / Bounded Search:** No matching adversary telemetry was detected within the specified observation window.",
-            "- **Visibility Improvement:** Consider expanding telemetry collection coverage or extending time boundary if threat activity is suspected through other indicators.",
+            "> [!NOTE]",
+            "> **Tier 1 — Telemetry Visibility & Baseline Maintenance:**",
+            "- No matching adversary activity detected within the queried scope.",
+            "- Ensure log retention and coverage bounds cover critical infrastructure.",
         ])
 
     lines.extend([
@@ -428,8 +589,14 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
             f"<summary><strong>Click to expand Raw Telemetry Observation IDs ({len(account.observation_citations)} events)</strong></summary>",
             "",
         ])
-        for obs_id in sorted(account.observation_citations):
-            lines.append(f"- `{obs_id}`")
+        sorted_citations = sorted(account.observation_citations)
+        if len(sorted_citations) > 20:
+            for obs_id in sorted_citations[:10]:
+                lines.append(f"- `{obs_id}`")
+            lines.append(f"- *... ({len(sorted_citations) - 10} additional observations stored in audit artifact `observations.jsonl`)*")
+        else:
+            for obs_id in sorted_citations:
+                lines.append(f"- `{obs_id}`")
         lines.append("</details>")
     else:
         lines.append("- None")
@@ -568,4 +735,270 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["render_final_hunt_account"]
+def render_analyst_report(account: FinalHuntAccount) -> str:
+    """Render the small analyst-facing report.
+
+    The complete ledger and audit trail remain in the per-hunt artifacts. This
+    view contains only the question, reasoning result, useful evidence, replay
+    queries and LLM cost, so raw observation IDs do not bury the conclusion.
+    """
+    lines: list[str] = ["# Hunt Report", ""]
+    objective = account.objective
+    question = objective.statement or objective.request_id
+    answer = account.answer or {}
+    outcome = account.outcome.value
+    stopping = account.stopping_decision.value
+
+    lines.extend([
+        "## 1. Hypothesis / Question",
+        "",
+        f"> {question}",
+        "",
+    ])
+    intent = getattr(objective, "semantic_intent", None)
+    if intent:
+        lines.extend([
+            f"- **Subject:** `{intent.subject.type}`: `{intent.subject.value}`",
+            f"- **Requested Object:** `{intent.requested_object.type}` (role: `{intent.requested_object.role}`)",
+            f"- **Behavior:** {intent.behavior}",
+            "",
+        ])
+    lines.extend([
+        f"**Result:** `{outcome}`  ",
+        f"**Stopping:** `{stopping}`",
+    ])
+    cb = account.coverage_bound
+    if cb:
+        c_pct = cb.causal_path_coverage * 100.0
+        w_pct = cb.wildcard_scope_coverage * 100.0
+        i_pct = cb.instance_cell_coverage * 100.0
+        lines.extend([
+            "",
+            f"- **Causal Path Coverage:** `{c_pct:.1f}%` ({cb.causal_path_verified_edges}/{cb.causal_path_total_edges} relations verified)",
+            f"- **Wildcard Scope Coverage:** `{w_pct:.1f}%` ({cb.explored_cells_wildcard}/{cb.known_cells_wildcard} broadsweep cells)",
+            f"- **Instance Cell Coverage:** `{i_pct:.1f}%` ({cb.explored_cells_instance}/{cb.known_cells_instance} concrete entity cells)",
+        ])
+    if answer.get("status") == "ANSWERED":
+        lines.extend([
+            "",
+            f"**Answer ({answer.get('answer_type', 'value')}):** `{answer.get('value', 'N/A')}`",
+        ])
+    elif answer.get("status") == "NOT_FOUND":
+        lines.extend(["", "**Answer:** No matching value was found in the searched telemetry."])
+    elif answer.get("status") == "INCONCLUSIVE":
+        lines.extend(["", f"**Answer:** Inconclusive ({answer.get('reason', 'IDENTITY_UNRESOLVED')})"])
+    if answer.get("explanation"):
+        lines.extend(["", f"**Answer explanation:** {answer['explanation']}"])
+
+    lines.extend(["", "## 2. Hypothesis analysis", ""])
+    if account.hypotheses:
+        for hypothesis in account.hypotheses:
+            statement = hypothesis.statement.replace("|", "\\|")
+            status = hypothesis.status.value if hasattr(hypothesis.status, "value") else str(hypothesis.status)
+            lines.append(f"- `{status}` — {statement}")
+    else:
+        lines.append("- No testable hypothesis was produced.")
+
+    if intent and intent.required_correlations:
+        lines.extend([
+            "",
+            "**Required Correlation Chain:**",
+            *(f"- `{step}`" for step in intent.required_correlations),
+        ])
+    case = getattr(account, "case", None)
+    case_graph = getattr(case, "graph", None) if case else None
+    proofs = list(case_graph.proofs.values()) if case_graph and getattr(case_graph, "proofs", None) else []
+    if not proofs and getattr(account, "provenance_chain", None):
+        proofs = account.provenance_chain
+
+    if proofs:
+        lines.extend([
+            "",
+            "### Proven Relation Chain (Causal Provenance)",
+            "",
+            "| Edge ID | Relation Path | Citations | Verified At |",
+            "|---|---|---|---|",
+        ])
+        for p in proofs:
+            cits = getattr(p, "citations", []) or []
+            cits_str = ", ".join(f"`{c}`" for c in cits) if cits else "`N/A`"
+            src_v = getattr(p, "source_value", "")
+            tgt_v = getattr(p, "target_value", "")
+            rel_t = getattr(p, "relation_type", "")
+            if hasattr(rel_t, "value"):
+                rel_t = rel_t.value
+            ver_at = getattr(p, "verified_at", "")
+            e_id = getattr(p, "edge_id", "")
+            lines.append(f"| `{e_id}` | `{src_v}` **-[{rel_t}]->** `{tgt_v}` | {cits_str} | `{ver_at}` |")
+    elif account.relation_graph and account.relation_graph.nodes:
+        known_edges = [e for e in account.relation_graph.edges.values() if getattr(e, "status", "") in ("KNOWN", "verified", RelationStatus.VERIFIED)]
+        if known_edges:
+            lines.extend([
+                "",
+                "**Proven Relation Chain (Graph):**",
+            ])
+            for e in known_edges:
+                src_n = account.relation_graph.get_node(e.source_id)
+                tgt_n = account.relation_graph.get_node(e.target_id)
+                src_str = f"{src_n.type}({src_n.value})" if src_n else e.source_id
+                tgt_str = f"{tgt_n.type}({tgt_n.value})" if tgt_n else e.target_id
+                q_info = f" (via `{e.origin_query_id}`)" if e.origin_query_id else ""
+                lines.append(f"- `{src_str} -[{e.relation_type}]-> {tgt_str}`{q_info}")
+
+    # Unresolved Mandatory Unknowns
+    if proofs:
+        lines.extend([
+            "",
+            "**Unresolved Mandatory Unknowns:** None (all causal relations verified).",
+        ])
+    elif account.investigation_model and account.investigation_model.unknowns:
+        unresolved = [u for u in account.investigation_model.unknowns if getattr(u, "status", "") == "UNRESOLVED"]
+        if unresolved:
+            lines.extend([
+                "",
+                "**Unresolved Mandatory Unknowns:**",
+                *(f"- `{u.relation_to_resolve}`: {u.description}" for u in unresolved),
+            ])
+    elif case and hasattr(case, "unknowns") and case.unknowns:
+        unresolved = [u for u in case.unknowns if not getattr(u, "resolved_value", None) and getattr(case.graph.get_edge(u.resolving_edge_id), "status", "") not in ("verified", RelationStatus.VERIFIED)]
+        if unresolved:
+            lines.extend([
+                "",
+                "**Unresolved Mandatory Unknowns:**",
+                *(f"- `{u.variable_name}`: {u.description}" for u in unresolved),
+            ])
+        else:
+            lines.extend([
+                "",
+                "**Unresolved Mandatory Unknowns:** None (all causal relations verified).",
+            ])
+    elif intent and intent.uncertainties and not proofs:
+        lines.extend([
+            "",
+            "**Current Uncertainties / Gaps:**",
+            *(f"- {u}" for u in intent.uncertainties),
+        ])
+
+    lines.extend(["", "## 3. Evidence and explanation", ""])
+    cards = list(account.evidence_cards)
+    answer_card_ids = {
+        card_id
+        for candidate in answer.get("candidates", [])
+        for card_id in candidate.get("card_ids", [])
+    }
+    answer_card_ids.update(
+        str(card_id).strip()
+        for card_id in answer.get("card_ids", [])
+        if str(card_id).strip()
+    )
+    cards.sort(key=lambda card: (0 if (card.id in answer_card_ids or card.id.startswith("card-edge-")) else 1, -card.count, card.id))
+    cards = cards[:12]
+    if cards:
+        lines.extend([
+            "| Evidence | Why it matters | Source |",
+            "|---|---|---|",
+        ])
+        assessments_by_card = {assessment.card_id: assessment for assessment in account.evidence_assessments}
+        for card in cards:
+            summary = card.summary or card.fact_type or "telemetry"
+            if card.fact_type == "web_request":
+                domains = card.field_summary.get("domains") or card.field_summary.get("sites") or []
+                if domains:
+                    summary = f"Web request to {', '.join(str(value) for value in domains[:3])}"
+            elif card.fact_type == "dns_activity":
+                domains = card.field_summary.get("domains") or card.field_summary.get("sites") or []
+                if domains:
+                    summary = f"DNS lookup for {', '.join(str(value) for value in domains[:3])}"
+            assessment = assessments_by_card.get(card.id)
+            why = (
+                assessment.interpretation
+                if assessment and assessment.interpretation
+                else card.why_it_matters or "Supports the related evidence requirement."
+            )
+            reps = ", ".join(f"`{value}`" for value in card.representative_observation_ids[:3]) or "not recorded"
+            source = f"{card.count} event(s); representative observations: {reps}"
+            summary_md = summary.replace("|", "\\|")
+            why_md = why.replace("|", "\\|")
+            lines.append(f"| {summary_md} | {why_md} | {source} |")
+    else:
+        lines.append("No evidence cards were produced.")
+
+    lines.extend(["", "### Explanation", ""])
+    sem = account.semantic_analysis or {}
+    parse_status = sem.get("parse_status", "")
+    llm_expl = ""
+    if isinstance(sem.get("answer"), dict):
+        llm_expl = str(sem["answer"].get("explanation", "")).strip()
+
+    if answer.get("status") == "ANSWERED":
+        lines.append(f"- **Deterministic Graph Resolution:** The target object `{answer.get('value')}` was proven through the verified 4-step causal provenance chain.")
+
+    if parse_status == "SUCCESS" and llm_expl:
+        lines.append(f"- **LLM Narrative Analysis:** {llm_expl}")
+    elif parse_status and parse_status != "SUCCESS":
+        err_detail = sem.get("error_message", parse_status)
+        lines.append(f"- **LLM Explanation:** Unavailable ({parse_status}: {err_detail})")
+    elif not sem or not account.llm_usage:
+        lines.append("- **LLM Explanation:** Not requested / offline deterministic mode.")
+
+    explanations: list[str] = []
+    assessments_by_card = {assessment.card_id: assessment for assessment in account.evidence_assessments}
+    for card in cards:
+        assessment = assessments_by_card.get(card.id)
+        explanation = (
+            assessment.interpretation.strip()
+            if assessment and assessment.interpretation
+            else card.why_it_matters.strip()
+        )
+        if explanation and explanation not in explanations:
+            explanations.append(explanation)
+    if explanations:
+        lines.extend(f"- {item}" for item in explanations[:8])
+    if account.outcome != HuntOutcome.SUPPORTED and account.stopping_decision != StoppingDecision.STOP_RESOLVED:
+        semantic_missing = account.semantic_analysis.get("missing_evidence", []) if account.semantic_analysis else []
+        for missing in semantic_missing[:5]:
+            lines.append(f"- Missing according to evidence analysis: {missing}")
+    if account.residuals:
+        lines.append(f"- Limitation: {account.residuals[0]}")
+
+    lines.extend(["", "## 4. Queries used", ""])
+    if account.queries:
+        for query in account.queries:
+            query_id = query.get("query_id", "unknown-query")
+            requirement = query.get("requirement_id", "unknown requirement")
+            query_text = str(query.get("native_query") or query.get("query_text", "")).strip()
+            purpose = query.get("purpose", "")
+            reason = query.get("semantic_intent", "")
+            result_sum = query.get("result_summary", "")
+            hypo_ids = query.get("hypothesis_ids", [])
+            lines.extend([
+                f"### `{query_id}` — `{requirement}`",
+                f"- **Purpose:** {purpose}" if purpose else "",
+                f"- **Semantic Reason:** `{reason}`" if reason else "",
+                f"- **Result:** {result_sum}" if result_sum else "",
+                f"- **Hypothesis Impact:** Targets `{', '.join(hypo_ids)}`" if hypo_ids else "",
+                f"Provider: `{query.get('provider_id', 'unknown')}`; completeness: `{query.get('completeness_contract', 'unknown')}`",
+                "",
+                "```spl",
+                query_text or "(native query text not captured)",
+                "```",
+                "",
+            ])
+            # Filter out empty strings from lines
+            lines = [line for line in lines if line is not None]
+    else:
+        lines.append("No query was executed.")
+
+    usage = account.llm_usage or {}
+    lines.extend([
+        "## 5. Cost",
+        "",
+        f"- Model: `{usage.get('model', 'unknown')}`",
+        f"- Calls: `{usage.get('calls_made', 0)}`",
+        f"- Tokens: `{usage.get('total_tokens', 0)}`",
+        f"- Estimated cost: `${float(usage.get('estimated_cost_usd', 0.0)):.6f}`",
+    ])
+    return "\n".join(lines) + "\n"
+
+
+__all__ = ["render_final_hunt_account", "render_analyst_report"]

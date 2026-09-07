@@ -16,6 +16,8 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "gemini-2.5-pro": {"prompt": 1.25 / 1_000_000, "completion": 5.00 / 1_000_000},
     "gemini-1.5-flash": {"prompt": 0.075 / 1_000_000, "completion": 0.30 / 1_000_000},
     "gemini-1.5-pro": {"prompt": 1.25 / 1_000_000, "completion": 5.00 / 1_000_000},
+    "gemini-flash": {"prompt": 0.075 / 1_000_000, "completion": 0.30 / 1_000_000},
+    "1/gemini-flash-3.8-high-omni": {"prompt": 0.075 / 1_000_000, "completion": 0.30 / 1_000_000},
     "gpt-4o": {"prompt": 2.50 / 1_000_000, "completion": 10.00 / 1_000_000},
     "gpt-4o-mini": {"prompt": 0.15 / 1_000_000, "completion": 0.60 / 1_000_000},
     "claude-3-5-sonnet": {"prompt": 3.00 / 1_000_000, "completion": 15.00 / 1_000_000},

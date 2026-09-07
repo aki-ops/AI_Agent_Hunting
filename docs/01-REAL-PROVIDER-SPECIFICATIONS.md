@@ -1,135 +1,100 @@
-# Real-Provider Specifications (v4.1)
+# Real-Provider Specifications (v5.0)
 
-This document describes the provider boundary used by the current code and
-the extension contract for providers that are not implemented yet.
+This document describes the provider boundary used by the v5.0 architecture,
+defining field roles, logical provider operations, and adapter contracts.
 
-## 1. Common provider contract
+---
+
+## 1. Common Provider Contract [Tags: REF-OCSF, REF-OTEL, REF-AIQL]
 
 Every provider must expose, directly or through an adapter:
-
 ```text
 ProviderScope
   → capability/catalog discovery
-  → ProviderOperation/CapabilityBinding
+  → Logical Provider Operations & Field Roles
   → QueryResult(executed_ok, complete, rows, diagnostics)
 ```
 
-Provider-native partitions belong in `ProviderScope`; operations are not Cell
-dimensions. Native fields and native record types are preserved during
-normalization. Unknown records must survive ingestion.
+1. `ProviderScope`: Identifies native partitions (index, sourcetype, sensor, tenant) and temporal bounds.
+2. `Cell = (ProviderScope, entity | ANY, time_bucket)`: Execution coordinate tracking queried partitions and cursors.
+3. Native records and native fields are preserved during ingestion. Unknown native types must never be dropped.
 
-The current code has two executable providers:
+---
 
-- `CdbAdapter` for local SQLite replay;
-- `SplunkLiveAdapter` for live Splunk REST searches.
+## 2. Field Roles and Semantic Disambiguation Contract [Tags: REF-FOR572, REF-OMEGALOG]
 
-EDR and IDS sections below are planned adapter contracts, not implemented live
-integrations.
+To prevent catastrophic attribution errors (e.g. treating web servers or destination IPs as user workstations),
+telemetry fields carry strict semantic roles:
 
-## 2. Splunk — implemented
+| Field Role | Meaning | Example Native Fields (Splunk/Windows/Suricata) | Incompatible Conflation |
+|---|---|---|---|
+| `CLIENT_IP` | Originating host network address initiating request | `c_ip`, `client_ip`, `src_ip`, `IpAddress` (Event 4624) | NEVER conflate with `SERVER_IP` or `DESTINATION_IP` |
+| `SERVER_IP` | Destination service host answering request | `s_ip`, `server_ip`, `dest_ip`, `destination_ip` | NEVER conflate with `CLIENT_IP` or `SOURCE_IP` |
+| `ENDPOINT_HOST` | Client computer or workstation executing user session | `host`, `ComputerName`, `workstation_name` | NEVER conflate with `SERVER_HOST` or `SENSOR_HOST` |
+| `SERVER_HOST` | Application/web server responding to inbound traffic | `host` (on web/IIS/database servers), `site`, `dest_host` | NEVER bind as client endpoint |
+| `SENSOR_HOST` | Network probe or proxy appliance recording traffic | `host` (on forwarder/sensor), `sensor_id` | NEVER bind as client or server endpoint |
+| `ACCOUNT_NAME` | Authenticated user identity string | `user`, `username`, `TargetUserName`, `Account_Name` | NEVER match against hostname or string fragments |
+| `PERSON_NAME` | Human individual specified in request | `Amber Turing`, `display_name` | Must be resolved to `ACCOUNT_NAME` via directory/logon |
+| `DOMAIN_NAME` | FQDN or web domain | `query`, `domain`, `site`, `cs_host` | |
+| `PROCESS_NAME` | Executable image name | `image`, `process_name`, `NewProcessName` | |
 
-### 2.1 Scope and discovery
+---
 
-The adapter uses the native Splunk index as its primary partition and can also
-retain manifest scope metadata such as sourcetype/source. The BOTSv1 test
-configuration is `configs/splunk_botsv1.yaml`.
+## 3. Logical Provider Operations by Relation [Tags: REF-AIQL, REF-MITRE-ANALYTICS]
 
-`discover_full_capabilities()` queries Splunk indexes and sourcetypes, then
-returns a `ProviderCapabilityCatalog` with status, supported evidence types,
-observable fields, retention and discovery details. A manifest can provide
-explicit bindings; otherwise the adapter derives supported categories from
-discovered sourcetypes.
-
-### 2.2 Query execution
-
-The adapter builds parameterized SPL for the canonical operations:
+Rather than accepting unconstrained query text or broad sweeps, adapters declare
+support for relation-first operations:
 
 ```text
-cdb_scope_scan / cdb_broad_sweep
-cdb_process_lineage / cdb_process_search
-cdb_logon_history / cdb_auth_search
-cdb_network_connections / cdb_net_search
-cdb_file_writes / cdb_file_search
-cdb_dns_queries / cdb_dns_search
-cdb_persistence_artifacts / cdb_persistence_search
-cdb_web_requests / splunk_search_web
+1. resolve_person_to_account(person_name) → AccountNode
+2. resolve_account_to_endpoint(account_name, time_window) → EndpointNode
+3. resolve_endpoint_to_client_ip(endpoint_host, time_window) → IPNode
+4. find_web_activity_from_client_ip(client_ip, time_window, predicates) → WebRequestObservations
+5. find_dns_activity_from_client_ip(client_ip, time_window, predicates) → DNSQueryObservations
+6. find_process_from_endpoint(endpoint_host, time_window, predicates) → ProcessObservations
+7. find_file_change_from_process(endpoint_host, process_id, time_window) → FileObservations
 ```
 
-Queries are submitted to `/services/search/jobs` in oneshot mode. Provider
-fields are normalized into the engine vocabulary while the original
-`native_type` and a bounded `raw_ref` are retained.
+---
 
-The native query compiler and adapter accept entity/predicate constraints only
-after provider validation. Custom LLM-generated query text is allowed only
-through the planner parser, operation/field allowlist and dry-run validation.
+## 4. Splunk Adapter (v5.0)
 
-### 2.3 Completeness
+### 4.1 Scope & Capability Mapping
+- **Indexes**: `botsv1`, `botsv2`, enterprise telemetry partitions.
+- **Sourcetypes**:
+  - Identity & Logon: `WinEventLog:Security` (Event ID 4624, 4625, 4672).
+  - Web & Proxy: `stream:http`, `iis`, `pan:traffic`, `squid`.
+  - DNS: `stream:dns`, `XmlWinEventLog:Microsoft-Windows-Sysmon/Operational` (Event ID 22).
+  - Process & System: `XmlWinEventLog:Microsoft-Windows-Sysmon/Operational` (Event ID 1, 3, 11).
 
-The adapter requests one more row than the consumer limit. If more than the
-limit is returned, it returns the bounded rows with `complete=False` and a
-continuation cursor. If the returned count is within the limit, it returns
-`complete=True`.
+### 4.2 Parameterized Operation Compilation
+The adapter translates logical operations into parameterized SPL:
+- `resolve_account_to_endpoint`:
+  ```spl
+  search index="botsv2" sourcetype="WinEventLog:Security" EventCode=4624 TargetUserName="<account>"
+  | table _time, TargetUserName, ComputerName, IpAddress, LogonType
+  ```
+- `find_web_activity_from_client_ip`:
+  ```spl
+  search index="botsv2" (sourcetype="stream:http" OR sourcetype="pan:traffic") src_ip="<client_ip>"
+  | table _time, src_ip, dest_ip, site, cs_host, uri, cs_uri_stem, status
+  ```
 
-`complete=False` is not a negative result. The engine records the partial
-diagnostic and may continue through bounded time/entity expansion.
+### 4.3 Completeness & Negative Controls
+- Implements the L+1 row limit on oneshot REST searches.
+- Controls: `control_health`, `control_any_record`, `control_observability`.
 
-### 2.4 Negative controls
+---
 
-Splunk control methods are:
+## 5. CDB Adapter (Local SQLite Replay)
 
-1. `control_health`: checks Splunk reachability and scope health;
-2. `control_any_record`: checks that the target index/window has telemetry;
-3. `control_observability`: checks whether the requirement predicate is
-   observable in the adapter’s field catalog.
+Provides deterministic replay of pre-recorded forensic cases for unit testing and offline CI:
+- Maps logical operations to parameterized SQL statements.
+- Preserves identical `QueryResult` envelope and field role typing as live SIEM adapters.
 
-Controls do not mint observations. A zero-row query is usable as negative
-evidence only when execution is complete and the relevant controls pass.
+---
 
-## 3. EDR — extension contract, not yet implemented
+## 6. EDR & IDS Extension Contracts
 
-An EDR adapter should use a native scope such as:
-
-```python
-ProviderScope(
-    provider_id="edr",
-    native_partition={"tenant_id": "...", "dataset": "..."},
-    scope_id="edr-primary",
-)
-```
-
-Operations should expose process lineage, authentication, network, file and
-registry/persistence capabilities. Opaque cursor pagination, rate-limit
-backoff, sensor health and policy observability must be represented in
-`QueryResult`/diagnostics. These requirements are design targets; the current
-repo has mock contract tests only.
-
-## 4. IDS — extension contract, not yet implemented
-
-An IDS adapter should preserve native sensor/interface/stream partitions, for
-example:
-
-```python
-ProviderScope(
-    provider_id="ids",
-    native_partition={"sensor_id": "...", "interface": "eth1", "stream": "dns"},
-    scope_id="ids-dmz-dns",
-)
-```
-
-Suricata/Zeek records should retain their complete native JSON/tabular fields,
-including new protocol metadata. Capture drops, parser state, sensor health
-and stream availability must block unjustified negative evidence. No live
-Suricata/Zeek adapter currently exists in this repository.
-
-## 5. Provider gate status
-
-| Provider | Current state | Required before production claim |
-|---|---|---|
-| CDB/SQLite | implemented and replay-tested | maintain contract/replay tests |
-| Splunk | implemented; BOTSv1 live replay passes | deployment-specific manifest, credentials and completeness evidence |
-| EDR | mock contract only | implement adapter, cursor/rate-limit/health tests, then live test |
-| IDS | mock contract only | implement adapter, capture/parser health tests, then live test |
-
-All providers must integrate through `ProviderScope`, capability descriptors,
-`ProviderOperation`, `CapabilityBinding`, `QueryPlan` and `QueryResult` without
-adding `event_family` to `Cell`.
+- **EDR Contract**: Exposes process tree lineage, memory injection, and network socket bindings keyed by endpoint ID and process GUID.
+- **IDS Contract**: Exposes protocol stream events (HTTP, TLS, DNS, flow) keyed by sensor interface and source/destination IP pairs.

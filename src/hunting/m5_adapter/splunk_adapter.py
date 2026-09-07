@@ -1,10 +1,10 @@
-"""Splunk Live Provider Adapter for Enterprise SIEM Telemetry (BOTSv1).
+"""Splunk Live Provider Adapter for Enterprise SIEM Telemetry.
 
 Implements the production-grade M5 provider adapter for Splunk Enterprise:
   - Dual Binding Architecture:
       Mode 1: Dynamic Auto-Discovery (zero-config, introspects /services/data/indexes
               and | metadata type=sourcetypes).
-      Mode 2: Declarative YAML Manifest (reads configs/splunk_botsv1.yaml with
+      Mode 2: Declarative YAML Manifest (reads configs/splunk_botsv2.yaml with
               explicit sourcetypes, event filters, and search-time rex extractions).
   - Strict Completeness Contract (L+1 Rule): queries fetch limit + 1 internally
     to determine EOF vs truncation.
@@ -14,6 +14,7 @@ Implements the production-grade M5 provider adapter for Splunk Enterprise:
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -96,15 +97,79 @@ OBSERVABLE_FIELDS = (
     "cs_host",
 )
 
+SOURCETYPE_FIELD_ROLE_MAPPINGS: dict[str, dict[str, list[str]]] = {
+    "WinEventLog:Security": {
+        "account_name": ["TargetUserName", "user", "Account_Name"],
+        "endpoint_host": ["ComputerName", "host", "workstation_name"],
+        "client_ip": ["IpAddress"],
+    },
+    "stream:http": {
+        "client_ip": ["src_ip", "c_ip", "client_ip"],
+        "server_ip": ["dest_ip", "s_ip", "server_ip"],
+        "domain_name": ["site", "cs_host", "domain"],
+        "server_host": ["site", "cs_host"],
+    },
+    "stream:dns": {
+        "client_ip": ["src_ip", "c_ip", "client_ip"],
+        "server_ip": ["dest_ip", "s_ip", "server_ip"],
+        "domain_name": ["query", "domain", "site"],
+    },
+    "iis": {
+        "client_ip": ["c_ip"],
+        "server_ip": ["s_ip"],
+        "server_host": ["host", "cs_host"],
+        "domain_name": ["cs_host", "site"],
+    },
+    "pan:traffic": {
+        "client_ip": ["src_ip"],
+        "server_ip": ["dest_ip"],
+    },
+    "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational": {
+        "endpoint_host": ["host", "ComputerName"],
+        "process_name": ["Image", "process_name"],
+        "client_ip": ["SourceIp"],
+        "server_ip": ["DestinationIp"],
+    },
+}
+
 
 class SplunkLiveAdapter:
     """Production live adapter querying Splunk REST API."""
+
+    @classmethod
+    def validate_field_role_against_sourcetype(
+        cls,
+        field_role: str,
+        field_name: str,
+        sourcetype: str,
+    ) -> bool:
+        """Validate whether field_name in sourcetype can legitimately fulfill the declared field_role.
+
+        Prevents conflating server_ip/dest_ip with client_ip, or server host (IIS) with endpoint_host.
+        """
+        role_key = str(getattr(field_role, "value", field_role)).lower()
+        f_clean = field_name.strip().lower()
+
+        # Immediate hard rejection of known invalid conflations
+        if role_key == "client_ip" and f_clean in ("dest_ip", "destination_ip", "server_ip", "s_ip"):
+            return False
+        if role_key == "endpoint_host" and ("iis" in sourcetype.lower() or f_clean in ("site", "domain")):
+            return False
+
+        for st_pattern, role_map in SOURCETYPE_FIELD_ROLE_MAPPINGS.items():
+            if st_pattern.lower() in sourcetype.lower():
+                allowed_fields = [f.lower() for f in role_map.get(role_key, [])]
+                if allowed_fields:
+                    return f_clean in allowed_fields
+
+        # Default fallback: allow if not an explicitly blocked conflation
+        return True
 
     def __init__(
         self,
         splunk_url: str = "https://localhost:8089",
         auth: tuple[str, str] = ("admin", "12345678"),
-        index: str = "botsv1",
+        index: str = "botsv2",
         manifest_path: str | Path | None = None,
         verify_ssl: bool = False,
         timeout: int = 60,
@@ -302,7 +367,7 @@ class SplunkLiveAdapter:
         temp_adapter = cls(
             splunk_url=splunk_url,
             auth=auth,
-            index="botsv1",
+            index="botsv2",
             verify_ssl=verify_ssl,
             timeout=timeout,
         )
@@ -421,6 +486,13 @@ class SplunkLiveAdapter:
             ProviderOperation("cdb_web_requests", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("splunk_search_process", "splunk", op_scope_ids, pagination="cursor", limit_semantics="complete only on EOF"),
             ProviderOperation("splunk_search_web", "splunk", op_scope_ids, pagination="cursor", limit_semantics="complete only on EOF"),
+            ProviderOperation("resolve_person_to_account", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("resolve_account_to_endpoint", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("resolve_endpoint_to_client_ip", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_web_activity_from_client_ip", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_dns_activity_from_client_ip", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_process_from_endpoint", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_file_change_from_process", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
         )
         bindings = (
             CapabilityBinding(EvidenceRequirement.SCOPE_RECORDS, "splunk", "cdb_broad_sweep", confidence="EXACT"),
@@ -491,6 +563,140 @@ class SplunkLiveAdapter:
         start_dt, end_dt = validate_time_window_format(window)
         earliest_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         latest_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Handle relation-first operations (v5.0)
+        if operation_id == "resolve_person_to_account":
+            if isinstance(entity, str):
+                ent_val = entity
+            elif isinstance(entity, Account):
+                ent_val = entity.username or (str(entity.kind) if str(entity.kind) != "account" else "")
+            else:
+                ent_val = str(getattr(entity, "username", getattr(entity, "name", str(entity or ""))))
+            ent_val = ent_val.replace('"', '').strip()
+            first_name = ent_val.split()[0] if ent_val else ent_val
+            spl = (
+                f'search index="{self.index}" (sourcetype="WinEventLog:Security" OR sourcetype="wineventlog:security") (EventCode=4624 OR EventCode=4625) '
+                f'("{ent_val}" OR "{first_name}" OR TargetUserName="*{first_name}*") '
+                f'| rex field=_raw "New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)" '
+                f'| rex field=_raw "Account Name:\\s*(?<user>[^\\r\\n\\s]+)" '
+                f'| head {limit + 1} '
+                f'| table _time, host, ComputerName, TargetUserName, user, IpAddress, WorkstationName, LogonType, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
+        if operation_id == "resolve_account_to_endpoint":
+            if isinstance(entity, str):
+                ent_val = entity
+            elif isinstance(entity, Account):
+                ent_val = entity.username or (str(entity.kind) if str(entity.kind) != "account" else "")
+            else:
+                ent_val = str(getattr(entity, "username", getattr(entity, "name", str(entity or ""))))
+            ent_val = ent_val.replace('"', '').strip()
+            first_name = ent_val.split()[0] if ent_val else ent_val
+            spl = (
+                f'search index="{self.index}" (sourcetype="WinEventLog:Security" OR sourcetype="wineventlog:security") (EventCode=4624 OR EventCode=4625) '
+                f'("{ent_val}" OR TargetUserName="*{ent_val}*" OR TargetUserName="*{first_name}*" OR user="*{ent_val}*") '
+                f'| rex field=_raw "Workstation Name:\\s*(?<WorkstationName>[^\\r\\n\\s]+)" '
+                f'| rex field=_raw "New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)" '
+                f'| head {limit + 1} '
+                f'| table _time, host, ComputerName, TargetUserName, user, IpAddress, WorkstationName, LogonType, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
+        if operation_id == "resolve_endpoint_to_client_ip":
+            if isinstance(entity, str):
+                ent_val = entity
+            elif isinstance(entity, Host):
+                ent_val = entity.name or (str(entity.kind) if str(entity.kind) != "host" else "")
+            else:
+                ent_val = str(getattr(entity, "name", str(entity or "")))
+            ent_val = ent_val.replace('"', '').strip()
+            spl = (
+                f'search index="{self.index}" ((sourcetype="stream:dns" ("{ent_val}" OR hostname="*{ent_val}*" OR name="*{ent_val}*")) '
+                f'OR ((sourcetype="WinEventLog:Security" OR sourcetype="wineventlog:security") ("{ent_val}" OR host="*{ent_val}*" OR ComputerName="*{ent_val}*") EventCode=4624) '
+                f'OR (sourcetype="*sysmon*" (host="*{ent_val}*" OR ComputerName="*{ent_val}*") "*EventID>3<*") '
+                f'OR (sourcetype="stream:dhcp" host="*{ent_val}*")) '
+                f'| rex field=_raw "\\"host_addr\\":\\[\\"(?<IpAddress>[^\\"]+)\\"" '
+                f'| rex field=_raw "\\"src_ip\\":\\"(?<src_ip>[^\\"]+)\\"" '
+                f'| rex field=_raw "Source Network Address:\\s*(?<IpAddress>[^\\r\\n\\s]+)" '
+                f'| rex field=_raw "New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)" '
+                f'| rex field=_raw "Workstation Name:\\s*(?<WorkstationName>[^\\r\\n\\s]+)" '
+                f'| where (isnotnull(IpAddress) AND IpAddress!="-" AND IpAddress!="127.0.0.1" AND IpAddress!="0.0.0.0") '
+                f'OR (isnotnull(src_ip) AND src_ip!="-" AND src_ip!="127.0.0.1" AND src_ip!="0.0.0.0") '
+                f'| head {limit + 1} '
+                f'| table _time, host, ComputerName, WorkstationName, TargetUserName, IpAddress, src_ip, client_ip, c_ip, hostname, name, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
+        if operation_id == "find_web_activity_from_client_ip":
+            if isinstance(entity, str):
+                ent_val = entity
+            elif isinstance(entity, IPAddress):
+                ent_val = entity.address or (str(entity.kind) if str(entity.kind) != "ip" else "")
+            else:
+                ent_val = str(getattr(entity, "address", getattr(entity, "ip", str(entity or ""))))
+            ent_val = ent_val.replace('"', '').strip()
+            pred_filter = ""
+            if predicate:
+                fn = predicate.field.strip().lower()
+                val = str(predicate.value).strip() if predicate.value is not None else ""
+                if fn in ("site", "domain"):
+                    root_val = val[4:] if val.lower().startswith("www.") else val
+                    pred_filter = f'| where like(lower(site), "%{root_val.lower()}%") OR like(lower(cs_host), "%{root_val.lower()}%")'
+            noise_filter = (
+                'NOT (site="*cnn.com*" OR site="*scorecardresearch*" OR site="*doubleclick*" '
+                'OR site="*rubiconproject*" OR site="*outbrain*" OR site="*adnxs*" '
+                'OR site="*fwmrm.net*" OR site="*krxd.net*" OR site="*gigya.com*" '
+                'OR site="*doubleverify*" OR site="*sharethrough*" OR site="*akamai*")'
+            )
+            spl = (
+                f'search index="{self.index}" (sourcetype="stream:http" OR sourcetype="pan:traffic") '
+                f'(src_ip="{ent_val}" OR client_ip="{ent_val}" OR c_ip="{ent_val}" OR src="{ent_val}") '
+                f'| eval site=coalesce(site, cs_host) '
+                f'| where isnotnull(site) AND site!="" AND NOT (site like "%:8014%") '
+                f'| search {noise_filter} '
+                f'{pred_filter} '
+                f'| dedup site '
+                f'| head {limit + 1} '
+                f'| table _time, host, sourcetype, src_ip, dest_ip, site, cs_host, uri, cs_uri_stem, cs_method, status, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
+        if operation_id == "find_dns_activity_from_client_ip":
+            if isinstance(entity, str):
+                ent_val = entity
+            elif isinstance(entity, IPAddress):
+                ent_val = entity.address or (str(entity.kind) if str(entity.kind) != "ip" else "")
+            else:
+                ent_val = str(getattr(entity, "address", getattr(entity, "ip", str(entity or ""))))
+            ent_val = ent_val.replace('"', '').strip()
+            spl = (
+                f'search index="{self.index}" (sourcetype="stream:dns" OR (sourcetype="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=22)) '
+                f'(src_ip="{ent_val}" OR client_ip="{ent_val}" OR c_ip="{ent_val}") '
+                f'| head {limit + 1} '
+                f'| table _time, host, sourcetype, src_ip, dest_ip, query, domain, site, cs_host, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
+        if operation_id == "find_process_from_endpoint":
+            ent_val = str(getattr(entity, "name", str(entity or ""))).replace('"', '').strip()
+            spl = (
+                f'search index="{self.index}" (sourcetype="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=1) '
+                f'(host="*{ent_val}*" OR ComputerName="*{ent_val}*") '
+                f'| head {limit + 1} '
+                f'| table _time, host, ComputerName, Image, CommandLine, ParentImage, User, ProcessId, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
+        if operation_id == "find_file_change_from_process":
+            ent_val = str(getattr(entity, "name", str(entity or ""))).replace('"', '').strip()
+            spl = (
+                f'search index="{self.index}" (sourcetype="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=11) '
+                f'(ProcessId="{ent_val}" OR Image="*{ent_val}*") '
+                f'| head {limit + 1} '
+                f'| table _time, host, TargetFilename, Image, ProcessId, _raw'
+            )
+            return spl, earliest_iso, latest_iso
 
         kind = self._resolve_evidence_kind(operation_id)
         spl_parts: list[str] = [f'search index="{self.index}"']
@@ -683,6 +889,7 @@ class SplunkLiveAdapter:
                     index=self.index,
                     execution_time_ms=elapsed,
                 )
+            resp.encoding = "utf-8"
             raw_results = resp.json().get("results", [])
         except Exception as err:
             elapsed = round((time.perf_counter() - start_time) * 1000, 2)
@@ -707,17 +914,85 @@ class SplunkLiveAdapter:
                 "host": r.get("host", ""),
                 "native_type": r.get("sourcetype", ""),
                 "raw_ref": r.get("_raw", "")[:200],
+                "raw_event": dict(r),
             }
-            # Normalize fields
-            for k in (
-                "image", "cmdline", "parent_image", "user", "pid", "ppid",
-                "destination_ip", "destination_port", "source_ip", "source_port",
-                "protocol", "file_path", "domain", "query", "logon_type", "status", "hash",
-                "uri", "client_ip", "server_ip", "c_ip", "s_ip", "http_method", "site",
-            ):
-                val = r.get(k)
-                if val:
+
+            # Priority 1: Direct or manifest extractions from r
+            for k, val in r.items():
+                if k not in ("_raw", "_time") and val is not None and val != "":
                     row[k] = val
+
+            # Normalize user from TargetUserName if user is empty, "-" or machine account ending in $
+            if row.get("TargetUserName") and (not row.get("user") or row.get("user") == "-" or str(row.get("user")).endswith("$")):
+                row["user"] = row["TargetUserName"]
+
+            # Priority 2: Fallback to parsing _raw JSON if available (e.g. stream:dns, stream:http)
+            raw_text = r.get("_raw", "")
+            raw_json: dict[str, Any] = {}
+            if isinstance(raw_text, str) and "{" in raw_text and "}" in raw_text:
+                trimmed = raw_text.strip()
+                s_idx = trimmed.find("{")
+                e_idx = trimmed.rfind("}")
+                if s_idx != -1 and e_idx != -1 and e_idx > s_idx:
+                    try:
+                        raw_json = json.loads(trimmed[s_idx : e_idx + 1])
+                    except Exception:
+                        raw_json = {}
+
+            if raw_json and isinstance(raw_json, dict):
+                # Extract and normalize JSON fields if not already populated
+                if "query" in raw_json and "query" not in row:
+                    q_val = raw_json["query"]
+                    if isinstance(q_val, list) and q_val:
+                        row["query"] = str(q_val[0])
+                    elif q_val:
+                        row["query"] = str(q_val)
+                if "name" in raw_json and "name" not in row:
+                    n_val = raw_json["name"]
+                    row["name"] = str(n_val[0]) if isinstance(n_val, list) and n_val else str(n_val)
+                if "hostname" in raw_json and "hostname" not in row:
+                    h_val = raw_json["hostname"]
+                    row["hostname"] = str(h_val[0]) if isinstance(h_val, list) and h_val else str(h_val)
+                if "host_addr" in raw_json and "host_addr" not in row:
+                    ha_val = raw_json["host_addr"]
+                    row["host_addr"] = str(ha_val[0]) if isinstance(ha_val, list) and ha_val else str(ha_val)
+                if "site" in raw_json and "site" not in row:
+                    row["site"] = str(raw_json["site"])
+                if "cs_host" in raw_json and "site" not in row:
+                    row["site"] = str(raw_json["cs_host"])
+                if "uri" in raw_json and "uri" not in row:
+                    row["uri"] = str(raw_json["uri"])
+                if "cs_uri_stem" in raw_json and "uri" not in row:
+                    row["uri"] = str(raw_json["cs_uri_stem"])
+                if "src_ip" in raw_json and "src_ip" not in row:
+                    row["src_ip"] = str(raw_json["src_ip"])
+                if "src_ip" in raw_json and "client_ip" not in row:
+                    row["client_ip"] = str(raw_json["src_ip"])
+                if "src_ip" in raw_json and "source_ip" not in row:
+                    row["source_ip"] = str(raw_json["src_ip"])
+                if "c_ip" in raw_json and "client_ip" not in row:
+                    row["client_ip"] = str(raw_json["c_ip"])
+                if "dest_ip" in raw_json and "destination_ip" not in row:
+                    row["destination_ip"] = str(raw_json["dest_ip"])
+                if "s_ip" in raw_json and "server_ip" not in row:
+                    row["server_ip"] = str(raw_json["s_ip"])
+                if "user" in raw_json and not row.get("user"):
+                    row["user"] = str(raw_json["user"])
+                if "host" in raw_json and not row.get("host"):
+                    row["host"] = str(raw_json["host"])
+
+            # Field harmonization
+            if isinstance(row.get("query"), list) and row["query"]:
+                row["query"] = str(row["query"][0])
+
+            if "name" in row and "site" not in row:
+                row["site"] = row["name"]
+            if "name" in row and "domain" not in row:
+                row["domain"] = row["name"]
+            if "query" in row and "domain" not in row:
+                row["domain"] = row["query"]
+            if "query" in row and "site" not in row:
+                row["site"] = row["query"]
 
             if "c_ip" in r and "client_ip" not in row:
                 row["client_ip"] = r["c_ip"]
@@ -743,6 +1018,10 @@ class SplunkLiveAdapter:
                 row["site"] = r["cs_host"]
             if "site" in row and "domain" not in row:
                 row["domain"] = row["site"]
+            if "source_ip" in row and "client_ip" not in row:
+                row["client_ip"] = row["source_ip"]
+            if "destination_ip" in row and "server_ip" not in row:
+                row["server_ip"] = row["destination_ip"]
 
             # Also catch uppercase fields from standard Splunk extractions if present
             if "Image" in r and "image" not in row:

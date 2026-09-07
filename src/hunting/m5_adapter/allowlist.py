@@ -40,6 +40,13 @@ _ALLOWLISTED_OPERATIONS = frozenset({
     "splunk_broad_sweep",
     "splunk_scope_scan",
     "custom_operation",
+    "resolve_person_to_account",
+    "resolve_account_to_endpoint",
+    "resolve_endpoint_to_client_ip",
+    "find_web_activity_from_client_ip",
+    "find_dns_activity_from_client_ip",
+    "find_process_from_endpoint",
+    "find_file_change_from_process",
 })
 
 _ALLOWLISTED_FIELDS = frozenset({

@@ -11,5 +11,8 @@ data/cdb_sample/
 *.sqlite
 data/*.sqlite
 .env
-*.env
+
+# Generated hunt run artifacts
+artifacts/hunt-*
+artifacts/req-hunt-*
 

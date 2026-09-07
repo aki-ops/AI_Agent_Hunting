@@ -7,9 +7,10 @@ Provides:
 from __future__ import annotations
 
 from hunting.reporter.builder import build_final_hunt_account
-from hunting.reporter.renderer import render_final_hunt_account
+from hunting.reporter.renderer import render_analyst_report, render_final_hunt_account
 
 __all__ = [
     "build_final_hunt_account",
     "render_final_hunt_account",
+    "render_analyst_report",
 ]

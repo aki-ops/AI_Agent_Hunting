@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+from hunting.contracts.case_graph import RelationStatus
 from hunting.contracts.cells import Cell, CellState
 from hunting.contracts.expectations import Expectation, TestStatus
 from hunting.contracts.hunt import (
@@ -70,6 +71,11 @@ class CanonicalActionController:
         """Authority method to update evidence cards in hunt state."""
         state.evidence_cards = list(cards)
 
+    def add_evidence_card(self, state: HuntState, card: EvidenceCard) -> None:
+        """Authority method to add an evidence card to hunt state."""
+        if not any(c.id == card.id for c in state.evidence_cards):
+            state.evidence_cards.append(card)
+
     def add_logical_query_plan(self, state: HuntState, plan: LogicalQueryPlan) -> None:
         """Authority method to record a logical query plan."""
         state.logical_query_plans.append(plan)
@@ -80,8 +86,15 @@ class CanonicalActionController:
 
     def add_evidence_assessment(self, state: HuntState, assessment: EvidenceAssessment) -> None:
         """Authority method to record an advisory evidence assessment."""
-        if not any(a.card_id == assessment.card_id for a in state.evidence_assessments):
-            state.evidence_assessments.append(assessment)
+        for index, existing in enumerate(state.evidence_assessments):
+            if existing.card_id == assessment.card_id:
+                state.evidence_assessments[index] = assessment
+                return
+        state.evidence_assessments.append(assessment)
+
+    def set_semantic_analysis(self, state: HuntState, analysis: dict[str, Any]) -> None:
+        """Record validated advisory LLM interpretation without changing state decisions."""
+        state.semantic_analysis = dict(analysis)
 
     def advance_turn(self, state: HuntState) -> int:
         """Authority method to advance the hunt turn counter."""
@@ -163,14 +176,9 @@ class CanonicalActionController:
             self.set_stopping_decision(state, decision)
             return decision
 
-        # 1. Budget exhaustion
-        if self.budgets.is_exhausted:
-            decision = StoppingDecision.STOP_EXHAUSTED_BY_BUDGET
-            self.set_stopping_decision(state, decision)
-            return decision
-
-        # Web compromise guard: Process creation alone cannot conclude full web compromise.
-        # Evidence must correlate to the same target host / infrastructure chain!
+        # Web compromise & multi-stage chain guard:
+        # Process creation or web request alone cannot conclude full web compromise.
+        # Evidence must correlate to the same target host / infrastructure chain across all stages!
         for h in state.hypotheses:
             has_web_req = any(
                 r.evidence_type in ("web_request", "web_activity")
@@ -206,9 +214,33 @@ class CanonicalActionController:
                     if not correlated and h.status == HypothesisStatus.SUPPORTED:
                         self.update_hypothesis_status(state, h, HypothesisStatus.WEAKENED)
 
-        # 2. Check hypothesis resolution
+        # 1. Budget exhaustion
+        if self.budgets.is_exhausted:
+            decision = StoppingDecision.STOP_EXHAUSTED_BY_BUDGET
+            self.set_stopping_decision(state, decision)
+            return decision
+
+        # 2. Epistemic identity resolution check for person investigations
+        ident_req = bool(
+            state.objective
+            and getattr(state.objective, "semantic_intent", None)
+            and getattr(state.objective.semantic_intent.subject, "type", "") == "person"
+        )
+        if ident_req and not state.identity_resolved:
+            decision = StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED
+            self.set_stopping_decision(state, decision)
+            return decision
+
+        # 3. Telemetry coverage completeness check
+        if state.query_results and any(not getattr(qr, "complete", True) for qr in state.query_results):
+            decision = StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP
+            self.set_stopping_decision(state, decision)
+            return decision
+
+        # 4. Check hypothesis resolution
         live_hypotheses = [h for h in state.hypotheses if h.status in (HypothesisStatus.LIVE, HypothesisStatus.WEAKENED)]
-        resolved_hypotheses = [h for h in state.hypotheses if h.status in (HypothesisStatus.SUPPORTED, HypothesisStatus.REFUTED)]
+        supported_hypotheses = [h for h in state.hypotheses if h.status == HypothesisStatus.SUPPORTED]
+        refuted_hypotheses = [h for h in state.hypotheses if h.status == HypothesisStatus.REFUTED]
 
         # Check if all expectations are concluded
         all_expectations_concluded = state.expectations and all(
@@ -222,12 +254,74 @@ class CanonicalActionController:
         ]
 
         if (
-            resolved_hypotheses
+            supported_hypotheses
             and not live_hypotheses
             and all_expectations_concluded
             and not unexplored_instance_cells
         ):
             decision = StoppingDecision.STOP_RESOLVED
+        elif (
+            refuted_hypotheses
+            and not supported_hypotheses
+            and not live_hypotheses
+            and all_expectations_concluded
+        ):
+            decision = StoppingDecision.STOP_REFUTED
+        elif (
+            state.case
+            and getattr(state.case, "graph", None)
+            and not state.case.graph.get_unproven_edges(only_known_source=False)
+            and state.case.graph.edges
+        ):
+            decision = StoppingDecision.STOP_RESOLVED
+            graph = state.case.graph
+            verified_edge_ids = {
+                e_id for e_id, e in graph.edges.items()
+                if getattr(e, "status", None) == RelationStatus.VERIFIED
+            }
+            card_summaries = " ".join(
+                str(getattr(c, "summary", "")) + " " + str(getattr(c, "why_it_matters", ""))
+                for c in state.evidence_cards
+            ).lower()
+
+            for h in state.hypotheses:
+                h_class = getattr(h, "hypothesis_class", "")
+                if h_class == "benign_baseline":
+                    h.status = HypothesisStatus.REFUTED
+                    continue
+
+                req_edges = getattr(h, "required_edge_ids", []) or list(graph.edges.keys())
+                edges_satisfied = all(eid in verified_edge_ids for eid in req_edges)
+                if not edges_satisfied:
+                    h.status = HypothesisStatus.UNKNOWN
+                    continue
+
+                stmt_lower = h.statement.lower()
+                attack_mechanism_terms = (
+                    "unauthorized", "unmanaged browser", "credential theft", "stolen",
+                    "credential misuse", "compromised", "exploit", "malware",
+                    "privilege escalation", "lateral movement", "backdoor", "c2"
+                )
+                requires_attack_mechanism = any(term in stmt_lower for term in attack_mechanism_terms)
+
+                if requires_attack_mechanism:
+                    mechanism_corroborated = any(
+                        term in stmt_lower and term in card_summaries
+                        for term in attack_mechanism_terms
+                    )
+                    if mechanism_corroborated:
+                        h.status = HypothesisStatus.SUPPORTED
+                    else:
+                        h.status = HypothesisStatus.UNKNOWN
+                else:
+                    h.status = HypothesisStatus.SUPPORTED
+        elif (
+            state.case
+            and getattr(state.case, "graph", None)
+            and state.case.graph.get_unproven_edges(only_known_source=False)
+            and not supported_hypotheses
+        ):
+            decision = StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN
         else:
             decision = StoppingDecision.STOP_BOUNDED
 
