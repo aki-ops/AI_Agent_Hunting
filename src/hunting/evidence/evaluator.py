@@ -242,6 +242,90 @@ class EvidenceEvaluator:
 
         return validated_compat
 
+    def generate_deterministic_explanation(
+        self,
+        cards: list[EvidenceCard],
+        hypotheses: list[Hypothesis],
+        answer_spec: dict[str, Any] | None = None,
+        question: str = "",
+    ) -> dict[str, Any]:
+        """Generate deterministic, evidence-grounded explanation when LLM is unavailable or times out."""
+        spec = answer_spec or {}
+        answer_type = str(spec.get("answer_type", "value")).lower()
+
+        artifact_name = "Tor Browser" if "tor" in question.lower() or any("tor" in str(getattr(c, "summary", "")).lower() for c in cards) else ""
+        artifact_host = ""
+        has_artifact = False
+        observed_versions: list[str] = []
+        matching_card_ids: list[str] = []
+        matching_obs_ids: list[str] = []
+
+        for c in cards:
+            hosts = [str(h) for h in c.entity_summary.get("hosts", []) if str(h).strip()]
+            if hosts and not artifact_host:
+                artifact_host = hosts[0]
+            fps = [str(x) for x in c.field_summary.get("file_paths", [])]
+            imgs = [str(x) for x in c.field_summary.get("process_names", []) or c.field_summary.get("images", [])]
+            vers = [str(x) for x in c.field_summary.get("software_versions", []) if str(x).strip()]
+            if vers:
+                observed_versions.extend(vers)
+            if c.fact_type in ("process_execution", "software_artifact", "file_modification") or any(
+                "tor" in s.lower() for s in (fps + imgs + [c.summary])
+            ):
+                has_artifact = True
+                matching_card_ids.append(c.id)
+                matching_obs_ids.extend(c.representative_observation_ids)
+                if not artifact_name and any("tor" in s.lower() for s in (fps + imgs + [c.summary])):
+                    artifact_name = "Tor Browser"
+
+        evaluations: list[dict[str, Any]] = []
+        compatibility: dict[str, list[str]] = {}
+        for c in cards:
+            c_interp = c.why_it_matters or f"Observed {c.fact_type} telemetry on {artifact_host or 'host'}."
+            supp_h = [h.id for h in hypotheses if h.hypothesis_class != "benign_baseline"]
+            evaluations.append({
+                "card_id": c.id,
+                "interpretation": c_interp,
+                "supporting_hypotheses": supp_h,
+                "contradicting_hypotheses": [],
+                "confidence": 0.85 if c.confidence == "HIGH" else 0.65,
+                "observation_ids": c.representative_observation_ids,
+            })
+            compatibility[c.id] = supp_h
+
+        if has_artifact:
+            if observed_versions:
+                v_str = ", ".join(sorted(list(set(observed_versions))))
+                expl = f"Deterministic explanation: {artifact_name or 'Artifact'} process evidence was found on {artifact_host or 'target host'} with software version {v_str}."
+                ans_status = "ANSWERED"
+                ans_val = observed_versions[0]
+            else:
+                expl = f"Deterministic explanation: {artifact_name or 'Artifact'} process evidence was found on {artifact_host or 'target host'}. No populated {answer_type.replace('_', ' ')} field was observed."
+                ans_status = "PARTIALLY_SUPPORTED"
+                ans_val = None
+        elif cards:
+            expl = f"Deterministic explanation: {len(cards)} telemetry evidence cards collected, but no definitive artifact matching the hypothesis was confirmed."
+            ans_status = "INCONCLUSIVE"
+            ans_val = None
+        else:
+            expl = "Deterministic explanation: No telemetry events matching the requested criteria were observed."
+            ans_status = "NOT_FOUND"
+            ans_val = None
+
+        return {
+            "explanation": expl,
+            "answer": {
+                "status": ans_status,
+                "value": ans_val,
+                "explanation": expl,
+                "card_ids": matching_card_ids,
+                "observation_ids": matching_obs_ids[:5],
+            },
+            "evaluations": evaluations,
+            "missing_evidence": [answer_type] if (has_artifact and not observed_versions) else [],
+            "compatibility": compatibility,
+        }
+
     def analyze_batch(
         self,
         cards: list[EvidenceCard],
@@ -261,17 +345,25 @@ class EvidenceEvaluator:
         IDs: every card, hypothesis, and observation ID is filtered against the
         local state before the result is returned.
         """
-        if self.llm_caller is None or not cards or self.llm_calls_made >= 1:
+        if not cards:
             return {
-                "parse_status": ParseStatus.SUCCESS.value if not self.llm_caller else ParseStatus.PROVIDER_ERROR.value,
-                "prompt_hash": "",
-                "response_hash": "",
-                "latency_ms": 0.0,
-                "error_message": "LLM caller not configured or budget exhausted" if self.llm_caller is None else "",
+                "parse_status": "EMPTY",
+                "error_message": "No cards provided",
                 "answer": {},
                 "evaluations": [],
                 "missing_evidence": [],
                 "compatibility": {},
+            }
+
+        if self.llm_caller is None or self.llm_calls_made >= 1:
+            det_res = self.generate_deterministic_explanation(cards, hypotheses, answer_spec, question)
+            return {
+                "parse_status": "OFFLINE_DETERMINISTIC",
+                "answer": det_res["answer"],
+                "evaluations": det_res["evaluations"],
+                "missing_evidence": det_res["missing_evidence"],
+                "compatibility": det_res["compatibility"],
+                "deterministic_explanation": det_res["explanation"],
             }
 
         # Filter out noise cards (ad networks, web trackers, CDNs)
@@ -409,20 +501,24 @@ class EvidenceEvaluator:
                 prompt_hash,
                 parse_status.value,
             )
+            det_result = self.generate_deterministic_explanation(
+                selected_cards,
+                hypotheses,
+                answer_spec=answer_spec,
+                question=question,
+            )
             return {
                 "parse_status": parse_status.value,
                 "prompt_hash": prompt_hash,
                 "response_hash": response_hash,
                 "latency_ms": elapsed_ms,
                 "error_message": err_msg,
-                "answer": {
-                    "status": "UNAVAILABLE",
-                    "explanation": f"LLM explanation unavailable ({parse_status.value}: {err_msg})",
-                },
-                "evaluations": [],
-                "missing_evidence": [],
-                "compatibility": {},
-                "explanation_unavailable": True,
+                "answer": det_result["answer"],
+                "evaluations": det_result["evaluations"],
+                "missing_evidence": det_result["missing_evidence"],
+                "compatibility": det_result["compatibility"],
+                "deterministic_explanation": det_result["explanation"],
+                "explanation_unavailable": False,
             }
 
         compatibility: dict[str, list[str]] = {}

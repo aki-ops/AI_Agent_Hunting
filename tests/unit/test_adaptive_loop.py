@@ -164,8 +164,8 @@ def test_engine_adaptive_loop_bounded_to_two_iterations():
     assert len(adaptive_ops) == 2
     assert adaptive_ops == ["find_file_version", "find_process_version"]
 
-    # Since ProductVersion was never returned in evidence rows, answer status must be PARTIAL, INCONCLUSIVE, or NOT_FOUND (never false ANSWERED)
-    assert result.account.answer["status"] in ("PARTIAL", "INCONCLUSIVE", "NOT_FOUND")
+    # Since ProductVersion was never returned in evidence rows, answer status must be PARTIAL, PARTIALLY_SUPPORTED, INCONCLUSIVE, or NOT_FOUND (never false ANSWERED)
+    assert result.account.answer["status"] in ("PARTIAL", "PARTIALLY_SUPPORTED", "INCONCLUSIVE", "NOT_FOUND")
 
 
 def test_engine_adaptive_loop_stops_early_when_evidence_found():

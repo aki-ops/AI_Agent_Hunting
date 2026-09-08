@@ -11,5 +11,6 @@
   ],
   "prompt_hash": "",
   "validation_result": "DETERMINISTIC_CAPABILITY_MATCH",
-  "iteration": 2
+  "iteration": 2,
+  "available_schema_fields": []
 }

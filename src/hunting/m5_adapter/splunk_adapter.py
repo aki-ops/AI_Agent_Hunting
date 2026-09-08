@@ -505,7 +505,7 @@ class SplunkLiveAdapter:
             ProviderOperation("cdb_network_connections", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_net_search", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_file_writes", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("cdb_file_search", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("cdb_file_search", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required", semantic_intents=("software_version",), input_entity_kinds=("host", "process", "file"), output_fields=("ProductVersion", "FileVersion", "Version")),
             ProviderOperation("cdb_dns_queries", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_dns_search", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_persistence_artifacts", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
@@ -519,9 +519,9 @@ class SplunkLiveAdapter:
             ProviderOperation("find_web_activity_from_client_ip", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_dns_activity_from_client_ip", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_web_activity_from_endpoint", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("find_process_from_endpoint", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("find_file_change_from_endpoint", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("find_file_change_from_process", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_process_from_endpoint", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required", semantic_intents=("software_version",), input_entity_kinds=("host", "process"), output_fields=("ProductVersion", "FileVersion", "Version")),
+            ProviderOperation("find_file_change_from_endpoint", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required", semantic_intents=("software_version",), input_entity_kinds=("host", "file"), output_fields=("ProductVersion", "FileVersion", "Version")),
+            ProviderOperation("find_file_change_from_process", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required", semantic_intents=("software_version",), input_entity_kinds=("process", "file"), output_fields=("ProductVersion", "FileVersion", "Version")),
             ProviderOperation("resolve_account_to_email", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_outbound_message_metadata", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("resolve_recipient_identity", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
@@ -611,7 +611,8 @@ class SplunkLiveAdapter:
                 safe_terms = [str(entity).replace('"', "")[:200].strip()]
             safe_groups: list[list[str]] = []
             for group in search_groups or []:
-                aliases = [str(term).replace('"', "")[:200].strip() for term in group if str(term).strip()]
+                terms_iter = group.terms if hasattr(group, "terms") else group
+                aliases = [str(term).replace('"', "")[:200].strip() for term in terms_iter if str(term).strip()]
                 if aliases:
                     safe_groups.append(aliases)
             if safe_groups:
@@ -624,8 +625,15 @@ class SplunkLiveAdapter:
             search_head = f'search index="{self.index}"'
             if term_clause:
                 search_head += f" {term_clause}"
+            rex_version = (
+                " | rex field=_raw \"(?i)<Data Name=[\\\"']ProductVersion[\\\"']>(?<ProductVersion>[^<]+)</Data>\""
+                " | rex field=_raw \"(?i)<Data Name=[\\\"']FileVersion[\\\"']>(?<FileVersion>[^<]+)</Data>\""
+                " | rex field=_raw \"(?i)ProductVersion[:= ]+(?<ProductVersion>[^\\r\\n,]+)\""
+                " | rex field=_raw \"(?i)FileVersion[:= ]+(?<FileVersion>[^\\r\\n,]+)\""
+                " | rex field=_raw \"(?i)version[\\\"':= ]+(?<Version>[0-9]+(\\.[0-9]+)+)\""
+            )
             return (
-                f'{search_head} | head {limit + 1} '
+                f'{search_head}{rex_version} | head {limit + 1} '
                 '| table _time, host, sourcetype, user, Image, CommandLine, Path, '
                 'TargetFilename, ProductVersion, FileVersion, Version, uri, site, _raw',
                 earliest_iso,
@@ -772,19 +780,51 @@ class SplunkLiveAdapter:
 
         if operation_id == "find_process_from_endpoint":
             ent_val = str(getattr(entity, "name", str(entity or ""))).replace('"', '').strip()
+            extra_filter = ""
+            safe_terms = [
+                str(t).replace('"', '')[:200].strip()
+                for t in (search_terms or [])
+                if str(t).strip() and str(t).strip().casefold() != ent_val.casefold()
+            ]
+            if safe_terms:
+                extra_filter = " (" + " OR ".join(f'"{t}"' for t in safe_terms) + ")"
+            rex_version = (
+                " | rex field=_raw \"(?i)<Data Name=[\\\"']ProductVersion[\\\"']>(?<ProductVersion>[^<]+)</Data>\""
+                " | rex field=_raw \"(?i)<Data Name=[\\\"']FileVersion[\\\"']>(?<FileVersion>[^<]+)</Data>\""
+                " | rex field=_raw \"(?i)ProductVersion[:= ]+(?<ProductVersion>[^\\r\\n,]+)\""
+                " | rex field=_raw \"(?i)FileVersion[:= ]+(?<FileVersion>[^\\r\\n,]+)\""
+                " | rex field=_raw \"(?i)version[\\\"':= ]+(?<Version>[0-9]+(\\.[0-9]+)+)\""
+            )
             spl = (
                 f'search index="{self.index}" (sourcetype="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=1) '
-                f'(host="*{ent_val}*" OR ComputerName="*{ent_val}*") '
+                f'(host="*{ent_val}*" OR ComputerName="*{ent_val}*"){extra_filter}'
+                f'{rex_version} '
                 f'| head {limit + 1} '
-                f'| table _time, host, ComputerName, Image, CommandLine, ParentImage, User, ProcessId, _raw'
+                f'| table _time, host, ComputerName, Image, CommandLine, ParentImage, User, ProcessId, ProductVersion, FileVersion, Version, _raw'
             )
             return spl, earliest_iso, latest_iso
 
         if operation_id == "find_file_change_from_endpoint":
             ent_val = str(getattr(entity, "name", str(entity or ""))).replace('"', '').strip()
+            extra_filter = ""
+            safe_terms = [
+                str(t).replace('"', '')[:200].strip()
+                for t in (search_terms or [])
+                if str(t).strip() and str(t).strip().casefold() != ent_val.casefold()
+            ]
+            if safe_terms:
+                extra_filter = " (" + " OR ".join(f'"{t}"' for t in safe_terms) + ")"
+            rex_version = (
+                " | rex field=_raw \"(?i)<Data Name=[\\\"']ProductVersion[\\\"']>(?<ProductVersion>[^<]+)</Data>\""
+                " | rex field=_raw \"(?i)<Data Name=[\\\"']FileVersion[\\\"']>(?<FileVersion>[^<]+)</Data>\""
+                " | rex field=_raw \"(?i)ProductVersion[:= ]+(?<ProductVersion>[^\\r\\n,]+)\""
+                " | rex field=_raw \"(?i)FileVersion[:= ]+(?<FileVersion>[^\\r\\n,]+)\""
+                " | rex field=_raw \"(?i)version[\\\"':= ]+(?<Version>[0-9]+(\\.[0-9]+)+)\""
+            )
             spl = (
                 f'search index="{self.index}" (sourcetype="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=11) '
-                f'(host="*{ent_val}*" OR ComputerName="*{ent_val}*") '
+                f'(host="*{ent_val}*" OR ComputerName="*{ent_val}*"){extra_filter}'
+                f'{rex_version} '
                 f'| head {limit + 1} '
                 f'| table _time, host, ComputerName, TargetFilename, Image, ProcessId, ProductVersion, FileVersion, Version, _raw'
             )
@@ -792,11 +832,19 @@ class SplunkLiveAdapter:
 
         if operation_id == "find_file_change_from_process":
             ent_val = str(getattr(entity, "name", str(entity or ""))).replace('"', '').strip()
+            rex_version = (
+                " | rex field=_raw \"(?i)<Data Name=[\\\"']ProductVersion[\\\"']>(?<ProductVersion>[^<]+)</Data>\""
+                " | rex field=_raw \"(?i)<Data Name=[\\\"']FileVersion[\\\"']>(?<FileVersion>[^<]+)</Data>\""
+                " | rex field=_raw \"(?i)ProductVersion[:= ]+(?<ProductVersion>[^\\r\\n,]+)\""
+                " | rex field=_raw \"(?i)FileVersion[:= ]+(?<FileVersion>[^\\r\\n,]+)\""
+                " | rex field=_raw \"(?i)version[\\\"':= ]+(?<Version>[0-9]+(\\.[0-9]+)+)\""
+            )
             spl = (
                 f'search index="{self.index}" (sourcetype="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=11) '
-                f'(ProcessId="{ent_val}" OR Image="*{ent_val}*") '
+                f'(ProcessId="{ent_val}" OR Image="*{ent_val}*")'
+                f'{rex_version} '
                 f'| head {limit + 1} '
-                f'| table _time, host, TargetFilename, Image, ProcessId, _raw'
+                f'| table _time, host, TargetFilename, Image, ProcessId, ProductVersion, FileVersion, Version, _raw'
             )
             return spl, earliest_iso, latest_iso
 
@@ -897,6 +945,11 @@ class SplunkLiveAdapter:
                 rex_clauses.extend([
                     '| rex field=_raw "<Data Name=\'TargetFilename\'>(?<file_path>[^<]+)</Data>"',
                     '| rex field=_raw "<Data Name=\'Image\'>(?<image>[^<]+)</Data>"',
+                    '| rex field=_raw "(?i)<Data Name=[\\\'\\\"ProductVersion[\\\'\\\">[^<]+</Data>"',
+                    '| rex field=_raw "(?i)<Data Name=[\\\'\\\"FileVersion[\\\'\\\">[^<]+</Data>"',
+                    '| rex field=_raw "(?i)ProductVersion[:= ]+([^\\r\\n,]+)"',
+                    '| rex field=_raw "(?i)FileVersion[:= ]+([^\\r\\n,]+)"',
+                    '| rex field=_raw "(?i)version[\\\'\\\":= ]+([0-9]+(\\.[0-9]+)+)"',
                 ])
             elif kind == "authentication_activity":
                 spl_parts.append('sourcetype="WinEventLog:Security" (EventCode=4624 OR EventCode=4625)')
@@ -968,7 +1021,7 @@ class SplunkLiveAdapter:
         query_parts.extend(rex_clauses)
         query_parts.extend(filter_clauses)
         query_parts.append(f"| head {limit + 1}")
-        query_parts.append("| table _time, host, sourcetype, image, cmdline, parent_image, user, pid, ppid, destination_ip, destination_port, source_ip, source_port, protocol, file_path, domain, query, logon_type, status, hash, uri, cs_uri_stem, cs_method, client_ip, server_ip, c_ip, s_ip, dest_ip, src_ip, dest, http_method, site, cs_host, _raw")
+        query_parts.append("| table _time, host, sourcetype, image, cmdline, parent_image, user, pid, ppid, destination_ip, destination_port, source_ip, source_port, protocol, file_path, domain, query, logon_type, status, hash, uri, cs_uri_stem, cs_method, client_ip, server_ip, c_ip, s_ip, dest_ip, src_ip, dest, http_method, site, cs_host, ProductVersion, FileVersion, Version, TargetFilename, _raw")
 
         spl_final = "\n".join(query_parts)
         return spl_final, earliest_iso, latest_iso
@@ -1228,6 +1281,26 @@ class SplunkLiveAdapter:
                 row["pid"] = r["ProcessId"]
             if "DestinationIp" in r and "destination_ip" not in row:
                 row["destination_ip"] = r["DestinationIp"]
+
+            # Canonicalize common Windows/native field names while retaining
+            # the original fields above for audit and replay.  Evidence and
+            # grouping operate on these semantic aliases, not on one vendor's
+            # capitalization convention.
+            if "Path" in r and r.get("Path") not in (None, ""):
+                row.setdefault("path", r["Path"])
+                row.setdefault("file_path", r["Path"])
+            if "TargetFilename" in r and r.get("TargetFilename") not in (None, ""):
+                row.setdefault("path", r["TargetFilename"])
+                row.setdefault("file_path", r["TargetFilename"])
+            if "Name" in r and r.get("Name") not in (None, ""):
+                row.setdefault("process_name", r["Name"])
+                row.setdefault("image", r["Name"])
+            if "ProductVersion" in r and r.get("ProductVersion") not in (None, ""):
+                row.setdefault("software_version", r["ProductVersion"])
+            elif "FileVersion" in r and r.get("FileVersion") not in (None, ""):
+                row.setdefault("software_version", r["FileVersion"])
+            elif "Version" in r and r.get("Version") not in (None, ""):
+                row.setdefault("software_version", r["Version"])
 
             normalized_rows.append(row)
 

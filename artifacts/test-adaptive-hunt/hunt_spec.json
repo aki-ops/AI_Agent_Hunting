@@ -5,7 +5,8 @@
     "required_fields": [
       "ProductVersion"
     ],
-    "requires_binding": true
+    "requires_binding": true,
+    "allowed_values": []
   },
   "anchors": [
     {

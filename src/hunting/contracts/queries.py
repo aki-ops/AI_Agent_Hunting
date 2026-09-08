@@ -82,6 +82,8 @@ class ProviderOperation:
     limit_semantics: str = "provider-defined"
     rate_limit: dict[str, Any] | None = None
     semantic_intents: tuple[str, ...] = ()
+    input_entity_kinds: tuple[str, ...] = ()
+    output_fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

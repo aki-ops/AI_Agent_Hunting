@@ -30,12 +30,14 @@
 
 | Evidence | Why it matters | Source |
 |---|---|---|
-| Telemetry observations (2 events on wrk-amber) | Observed operational telemetry within the monitored scope. | 2 event(s); representative observations: `obs-discovery-1`, `obs-adaptive-2` |
+| Process: tor.exe Path: C:\Tor\firefox.exe Host: wrk-amber | Observed process execution providing evidence of code execution on endpoint. | 1 event(s); representative observations: `obs-adaptive-2` |
+| Telemetry observations (1 events on wrk-amber) | Observed operational telemetry within the monitored scope. | 1 event(s); representative observations: `obs-discovery-1` |
 
 ### Explanation
 
 - **Deterministic Graph Resolution:** The target object `13.5.2` was proven through the verified 4-step causal provenance chain.
-- **LLM Explanation:** Not requested / offline deterministic mode.
+- **LLM Narrative Analysis:** Not requested / offline deterministic mode.
+- Observed process execution providing evidence of code execution on endpoint.
 - Observed operational telemetry within the monitored scope.
 - Limitation: No definitive adversary presence or refutation established in searched frame.
 
@@ -49,7 +51,7 @@
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2533600387600'>
+<MagicMock name='mock.last_query_text' id='2385217660688'>
 ```
 
 ### `qp-adaptive-0-1` — `adaptive-answer`
@@ -60,7 +62,7 @@ Provider: `mock_splunk`; completeness: `complete`
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2533600387600'>
+<MagicMock name='mock.last_query_text' id='2385217660688'>
 ```
 
 ## 5. Cost

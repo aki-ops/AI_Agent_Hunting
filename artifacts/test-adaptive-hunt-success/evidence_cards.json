@@ -1,21 +1,60 @@
 [
   {
+    "id": "card-e5d92fdeb056",
+    "summary": "Process: tor.exe Path: C:\\Tor\\firefox.exe Host: wrk-amber",
+    "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
+    "fact_type": "process_execution",
+    "count": 1,
+    "confidence": "MEDIUM",
+    "hypotheses": [],
+    "requirements": [],
+    "query_ids": [
+      "qp-adaptive-0-1"
+    ],
+    "replay": {
+      "artifact": "observations.jsonl",
+      "query_ids": [
+        "qp-adaptive-0-1"
+      ],
+      "command": "python -m hunting.cli show-observation --observation-id obs-adaptive-2"
+    },
+    "entity_summary": {
+      "hosts": [
+        "wrk-amber"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2026-09-02T10:05:00Z",
+      "latest": "2026-09-02T10:05:00Z",
+      "span_events": 1
+    },
+    "field_summary": {
+      "file_paths": [
+        "C:\\Tor\\firefox.exe"
+      ],
+      "software_versions": [
+        "13.5.2"
+      ]
+    },
+    "representative_observation_ids": [
+      "obs-adaptive-2"
+    ]
+  },
+  {
     "id": "card-eef7b0502355",
-    "summary": "Telemetry observations (2 events on wrk-amber)",
+    "summary": "Telemetry observations (1 events on wrk-amber)",
     "why_it_matters": "Observed operational telemetry within the monitored scope.",
     "fact_type": "generic_telemetry",
-    "count": 2,
+    "count": 1,
     "confidence": "LOW",
     "hypotheses": [],
     "requirements": [],
     "query_ids": [
-      "qp-adaptive-0-1",
       "qp-discovery-0"
     ],
     "replay": {
       "artifact": "observations.jsonl",
       "query_ids": [
-        "qp-adaptive-0-1",
         "qp-discovery-0"
       ],
       "command": "python -m hunting.cli show-observation --observation-id obs-discovery-1"
@@ -30,13 +69,12 @@
     },
     "time_summary": {
       "earliest": "2026-09-02T10:00:00Z",
-      "latest": "2026-09-02T10:05:00Z",
-      "span_events": 2
+      "latest": "2026-09-02T10:00:00Z",
+      "span_events": 1
     },
     "field_summary": {},
     "representative_observation_ids": [
-      "obs-discovery-1",
-      "obs-adaptive-2"
+      "obs-discovery-1"
     ]
   }
 ]

@@ -26,12 +26,14 @@ class AnswerContract:
     answer_type: str
     required_fields: tuple[str, ...] = ()
     requires_binding: bool = True
+    allowed_values: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "answer_type": self.answer_type,
             "required_fields": list(self.required_fields),
             "requires_binding": self.requires_binding,
+            "allowed_values": list(self.allowed_values),
         }
 
 
@@ -43,6 +45,25 @@ class Anchor:
     kind: str = "unknown"
     origin: str = "input"
     confidence: float = 1.0
+
+
+@dataclass(frozen=True)
+class QueryTermGroup:
+    """Group of semantic query terms combined with a boolean operator."""
+    terms: tuple[str, ...]
+    mode: str = "OR"  # "OR" | "AND"
+    required: bool = True
+
+    def __post_init__(self) -> None:
+        if isinstance(self.terms, (list, set)):
+            object.__setattr__(self, "terms", tuple(self.terms))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "terms": list(self.terms),
+            "mode": self.mode,
+            "required": self.required,
+        }
 
 
 @dataclass(frozen=True)
@@ -183,16 +204,21 @@ class HuntSpec:
             "uncertainties": list(self.uncertainties),
         }
 
-    def discovery_groups(self) -> list[list[str]]:
-        """Return high-recall lexical groups for provider discovery.
+    def discovery_groups(self, relaxation_level: int = 1) -> list[list[str]]:
+        """Return high-recall lexical groups for provider discovery with progressive relaxation.
 
         Aliases in one semantic role are alternatives (OR); roles are
         combined (AND). This prevents an LLM emitting many aliases from
         accidentally requiring every alias in one event.
+
+        Relaxation levels:
+        - Level 1: Subject (Group 1) AND Evidence/Software (Group 2)
+        - Level 2: Only Evidence/Software (Group 2) (e.g. if subject identity is uncertain)
+        - Level 3: Relaxed Evidence aliases (pruning narrow/path terms, retaining core names)
         """
         groups: list[list[str]] = []
         anchor_values = [a.value for a in self.anchors if a.value.strip()]
-        if anchor_values:
+        if anchor_values and relaxation_level == 1:
             subject_aliases: list[str] = []
             for value in anchor_values:
                 subject_aliases.append(value)
@@ -212,10 +238,21 @@ class HuntSpec:
             for chunk in chunks:
                 text = chunk.strip().strip('"')
                 if text and len(text) >= 3 and text.casefold() not in {v.casefold() for v in evidence_aliases}:
+                    if relaxation_level >= 3 and ("\\" in text or "/" in text or len(text) > 30):
+                        continue
                     evidence_aliases.append(text)
         if evidence_aliases:
             groups.append(evidence_aliases[:24])
         return groups
+
+    def structured_query_groups(self, relaxation_level: int = 1) -> list[QueryTermGroup]:
+        """Return structured QueryTermGroup instances for boolean query assembly."""
+        raw_groups = self.discovery_groups(relaxation_level=relaxation_level)
+        return [
+            QueryTermGroup(terms=tuple(grp), mode="OR", required=True)
+            for grp in raw_groups
+            if grp
+        ]
 
 
 __all__ = [

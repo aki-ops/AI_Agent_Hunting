@@ -1,5 +1,9 @@
 """Query Planner and Validator module."""
-from hunting.planner.adaptive import AdaptiveDecision, AdaptiveOperationPlanner
+from hunting.planner.adaptive import (
+    AdaptiveDecision,
+    AdaptiveOperationPlanner,
+    compatible_operations,
+)
 from hunting.planner.cache import PlanCache
 from hunting.planner.planner import CanonicalQueryPlanner
 from hunting.planner.templates import QueryTemplate, build_default_query_templates
@@ -14,4 +18,5 @@ __all__ = [
     "build_default_query_templates",
     "AdaptiveDecision",
     "AdaptiveOperationPlanner",
+    "compatible_operations",
 ]

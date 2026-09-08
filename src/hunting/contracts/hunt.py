@@ -115,6 +115,7 @@ class HypothesisOrigin(str, Enum):
 class HypothesisStatus(str, Enum):
     LIVE = "LIVE"
     SUPPORTED = "SUPPORTED"
+    PARTIALLY_SUPPORTED = "PARTIALLY_SUPPORTED"
     WEAKENED = "WEAKENED"
     REFUTED = "REFUTED"
     UNTESTABLE = "UNTESTABLE"
@@ -165,10 +166,16 @@ class RequirementStatus(str, Enum):
 
 class AnswerStatus(str, Enum):
     """Forensic answer completeness status."""
+    ANSWERED = "ANSWERED"
     FULLY_ANSWERED = "FULLY_ANSWERED"
+    PARTIALLY_SUPPORTED = "PARTIALLY_SUPPORTED"
     PARTIALLY_ANSWERED = "PARTIALLY_ANSWERED"
+    VERSION_UNAVAILABLE = "VERSION_UNAVAILABLE"
+    NOT_FOUND = "NOT_FOUND"
+    UNSUPPORTED = "UNSUPPORTED"
     UNANSWERED = "UNANSWERED"
     INCONCLUSIVE = "INCONCLUSIVE"
+
 
 
 @dataclass
@@ -315,6 +322,8 @@ class EvidenceCard:
     fact_type: str = ""
     completeness: str = "complete"
     relations: list[dict[str, Any]] = field(default_factory=list)
+    supports: list[str] = field(default_factory=list)
+    does_not_prove: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -327,6 +336,7 @@ class HuntOutcome(str, Enum):
     """Canonical epistemic outcomes for threat hunting hypotheses."""
     SUPPORTED = "SUPPORTED"
     SUPPORTED_WITH_LIMITATIONS = "SUPPORTED_WITH_LIMITATIONS"
+    PARTIALLY_SUPPORTED = "PARTIALLY_SUPPORTED"
     CONTRADICTED = "CONTRADICTED"
     INCONCLUSIVE = "INCONCLUSIVE"
     INCONCLUSIVE_BUDGET_EXHAUSTED = "INCONCLUSIVE_BUDGET_EXHAUSTED"
@@ -375,6 +385,7 @@ class HuntState:
     semantic_analysis: dict[str, Any] = field(default_factory=dict)
     semantic_intent: SemanticHuntIntent | None = None
     hunt_spec: HuntSpec | None = None
+    evidence_state: Any | None = None
     discovery_completed: bool = False
     discovery_anchor_values: list[str] = field(default_factory=list)
     adaptive_decision: dict[str, Any] = field(default_factory=dict)
@@ -416,6 +427,7 @@ class FinalHuntAccount:
     evidence_assessments: list[EvidenceAssessment] = field(default_factory=list)
     investigation_model: InvestigationModel | None = None
     relation_graph: RelationGraph | None = None
+    evidence_state: Any | None = None
     case: Any | None = None
     provenance_chain: list[Any] = field(default_factory=list)
     answer_status: AnswerStatus | str = AnswerStatus.UNANSWERED
@@ -449,8 +461,17 @@ class FinalHuntAccount:
                 return HuntOutcome.SUPPORTED_WITH_LIMITATIONS
             return HuntOutcome.INCONCLUSIVE_BUDGET_EXHAUSTED
 
+        if self.answer_status in (
+            AnswerStatus.PARTIALLY_SUPPORTED,
+            "PARTIALLY_SUPPORTED",
+            AnswerStatus.VERSION_UNAVAILABLE,
+            "VERSION_UNAVAILABLE",
+        ):
+            return HuntOutcome.PARTIALLY_SUPPORTED
+
         if self.answer_status in (AnswerStatus.PARTIALLY_ANSWERED, "PARTIALLY_ANSWERED"):
             return HuntOutcome.SUPPORTED_WITH_LIMITATIONS
+
 
         if any(h.id in self.supporting for h in attack_hypos):
             return HuntOutcome.SUPPORTED

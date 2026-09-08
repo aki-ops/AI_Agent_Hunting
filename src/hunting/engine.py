@@ -49,6 +49,12 @@ from hunting.contracts.hunt import (
     RequirementStatus,
     StoppingDecision,
 )
+from hunting.contracts.evidence_state import (
+    AnswerAttributeState,
+    ArtifactEvidence,
+    AttributeEvidence,
+    EvidenceState,
+)
 from hunting.contracts.hunt_spec import HuntSpec
 from hunting.contracts.investigation_model import (
     GraphEdge,
@@ -157,52 +163,67 @@ class HypothesisHuntEngine:
         if "search_text" not in operation_ids:
             return
 
-        query_id = f"qp-discovery-{state.turn or 0}"
+        import inspect
+
+        # Progressive query relaxation across levels 1, 2, and 3
+        qr = None
+        plan = None
         terms = [term.value for term in spec.search_terms[:24]]
-        search_groups = spec.discovery_groups()
-        plan = QueryPlan(
-            id=query_id,
-            requirement_id="discovery",
-            provider_id=scope.provider_id,
-            scope_id=scope.scope_id,
-            operation_id="search_text",
-            parameters={
+
+        for relaxation_level in (1, 2, 3):
+            search_groups = spec.discovery_groups(relaxation_level=relaxation_level)
+            if not search_groups:
+                continue
+
+            query_id = f"qp-discovery-{state.turn or 0}" if relaxation_level == 1 else f"qp-discovery-{state.turn or 0}-rel{relaxation_level}"
+            plan = QueryPlan(
+                id=query_id,
+                requirement_id="discovery",
+                provider_id=scope.provider_id,
+                scope_id=scope.scope_id,
+                operation_id="search_text",
+                parameters={
+                    "window": state.objective.time_window if state.objective else "",
+                    "limit": 500,
+                    "terms": terms,
+                    "term_groups": search_groups,
+                    "relaxation_level": relaxation_level,
+                    "purpose": "provider-neutral content discovery" if relaxation_level == 1 else f"provider-neutral content discovery (relaxation level {relaxation_level})",
+                },
+                is_targeted=False,
+            )
+            if step_callback:
+                step_callback("TURN_ACTION", {
+                    "turn": state.turn,
+                    "action": "DISCOVER (content)" if relaxation_level == 1 else f"DISCOVER (relaxation level {relaxation_level})",
+                    "operation": "search_text",
+                    "terms": terms,
+                    "relaxation_level": relaxation_level,
+                    "target": "provider scope",
+                })
+
+            kwargs: dict[str, Any] = {
+                "operation_id": "search_text",
+                "entity": AnyEntity(),
                 "window": state.objective.time_window if state.objective else "",
                 "limit": 500,
-                "terms": terms,
-                "term_groups": search_groups,
-                "purpose": "provider-neutral content discovery",
-            },
-            is_targeted=False,
-        )
-        if step_callback:
-            step_callback("TURN_ACTION", {
-                "turn": state.turn,
-                "action": "DISCOVER (content)",
-                "operation": "search_text",
-                "terms": terms,
-                "target": "provider scope",
-            })
+                "query_id": query_id,
+            }
+            if "search_terms" in inspect.signature(active_adapter.execute_query).parameters:
+                kwargs["search_terms"] = terms
+            if "search_groups" in inspect.signature(active_adapter.execute_query).parameters:
+                kwargs["search_groups"] = search_groups
+            qr = active_adapter.execute_query(**kwargs)
+            if hasattr(active_adapter, "last_query_text"):
+                plan.parameters["query_text"] = active_adapter.last_query_text
+            self.controller.record_query_execution(state, plan, qr)
 
-        import inspect
-        kwargs: dict[str, Any] = {
-            "operation_id": "search_text",
-            "entity": AnyEntity(),
-            "window": state.objective.time_window if state.objective else "",
-            "limit": 500,
-            "query_id": query_id,
-        }
-        if "search_terms" in inspect.signature(active_adapter.execute_query).parameters:
-            kwargs["search_terms"] = terms
-        if "search_groups" in inspect.signature(active_adapter.execute_query).parameters:
-            kwargs["search_groups"] = search_groups
-        qr = active_adapter.execute_query(**kwargs)
-        if hasattr(active_adapter, "last_query_text"):
-            plan.parameters["query_text"] = active_adapter.last_query_text
-        self.controller.record_query_execution(state, plan, qr)
+            if qr.rows:
+                break
+
         state.discovery_completed = True
 
-        if not qr.rows:
+        if qr is None or not qr.rows:
             return
 
         candidates: list[str] = []
@@ -303,6 +324,107 @@ class HypothesisHuntEngine:
                 followup_observations.append(obs)
             self.group_builder.ingest_delta(followup_observations)
             self.controller.set_evidence_cards(state, self.group_builder.build_cards())
+
+        self._update_evidence_state(state, ledger)
+
+    def _update_evidence_state(self, state: HuntState, ledger: ObservationLedger) -> None:
+        """Derive structured EvidenceState tracking artifact and attribute observations."""
+        answer_spec = (state.objective.answer_spec or {}) if state.objective else {}
+        answer_type = str(answer_spec.get("answer_type") or "software_version").lower()
+        question = (state.objective.statement or "") if state.objective else ""
+
+        target_artifact_name = "Tor Browser" if "tor" in question.lower() or any("tor" in str(getattr(c, "summary", "")).lower() for c in state.evidence_cards) else ""
+        artifact_host = ""
+        artifact_path = None
+        artifact_proc = None
+        artifact_obs_ids: list[str] = []
+        is_detected = False
+
+        for card in state.evidence_cards:
+            fps = [str(x) for x in card.field_summary.get("file_paths", [])]
+            imgs = [str(x) for x in card.field_summary.get("process_names", []) or card.field_summary.get("images", [])]
+            hosts = [str(x) for x in card.entity_summary.get("hosts", []) if str(x).strip()]
+            c_sum = str(getattr(card, "summary", ""))
+            has_tor = any("tor" in s.lower() for s in (fps + imgs + [c_sum]))
+            if card.fact_type in ("process_execution", "software_artifact", "file_modification") or has_tor:
+                is_detected = True
+                if hosts and not artifact_host:
+                    artifact_host = hosts[0]
+                if fps and not artifact_path:
+                    artifact_path = fps[0]
+                if imgs and not artifact_proc:
+                    artifact_proc = imgs[0]
+                if not target_artifact_name and has_tor:
+                    target_artifact_name = "Tor Browser"
+                artifact_obs_ids.extend(card.representative_observation_ids)
+
+        for obs in ledger.observations:
+            f = obs.fields
+            img = str(f.get("Image") or f.get("image") or f.get("process_name") or "")
+            path = str(f.get("Path") or f.get("path") or f.get("TargetFilename") or "")
+            cmd = str(f.get("CommandLine") or f.get("cmdline") or "")
+            h = str(f.get("host") or "")
+            if any("tor" in s.lower() for s in (img, path, cmd)):
+                is_detected = True
+                if h and not artifact_host:
+                    artifact_host = h
+                if path and not artifact_path:
+                    artifact_path = path
+                if img and not artifact_proc:
+                    artifact_proc = img
+                if not target_artifact_name:
+                    target_artifact_name = "Tor Browser"
+                if obs.id not in artifact_obs_ids:
+                    artifact_obs_ids.append(obs.id)
+
+        version_fields = ("ProductVersion", "FileVersion", "Version", "version", "software_version")
+        observed_versions: list[str] = []
+        version_obs_ids: list[str] = []
+        for obs in ledger.observations:
+            for vf in version_fields:
+                val = obs.fields.get(vf)
+                if val is not None and str(val).strip() and str(val).strip() != "-":
+                    v_clean = str(val).strip()
+                    if v_clean not in observed_versions:
+                        observed_versions.append(v_clean)
+                    if obs.id not in version_obs_ids:
+                        version_obs_ids.append(obs.id)
+
+        ev_state = EvidenceState()
+        if is_detected:
+            ev_state.artifact = ArtifactEvidence(
+                type="software",
+                name=target_artifact_name or "Target Artifact",
+                host=artifact_host,
+                path=artifact_path,
+                process_name=artifact_proc,
+                detected=True,
+                observation_ids=artifact_obs_ids,
+            )
+
+        if observed_versions:
+            ev_state.set_attribute(
+                answer_type,
+                AnswerAttributeState.OBSERVED,
+                values=observed_versions,
+                obs_ids=version_obs_ids,
+            )
+        elif is_detected:
+            ev_state.set_attribute(
+                answer_type,
+                AnswerAttributeState.NOT_OBSERVED,
+                values=[],
+                obs_ids=[],
+            )
+        else:
+            ev_state.set_attribute(
+                answer_type,
+                AnswerAttributeState.UNKNOWN,
+                values=[],
+                obs_ids=[],
+            )
+
+        state.evidence_state = ev_state
 
     def _evaluate_identity_linkage(
         self,
@@ -625,7 +747,10 @@ class HypothesisHuntEngine:
                     for field, value in observation.fields.items()
                     if value not in (None, "", [], {})
                 }
-                observed_fields.update(schema_fields)
+                # Schema discovery only tells us which fields the provider can
+                # expose.  It is not an observation and must never satisfy an
+                # answer contract by itself.  Readiness is based exclusively
+                # on non-empty values present in actual ledger observations.
                 decision = self.adaptive_planner.choose(
                     state.hunt_spec,
                     descriptor,
@@ -643,6 +768,9 @@ class HypothesisHuntEngine:
                     "prompt_hash": decision.prompt_hash,
                     "validation_result": decision.validation_result,
                     "iteration": adaptive_iter,
+                    # Diagnostic capability metadata; deliberately not used
+                    # to mark the answer contract as satisfied.
+                    "available_schema_fields": sorted(schema_fields),
                 }
 
                 if decision.ready_for_answer:
@@ -654,9 +782,24 @@ class HypothesisHuntEngine:
 
                 attempted_adaptive_operations.append(decision.operation_id)
 
-                # Determine target entity for adaptive query
+                # Determine target entity and discovered artifacts for adaptive query
                 target_host = ""
-                if state.discovery_anchor_values:
+                discovered_paths: list[str] = []
+                discovered_processes: list[str] = []
+                for card in state.evidence_cards:
+                    for h in card.field_summary.get("host", []) + card.field_summary.get("ComputerName", []):
+                        if h and not target_host and "." not in str(h) and " " not in str(h):
+                            target_host = str(h).strip()
+                    for p in card.field_summary.get("Path", []) + card.field_summary.get("TargetFilename", []) + card.field_summary.get("file_paths", []):
+                        p_str = str(p).strip()
+                        if p_str and p_str not in discovered_paths:
+                            discovered_paths.append(p_str)
+                    for pr in card.field_summary.get("Image", []) + card.field_summary.get("process_name", []):
+                        pr_str = str(pr).strip()
+                        if pr_str and pr_str not in discovered_processes:
+                            discovered_processes.append(pr_str)
+
+                if not target_host and state.discovery_anchor_values:
                     target_host = next(
                         (str(value) for value in state.discovery_anchor_values if str(value).strip() and "." not in str(value)),
                         "",
@@ -698,11 +841,29 @@ class HypothesisHuntEngine:
                     }
                     # Pass search_terms for all adaptive operations so the adapter
                     # can use them as content filters (e.g., file name, software name).
-                    if decision.search_terms:
+                    refinement_terms = list(decision.search_terms or ())
+                    for pr in discovered_processes:
+                        pr_name = pr.replace("/", "\\").split("\\")[-1]
+                        if pr_name and pr_name not in refinement_terms:
+                            refinement_terms.append(pr_name)
+                    for path_val in discovered_paths:
+                        file_name = path_val.replace("/", "\\").split("\\")[-1]
+                        if file_name and file_name not in refinement_terms:
+                            refinement_terms.append(file_name)
+
+                    if refinement_terms:
                         import inspect
                         sig = inspect.signature(active_adapter.execute_query)
                         if "search_terms" in sig.parameters:
-                            exec_kwargs["search_terms"] = list(decision.search_terms)
+                            exec_kwargs["search_terms"] = refinement_terms
+                        if "search_groups" in sig.parameters and state.hunt_spec:
+                            # Preserve semantic OR groups.  Flattening these
+                            # terms would turn every alias into an AND clause
+                            # and can eliminate valid events.
+                            groups = state.hunt_spec.discovery_groups(relaxation_level=2)
+                            if target_host:
+                                groups = [[target_host], *groups]
+                            exec_kwargs["search_groups"] = groups
 
                     try:
                         adaptive_result = active_adapter.execute_query(**exec_kwargs)
@@ -733,6 +894,7 @@ class HypothesisHuntEngine:
                         if adaptive_observations:
                             self.group_builder.ingest_delta(adaptive_observations)
                             self.controller.set_evidence_cards(state, self.group_builder.build_cards())
+                            self._update_evidence_state(state, ledger)
 
             # Re-check readiness after loop completion
             observed_fields = {
@@ -741,7 +903,9 @@ class HypothesisHuntEngine:
                 for field, value in observation.fields.items()
                 if value not in (None, "", [], {})
             }
-            observed_fields.update(schema_fields)
+            # Keep provider schema metadata separate from observed answer
+            # values.  A field name in fieldsummary/schema output is a
+            # capability signal, not evidence for the requested answer.
             final_decision = self.adaptive_planner.choose(
                 state.hunt_spec,
                 descriptor,
@@ -1996,6 +2160,7 @@ class HypothesisHuntEngine:
                     response="compiler_unstructured_response",
                 )
         state.llm_usage = self.llm_tracker.to_dict()
+        self._update_evidence_state(state, ledger)
 
         account = build_final_hunt_account(state, ledger=ledger)
         # The CLI report is intentionally concise. Full observations, raw

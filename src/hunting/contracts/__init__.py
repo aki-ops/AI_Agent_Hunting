@@ -79,6 +79,12 @@ from hunting.contracts.hunt import (
     SubjectEntity,
     TimePolicy,
 )
+from hunting.contracts.evidence_state import (
+    AnswerAttributeState,
+    ArtifactEvidence,
+    AttributeEvidence,
+    EvidenceState,
+)
 from hunting.contracts.hunt_spec import (
     Anchor,
     AnswerContract,

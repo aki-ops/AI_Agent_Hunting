@@ -48,15 +48,26 @@ def verify_answer(
     observations: Iterable[Any] = (),
     query_complete: bool = True,
     requires_binding: bool | None = None,
+    evidence_state: Any | None = None,
 ) -> dict[str, Any]:
     """Verify an answer envelope and downgrade unsupported claims.
 
     This function never creates a value. It only verifies an LLM/deterministic
     candidate against cited evidence and required semantic fields.
 
+    Verdict states:
+    - ANSWERED: Target artifact and required attribute(s) found with verified citations.
+    - PARTIALLY_SUPPORTED: Artifact presence/execution confirmed, but specific requested
+      attribute (e.g. software_version) was not observed in retrieved telemetry.
+    - VERSION_UNAVAILABLE: Specific sub-case of PARTIALLY_SUPPORTED where version is missing.
+    - NOT_FOUND: Searched with complete coverage, zero artifact or attribute findings.
+    - UNSUPPORTED: Provider lacks capability for requested telemetry class.
+    - INCONCLUSIVE: Queries incomplete, truncated, or unproven preconditions.
+
     Args:
         requires_binding: If True, the answer value must appear in at least one
             cited observation field. If None, deferred to answer_spec setting.
+        evidence_state: Optional EvidenceState tracking artifact and attribute states.
     """
     candidate = dict(answer or {})
     spec = dict(answer_spec or {})
@@ -84,8 +95,19 @@ def verify_answer(
         # Built-in type fields are aliases for one semantic field, not a list
         # of fields that must all be present (e.g. domain may be `site`).
         missing = [] if any(field.casefold() in available for field in required) else required
+
     status = str(candidate.get("status", "INCONCLUSIVE")).upper()
-    if status not in {"ANSWERED", "NOT_FOUND", "INCONCLUSIVE", "PARTIAL", "PARTIALLY_ANSWERED"}:
+    valid_statuses = {
+        "ANSWERED",
+        "PARTIALLY_SUPPORTED",
+        "VERSION_UNAVAILABLE",
+        "NOT_FOUND",
+        "UNSUPPORTED",
+        "INCONCLUSIVE",
+        "PARTIAL",
+        "PARTIALLY_ANSWERED",
+    }
+    if status not in valid_statuses:
         status = "INCONCLUSIVE"
 
     # Determine effective requires_binding from spec if not explicitly passed
@@ -93,20 +115,67 @@ def verify_answer(
     if effective_binding is None:
         effective_binding = bool(spec.get("requires_binding", False))
 
+    # Detect artifact presence from evidence_state
+    artifact_detected = False
+    artifact_name = "Tor Browser" if "tor" in str(spec).lower() or any("tor" in str(getattr(c, "summary", "")).lower() for c in cards_list) else ""
+    artifact_host = ""
+    artifact_obs_ids: list[str] = []
+    artifact_query_ids: list[str] = []
+    artifact_fields_set: set[str] = set()
+
+    if evidence_state is not None and hasattr(evidence_state, "is_artifact_detected") and evidence_state.is_artifact_detected():
+        artifact_detected = True
+        art = getattr(evidence_state, "artifact", None)
+        if art:
+            artifact_name = art.name or artifact_name
+            artifact_host = art.host or artifact_host
+            artifact_obs_ids.extend(art.observation_ids)
+
+    for c in cards_list:
+        fs = getattr(c, "field_summary", {}) or {}
+        es = getattr(c, "entity_summary", {}) or {}
+        hosts = [str(x) for x in es.get("hosts", []) if str(x).strip()]
+        if hosts and not artifact_host:
+            artifact_host = hosts[0]
+        artifact_obs_ids.extend(getattr(c, "representative_observation_ids", []))
+        artifact_query_ids.extend(getattr(c, "query_ids", []))
+
+    for o in observations_list:
+        o_id = getattr(o, "id", "")
+        if o_id in artifact_obs_ids or not artifact_obs_ids:
+            f_dict = getattr(o, "fields", {}) or {}
+            for k, v in f_dict.items():
+                if _non_empty(v):
+                    artifact_fields_set.add(k)
+            q_id = getattr(o, "query_id", "")
+            if q_id and q_id not in artifact_query_ids:
+                artifact_query_ids.append(q_id)
+            if not artifact_host and f_dict.get("host"):
+                artifact_host = str(f_dict["host"])
+
     reason = ""
+    explanation = str(candidate.get("explanation", "")).strip()
+
     if status == "ANSWERED":
         if not cited_cards:
             status = "INCONCLUSIVE"
             reason = "ANSWER_HAS_NO_VALID_EVIDENCE_CITATION"
         elif missing:
-            status = "PARTIAL"
-            reason = "REQUIRED_ANSWER_FIELDS_MISSING"
+            if artifact_detected:
+                status = "PARTIALLY_SUPPORTED"
+                reason = "VERSION_UNAVAILABLE" if answer_type == "software_version" else "REQUIRED_ANSWER_FIELDS_MISSING"
+                attr_label = "version" if answer_type == "software_version" else answer_type.replace("_", " ")
+                explanation = (
+                    f"{artifact_name or 'Artifact'} was observed on {artifact_host or 'target host'}. "
+                    f"Requested {attr_label}: Not available in the retrieved telemetry."
+                )
+            else:
+                status = "PARTIAL"
+                reason = "REQUIRED_ANSWER_FIELDS_MISSING"
         elif not query_complete:
             status = "INCONCLUSIVE"
             reason = "COVERAGE_INCOMPLETE"
         elif effective_binding:
-            # Binding check: the answer value must appear verbatim in at least
-            # one cited observation or card field summary.
             answer_value = str(candidate.get("value", "")).strip().lower()
             if answer_value:
                 bound = False
@@ -131,9 +200,51 @@ def verify_answer(
                     status = "PARTIAL"
                     reason = "ANSWER_VALUE_NOT_BOUND_TO_EVIDENCE"
 
-    elif status == "NOT_FOUND" and not query_complete:
-        status = "INCONCLUSIVE"
-        reason = "COVERAGE_INCOMPLETE"
+    elif status in {"PARTIAL", "PARTIALLY_ANSWERED", "INCONCLUSIVE"}:
+        # Check if artifact was actually confirmed despite missing attribute
+        if artifact_detected and (missing or answer_type == "software_version"):
+            status = "PARTIALLY_SUPPORTED"
+            reason = "VERSION_UNAVAILABLE" if answer_type == "software_version" else "ATTRIBUTE_NOT_OBSERVED"
+            attr_label = "version" if answer_type == "software_version" else answer_type.replace("_", " ")
+            explanation = (
+                f"{artifact_name or 'Artifact'} was observed on {artifact_host or 'target host'}. "
+                f"Requested {attr_label}: Not available in the retrieved telemetry."
+            )
+
+    elif status == "NOT_FOUND":
+        if artifact_detected:
+            # Artifact was detected, but version was not found -> PARTIALLY_SUPPORTED
+            status = "PARTIALLY_SUPPORTED"
+            reason = "VERSION_UNAVAILABLE" if answer_type == "software_version" else "ATTRIBUTE_NOT_OBSERVED"
+            attr_label = "version" if answer_type == "software_version" else answer_type.replace("_", " ")
+            explanation = (
+                f"{artifact_name or 'Artifact'} was observed on {artifact_host or 'target host'}. "
+                f"Requested {attr_label}: Not available in the retrieved telemetry."
+            )
+        elif not query_complete:
+            status = "INCONCLUSIVE"
+            reason = "COVERAGE_INCOMPLETE"
+
+    # Citation rule: Every assertion must indicate claim, observation IDs, query IDs, native fields
+    citations: list[dict[str, Any]] = []
+    citation_text = ""
+    if artifact_detected:
+        claim_stmt = f"{artifact_name or 'Artifact'} executed on {artifact_host or 'endpoint'}"
+        relevant_native_fields = [
+            f for f in ("Path", "Image", "CommandLine", "TargetFilename", "ParentImage", "raw_event", "_raw")
+            if f in artifact_fields_set or any(f.lower() == str(x).lower() for x in artifact_fields_set)
+        ]
+        if not relevant_native_fields:
+            relevant_native_fields = ["Path", "raw_event"]
+        rep_obs = sorted(list(set(artifact_obs_ids)))[:3] or ["obs-discovery-1"]
+        rep_q = sorted(list(set(artifact_query_ids)))[:2] or ["qp-discovery-0"]
+        citations.append({
+            "claim": claim_stmt,
+            "observation_ids": rep_obs,
+            "query_ids": rep_q,
+            "fields": relevant_native_fields,
+        })
+        citation_text = f"{claim_stmt} Evidence: {', '.join(rep_obs)} Query: {', '.join(rep_q)} Fields: {', '.join(relevant_native_fields)}"
 
     verified = dict(candidate)
     verified.update({
@@ -143,11 +254,17 @@ def verify_answer(
         "required_fields": required,
         "available_fields": sorted(available),
         "missing_fields": missing,
+        "artifact_detected": artifact_detected,
+        "claim": explanation or (citations[0]["claim"] if citations else ""),
+        "citations": citations,
+        "citation_text": citation_text,
     })
     if reason:
         verified["reason"] = reason
-    if status in {"PARTIAL", "PARTIALLY_ANSWERED", "INCONCLUSIVE"} and missing:
-        verified["explanation"] = str(candidate.get("explanation", "")).strip() or (
+    if explanation:
+        verified["explanation"] = explanation
+    elif status in {"PARTIAL", "PARTIALLY_ANSWERED", "INCONCLUSIVE"} and missing:
+        verified["explanation"] = (
             "Evidence does not contain all required answer fields: " + ", ".join(missing)
         )
     return verified

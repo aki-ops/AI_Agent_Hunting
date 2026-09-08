@@ -1,22 +1,20 @@
 [
   {
     "id": "card-eef7b0502355",
-    "summary": "Telemetry observations (3 events on wrk-amber)",
-    "why_it_matters": "Observed operational telemetry within the monitored scope.",
-    "fact_type": "generic_telemetry",
-    "count": 3,
-    "confidence": "LOW",
+    "summary": "Process: firefox.exe executed on wrk-amber",
+    "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
+    "fact_type": "process_execution",
+    "count": 2,
+    "confidence": "MEDIUM",
     "hypotheses": [],
     "requirements": [],
     "query_ids": [
-      "qp-adaptive-0-1",
       "qp-adaptive-0-2",
       "qp-discovery-0"
     ],
     "replay": {
       "artifact": "observations.jsonl",
       "query_ids": [
-        "qp-adaptive-0-1",
         "qp-adaptive-0-2",
         "qp-discovery-0"
       ],
@@ -33,13 +31,57 @@
     "time_summary": {
       "earliest": "2026-09-02T10:00:00Z",
       "latest": "2026-09-02T10:10:00Z",
-      "span_events": 3
+      "span_events": 2
     },
-    "field_summary": {},
+    "field_summary": {
+      "images": [
+        "firefox.exe"
+      ],
+      "process_names": [
+        "firefox.exe"
+      ]
+    },
     "representative_observation_ids": [
       "obs-discovery-1",
-      "obs-adaptive-2",
       "obs-adaptive-3"
+    ]
+  },
+  {
+    "id": "card-e5d92fdeb056",
+    "summary": "Process: tor.exe Path: C:\\Tor\\firefox.exe Host: wrk-amber",
+    "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
+    "fact_type": "process_execution",
+    "count": 1,
+    "confidence": "MEDIUM",
+    "hypotheses": [],
+    "requirements": [],
+    "query_ids": [
+      "qp-adaptive-0-1"
+    ],
+    "replay": {
+      "artifact": "observations.jsonl",
+      "query_ids": [
+        "qp-adaptive-0-1"
+      ],
+      "command": "python -m hunting.cli show-observation --observation-id obs-adaptive-2"
+    },
+    "entity_summary": {
+      "hosts": [
+        "wrk-amber"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2026-09-02T10:05:00Z",
+      "latest": "2026-09-02T10:05:00Z",
+      "span_events": 1
+    },
+    "field_summary": {
+      "file_paths": [
+        "C:\\Tor\\firefox.exe"
+      ]
+    },
+    "representative_observation_ids": [
+      "obs-adaptive-2"
     ]
   }
 ]

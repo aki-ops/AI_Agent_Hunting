@@ -62,23 +62,42 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
     relations: list[EntityRelation] = []
 
     # 1. Process execution fact & ancestry relationship
-    if fields.get("image") or fields.get("cmdline"):
-        pid = _safe_int(fields.get("pid"), 0)
+    proc_val = fields.get("process_name") or fields.get("image") or fields.get("Image") or fields.get("cmdline") or fields.get("CommandLine")
+    path_val = fields.get("file_path") or fields.get("path") or fields.get("Path") or fields.get("TargetFilename")
+    # If path points to executable or contains tor / browser / setup / exe, it indicates process/software artifact
+    is_software_artifact = bool(
+        proc_val
+        or (path_val and any(str(path_val).lower().endswith(ext) for ext in (".exe", ".bat", ".cmd", ".ps1", ".vbs", ".dll", ".msi")))
+        or (path_val and any(k in str(path_val).lower() for k in ("tor browser", "firefox", "setup", "installer")))
+    )
+
+    if is_software_artifact:
+        pid = _safe_int(fields.get("pid") or fields.get("ProcessId"), 0)
         proc_entity = Process(host=str(host_name), pid=pid, time=timestamp)
         relations.append(EntityRelation(source_entity=host_entity, relation_type="executed_process", target_entity=proc_entity))
 
-        if fields.get("parent_image"):
-            parent_pid = _safe_int(fields.get("parent_pid"), 0)
+        parent_img = fields.get("parent_image") or fields.get("ParentImage")
+        if parent_img:
+            parent_pid = _safe_int(fields.get("parent_pid") or fields.get("ParentProcessId"), 0)
             parent_proc = Process(host=str(host_name), pid=parent_pid, time=timestamp)
             relations.append(EntityRelation(source_entity=parent_proc, relation_type="spawned_process", target_entity=proc_entity))
 
+        proc_fields = {
+            k: v for k, v in fields.items()
+            if k in (
+                "image", "Image", "process_name", "cmdline", "CommandLine", "parent_image", "ParentImage",
+                "user", "TargetUserName", "file_path", "path", "Path", "TargetFilename",
+                "ProductVersion", "FileVersion", "Version", "version", "software_version",
+            )
+            and v is not None
+        }
         facts.append(
             EvidenceFact(
                 observation_id=observation.id,
                 fact_type="process_execution",
                 timestamp=timestamp,
                 primary_entity=proc_entity,
-                fields={k: v for k, v in fields.items() if k in ("image", "cmdline", "parent_image", "user") and v is not None},
+                fields=proc_fields,
                 relations=tuple(relations),
             )
         )

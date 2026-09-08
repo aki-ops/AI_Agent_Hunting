@@ -54,6 +54,8 @@ class Observation:
     native_type: str | None = None
     semantic_type: SemanticType | str | None = None
     fields: dict[str, Any] = field(default_factory=dict)
+    native_fields: dict[str, Any] = field(default_factory=dict)
+    canonical_fields: dict[str, Any] = field(default_factory=dict)
     taint: dict[str, TaintLabel] = field(default_factory=dict)
     entities: list[EntityRef] = field(default_factory=list)
     provenance: Provenance | None = None
@@ -70,6 +72,15 @@ class Observation:
             raise ValueError("Observation.timestamp must not be empty")
         if any(isinstance(entity, AnyEntity) for entity in self.entities):
             raise ValueError("Observation.entities cannot contain ANY")
+        if not self.native_fields and self.fields:
+            self.native_fields = dict(self.fields)
+        if not self.canonical_fields and self.fields:
+            from hunting.evidence.normalizer import normalize_telemetry_fields
+            _, self.canonical_fields = normalize_telemetry_fields(self.fields)
+            # Merge canonical keys into fields if not already present, ensuring seamless legacy access
+            for c_k, c_v in self.canonical_fields.items():
+                if c_k not in self.fields:
+                    self.fields[c_k] = c_v
 
     @property
     def is_unmapped(self) -> bool:

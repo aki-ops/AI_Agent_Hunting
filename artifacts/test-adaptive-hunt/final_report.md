@@ -8,18 +8,22 @@
 - **Requested Object:** `software_version` (role: `answer`)
 - **Behavior:** installed Tor
 
-**Result:** `INCONCLUSIVE`  
+**Result:** `PARTIALLY_SUPPORTED`  
 **Stopping:** `STOP_BOUNDED`
 
 - **Causal Path Coverage:** `0.0%` (0/1 relations verified)
 - **Wildcard Scope Coverage:** `0.0%` (0/1 broadsweep cells)
 - **Instance Cell Coverage:** `0.0%` (0/0 concrete entity cells)
 
-**Answer:** No matching value was found in the searched telemetry.
+**Answer Status:** `PARTIALLY_SUPPORTED`
+
+**Answer:** Tor Browser was observed on wrk-amber. Requested version: Not available in the retrieved telemetry.
+
+**Evidence Citation:** Tor Browser executed on wrk-amber Evidence: obs-adaptive-2, obs-adaptive-3, obs-discovery-1 Query: qp-adaptive-0-1, qp-adaptive-0-2 Fields: Path, Image
 
 ## 2. Hypothesis analysis
 
-- `LIVE` — Tor installed
+- `PARTIALLY_SUPPORTED` — Tor installed
 
 **Unresolved Mandatory Unknowns:**
 - `host(wrk-amber) -> connected_to -> software_version`: Activity connecting wrk-amber to software_version
@@ -28,12 +32,14 @@
 
 | Evidence | Why it matters | Source |
 |---|---|---|
-| Telemetry observations (3 events on wrk-amber) | Observed operational telemetry within the monitored scope. | 3 event(s); representative observations: `obs-discovery-1`, `obs-adaptive-2`, `obs-adaptive-3` |
+| Process: firefox.exe executed on wrk-amber | Observed process execution providing evidence of code execution on endpoint. | 2 event(s); representative observations: `obs-discovery-1`, `obs-adaptive-3` |
+| Process: tor.exe Path: C:\Tor\firefox.exe Host: wrk-amber | Observed process execution providing evidence of code execution on endpoint. | 1 event(s); representative observations: `obs-adaptive-2` |
 
 ### Explanation
 
-- **LLM Explanation:** Not requested / offline deterministic mode.
-- Observed operational telemetry within the monitored scope.
+- **Deterministic Explanation:** Tor Browser was observed on wrk-amber. Requested version: Not available in the retrieved telemetry.
+- **LLM Narrative Analysis:** Not requested / offline deterministic mode.
+- Observed process execution providing evidence of code execution on endpoint.
 - Limitation: No definitive adversary presence or refutation established in searched frame.
 
 ## 4. Queries used
@@ -46,7 +52,7 @@
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2533600290768'>
+<MagicMock name='mock.last_query_text' id='2385217542096'>
 ```
 
 ### `qp-adaptive-0-1` — `adaptive-answer`
@@ -57,7 +63,7 @@ Provider: `mock_splunk`; completeness: `complete`
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2533600290768'>
+<MagicMock name='mock.last_query_text' id='2385217542096'>
 ```
 
 ### `qp-adaptive-0-2` — `adaptive-answer`
@@ -68,7 +74,7 @@ Provider: `mock_splunk`; completeness: `complete`
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2533600290768'>
+<MagicMock name='mock.last_query_text' id='2385217542096'>
 ```
 
 ## 5. Cost

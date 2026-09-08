@@ -1,4 +1,4 @@
-﻿"""Phase D: Live Splunk validation across 5 question groups.
+"""Phase D: Live Splunk validation across 5 question groups.
 
 Tests are skipped when Splunk is not reachable on localhost:8089.
 Each group verifies:
@@ -127,7 +127,7 @@ class TestSoftwareVersionHunt:
         result = engine.execute_hunt(req, adapter=live_adapter)
         assert len(result.state.queries) <= 6
         status = result.account.answer.get("status", "")
-        assert status in ("ANSWERED", "PARTIAL", "NOT_FOUND", "INCONCLUSIVE"), f"Unexpected status: {status}"
+        assert status in ("ANSWERED", "PARTIAL", "PARTIALLY_SUPPORTED", "NOT_FOUND", "INCONCLUSIVE"), f"Unexpected status: {status}"
         if status == "ANSWERED":
             val = str(result.account.answer.get("value", ""))
             assert any(ch.isdigit() for ch in val), f"Version '{val}' has no digits"
@@ -202,7 +202,7 @@ class TestEmailHunt:
         result = engine.execute_hunt(req, adapter=live_adapter)
         assert len(result.state.queries) <= 6
         status = result.account.answer.get("status", "")
-        assert status in ("ANSWERED", "PARTIAL", "INCONCLUSIVE", "NOT_FOUND")
+        assert status in ("ANSWERED", "PARTIAL", "PARTIALLY_SUPPORTED", "INCONCLUSIVE", "NOT_FOUND")
         if status == "ANSWERED":
             val = str(result.account.answer.get("value", ""))
             assert "@" in val, f"Email answer '{val}' missing '@'"

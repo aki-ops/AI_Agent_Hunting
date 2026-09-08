@@ -460,13 +460,14 @@ def build_final_hunt_account(
         observations=list(ledger.observations) if ledger is not None else (),
         query_complete=all(getattr(result, "complete", True) for result in state.query_results)
         if state.query_results else True,
+        evidence_state=getattr(state, "evidence_state", None),
     )
 
     limitations: list[str] = []
     claim_verdicts: list[ClaimVerdict] = []
     ans_status = AnswerStatus.UNANSWERED
 
-    if not answer or answer.get("status") != "ANSWERED":
+    if not answer or answer.get("status") not in ("ANSWERED", "PARTIALLY_SUPPORTED", "VERSION_UNAVAILABLE"):
         case = getattr(state, "case", None)
         if case and getattr(case, "graph", None):
             recipient_node = case.graph.get_node("node-target-recipient")
@@ -504,6 +505,13 @@ def build_final_hunt_account(
 
     if answer.get("status") == "ANSWERED":
         ans_status = AnswerStatus.FULLY_ANSWERED
+    elif answer.get("status") in ("PARTIALLY_SUPPORTED", "VERSION_UNAVAILABLE"):
+        ans_status = AnswerStatus.PARTIALLY_SUPPORTED
+        # Do not use INCONCLUSIVE for the entire hypothesis if artifact was confirmed!
+        for h in state.hypotheses:
+            if h.status in (HypothesisStatus.LIVE, HypothesisStatus.UNKNOWN):
+                h.status = HypothesisStatus.PARTIALLY_SUPPORTED
+
 
     # Evaluate claim-level status and limitations for email/composite cases
     case = getattr(state, "case", None)
@@ -617,6 +625,7 @@ def build_final_hunt_account(
         evidence_assessments=list(state.evidence_assessments),
         investigation_model=state.investigation_model,
         relation_graph=state.relation_graph,
+        evidence_state=getattr(state, "evidence_state", None),
         case=getattr(state, "case", None),
         provenance_chain=list(getattr(getattr(state, "case", None), "graph", state.relation_graph).proofs.values()) if hasattr(getattr(state, "case", None), "graph") and hasattr(getattr(state, "case", None).graph, "proofs") else [],
         answer_status=ans_status,

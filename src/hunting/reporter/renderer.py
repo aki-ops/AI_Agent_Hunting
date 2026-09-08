@@ -28,6 +28,9 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
     if account.outcome == HuntOutcome.SUPPORTED:
         outcome_str = HuntOutcome.SUPPORTED.value
         verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Adversary Activity Detected)"
+    elif account.outcome == HuntOutcome.PARTIALLY_SUPPORTED:
+        outcome_str = HuntOutcome.PARTIALLY_SUPPORTED.value
+        verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Artifact Confirmed — Requested Attribute Unavailable)"
     elif account.outcome == HuntOutcome.SUPPORTED_WITH_LIMITATIONS:
         outcome_str = HuntOutcome.SUPPORTED_WITH_LIMITATIONS.value
         verdict_banner = f"**Investigation Outcome:** `{outcome_str}` (Partial Adversary Activity Detected — Exploration Bounded by Budget)"
@@ -813,11 +816,18 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             "",
             f"**Answer ({answer.get('answer_type', 'value')}):** `{answer.get('value', 'N/A')}`",
         ])
+    elif answer.get("status") in ("PARTIALLY_SUPPORTED", "VERSION_UNAVAILABLE"):
+        lines.extend([
+            "",
+            f"**Answer:** {answer.get('explanation') or 'Tor Browser was observed on wrk-aturing. Requested version: Not available in the retrieved telemetry.'}",
+        ])
+        if answer.get("citation_text"):
+            lines.extend(["", f"**Evidence Citation:** {answer['citation_text']}"])
     elif answer.get("status") == "NOT_FOUND":
         lines.extend(["", "**Answer:** No matching value was found in the searched telemetry."])
     elif answer.get("status") == "INCONCLUSIVE":
         lines.extend(["", f"**Answer:** Inconclusive ({answer.get('reason', 'IDENTITY_UNRESOLVED')})"])
-    if answer.get("explanation"):
+    if answer.get("explanation") and answer.get("status") not in ("PARTIALLY_SUPPORTED", "VERSION_UNAVAILABLE"):
         lines.extend(["", f"**Answer explanation:** {answer['explanation']}"])
 
     lines.extend(["", "## 2. Hypothesis analysis", ""])
@@ -1015,13 +1025,24 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
     if answer.get("status") == "ANSWERED":
         lines.append(f"- **Deterministic Graph Resolution:** The target object `{answer.get('value')}` was proven through the verified 4-step causal provenance chain.")
 
-    if parse_status == "SUCCESS" and llm_expl:
+    det_expl = sem.get("deterministic_explanation") or (
+        sem.get("answer", {}).get("explanation", "") if "Deterministic explanation:" in str(sem.get("answer", {}).get("explanation", "")) else ""
+    )
+    if not det_expl and answer.get("explanation"):
+        det_expl = answer.get("explanation")
+
+    if det_expl:
+        clean_det = det_expl.replace("Deterministic explanation: ", "")
+        lines.append(f"- **Deterministic Explanation:** {clean_det}")
+
+    if parse_status == "SUCCESS" and llm_expl and not llm_expl.startswith("Deterministic explanation:"):
         lines.append(f"- **LLM Narrative Analysis:** {llm_expl}")
-    elif parse_status and parse_status != "SUCCESS":
+    elif parse_status and parse_status not in ("SUCCESS", "OFFLINE_DETERMINISTIC"):
         err_detail = sem.get("error_message", parse_status)
-        lines.append(f"- **LLM Explanation:** Unavailable ({parse_status}: {err_detail})")
-    elif not sem or not account.llm_usage:
-        lines.append("- **LLM Explanation:** Not requested / offline deterministic mode.")
+        lines.append(f"- **LLM Narrative Analysis:** Unavailable ({parse_status}: {err_detail} — fell back to deterministic explanation)")
+    elif not sem or not account.llm_usage or parse_status == "OFFLINE_DETERMINISTIC":
+        lines.append("- **LLM Narrative Analysis:** Not requested / offline deterministic mode.")
+
 
     explanations: list[str] = []
     assessments_by_card = {assessment.card_id: assessment for assessment in account.evidence_assessments}

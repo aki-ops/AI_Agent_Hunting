@@ -1,9 +1,9 @@
 {
   "hunt_id": "test-adaptive-hunt",
-  "outcome": "INCONCLUSIVE",
+  "outcome": "PARTIALLY_SUPPORTED",
   "stopping_decision": "STOP_BOUNDED",
   "answer": {
-    "status": "NOT_FOUND",
+    "status": "PARTIALLY_SUPPORTED",
     "answer_type": "software_version",
     "question": "What version of Tor was installed on wrk-amber?",
     "candidates": [],
@@ -12,15 +12,40 @@
       "ProductVersion"
     ],
     "available_fields": [
+      "file_path",
       "host",
       "image",
       "path",
+      "process_name",
       "timestamp",
       "user"
     ],
     "missing_fields": [
       "ProductVersion"
-    ]
+    ],
+    "artifact_detected": true,
+    "claim": "Tor Browser was observed on wrk-amber. Requested version: Not available in the retrieved telemetry.",
+    "citations": [
+      {
+        "claim": "Tor Browser executed on wrk-amber",
+        "observation_ids": [
+          "obs-adaptive-2",
+          "obs-adaptive-3",
+          "obs-discovery-1"
+        ],
+        "query_ids": [
+          "qp-adaptive-0-1",
+          "qp-adaptive-0-2"
+        ],
+        "fields": [
+          "Path",
+          "Image"
+        ]
+      }
+    ],
+    "citation_text": "Tor Browser executed on wrk-amber Evidence: obs-adaptive-2, obs-adaptive-3, obs-discovery-1 Query: qp-adaptive-0-1, qp-adaptive-0-2 Fields: Path, Image",
+    "reason": "VERSION_UNAVAILABLE",
+    "explanation": "Tor Browser was observed on wrk-amber. Requested version: Not available in the retrieved telemetry."
   },
   "llm_usage": {
     "model": "stub",
@@ -34,6 +59,6 @@
     "calls": []
   },
   "total_observations": 3,
-  "total_cards": 1,
+  "total_cards": 2,
   "total_queries": 3
 }

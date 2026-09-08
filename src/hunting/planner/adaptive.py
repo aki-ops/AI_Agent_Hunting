@@ -93,6 +93,94 @@ def _fields_satisfied(required: tuple[str, ...], observed: set[str], answer_type
     return all(f in observed for f in req_lower)
 
 
+ATTRIBUTE_OUTPUT_FIELDS: dict[str, set[str]] = {
+    "software_version": {"productversion", "fileversion", "version", "software_version"},
+    "email_address": {"sender_email", "recipient_email", "email", "sender", "receiver"},
+    "client_ip": {"client_ip", "c_ip", "source_ip", "src_ip", "ipaddress"},
+    "domain": {"domain", "site", "cs_host", "query", "dest_host"},
+    "file_path": {"path", "targetfilename", "file_path", "image_path"},
+    "process_name": {"image", "name", "process_name", "process"},
+}
+
+FORBIDDEN_OPERATIONS_FOR_ATTRIBUTE: dict[str, set[str]] = {
+    "software_version": {
+        "resolve_person_to_account",
+        "resolve_account_to_endpoint",
+        "resolve_endpoint_to_client_ip",
+        "find_web_activity_from_client_ip",
+        "find_dns_activity_from_client_ip",
+        "find_web_activity_from_endpoint",
+        "find_dns_activity",
+        "find_web_activity",
+        "resolve_account_to_email",
+        "find_outbound_message_metadata",
+        "resolve_recipient_identity",
+        "resolve_role_identity",
+        "cdb_dns_queries",
+        "cdb_dns_search",
+        "cdb_network_connections",
+        "cdb_net_search",
+        "cdb_web_requests",
+        "cdb_logon_history",
+        "cdb_auth_search",
+    }
+}
+
+
+def _is_forbidden_operation(operation: Any, missing_attribute: str) -> bool:
+    attr_lower = str(missing_attribute or "").strip().casefold()
+    op_id = str(getattr(operation, "id", "")).strip()
+    forbidden_ids = FORBIDDEN_OPERATIONS_FOR_ATTRIBUTE.get(attr_lower, set())
+    if op_id in forbidden_ids:
+        return True
+
+    if attr_lower == "software_version":
+        forbidden_terms = ("person", "account", "identity", "email", "dns", "web", "network", "net_")
+        intents = {str(v).casefold() for v in (getattr(operation, "semantic_intents", ()) or ())}
+        out_fields = {str(v).casefold() for v in (getattr(operation, "output_fields", ()) or ())}
+        target_fields = ATTRIBUTE_OUTPUT_FIELDS.get(attr_lower, set())
+
+        has_forbidden_term = any(t in op_id.casefold() for t in forbidden_terms) or any(
+            any(t in intent for t in forbidden_terms) for intent in intents
+        )
+        if has_forbidden_term and not (out_fields & target_fields) and "software_version" not in intents:
+            return True
+
+    return False
+
+
+def _is_directly_compatible(operation: Any, missing_attribute: str) -> bool:
+    attr_lower = str(missing_attribute or "").strip().casefold()
+    intents = {str(v).casefold() for v in (getattr(operation, "semantic_intents", ()) or ())}
+    out_fields = {str(v).casefold() for v in (getattr(operation, "output_fields", ()) or ())}
+    target_fields = ATTRIBUTE_OUTPUT_FIELDS.get(attr_lower, {attr_lower})
+    return attr_lower in intents or bool(out_fields & target_fields)
+
+
+def compatible_operations(
+    missing_attribute: str,
+    descriptor: VersionedCapabilityDescriptor | Any,
+) -> list[Any]:
+    """Filter candidate provider operations by output fields and semantic intents for a missing attribute.
+
+    For software_version, operations that resolve identity, email, DNS, or network activity
+    without producing version fields are strictly excluded.
+    """
+    attr_lower = str(missing_attribute or "").strip().casefold()
+    operations = list(getattr(descriptor, "operations", ()) or ())
+    if not operations or not attr_lower:
+        return []
+
+    compatible: list[Any] = []
+    for op in operations:
+        if _is_forbidden_operation(op, attr_lower):
+            continue
+        if _is_directly_compatible(op, attr_lower):
+            compatible.append(op)
+
+    return compatible
+
+
 class AdaptiveOperationPlanner:
     """Select the next bounded semantic operation from observed capabilities."""
 
@@ -192,30 +280,47 @@ class AdaptiveOperationPlanner:
                 validation_result="OPERATIONS_EXHAUSTED",
             )
 
-        # Explicit semantic declarations are authoritative. Operation names
-        # alone are not enough: `cdb_file_search` may contain hidden vendor
-        # assumptions that do not match the current deployment.
-        for operation in available_operations:
+        # Attribute Planner: Exclude operations strictly forbidden for the requested attribute.
+        # For software_version, identity, email, DNS, and network operations are strictly forbidden.
+        available_operations = [
+            op for op in available_operations
+            if not _is_forbidden_operation(op, answer_type)
+        ]
+        if not available_operations:
+            return AdaptiveDecision(
+                operation_id=None,
+                reason=f"no provider operations compatible with {answer_type}",
+                required_fields=required,
+                ready_for_answer=False,
+                search_terms=spec_terms,
+                validation_result="NO_COMPATIBLE_OPERATIONS",
+            )
+
+        # Prioritize directly compatible operations (matching semantic intents or output_fields)
+        directly_compatible = [
+            op for op in available_operations
+            if _is_directly_compatible(op, answer_type)
+        ]
+
+        # Explicit semantic declarations or direct output_field matches are authoritative.
+        for operation in directly_compatible:
             op_id = str(getattr(operation, "id", ""))
-            declared_intents = {
-                str(value).casefold()
-                for value in getattr(operation, "semantic_intents", ()) or ()
-            }
-            if answer_type in declared_intents:
-                return AdaptiveDecision(
-                    operation_id=op_id,
-                    reason="selected from provider semantic capability",
-                    required_fields=required,
-                    ready_for_answer=False,
-                    search_terms=spec_terms,
-                    validation_result="DETERMINISTIC_CAPABILITY_MATCH",
-                )
+            return AdaptiveDecision(
+                operation_id=op_id,
+                reason="selected from provider semantic capability",
+                required_fields=required,
+                ready_for_answer=False,
+                search_terms=spec_terms,
+                validation_result="DETERMINISTIC_CAPABILITY_MATCH",
+            )
+
+        target_pool = directly_compatible if directly_compatible else available_operations
 
         # For deployment-specific or novel semantics, ask the LLM to select a
         # semantic operation. It receives metadata only; it never receives raw
         # events and never emits native SPL/SQL/KQL.
         if self.llm_generator is not None:
-            operation_ids = [str(getattr(operation, "id", "")) for operation in available_operations]
+            operation_ids = [str(getattr(operation, "id", "")) for operation in target_pool]
             prompt = json.dumps({
                 "task": "select_semantic_hunt_operation",
                 "answer_type": answer_type,
@@ -425,4 +530,10 @@ class AdaptiveOperationPlanner:
         )
 
 
-__all__ = ["AdaptiveDecision", "AdaptiveOperationPlanner"]
+__all__ = [
+    "AdaptiveDecision",
+    "AdaptiveOperationPlanner",
+    "compatible_operations",
+    "ATTRIBUTE_OUTPUT_FIELDS",
+    "FORBIDDEN_OPERATIONS_FOR_ATTRIBUTE",
+]
