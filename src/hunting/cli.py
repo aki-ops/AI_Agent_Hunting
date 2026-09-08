@@ -38,6 +38,7 @@ from hunting.m2_abduction.provider import (
 )
 from hunting.m5_adapter import CdbAdapter, SplunkLiveAdapter
 from hunting.orchestrator import InvestigationOrchestrator
+from hunting.planner.adaptive import AdaptiveOperationPlanner
 from hunting.planner.planner import CanonicalQueryPlanner
 from hunting.registry.loader import load_registry
 
@@ -825,13 +826,15 @@ def run_cli(args: argparse.Namespace) -> int:
                     api_key=args.api_key or config.api_key,
                 )
             llm_provider = ApiLLMProvider(config)
-            llm_tracker = LLMUsageTracker(max_calls=3, model_name=config.model)
+            llm_tracker = LLMUsageTracker(max_calls=4, model_name=config.model)
             compiler_caller = create_llm_caller(llm_provider, llm_tracker, "compiler")
             planner_caller = create_llm_caller(llm_provider, llm_tracker, "planner")
+            adaptive_caller = create_llm_caller(llm_provider, llm_tracker, "adaptive_planner")
             evaluator_caller = create_llm_caller(llm_provider, llm_tracker, "evaluator")
 
             compiler = KnowledgeBehaviorCompiler(llm_caller=compiler_caller)
             planner = CanonicalQueryPlanner(llm_generator=planner_caller)
+            adaptive_planner = AdaptiveOperationPlanner(llm_generator=adaptive_caller, llm_tracker=llm_tracker)
             evaluator = EvidenceEvaluator(llm_caller=evaluator_caller)
             print(f"[+] [AI SUB-SYSTEM] Active ApiLLMProvider: model='{config.model}' endpoint='{config.endpoint}'")
         elif args.llm == "stub":
@@ -841,6 +844,7 @@ def run_cli(args: argparse.Namespace) -> int:
             # when natural-language compilation is required.
             compiler = KnowledgeBehaviorCompiler()
             planner = CanonicalQueryPlanner()
+            adaptive_planner = AdaptiveOperationPlanner()
             evaluator = EvidenceEvaluator()
             print("[+] [AI SUB-SYSTEM] Offline deterministic mode (free text requires --llm api)")
         else:
@@ -857,11 +861,13 @@ def run_cli(args: argparse.Namespace) -> int:
             llm_tracker = LLMUsageTracker(max_calls=3, model_name="stub")
             compiler = KnowledgeBehaviorCompiler()
             planner = CanonicalQueryPlanner()
+            adaptive_planner = AdaptiveOperationPlanner()
             evaluator = EvidenceEvaluator()
 
         engine = HypothesisHuntEngine(
             compiler=compiler,
             planner=planner,
+            adaptive_planner=adaptive_planner,
             evaluator=evaluator,
             llm_tracker=llm_tracker,
             cdb_adapter=adapter if isinstance(adapter, CdbAdapter) else None,

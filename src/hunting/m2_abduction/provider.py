@@ -67,10 +67,13 @@ class ApiLLMConfig:
         file_env = load_dotenv(env_path)
         combined = {**file_env, **os.environ}
 
+        openai_base = combined.get("OPENAI_BASE_URL", "")
         anthropic_base = combined.get("ANTHROPIC_BASE_URL", "")
         hermes_base = combined.get("HERMES_API_BASE_URL", "")
 
-        if anthropic_base:
+        if openai_base:
+            default_endpoint = f"{openai_base.rstrip('/')}/chat/completions"
+        elif anthropic_base:
             default_endpoint = f"{anthropic_base.rstrip('/')}/messages"
         elif hermes_base:
             default_endpoint = f"{hermes_base.rstrip('/')}/chat/completions"
@@ -81,17 +84,23 @@ class ApiLLMConfig:
         api_key = combined.get(
             "LLM_API_KEY",
             combined.get(
-                "ANTHROPIC_API_KEY",
-                combined.get("HERMES_API_KEY", combined.get("OPENAI_API_KEY", "secret-token-env")),
+                "OPENAI_API_KEY",
+                combined.get(
+                    "ANTHROPIC_API_KEY",
+                    combined.get("HERMES_API_KEY", "secret-token-env"),
+                ),
             ),
         )
         model = combined.get(
             "LLM_MODEL",
             combined.get(
-                "ANTHROPIC_MODEL",
+                "OPENAI_MODEL",
                 combined.get(
-                    "CLAUDE_MODEL",
-                    combined.get("HERMES_MODEL_NAME", "1/gemini-flash-3.8-high-omni"),
+                    "ANTHROPIC_MODEL",
+                    combined.get(
+                        "CLAUDE_MODEL",
+                        combined.get("HERMES_MODEL_NAME", "auto"),
+                    ),
                 ),
             ),
         )
@@ -263,7 +272,7 @@ class ApiLLMProvider(LLMProvider):
                 ],
                 "temperature": 0.0,
                 "max_tokens": self.config.max_tokens,
-                "stream": False,
+                "stream": True,
             }
 
         headers = {
@@ -271,7 +280,7 @@ class ApiLLMProvider(LLMProvider):
             "Authorization": f"Bearer {self.config.api_key}",
             "x-api-key": self.config.api_key,
             "anthropic-version": "2023-06-01",
-            "User-Agent": "AI-Agent-Hunting/1.0",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AI-Agent-Hunting/1.0",
         }
 
         req = urllib.request.Request(
@@ -526,7 +535,30 @@ def create_llm_caller(
         resp = "{}"
         try:
             if hasattr(provider, "call_raw"):
-                resp = provider.call_raw(prompt)
+                component_system = {
+                    "compiler": (
+                        "You are the semantic compilation stage of a threat-hunting system. "
+                        "Convert the user's hunt request into ONLY the JSON contract described "
+                        "in the user prompt. Do not answer the hunt, write a report, invent a "
+                        "verdict, or emit SPL/KQL/vendor queries. Output JSON only."
+                    ),
+                    "planner": (
+                        "You are the bounded query-planning stage of a threat-hunting system. "
+                        "Return only the JSON contract requested by the user prompt. Do not "
+                        "write a report or claim evidence that was not provided."
+                    ),
+                    "adaptive_planner": (
+                        "You are the adaptive capability operation planning stage of a threat-hunting system. "
+                        "Select provider-neutral semantic operations and search terms matching the investigation spec. "
+                        "Do NOT emit vendor SPL/SQL/KQL queries or unobservable fields. Output JSON only."
+                    ),
+                    "evaluator": (
+                        "You are the evidence-evaluation stage of a threat-hunting system. "
+                        "Return only the JSON contract requested by the user prompt. Do not "
+                        "invent observations, fields, or verdicts unsupported by the cards."
+                    ),
+                }.get(component)
+                resp = provider.call_raw(prompt, system_instruction=component_system)
             elif hasattr(provider, "generate"):
                 resp = provider.generate({"prompt": prompt})
             else:

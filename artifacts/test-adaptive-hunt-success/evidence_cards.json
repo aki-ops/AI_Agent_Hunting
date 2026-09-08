@@ -1,0 +1,42 @@
+[
+  {
+    "id": "card-eef7b0502355",
+    "summary": "Telemetry observations (2 events on wrk-amber)",
+    "why_it_matters": "Observed operational telemetry within the monitored scope.",
+    "fact_type": "generic_telemetry",
+    "count": 2,
+    "confidence": "LOW",
+    "hypotheses": [],
+    "requirements": [],
+    "query_ids": [
+      "qp-adaptive-0-1",
+      "qp-discovery-0"
+    ],
+    "replay": {
+      "artifact": "observations.jsonl",
+      "query_ids": [
+        "qp-adaptive-0-1",
+        "qp-discovery-0"
+      ],
+      "command": "python -m hunting.cli show-observation --observation-id obs-discovery-1"
+    },
+    "entity_summary": {
+      "hosts": [
+        "wrk-amber"
+      ],
+      "users": [
+        "amber"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2026-09-02T10:00:00Z",
+      "latest": "2026-09-02T10:05:00Z",
+      "span_events": 2
+    },
+    "field_summary": {},
+    "representative_observation_ids": [
+      "obs-discovery-1",
+      "obs-adaptive-2"
+    ]
+  }
+]

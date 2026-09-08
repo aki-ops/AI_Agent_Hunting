@@ -494,6 +494,9 @@ class SplunkLiveAdapter:
         op_scope_ids = (self.scope.scope_id,)
         operations = (
             ProviderOperation("cdb_scope_scan", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("search_text", "splunk", op_scope_ids, params_schema={"terms": "list[string]", "term_groups": "list[list[string]]", "window": "interval"}, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("discover_schema", "splunk", op_scope_ids, params_schema={"window": "interval"}, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("sample_records", "splunk", op_scope_ids, params_schema={"window": "interval", "limit": "integer"}, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_broad_sweep", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_process_lineage", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_process_search", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
@@ -515,7 +518,9 @@ class SplunkLiveAdapter:
             ProviderOperation("resolve_endpoint_to_client_ip", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_web_activity_from_client_ip", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_dns_activity_from_client_ip", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_web_activity_from_endpoint", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_process_from_endpoint", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_file_change_from_endpoint", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_file_change_from_process", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("resolve_account_to_email", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_outbound_message_metadata", "splunk", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
@@ -586,11 +591,60 @@ class SplunkLiveAdapter:
         predicate: FieldPredicate | None,
         limit: int,
         offset: int = 0,
+        search_terms: list[str] | tuple[str, ...] | None = None,
+        search_groups: list[list[str]] | None = None,
     ) -> tuple[str, str, str]:
         """Construct safe parameterized SPL with search-time rex extractions and L+1 completeness limit."""
         start_dt, end_dt = validate_time_window_format(window)
         earliest_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         latest_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        if operation_id == "search_text":
+            # Terms are data, never native SPL.  Quote and escape them here so
+            # the provider adapter remains the only component that knows SPL.
+            safe_terms = [
+                str(term).replace('"', "")[:200].strip()
+                for term in (search_terms or [])
+                if str(term).strip()
+            ]
+            if not safe_terms and entity and not isinstance(entity, AnyEntity):
+                safe_terms = [str(entity).replace('"', "")[:200].strip()]
+            safe_groups: list[list[str]] = []
+            for group in search_groups or []:
+                aliases = [str(term).replace('"', "")[:200].strip() for term in group if str(term).strip()]
+                if aliases:
+                    safe_groups.append(aliases)
+            if safe_groups:
+                term_clause = " ".join(
+                    "(" + " OR ".join(f'"{term}"' for term in group) + ")"
+                    for group in safe_groups
+                )
+            else:
+                term_clause = " ".join(f'"{term}"' for term in safe_terms)
+            search_head = f'search index="{self.index}"'
+            if term_clause:
+                search_head += f" {term_clause}"
+            return (
+                f'{search_head} | head {limit + 1} '
+                '| table _time, host, sourcetype, user, Image, CommandLine, Path, '
+                'TargetFilename, ProductVersion, FileVersion, Version, uri, site, _raw',
+                earliest_iso,
+                latest_iso,
+            )
+
+        if operation_id == "discover_schema":
+            return (
+                f'search index="{self.index}" | head {limit + 1} | fieldsummary',
+                earliest_iso,
+                latest_iso,
+            )
+
+        if operation_id == "sample_records":
+            return (
+                f'search index="{self.index}" | head {limit + 1} | table _time, host, sourcetype, user, Image, CommandLine, Path, TargetFilename, ProductVersion, FileVersion, Version, uri, site, _raw',
+                earliest_iso,
+                latest_iso,
+            )
 
         # Handle relation-first operations (v5.0)
         if operation_id == "resolve_person_to_account":
@@ -706,6 +760,16 @@ class SplunkLiveAdapter:
             )
             return spl, earliest_iso, latest_iso
 
+        if operation_id == "find_web_activity_from_endpoint":
+            ent_val = str(getattr(entity, "name", str(entity or ""))).replace('"', '').strip()
+            spl = (
+                f'search index="{self.index}" (sourcetype="stream:http" OR sourcetype="pan:traffic") '
+                f'(host="*{ent_val}*" OR ComputerName="*{ent_val}*") '
+                f'| head {limit + 1} '
+                f'| table _time, host, ComputerName, sourcetype, src_ip, client_ip, site, cs_host, uri, cs_uri_stem, cs_method, status, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
         if operation_id == "find_process_from_endpoint":
             ent_val = str(getattr(entity, "name", str(entity or ""))).replace('"', '').strip()
             spl = (
@@ -713,6 +777,16 @@ class SplunkLiveAdapter:
                 f'(host="*{ent_val}*" OR ComputerName="*{ent_val}*") '
                 f'| head {limit + 1} '
                 f'| table _time, host, ComputerName, Image, CommandLine, ParentImage, User, ProcessId, _raw'
+            )
+            return spl, earliest_iso, latest_iso
+
+        if operation_id == "find_file_change_from_endpoint":
+            ent_val = str(getattr(entity, "name", str(entity or ""))).replace('"', '').strip()
+            spl = (
+                f'search index="{self.index}" (sourcetype="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=11) '
+                f'(host="*{ent_val}*" OR ComputerName="*{ent_val}*") '
+                f'| head {limit + 1} '
+                f'| table _time, host, ComputerName, TargetFilename, Image, ProcessId, ProductVersion, FileVersion, Version, _raw'
             )
             return spl, earliest_iso, latest_iso
 
@@ -913,6 +987,8 @@ class SplunkLiveAdapter:
         offset: int = 0,
         query_id: str = "q-001",
         native_query: str | None = None,
+        search_terms: list[str] | tuple[str, ...] | None = None,
+        search_groups: list[list[str]] | None = None,
     ) -> QueryResult:
         """Execute safe parameterized SPL over Splunk REST API with EOF completeness check."""
         start_time = time.perf_counter()
@@ -935,6 +1011,8 @@ class SplunkLiveAdapter:
                 predicate=predicate,
                 limit=limit,
                 offset=offset,
+                search_terms=search_terms,
+                search_groups=search_groups,
             )
         self.last_query_text = spl
 

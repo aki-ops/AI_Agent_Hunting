@@ -599,7 +599,248 @@ def build_investigation_case_from_intent(
         or any(getattr(r, "semantic_intent", "") in ("email_outbound", "message_communication", "outbound_message_metadata") for r in requirements)
     )
 
-    if is_email and subj_type in ("person", "user"):
+    # Do not infer one universal provenance chain for every person question.
+    # The semantic compiler already tells us what kind of telemetry is needed;
+    # the case graph must be derived from that contract.  In particular, a
+    # software/file question must not be forced through client-IP/web edges.
+    artifact_requirements = [
+        r for r in requirements
+        if str(getattr(r, "evidence_type", "") or getattr(r, "semantic_intent", "")).strip().lower()
+        in {
+            "process_ancestry", "process_execution", "process_creation",
+            "file_modification", "file_artifact", "file_creation", "persistence_change",
+        }
+    ]
+    artifact_target = (
+        req_obj_type_raw in {
+            "software", "software_version", "application", "version",
+            "process", "process_name", "file", "file_artifact",
+        }
+        or bool(artifact_requirements)
+    )
+
+    def _artifact_terms() -> list[str]:
+        """Extract bounded product hints, never a broad keyword query.
+
+        Product terms are only used by the deterministic verifier to reject
+        unrelated process/file rows.  They are not used to manufacture an
+        answer.  The phrase shape is intentionally generic (``X Browser``,
+        ``X installer``, ``X package``), so no product is hard-coded here.
+        """
+        import re
+
+        text = " ".join(
+            str(x or "") for x in (
+                getattr(intent, "original_request", ""),
+                getattr(intent, "question", ""),
+                getattr(intent, "behavior", ""),
+                *(getattr(r, "description", "") for r in requirements),
+            )
+        )
+        terms: list[str] = []
+        for match in re.finditer(
+            r"\b([A-Za-z0-9][\w.-]*(?:\s+[A-Za-z0-9][\w.-]*){0,3})\s+"
+            r"(browser|installer|application|software|package|bundle)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            phrase = match.group(1).strip().lower()
+            generic = {"the", "a", "an", "standard", "main", "specific", "versioned"}
+            tokens = [t for t in re.findall(r"[a-z0-9][a-z0-9_.-]*", phrase) if t not in generic]
+            if tokens:
+                terms.append(" ".join(tokens))
+                # Also retain the product head for paths such as tor.exe.
+                terms.append(tokens[-1])
+        return list(dict.fromkeys(t for t in terms if len(t) >= 3))
+
+    if not is_email and subj_type in ("person", "user") and artifact_target:
+        subj_node = GraphNode(
+            id="node-subject-person",
+            type=NodeType.PERSON,
+            value=subj_val,
+            status=NodeStatus.KNOWN,
+            source="intent",
+            field_role=FieldRole.PERSON_NAME,
+        )
+        acct_node = GraphNode(
+            id="node-subject-account",
+            type=NodeType.ACCOUNT,
+            value="?",
+            status=NodeStatus.UNKNOWN,
+            source="intent",
+            field_role=FieldRole.ACCOUNT_NAME,
+        )
+        endpoint_node = GraphNode(
+            id="node-subject-endpoint",
+            type=NodeType.ENDPOINT,
+            value="?",
+            status=NodeStatus.UNKNOWN,
+            source="intent",
+            field_role=FieldRole.ENDPOINT_HOST,
+        )
+        for n in (subj_node, acct_node, endpoint_node):
+            graph.add_node(n)
+
+        e1 = GraphEdge(
+            id="edge-person-owns-account",
+            source_id=subj_node.id,
+            source_entity_type=NodeType.PERSON,
+            relation_type=RelationType.OWNS,
+            target_id=acct_node.id,
+            target_entity_type=NodeType.ACCOUNT,
+            required_field_roles={"source": FieldRole.PERSON_NAME, "target": FieldRole.ACCOUNT_NAME},
+            acceptable_operations=["resolve_person_to_account"],
+            status=RelationStatus.UNPROVEN,
+        )
+        e2 = GraphEdge(
+            id="edge-account-logon-endpoint",
+            source_id=acct_node.id,
+            source_entity_type=NodeType.ACCOUNT,
+            relation_type=RelationType.LOGGED_ON_TO,
+            target_id=endpoint_node.id,
+            target_entity_type=NodeType.ENDPOINT,
+            required_field_roles={"source": FieldRole.ACCOUNT_NAME, "target": FieldRole.ENDPOINT_HOST},
+            acceptable_operations=["resolve_account_to_endpoint"],
+            status=RelationStatus.UNPROVEN,
+        )
+        graph.add_edge(e1)
+        graph.add_edge(e2)
+        unknowns.extend([
+            InvestigationUnknown(
+                id="unk-account",
+                entity_type=NodeType.ACCOUNT,
+                variable_name=f"account_for_{subj_val}",
+                description=f"Identify account username for {subj_val}",
+                resolving_edge_id=e1.id,
+            ),
+            InvestigationUnknown(
+                id="unk-endpoint",
+                entity_type=NodeType.ENDPOINT,
+                variable_name=f"endpoint_for_{subj_val}",
+                description=f"Identify workstation endpoint used by {subj_val}",
+                resolving_edge_id=e2.id,
+            ),
+        ])
+        goals.extend([
+            EvidenceGoal(id="goal-acct", target_edge_id=e1.id, description=f"Resolve account for {subj_val}"),
+            EvidenceGoal(id="goal-endpoint", target_edge_id=e2.id, description=f"Resolve endpoint for {subj_val}"),
+        ])
+
+        terms = _artifact_terms()
+        for idx, req in enumerate(artifact_requirements, start=1):
+            evidence_type = str(getattr(req, "evidence_type", "") or getattr(req, "semantic_intent", "")).strip().lower()
+            if evidence_type in {"file_modification", "file_artifact", "file_creation", "persistence_change"}:
+                operation = "find_file_change_from_endpoint"
+                relation = RelationType.MODIFIED
+            else:
+                operation = "find_process_from_endpoint"
+                relation = RelationType.EXECUTED
+            edge_id = f"edge-artifact-{getattr(req, 'id', idx)}"
+            edge = GraphEdge(
+                id=edge_id,
+                source_id=endpoint_node.id,
+                source_entity_type=NodeType.ENDPOINT,
+                relation_type=relation,
+                target_id=target_node.id,
+                target_entity_type=req_obj_type,
+                required_field_roles={
+                    "source": FieldRole.ENDPOINT_HOST,
+                    "target": FieldRole.FILE_PATH if operation == "find_file_change_from_endpoint" else FieldRole.PROCESS_NAME,
+                },
+                acceptable_operations=[operation],
+                acceptance_predicate={
+                    "software_terms": terms,
+                    "requirement_id": getattr(req, "id", edge_id),
+                },
+                status=RelationStatus.UNPROVEN,
+                metadata={
+                    "requirement_id": getattr(req, "id", edge_id),
+                    "evidence_type": evidence_type,
+                    "necessity": str(getattr(req, "necessity", "CRITICAL")).upper(),
+                },
+            )
+            graph.add_edge(edge)
+            unknowns.append(
+                InvestigationUnknown(
+                    id=f"unk-{edge_id}",
+                    entity_type=req_obj_type,
+                    variable_name=f"artifact_for_{getattr(req, 'id', idx)}",
+                    description=str(getattr(req, "description", "Verify artifact evidence")),
+                    resolving_edge_id=edge.id,
+                    metadata={"evidence_type": evidence_type},
+                )
+            )
+            goals.append(
+                EvidenceGoal(
+                    id=f"goal-{edge_id}",
+                    target_edge_id=edge.id,
+                    description=str(getattr(req, "description", "Verify artifact evidence")),
+                    necessity=str(getattr(req, "necessity", "CRITICAL")).upper(),
+                    acceptable_operations=[operation],
+                )
+            )
+
+        # Supporting web evidence is an independent endpoint-scoped task. It
+        # is not allowed to manufacture a client-IP/domain answer path for an
+        # artifact question, but it can still be tested when the compiler
+        # explicitly requests it.
+        supporting_web_requirements = [
+            r for r in requirements
+            if str(getattr(r, "evidence_type", "") or getattr(r, "semantic_intent", "")).strip().lower()
+            in {"web_request", "web_activity", "web_request_activity"}
+        ]
+        for idx, req in enumerate(supporting_web_requirements, start=1):
+            support_node = GraphNode(
+                id=f"node-support-web-{getattr(req, 'id', idx)}",
+                type=NodeType.EVENT,
+                value="?",
+                status=NodeStatus.UNKNOWN,
+                source="intent",
+            )
+            graph.add_node(support_node)
+            edge_id = f"edge-support-web-{getattr(req, 'id', idx)}"
+            edge = GraphEdge(
+                id=edge_id,
+                source_id=endpoint_node.id,
+                source_entity_type=NodeType.ENDPOINT,
+                relation_type=RelationType.ACCESSED,
+                target_id=support_node.id,
+                target_entity_type=NodeType.EVENT,
+                required_field_roles={"source": FieldRole.ENDPOINT_HOST, "target": FieldRole.URI_PATH},
+                acceptable_operations=["find_web_activity_from_endpoint"],
+                acceptance_predicate={
+                    "software_terms": terms,
+                    "requirement_id": getattr(req, "id", edge_id),
+                },
+                status=RelationStatus.UNPROVEN,
+                metadata={
+                    "requirement_id": getattr(req, "id", edge_id),
+                    "evidence_type": str(getattr(req, "evidence_type", "web_request")),
+                    "necessity": str(getattr(req, "necessity", "SUPPORTING")).upper(),
+                },
+            )
+            graph.add_edge(edge)
+            unknowns.append(
+                InvestigationUnknown(
+                    id=f"unk-{edge_id}",
+                    entity_type=NodeType.EVENT,
+                    variable_name=f"web_activity_for_{getattr(req, 'id', idx)}",
+                    description=str(getattr(req, "description", "Verify supporting web activity")),
+                    resolving_edge_id=edge.id,
+                    mandatory=False,
+                )
+            )
+            goals.append(
+                EvidenceGoal(
+                    id=f"goal-{edge_id}",
+                    target_edge_id=edge.id,
+                    description=str(getattr(req, "description", "Verify supporting web activity")),
+                    necessity="SUPPORTING",
+                    acceptable_operations=["find_web_activity_from_endpoint"],
+                )
+            )
+
+    elif is_email and subj_type in ("person", "user"):
         subj_node = GraphNode(
             id="node-subject-person",
             type=NodeType.PERSON,

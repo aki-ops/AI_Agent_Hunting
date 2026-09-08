@@ -60,6 +60,11 @@ class RelationVerifier:
     CLIENT_IP_FIELDS = ("ipaddress", "src_ip", "client_ip", "c_ip", "source_ip", "host_addr")
     SERVER_IP_FIELDS = ("dest_ip", "server_ip", "s_ip", "destination_ip")
     DOMAIN_FIELDS = ("site", "cs_host", "query", "domain", "url", "uri")
+    VERSION_FIELDS = (
+        "version", "productversion", "product_version", "fileversion", "file_version",
+        "software_version", "app_version", "displayversion", "package_version",
+    )
+    ARTIFACT_FIELDS = ("image", "targetfilename", "target_filename", "file_path", "path", "commandline", "cmdline")
     KNOWN_NOISE_DOMAINS = (
         "doubleclick.net", "rubiconproject.com", "bing.com", "msn.com",
         "microsoft.com", "adnxs.com", "gigya.com", "criteo.com", "fwmrm.net",
@@ -80,6 +85,49 @@ class RelationVerifier:
         "volvelle.tech", "yahoo.com", "edgesuite.net", "exelator.com",
         "cnn.io", "wayfair.com"
     )
+
+    @classmethod
+    def _artifact_value(
+        cls,
+        fields: dict[str, str],
+        edge: GraphEdge,
+        target_type: str,
+    ) -> tuple[str | None, dict[str, str]]:
+        """Return an artifact value only when the row carries target evidence.
+
+        This is intentionally a verifier, not an answer generator.  A row is
+        eligible only if it contains a product hint derived from the semantic
+        request.  A version is accepted only from an explicit version field or
+        a version-shaped token in the same cited row.
+        """
+        terms = [str(t).strip().lower() for t in (edge.acceptance_predicate or {}).get("software_terms", []) if str(t).strip()]
+        searchable = " ".join(str(v).lower() for v in fields.values())
+        if terms and not any(term in searchable for term in terms):
+            return None, {}
+        if not terms:
+            return None, {}
+
+        if target_type in ("software_version", "version"):
+            for key in cls.VERSION_FIELDS:
+                val = str(fields.get(key, "") or "").strip()
+                if val and val not in ("-", "unknown", "none"):
+                    match = re.search(r"\b\d+(?:\.\d+){1,4}\b", val)
+                    if match:
+                        return match.group(0), {"software_term": next(t for t in terms if t in searchable), "version": match.group(0), key: val}
+
+            # Some native feeds expose only _raw or a filename.  Still require
+            # the product term before accepting a version-shaped token.
+            match = re.search(r"(?<![A-Za-z0-9])v?(\d+(?:\.\d+){1,4})(?![A-Za-z0-9])", searchable)
+            if match:
+                return match.group(1), {"software_term": next(t for t in terms if t in searchable), "version": match.group(1)}
+            return None, {}
+
+        preferred = ("image", "targetfilename", "target_filename", "file_path", "path", "commandline", "cmdline")
+        for key in preferred:
+            val = str(fields.get(key, "") or "").strip()
+            if val and val not in ("-", "unknown", "none"):
+                return val, {"software_term": next(t for t in terms if t in searchable), key: val}
+        return None, {}
 
     def verify_candidate_edge(
         self,
@@ -327,6 +375,40 @@ class RelationVerifier:
                         break
                 else:
                     diagnostic_violations.append(f"Recipient executive role for '{src_val}' cannot be verified from message telemetry alone without directory/LDAP evidence.")
+
+            # Artifact requirements are anchored to the resolved endpoint.  Do
+            # not route them through IP/web telemetry and do not accept an
+            # arbitrary row merely because it contains a version-looking value.
+            elif src_type in ("endpoint", "host") and tgt_type == "event":
+                terms = [str(t).strip().lower() for t in (edge.acceptance_predicate or {}).get("software_terms", []) if str(t).strip()]
+                searchable = " ".join(str(v).lower() for v in fields.values())
+                if terms and any(term in searchable for term in terms):
+                    for domain_key in self.DOMAIN_FIELDS:
+                        value = str(fields.get(domain_key, "") or "").strip()
+                        if value and value not in ("-", "unknown"):
+                            discovered_target_val = value
+                            matching_obs_ids.append(obs.id)
+                            field_matches["endpoint"] = source_node.value
+                            field_matches["web_field"] = domain_key
+                            field_matches["web_value"] = value
+                            break
+                    if discovered_target_val:
+                        break
+
+            # Artifact requirements are anchored to the resolved endpoint.  Do
+            # not route them through IP/web telemetry and do not accept an
+            # arbitrary row merely because it contains a version-looking value.
+            elif src_type in ("endpoint", "host") and tgt_type in (
+                "software", "software_version", "application", "version",
+                "file", "file_artifact", "process", "process_name",
+            ):
+                artifact_value, artifact_matches = self._artifact_value(fields, edge, tgt_type)
+                if artifact_value:
+                    discovered_target_val = artifact_value
+                    matching_obs_ids.append(obs.id)
+                    field_matches.update(artifact_matches)
+                    field_matches["endpoint"] = source_node.value
+                    break
 
             # A. Person/Account -> Endpoint logon verification
             elif src_type in ("person", "account") and tgt_type in ("endpoint", "host"):

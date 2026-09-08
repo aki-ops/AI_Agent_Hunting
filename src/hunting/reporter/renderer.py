@@ -882,11 +882,26 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         case_unresolved = [
             u for u in case.unknowns
             if not getattr(u, "resolved_value", None)
-            and getattr(case.graph.get_edge(u.resolving_edge_id), "status", "") not in ("verified", RelationStatus.VERIFIED)
+            and getattr(case.graph.get_edge(u.resolving_edge_id), "status", "") in ("unproven", "hypothesized", RelationStatus.UNPROVEN, RelationStatus.HYPOTHESIZED)
         ]
+    case_unresolved_types = {
+        str(getattr(u, "entity_type", "")).lower().replace("nodetype.", "")
+        for u in case_unresolved
+    }
     model_unresolved = []
+    # The model has the most readable relation wording, while the case graph
+    # decides which entity types are actually in this hunt.  Keep model
+    # wording only when its entity type exists in the canonical graph; this
+    # prevents a legacy IP hop from returning in an artifact-only case.
     if account.investigation_model and account.investigation_model.unknowns:
-        model_unresolved = [u for u in account.investigation_model.unknowns if getattr(u, "status", "") == "UNRESOLVED"]
+        model_unresolved = [
+            u for u in account.investigation_model.unknowns
+            if getattr(u, "status", "") == "UNRESOLVED"
+            and (
+                not case_graph
+                or str(getattr(u, "entity_type", "")).lower().replace("nodetype.", "") in case_unresolved_types
+            )
+        ]
 
     # Prefer the semantic model's relationship wording, then include case
     # graph unknowns that are not already represented. This preserves both the
@@ -897,9 +912,11 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         getattr(u, "relation_to_resolve", "") or getattr(u, "variable_name", "")
         for u in unresolved
     }
+    model_types = {str(getattr(u, "entity_type", "")).lower() for u in unresolved}
     for unknown in case_unresolved:
         key = getattr(unknown, "relation_to_resolve", "") or getattr(unknown, "variable_name", "")
-        if key not in seen_unknowns:
+        entity_type = str(getattr(unknown, "entity_type", "")).lower()
+        if key not in seen_unknowns and entity_type not in model_types:
             unresolved.append(unknown)
             seen_unknowns.add(key)
     if unresolved:
@@ -914,7 +931,7 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
     elif proofs and (case or account.investigation_model):
         lines.extend([
             "",
-            "**Unresolved Mandatory Unknowns:** None (all causal relations verified).",
+            "**Unresolved Mandatory Unknowns:** None (all remaining causal relations are concluded).",
         ])
     elif intent and intent.uncertainties and not proofs:
         lines.extend([

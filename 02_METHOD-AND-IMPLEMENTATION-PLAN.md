@@ -1,4 +1,31 @@
-# 02 — METHOD AND IMPLEMENTATION PLAN (v5.0)
+# 02 — METHOD AND IMPLEMENTATION PLAN (v5.1)
+
+## 0. Current execution contract: discovery before correlation
+
+For a free-text hypothesis, execution starts with semantic compilation into a
+provider-neutral `HuntSpec`, followed by capability/schema discovery and a
+bounded `search_text` operation. The search primitive is deliberately generic:
+it accepts term groups, preserves native rows, and does not assume a specific
+event family, EventCode, sourcetype or application path.
+
+Only after observations exist may the controller create identity, process,
+network or other relation edges. The old relation-first graph flow remains a
+compatibility path for structured inputs, not the default for natural-language
+hunting. This ordering is what prevents a guessed identity chain from causing
+the agent to miss relevant mail, web, host or application telemetry.
+
+Every answer must be tied to an explicit answer contract. If the evidence only
+supports a domain but the question asks for a URI, the result is partial or
+inconclusive; it must not be promoted to a fully supported conclusion.
+
+The first implemented enforcement point is `answer_verifier`: it checks cited
+cards, available native fields, query completeness and required answer fields
+before the final account is built. It never creates an answer value itself.
+
+Operation selection is adaptive. Provider-declared semantic capabilities are
+preferred; otherwise the LLM receives only the answer contract, schema,
+anchors and available operation IDs. It returns a semantic operation, not
+SPL/SQL/KQL. Invalid or unavailable selections fall back to `search_text`.
 
 `01_FINAL-ARCHITECTURE.md` defines WHAT the system is. This file defines the
 executable HOW. `03` contains literature sources and traceability; `04` records
@@ -89,7 +116,8 @@ The action planner evaluates the `InvestigationGraph` using backward and forward
    - `status == UNPROVEN`
    - `source_node.status == KNOWN`
    - Edge is marked `MANDATORY`
-2. **The Amber Turing Invariant** (`REF-FOR508`, `REF-FOR572`):
+2. **The dependency-first path rule** (`REF-FOR508`, `REF-FOR572`):
+   - The historical web path shown below is only one possible path. The compiler must derive downstream edges from evidence requirements: artifact objectives use `Person -> Account -> Endpoint -> Process/File -> Answer`, while web/DNS objectives may use the IP/web suffix. Unused edges are never inserted.
    - Path: $	ext{Person(Amber)} ightarrow 	ext{Account} ightarrow 	ext{Endpoint} ightarrow 	ext{Client IP} ightarrow 	ext{Web Activity} ightarrow 	ext{Domain}$.
    - While $	ext{Person} ightarrow 	ext{Account}$ or $	ext{Account} ightarrow 	ext{Endpoint}$ is unproven:
      The planner **only** permits `RESOLVE_ENTITY` actions targeting identity.
@@ -199,7 +227,7 @@ The analyst-facing report (`report.md`) is structured into five concise sections
 1. **Hypothesis / Question**: Seed request, subject, requested object, triple coverage metrics (Causal Path, Wildcard Scope, Instance Cell), and deterministic verdict.
 2. **Hypothesis Analysis & Provenance Graph**:
    - Competing hypotheses adjudicated individually (supported vs unknown/weakened).
-   - Proven Relation Chain: Causal path $\text{Person} \rightarrow \text{Account} \rightarrow \text{Endpoint} \rightarrow \text{Client IP} \rightarrow \text{Request} \rightarrow \text{Domain}$ with citations.
+   - Proven Relation Chain: the request-specific typed path selected by the case graph, with citations; artifact-only cases do not report an IP/web hop.
    - Unresolved Mandatory Unknowns: Explicit listing of unproven variables if inconclusive.
 3. **Evidence and Explanation**:
    - Two-Layer Separation: Raw forensic records preserved in `ObservationLedger` (audit layer); LLM evaluator receives bounded `EvidenceSubgraph` (max 20 cards) with noise domains (CDNs, ads, telemetry trackers) stripped.

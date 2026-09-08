@@ -104,6 +104,7 @@ class CdbAdapter:
 
         operations = (
             ProviderOperation("cdb_scope_scan", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("search_text", "cdb", op_scope_ids, params_schema={"terms": "list[string]", "window": "interval"}, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_process_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_auth_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("cdb_net_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
@@ -117,7 +118,9 @@ class CdbAdapter:
             ProviderOperation("resolve_endpoint_to_client_ip", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_web_activity_from_client_ip", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_dns_activity_from_client_ip", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_web_activity_from_endpoint", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_process_from_endpoint", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            ProviderOperation("find_file_change_from_endpoint", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
             ProviderOperation("find_file_change_from_process", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
         )
 
@@ -149,6 +152,7 @@ class CdbAdapter:
         offset: int = 0,
         query_id: str = "q-001",
         native_query: str | None = None,
+        search_terms: list[str] | tuple[str, ...] | None = None,
     ) -> QueryResult:
         """Execute a parameterized query over SQLite events table with EOF completeness check."""
         params = {"window": window, "limit": limit}
@@ -160,6 +164,13 @@ class CdbAdapter:
 
         conditions: list[str] = ["timestamp >= ?", "timestamp <= ?"]
         sql_params: list[Any] = [start_iso, end_iso]
+
+        if operation_id == "search_text":
+            terms = [str(t).strip() for t in (search_terms or []) if str(t).strip()]
+            text_cols = ("raw_ref", "cmdline", "image", "file_path", "domain", "user", "host", "native_type")
+            for term in terms:
+                conditions.append("(" + " OR ".join(f"COALESCE({col}, '') LIKE ?" for col in text_cols) + ")")
+                sql_params.extend([f"%{term}%"] * len(text_cols))
 
         # Entity filtering
         if entity and entity != ANY:
@@ -237,8 +248,12 @@ class CdbAdapter:
             conditions.append("(domain IS NOT NULL OR native_type LIKE '%http%' OR native_type LIKE '%web%')")
         elif operation_id == "find_dns_activity_from_client_ip":
             conditions.append("(domain IS NOT NULL OR native_type LIKE '%dns%')")
+        elif operation_id == "find_web_activity_from_endpoint":
+            conditions.append("(domain IS NOT NULL OR native_type LIKE '%http%' OR native_type LIKE '%web%')")
         elif operation_id == "find_process_from_endpoint":
             conditions.append("(pid IS NOT NULL OR image IS NOT NULL OR cmdline IS NOT NULL)")
+        elif operation_id == "find_file_change_from_endpoint":
+            conditions.append("(file_path IS NOT NULL OR action LIKE '%write%' OR action LIKE '%create%')")
         elif operation_id == "find_file_change_from_process":
             conditions.append("(file_path IS NOT NULL OR action LIKE '%write%' OR action LIKE '%create%')")
         elif operation_id == "custom_operation" and native_query:

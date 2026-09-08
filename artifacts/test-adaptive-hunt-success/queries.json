@@ -1,0 +1,52 @@
+[
+  {
+    "query_id": "qp-discovery-0",
+    "requirement_id": "discovery",
+    "hypothesis_ids": [
+      "h1"
+    ],
+    "semantic_intent": "",
+    "purpose": "search_text",
+    "entity_binding": "None",
+    "expected_fields": [
+      "host",
+      "timestamp"
+    ],
+    "provider": "mock_splunk",
+    "provider_id": "mock_splunk",
+    "native_query": "<MagicMock name='mock.last_query_text' id='2533600387600'>",
+    "query_text": "<MagicMock name='mock.last_query_text' id='2533600387600'>",
+    "rows_count": 1,
+    "complete": true,
+    "result_summary": "1 rows returned; complete=True",
+    "completeness_contract": "complete",
+    "is_targeted": false,
+    "operation_id": "search_text",
+    "scope_id": "main"
+  },
+  {
+    "query_id": "qp-adaptive-0-1",
+    "requirement_id": "adaptive-answer",
+    "hypothesis_ids": [
+      "h1"
+    ],
+    "semantic_intent": "",
+    "purpose": "find_file_version",
+    "entity_binding": "None",
+    "expected_fields": [
+      "host",
+      "timestamp"
+    ],
+    "provider": "mock_splunk",
+    "provider_id": "mock_splunk",
+    "native_query": "<MagicMock name='mock.last_query_text' id='2533600387600'>",
+    "query_text": "<MagicMock name='mock.last_query_text' id='2533600387600'>",
+    "rows_count": 1,
+    "complete": true,
+    "result_summary": "1 rows returned; complete=True",
+    "completeness_contract": "complete",
+    "is_targeted": true,
+    "operation_id": "find_file_version",
+    "scope_id": "main"
+  }
+]

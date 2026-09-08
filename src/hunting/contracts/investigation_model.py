@@ -393,6 +393,22 @@ def build_investigation_model_from_intent(
     subj_val = getattr(intent.subject, "value", "") if hasattr(intent, "subject") else ""
     req_obj_type = getattr(intent.requested_object, "type", "unknown") if hasattr(intent, "requested_object") else "unknown"
 
+    artifact_requirements = [
+        r for r in requirements
+        if str(getattr(r, "evidence_type", "") or getattr(r, "semantic_intent", "")).strip().lower()
+        in {
+            "process_ancestry", "process_execution", "process_creation",
+            "file_modification", "file_artifact", "file_creation", "persistence_change",
+        }
+    ]
+    artifact_target = (
+        str(req_obj_type).lower() in {
+            "software", "software_version", "application", "version",
+            "process", "process_name", "file", "file_artifact",
+        }
+        or bool(artifact_requirements)
+    )
+
     # Subject Node
     subj_node = GraphNode(
         id=f"node-subj-{subj_type}",
@@ -413,7 +429,74 @@ def build_investigation_model_from_intent(
     )
     graph.add_node(target_node)
 
-    if subj_type in ("person", "user"):
+    if subj_type in ("person", "user") and artifact_target:
+        # The investigation model mirrors the semantic evidence contract.  A
+        # software/file objective needs an endpoint artifact path; it does not
+        # need an IP hop unless a web/DNS requirement explicitly asks for one.
+        endpoint_node = GraphNode(
+            id="node-endpoint",
+            type=NodeType.ENDPOINT.value,
+            value="UNKNOWN_ENDPOINT",
+            status=NodeStatus.UNKNOWN,
+            source="inference",
+        )
+        graph.add_node(endpoint_node)
+        edge1 = GraphEdge(
+            id="edge-person-endpoint",
+            source_id=subj_node.id,
+            target_id=endpoint_node.id,
+            relation_type=RelationType.LOGGED_ON_TO.value,
+            status=NodeStatus.UNKNOWN,
+            source="inference",
+        )
+        graph.add_edge(edge1)
+        unknowns.append(
+            InvestigationUnknown(
+                id="unk-endpoint",
+                entity_type="endpoint",
+                description=f"Identify workstation endpoint used by {subj_val}",
+                relation_to_resolve=f"{subj_type}({subj_val}) -> logged_on_to -> endpoint",
+                mandatory=True,
+                status="UNRESOLVED",
+            )
+        )
+        for idx, req in enumerate(artifact_requirements, start=1):
+            evidence_type = str(getattr(req, "evidence_type", "") or getattr(req, "semantic_intent", "")).strip().lower()
+            relation = RelationType.MODIFIED.value if evidence_type in {
+                "file_modification", "file_artifact", "file_creation", "persistence_change",
+            } else RelationType.EXECUTED.value
+            edge = GraphEdge(
+                id=f"edge-artifact-{getattr(req, 'id', idx)}",
+                source_id=endpoint_node.id,
+                target_id=target_node.id,
+                relation_type=relation,
+                status=NodeStatus.UNKNOWN,
+                source="inference",
+                metadata={
+                    "requirement_id": getattr(req, "id", f"artifact-{idx}"),
+                    "evidence_type": evidence_type,
+                    "necessity": str(getattr(req, "necessity", "CRITICAL")).upper(),
+                },
+            )
+            graph.add_edge(edge)
+            unknowns.append(
+                InvestigationUnknown(
+                    id=f"unk-artifact-{idx}",
+                    entity_type=str(req_obj_type),
+                    description=str(getattr(req, "description", "Verify artifact evidence")),
+                    relation_to_resolve=f"endpoint -> {relation} -> {req_obj_type}",
+                    mandatory=str(getattr(req, "necessity", "CRITICAL")).upper() == "CRITICAL",
+                    status="UNRESOLVED",
+                )
+            )
+        acceptance_criteria.append(
+            AcceptanceCriterion(
+                id="crit-user-artifact-path",
+                description=f"Resolve {subj_val} to an endpoint and verify the requested artifact evidence",
+                required_path=[subj_type, "endpoint", str(req_obj_type)],
+            )
+        )
+    elif subj_type in ("person", "user"):
         # Person requires: person -> logged_on_to -> endpoint -> originated_from -> IP -> requested -> target
         endpoint_node = GraphNode(
             id="node-endpoint",

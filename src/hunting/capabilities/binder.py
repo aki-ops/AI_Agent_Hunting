@@ -23,7 +23,9 @@ class CapabilityBinder:
         "resolve_endpoint_to_client_ip",
         "find_web_activity_from_client_ip",
         "find_dns_activity_from_client_ip",
+        "find_web_activity_from_endpoint",
         "find_process_from_endpoint",
+        "find_file_change_from_endpoint",
         "find_file_change_from_process",
         "resolve_account_to_email",
         "find_outbound_message_metadata",
@@ -80,6 +82,21 @@ class CapabilityBinder:
         # 10. Process -> File
         if src_t == "process" and tgt_t == "file":
             return "find_file_change_from_process"
+
+        # Artifact requirements may be anchored directly to an endpoint when
+        # no process identifier is known yet.  This is deliberately separate
+        # from process -> file: the planner must not invent a process pivot.
+        if src_t in ("endpoint", "host") and tgt_t in (
+            "file", "file_artifact", "software", "software_version", "application", "version", "process", "process_name",
+        ):
+            if edge.acceptable_operations:
+                return edge.acceptable_operations[0]
+            if rel_t in ("modified", "wrote"):
+                return "find_file_change_from_endpoint"
+            return "find_process_from_endpoint"
+
+        if src_t in ("endpoint", "host") and tgt_t == "event":
+            return edge.acceptable_operations[0] if edge.acceptable_operations else "find_web_activity_from_endpoint"
 
         # Fallback to acceptable operations on edge if defined
         if edge.acceptable_operations:
@@ -228,6 +245,14 @@ class CapabilityBinder:
                     f'| table _time, host, ComputerName, Image, CommandLine, ParentImage, User, ProcessId, _raw'
                 )
 
+            if op == "find_file_change_from_endpoint":
+                return (
+                    f'search index="{index}" (sourcetype="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=11) '
+                    f'(host="*{clean_val}*" OR ComputerName="*{clean_val}*") '
+                    f'| head {limit} '
+                    f'| table _time, host, ComputerName, TargetFilename, Image, ProcessId, ProductVersion, FileVersion, Version, _raw'
+                )
+
             if op == "find_file_change_from_process":
                 return (
                     f'search index="{index}" (sourcetype="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=11) '
@@ -256,6 +281,10 @@ class CapabilityBinder:
                 return f"SELECT * FROM events WHERE event_type = 'web' AND (source_ip = '{clean_val}' OR ip = '{clean_val}') LIMIT {limit}"
             if op == "find_dns_activity_from_client_ip":
                 return f"SELECT * FROM events WHERE event_type = 'dns' AND (source_ip = '{clean_val}' OR ip = '{clean_val}') LIMIT {limit}"
+            if op == "find_web_activity_from_endpoint":
+                return f"SELECT * FROM events WHERE host LIKE '%{clean_val}%' AND (domain IS NOT NULL OR native_type LIKE '%http%' OR native_type LIKE '%web%') LIMIT {limit}"
+            if op == "find_file_change_from_endpoint":
+                return f"SELECT * FROM events WHERE host LIKE '%{clean_val}%' AND (file_path IS NOT NULL OR action LIKE '%write%' OR action LIKE '%create%') LIMIT {limit}"
             return f"SELECT * FROM events WHERE host = '{clean_val}' OR user = '{clean_val}' LIMIT {limit}"
 
         return f"-- Provider {provider_id} query for {op} on {clean_val}"

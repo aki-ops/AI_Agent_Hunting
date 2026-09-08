@@ -1,0 +1,61 @@
+{
+  "question": "What version of Tor was installed on wrk-amber?",
+  "answer_contract": {
+    "answer_type": "software_version",
+    "required_fields": [
+      "ProductVersion"
+    ],
+    "requires_binding": true
+  },
+  "anchors": [
+    {
+      "value": "wrk-amber",
+      "kind": "host",
+      "origin": "input",
+      "confidence": 1.0
+    }
+  ],
+  "search_terms": [
+    {
+      "value": "wrk-amber",
+      "origin": "input",
+      "confidence": 1.0
+    }
+  ],
+  "evidence_predicates": [
+    {
+      "semantic_intent": "file_modification",
+      "description": "Tor version",
+      "necessity": "CRITICAL",
+      "required_fields": []
+    }
+  ],
+  "alternative_paths": [
+    {
+      "name": "raw_text_search",
+      "predicate_types": [
+        "discovery"
+      ]
+    },
+    {
+      "name": "process_telemetry",
+      "predicate_types": [
+        "process"
+      ]
+    },
+    {
+      "name": "file_telemetry",
+      "predicate_types": [
+        "file"
+      ]
+    },
+    {
+      "name": "registry_or_inventory",
+      "predicate_types": [
+        "metadata"
+      ]
+    }
+  ],
+  "time_window": "2026-09-01T00:00:00Z/2026-09-08T00:00:00Z",
+  "uncertainties": []
+}

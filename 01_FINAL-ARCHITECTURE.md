@@ -1,4 +1,34 @@
-# 01 — FINAL ARCHITECTURE (v5.0)
+# 01 — FINAL ARCHITECTURE (v5.1)
+
+## Current source of truth: discovery-first hunting
+
+The current implementation uses a **discovery-first** contract for free-text
+hunting. The request is not forced into a fixed attack chain or a predefined
+relation graph before telemetry is inspected.
+
+1. The LLM converts the hypothesis into a validated `HuntSpec`: intent,
+   answer contract, anchors, evidence requirements and provider-neutral search
+   terms. It must not emit SPL, event codes or a hard-coded attack path.
+2. The provider is inspected for capabilities and schema, then the generic
+   `search_text` primitive searches native content. Terms are grouped as
+   alternatives within a group and intersected across groups; this prevents
+   one guessed alias from suppressing valid evidence.
+3. Returned native rows are preserved as observations and evidence cards. The
+   next query is chosen from observed anchors, capability metadata and the
+   answer contract—not from a fixed list of event families.
+4. Deterministic checks validate exact fields, relationships, time order and
+   query completeness. The LLM explains ambiguous evidence and proposes the
+   next bounded search, but it cannot invent evidence or silently change the
+   objective.
+5. The former Investigation Case Graph is a post-discovery correlation and
+   verification mechanism. It is not allowed to preempt content discovery.
+
+When capability metadata is insufficient, the LLM may select a semantic
+operation and literal search terms from the discovered metadata. It may not
+emit native SPL, SQL or KQL; provider adapters own native query generation.
+
+The relation-first sections below describe the compatibility path for already
+structured cases; where they conflict with this section, this section wins.
 
 **Canonical architecture source of truth.** `02` describes the executable
 method, `03` records external literature and traceability, and `04` is
@@ -63,7 +93,7 @@ Final Hunt Result & Epistemic Verdict (Proven causal chain or truthful INCONCLUS
 |---|---|---|---|
 | **Semantic Case Compiler** | Compiles free text or CTI/CVE input into an `InvestigationCase` and `InvestigationGraph` with claims, unknowns, and required relation paths. | Free text: at most 1 schema-strict call. Known CVE/TTP: 0 calls (deterministic templates). Emits **no** raw SPL or vendor terms. | `REF-HUNTERAGENT`, `REF-THREATRAPTOR` |
 | **Investigation Case Graph** | Central epistemic state holding nodes, edges, unproven relations, and mandatory unknowns. | None (Deterministic data structure). | `REF-SLEUTH`, `REF-HOLMES`, `REF-EXCYTIN` |
-| **Capability Binder** | Maps unresolved relations (`person -> endpoint`, `endpoint -> client_ip`) to provider logical operations. | None (Deterministic capability schema). | `REF-AIQL`, `REF-MITRE-ANALYTICS` |
+| **Capability Binder** | Maps each unresolved typed relation to a provider-neutral operation. The path is evidence-driven: web/DNS claims may require an IP hop, while process/file/software claims can query directly from a resolved endpoint. | None (Deterministic capability schema). | `REF-AIQL`, `REF-MITRE-ANALYTICS` |
 | **Relation-Aware Action Planner** | Selects next action using backward/forward dependency chaining; enforces identity resolution before activity queries. | Advisory ranking only when multiple valid operations tie. Final selection is deterministic. | `REF-PROVSEEK`, `REF-FOR508` |
 | **Provider Adapter Layer** | Discovers partitions, compiles native queries (SPL/SQL), manages L+1 completeness pagination. | None (Zero LLM query synthesis in normal path). | `REF-OCSF`, `REF-MICROSOFT` |
 | **Observation Ledger** | Append-only store of raw provider rows preserving `native_type` and native fields. | None. | `REF-OMEGALOG`, `REF-OCSF` |
@@ -131,13 +161,22 @@ To prevent server-client conflation and spurious attribution, fields carry stric
 **Invariant**: A pivot or relation can NEVER be minted merely because a row contains a
 generic `host` or `destination_ip` field.
 
-### 4.3 The Identity-First Invariant (e.g. Amber Turing) [Tags: REF-FOR508, REF-FOR572]
-When an investigation targets a human actor (`person`), the engine enforces a strict causal chain:
-$$\text{Amber (Person)} \xrightarrow{\text{owns}} \text{Account} \xrightarrow{\text{logged\_on\_to}} \text{Endpoint} \xrightarrow{\text{assigned}} \text{Client IP} \xrightarrow{\text{requested}} \text{Web Activity} \xrightarrow{\text{targets}} \text{Domain}$$
+### 4.3 Dependency-First, Evidence-Driven Paths [Tags: REF-FOR508, REF-FOR572]
+When an investigation targets a human actor (`person`), identity resolution is a
+prerequisite, but it is not a universal suffix. The compiler derives downstream
+edges from the evidence requirements:
 
-**Absolute Operational Invariant**: Global web/DNS traffic sweeps are strictly forbidden
-while the causal prefix $\text{Person} \rightarrow \text{Endpoint / Client IP}$ remains unproven.
-Web servers (`jabbah`, `we1149srv`, IIS) are permanently prohibited from being bound as user endpoints.
+```text
+Web/DNS objective:   Person -> Account -> Endpoint -> Client IP -> Web/DNS -> Domain
+Artifact objective:  Person -> Account -> Endpoint -> Process/File -> Answer
+Email objective:     Person -> Account -> Email -> Message -> Recipient/Role
+```
+
+These are examples of typed paths, not hard-coded scenarios. An artifact hunt
+must not manufacture an IP/web edge, and a web hunt must not manufacture a
+process/file edge. Global web/DNS sweeps remain forbidden while the required
+identity prefix is unproven. Web servers (`jabbah`, `we1149srv`, IIS) are
+permanently prohibited from being bound as user endpoints.
 
 ---
 

@@ -1,0 +1,15 @@
+{
+  "operation": null,
+  "operation_id": null,
+  "reason": "answer fields already observed",
+  "required_fields": [
+    "ProductVersion"
+  ],
+  "ready_for_answer": true,
+  "search_terms": [
+    "wrk-amber"
+  ],
+  "prompt_hash": "",
+  "validation_result": "FIELDS_SATISFIED",
+  "iteration": 2
+}

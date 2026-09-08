@@ -1,0 +1,39 @@
+{
+  "hunt_id": "test-adaptive-hunt",
+  "outcome": "INCONCLUSIVE",
+  "stopping_decision": "STOP_BOUNDED",
+  "answer": {
+    "status": "NOT_FOUND",
+    "answer_type": "software_version",
+    "question": "What version of Tor was installed on wrk-amber?",
+    "candidates": [],
+    "card_ids": [],
+    "required_fields": [
+      "ProductVersion"
+    ],
+    "available_fields": [
+      "host",
+      "image",
+      "path",
+      "timestamp",
+      "user"
+    ],
+    "missing_fields": [
+      "ProductVersion"
+    ]
+  },
+  "llm_usage": {
+    "model": "stub",
+    "max_calls_budget": 3,
+    "calls_made": 0,
+    "is_exhausted": false,
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "total_tokens": 0,
+    "estimated_cost_usd": 0,
+    "calls": []
+  },
+  "total_observations": 3,
+  "total_cards": 1,
+  "total_queries": 3
+}

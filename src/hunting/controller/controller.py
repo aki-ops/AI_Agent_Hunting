@@ -226,7 +226,10 @@ class CanonicalActionController:
             and getattr(state.objective, "semantic_intent", None)
             and getattr(state.objective.semantic_intent.subject, "type", "") == "person"
         )
-        if ident_req and not state.identity_resolved:
+        # A discovery-first hunt may legitimately start from a person without a
+        # pre-linked endpoint.  Do not let the legacy identity gate terminate it
+        # before content discovery has been evaluated.
+        if ident_req and not state.identity_resolved and not getattr(state, "discovery_completed", False):
             decision = StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED
             self.set_stopping_decision(state, decision)
             return decision
@@ -273,7 +276,19 @@ class CanonicalActionController:
             and not state.case.graph.get_unproven_edges(only_known_source=False)
             and state.case.graph.edges
         ):
-            decision = StoppingDecision.STOP_RESOLVED
+            # A graph with completed-but-unverified artifact edges is not a
+            # resolved hunt.  The distinction matters for bounded negative
+            # searches: no matching row is not proof that the hypothesis is
+            # false, especially when another independent requirement remains.
+            has_refuted_edges = any(
+                e.status == RelationStatus.REFUTED
+                for e in state.case.graph.edges.values()
+            )
+            decision = (
+                StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN
+                if has_refuted_edges
+                else StoppingDecision.STOP_RESOLVED
+            )
             graph = state.case.graph
             verified_edge_ids = {
                 e_id for e_id, e in graph.edges.items()

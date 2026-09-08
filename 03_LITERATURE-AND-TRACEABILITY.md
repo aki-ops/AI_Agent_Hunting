@@ -1,4 +1,21 @@
-# 03 — LITERATURE AND TRACEABILITY (v5.0)
+# 03 — LITERATURE AND TRACEABILITY (v5.1)
+
+## Current design revision
+
+The implementation has moved from a relation-first default to a
+discovery-first default. The change is grounded in the following principles:
+
+- threat-hunting systems need iterative, queryable evidence collection rather
+  than a single fixed event taxonomy;
+- the search/query layer should be provider-aware but provider-neutral at the
+  semantic contract boundary;
+- an LLM may propose semantic anchors and explanations, while deterministic
+  validation, completeness metadata and provenance control what can be claimed;
+- relations are inferred from observed evidence and remain provisional until
+  corroborated.
+
+The previous relation-first graph remains documented as a compatibility
+planner. It is no longer the default execution path for free-text hypotheses.
 
 This document establishes the formal epistemic grounding of the system. It
 separates principles proven by external peer-reviewed literature, preprints,

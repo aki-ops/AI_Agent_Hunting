@@ -79,6 +79,14 @@ from hunting.contracts.hunt import (
     SubjectEntity,
     TimePolicy,
 )
+from hunting.contracts.hunt_spec import (
+    Anchor,
+    AnswerContract,
+    EvidencePath,
+    EvidencePredicate,
+    HuntSpec,
+    SearchTerm,
+)
 from hunting.contracts.observations import (
     EpistemicType,
     Observation,
@@ -145,6 +153,12 @@ __all__ = [
     "Cell",
     "CellState",
     "ProviderScope",
+    "HuntSpec",
+    "AnswerContract",
+    "Anchor",
+    "SearchTerm",
+    "EvidencePredicate",
+    "EvidencePath",
     "Observation",
     "EpistemicType",
     "TaintLabel",

@@ -1,0 +1,50 @@
+{
+  "nodes": {
+    "node-target-object": {
+      "id": "node-target-object",
+      "type": "software_version",
+      "value": "?",
+      "status": "UNKNOWN",
+      "confidence": 1.0,
+      "field_role": null,
+      "source": "intent",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {}
+    },
+    "node-subject-entity": {
+      "id": "node-subject-entity",
+      "type": "host",
+      "value": "wrk-amber",
+      "status": "KNOWN",
+      "confidence": 1.0,
+      "field_role": null,
+      "source": "intent",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {}
+    }
+  },
+  "edges": {
+    "edge-subject-to-target": {
+      "id": "edge-subject-to-target",
+      "source_id": "node-subject-entity",
+      "source_entity_type": "host",
+      "relation_type": "connected_to",
+      "target_id": "node-target-object",
+      "target_entity_type": "software_version",
+      "required_field_roles": {},
+      "source_field_bindings": {},
+      "required_native_types": [],
+      "acceptance_predicate": {},
+      "time_constraints": {},
+      "acceptable_operations": [],
+      "status": "UNPROVEN",
+      "confidence": 1.0,
+      "citations": [],
+      "origin_query_id": null,
+      "metadata": {}
+    }
+  },
+  "proofs": {}
+}

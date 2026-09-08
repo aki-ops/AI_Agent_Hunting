@@ -10,7 +10,9 @@ Component 1 of Canonical v4 Threat Hunting Architecture:
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import re
 from typing import Any, Callable
 
@@ -50,6 +52,8 @@ from hunting.contracts.semantic_intent import (
     SemanticHuntIntent,
     SubjectEntity,
 )
+
+logger = logging.getLogger(__name__)
 
 # Common prompt injection signatures targeting security agents
 INJECTION_PATTERNS = [
@@ -136,6 +140,45 @@ def validate_compiler_output_integrity(data: dict) -> list[str]:
     return violations
 
 
+def _project_compiler_contract(data: dict[str, Any]) -> dict[str, Any]:
+    """Keep only fields consumed by the semantic contract.
+
+    Models sometimes append illustrative vendor queries even when explicitly
+    told not to. Those fields are not part of the contract and must never be
+    executed or allowed to influence planning. We discard them before
+    validation, while still validating every field that the engine consumes.
+    """
+    root_keys = {
+        "normalized_claim", "entities", "mechanism_status", "answer_spec",
+        "hypotheses", "requirements", "semantic_intent",
+    }
+    projected = {key: data[key] for key in root_keys if key in data}
+    for key in ("normalized_claim", "answer_spec"):
+        value = projected.get(key)
+        if isinstance(value, dict):
+            allowed = {
+                "normalized_claim": {"text", "status"},
+                "answer_spec": {"mode", "answer_type", "evidence_types", "question"},
+            }[key]
+            projected[key] = {k: value[k] for k in allowed if k in value}
+    if isinstance(projected.get("entities"), list):
+        projected["entities"] = [
+            {k: item[k] for k in ("type", "value", "role") if k in item}
+            for item in projected["entities"] if isinstance(item, dict)
+        ]
+    if isinstance(projected.get("hypotheses"), list):
+        projected["hypotheses"] = [
+            {k: item[k] for k in ("id", "statement", "class", "hypothesis_class", "assumptions", "requirements", "required_edges", "required_edge_ids", "required_evidence", "required_evidence_types") if k in item}
+            for item in projected["hypotheses"] if isinstance(item, dict)
+        ]
+    if isinstance(projected.get("requirements"), list):
+        projected["requirements"] = [
+            {k: item[k] for k in ("id", "semantic_intent", "evidence_type", "necessity", "search_hints", "falsification_condition", "description", "source_refs", "predicate") if k in item}
+            for item in projected["requirements"] if isinstance(item, dict)
+        ]
+    return projected
+
+
 def parse_and_validate_semantic_intent(
     data: dict | str,
     original_request: str = "",
@@ -157,6 +200,8 @@ def parse_and_validate_semantic_intent(
 
     if not isinstance(data, dict):
         raise ValueError("LLM output must be a JSON object")
+
+    data = _project_compiler_contract(data)
 
     violations = validate_compiler_output_integrity(data)
     if violations:
@@ -682,6 +727,8 @@ class KnowledgeBehaviorCompiler:
             "Do NOT simply match keywords. Recognize that target entities (domains, hosts, IPs, users, files) do not dictate the attack vector.\n"
             "If the mechanism is not proven or specified, mark mechanism_status as UNKNOWN and generate competing hypotheses (e.g., exploitation, credential misuse, benign baseline) with explicit assumptions.\n"
             "Do NOT generate raw SPL/SQL queries. You only emit semantic intent, necessity, search hints, and falsification conditions.\n"
+            "For every requirement, search_hints must contain 1-5 literal, high-recall anchors that could occur in native telemetry: person/user names, product names, process names, domains, paths, email addresses, or distinctive phrases.\n"
+            "Do not emit provider syntax, EventCode, sourcetype, field comparisons, or a whole natural-language sentence as the only hint. If the request names a product or artifact, include that product/artifact literally.\n"
             "The claim in the request is NOT an established fact; mark claim status as UNVERIFIED.\n\n"
             "Allowed semantic_intent values:\n"
             "- web_request_activity\n"
@@ -711,6 +758,7 @@ class KnowledgeBehaviorCompiler:
             '  "answer_spec": {\n'
             '    "mode": "lookup" | "hunt",\n'
             '    "answer_type": "semantic type of the requested answer; do not restrict it to a fixed vocabulary",\n'
+            '    "required_fields": ["semantic fields that must be present to answer"],\n'
             '    "evidence_types": ["web_request", "dns_activity"],\n'
             '    "question": "The exact information the hunt must answer"\n'
             "  },\n"
@@ -738,7 +786,32 @@ class KnowledgeBehaviorCompiler:
         )
 
         self.llm_calls_made += 1
+        prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
         raw_resp = self.llm_caller(prompt)
+
+        # Gatekeeper retry: some API gateways apply a generic analyst persona
+        # and return a report instead of the requested compiler contract. Give
+        # the same model one bounded correction opportunity; never translate
+        # the free text locally or guess missing requirements.
+        try:
+            first_payload = json.loads(raw_resp) if isinstance(raw_resp, str) else raw_resp
+        except (TypeError, json.JSONDecodeError):
+            first_payload = {}
+        has_contract_hint = isinstance(raw_resp, str) and any(
+            f'"{marker}"' in raw_resp for marker in ("requirements", "hypotheses", "semantic_intent")
+        )
+        if isinstance(first_payload, dict) and not (set(first_payload) & {"requirements", "hypotheses", "semantic_intent"}) and not has_contract_hint:
+            repair_prompt = (
+                "CORRECTION REQUIRED. The previous response was not a semantic compiler response. "
+                "Ignore any report, verdict, SPL, KQL, hunting_queries, recommendations, or threat "
+                "classification fields. Re-read the original hunt request and return ONLY the exact "
+                "JSON object schema in the prompt, with requirements, hypotheses, entities, answer_spec, "
+                "and literal provider-neutral search_hints. Do not answer the hunt.\n\n"
+                + prompt
+            )
+            self.llm_calls_made += 1
+            prompt_hash = hashlib.sha256(repair_prompt.encode("utf-8")).hexdigest()[:16]
+            raw_resp = self.llm_caller(repair_prompt)
 
         # Parse and validate JSON schema strictly
         try:
@@ -758,6 +831,11 @@ class KnowledgeBehaviorCompiler:
             normalized_answer_spec = {
                 "mode": "lookup" if str(answer_spec.get("mode", "hunt")).lower() == "lookup" else "hunt",
                 "answer_type": answer_type,
+                "required_fields": [
+                    str(value).strip()
+                    for value in answer_spec.get("required_fields", [])
+                    if str(value).strip()
+                ],
                 "evidence_types": answer_evidence_types,
                 "question": str(answer_spec.get("question", request.content)).strip() or request.content,
             }
@@ -828,10 +906,21 @@ class KnowledgeBehaviorCompiler:
                 case_graph=inv_case.graph,
             )
 
+            logger.info(
+                "[LLM_OBSERVABILITY] phase=compiler prompt_hash=%s selected_operation=semantic_compilation search_terms=%s validation_result=VALID",
+                prompt_hash,
+                [r.search_hints for r in requirements if r.search_hints],
+            )
             return objective, hypotheses, requirements
 
-        except Exception:
+        except Exception as exc:
             # Under strict anti-hallucination policy, DO NOT fallback to keyword guessing!
+            logger.exception("Semantic compiler rejected LLM output: %s", exc)
+            logger.info(
+                "[LLM_OBSERVABILITY] phase=compiler prompt_hash=%s selected_operation=semantic_compilation search_terms=[] validation_result=FAILED: %s",
+                prompt_hash,
+                exc,
+            )
             hypo_insufficient = Hypothesis(
                 id=f"hypo-{request.id}-insufficient",
                 statement=f"Semantic compilation failed schema validation: '{request.content}'",

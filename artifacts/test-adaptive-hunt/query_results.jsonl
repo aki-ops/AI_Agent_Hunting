@@ -1,0 +1,3 @@
+{"query_id": "qp-discovery-0", "logical_plan_id": null, "executed_ok": true, "complete": true, "rows_count": 1, "native_query": null}
+{"query_id": "qp-adaptive-0-1", "logical_plan_id": null, "executed_ok": true, "complete": true, "rows_count": 1, "native_query": null}
+{"query_id": "qp-adaptive-0-2", "logical_plan_id": null, "executed_ok": true, "complete": true, "rows_count": 1, "native_query": null}

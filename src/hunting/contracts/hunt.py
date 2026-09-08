@@ -22,6 +22,7 @@ from hunting.contracts.cells import Cell
 from hunting.contracts.coverage import CoverageBound
 from hunting.contracts.entities import AnyEntity, EntityRef
 from hunting.contracts.expectations import Expectation, FieldPredicate
+from hunting.contracts.hunt_spec import HuntSpec
 from hunting.contracts.investigation_model import (
     GraphEdge,
     GraphNode,
@@ -97,6 +98,7 @@ class HuntObjective:
     investigation_model: InvestigationModel | None = None
     case: Any | None = None
     case_graph: Any | None = None
+    hunt_spec: HuntSpec | None = None
 
     def __post_init__(self) -> None:
         if not self.request_id.strip():
@@ -372,6 +374,10 @@ class HuntState:
     evidence_assessments: list[EvidenceAssessment] = field(default_factory=list)
     semantic_analysis: dict[str, Any] = field(default_factory=dict)
     semantic_intent: SemanticHuntIntent | None = None
+    hunt_spec: HuntSpec | None = None
+    discovery_completed: bool = False
+    discovery_anchor_values: list[str] = field(default_factory=list)
+    adaptive_decision: dict[str, Any] = field(default_factory=dict)
     investigation_model: InvestigationModel | None = None
     relation_graph: RelationGraph | None = None
     case: Any | None = None
@@ -486,6 +492,7 @@ __all__ = [
     "RequestedObject",
     "SemanticEvidenceRequirement",
     "SemanticHuntIntent",
+    "HuntSpec",
     "InvestigationModel",
     "RelationGraph",
     "GraphNode",

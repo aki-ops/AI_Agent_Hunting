@@ -81,6 +81,7 @@ class ProviderOperation:
     pagination: str = "none"
     limit_semantics: str = "provider-defined"
     rate_limit: dict[str, Any] | None = None
+    semantic_intents: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -404,6 +404,11 @@ class EvidenceEvaluator:
         response_hash = hashlib.sha256(raw_response.encode("utf-8")).hexdigest()[:16] if raw_response else ""
 
         if parse_status != ParseStatus.SUCCESS:
+            logger.info(
+                "[LLM_OBSERVABILITY] phase=evaluator prompt_hash=%s selected_operation=evaluate_cards search_terms=[] validation_result=%s",
+                prompt_hash,
+                parse_status.value,
+            )
             return {
                 "parse_status": parse_status.value,
                 "prompt_hash": prompt_hash,
@@ -492,7 +497,7 @@ class EvidenceEvaluator:
                 validated_answer["reason"] = "COVERAGE_INCOMPLETE"
                 validated_answer["explanation"] = "Cannot conclude NOT_FOUND because one or more telemetry queries were incomplete or truncated."
 
-        return {
+        res = {
             "parse_status": ParseStatus.SUCCESS.value,
             "prompt_hash": prompt_hash,
             "response_hash": response_hash,
@@ -506,6 +511,12 @@ class EvidenceEvaluator:
             "cards_truncated": len(cards) > max_cards,
             "explanation_unavailable": False,
         }
+        logger.info(
+            "[LLM_OBSERVABILITY] phase=evaluator prompt_hash=%s selected_operation=evaluate_cards search_terms=[] validation_result=VALID answer_status=%s",
+            prompt_hash,
+            validated_answer.get("status"),
+        )
+        return res
 
     def evaluate_evidence_advisory(
         self,

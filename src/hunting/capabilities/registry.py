@@ -21,6 +21,7 @@ def build_default_capability_registry() -> dict[str, VersionedCapabilityDescript
     )
 
     cdb_operations = (
+        ProviderOperation("search_text", "cdb_sqlite", ("cdb_native_scope",), params_schema={"terms": "list[string]", "window": "interval"}, pagination="offset", limit_semantics="complete up to limit"),
         ProviderOperation(
             id="cdb_process_lineage",
             provider_id="cdb_sqlite",
@@ -122,6 +123,7 @@ def build_default_capability_registry() -> dict[str, VersionedCapabilityDescript
     )
 
     splunk_operations = (
+        ProviderOperation("search_text", "splunk", ("splunk_live",), params_schema={"terms": "list[string]", "window": "interval"}, pagination="offset", limit_semantics="complete only on EOF"),
         ProviderOperation(
             id="cdb_process_lineage",
             provider_id="splunk",

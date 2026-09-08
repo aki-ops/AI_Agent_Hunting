@@ -7,8 +7,9 @@ Enforces:
 """
 from __future__ import annotations
 
+import hashlib
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 MODEL_PRICING: dict[str, dict[str, float]] = {
@@ -48,6 +49,10 @@ class LLMCallRecord:
     duration_ms: float = 0.0
     cost_usd: float = 0.0
     model: str = ""
+    prompt_hash: str = ""
+    validation_result: str = ""
+    selected_operation: str = ""
+    search_terms: list[str] = field(default_factory=list)
 
 
 class LLMUsageTracker:
@@ -86,6 +91,10 @@ class LLMUsageTracker:
         model: str | None = None,
         actual_prompt_tokens: int | None = None,
         actual_completion_tokens: int | None = None,
+        prompt_hash: str | None = None,
+        validation_result: str = "",
+        selected_operation: str = "",
+        search_terms: list[str] | tuple[str, ...] = (),
     ) -> LLMCallRecord:
         """Record an LLM call and update token and cost accounting."""
         if self.call_count >= self.max_calls:
@@ -99,6 +108,7 @@ class LLMUsageTracker:
         active_model = model or self.model_name
         pricing = get_model_pricing(active_model)
         call_cost = (prompt_tokens * pricing["prompt"]) + (comp_tokens * pricing["completion"])
+        p_hash = prompt_hash or (hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16] if prompt else "")
 
         record = LLMCallRecord(
             component=component,
@@ -110,6 +120,10 @@ class LLMUsageTracker:
             duration_ms=duration_ms,
             cost_usd=round(call_cost, 6),
             model=active_model,
+            prompt_hash=p_hash,
+            validation_result=validation_result,
+            selected_operation=selected_operation,
+            search_terms=list(search_terms),
         )
         self.calls.append(record)
         self.total_prompt_tokens += prompt_tokens
@@ -132,6 +146,7 @@ class LLMUsageTracker:
                 {
                     "component": c.component,
                     "model": c.model,
+                    "prompt_hash": c.prompt_hash,
                     "prompt_len": c.prompt_len,
                     "response_len": c.response_len,
                     "estimated_prompt_tokens": c.estimated_prompt_tokens,
@@ -139,6 +154,9 @@ class LLMUsageTracker:
                     "cost_usd": c.cost_usd,
                     "timestamp": c.timestamp_iso,
                     "duration_ms": c.duration_ms,
+                    "validation_result": c.validation_result,
+                    "selected_operation": c.selected_operation,
+                    "search_terms": c.search_terms,
                 }
                 for c in self.calls
             ],

@@ -1,0 +1,11 @@
+[
+  {
+    "id": "h1",
+    "statement": "Tor installed",
+    "status": "LIVE",
+    "hypothesis_class": "",
+    "requirements": [
+      "r1"
+    ]
+  }
+]

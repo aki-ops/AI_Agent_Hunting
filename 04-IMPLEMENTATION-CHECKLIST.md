@@ -1,4 +1,21 @@
-# 04 — IMPLEMENTATION CHECKLIST (v5.0)
+# 04 — IMPLEMENTATION CHECKLIST (v5.1)
+
+## Phase 0.1 — Discovery-first migration
+
+- [x] `HuntSpec` separates intent, answer contract, anchors and evidence requirements.
+- [x] Free-text semantic hunts execute provider-neutral `search_text` before relation correlation.
+- [x] Search aliases use OR within semantic groups and AND between groups.
+- [x] Splunk discovery does not hard-code EventCode, sourcetype or a fixed event family.
+- [x] Native discovery rows remain auditable observations and evidence cards.
+- [x] `AnswerContract` declares answer type and required semantic fields.
+- [x] `answer_verifier` rejects uncited answers and downgrades missing fields to `PARTIAL`/`INCONCLUSIVE`.
+- [x] Capability/schema discovery selects the next operation after the first result set.
+- [x] Observed anchors drive bounded follow-up queries across provider-neutral content telemetry.
+- [x] LLM may select an undeclared semantic operation from capability/schema metadata; native syntax remains adapter-owned.
+- [ ] Relation graph construction is enabled only after relevant observations exist.
+- [x] Final answer fields are validated against the answer contract, with partial/inconclusive status for missing fields.
+- [ ] Equivalent `search_text`/schema primitives exist for CDB, EDR and IDS adapters.
+- [ ] Live Splunk replay proves discovery-first behavior on multiple unrelated hypotheses.
 
 An item is marked complete `[x]` only when an automated test, replay script,
 or captured execution artifact directly verifies it. `01` is the architecture
@@ -12,7 +29,7 @@ contract, `02` is the executable method, and `03` is the literature traceability
 - [x] Freeze v4 test baseline and maintain historical auditability.
 - [x] Establish strict migration boundary: demote `Cell` to coverage coordinate only; promote `InvestigationCaseGraph` to agent reasoning unit.
 - [x] Enforce field role separation invariant: `client_ip` ≠ `server_ip`, `sensor_host` ≠ `endpoint_host`.
-- [x] Enforce identity-first invariant: `Person → Account → Endpoint → Client IP` before network traffic testing.
+- [x] Enforce dependency-first paths: resolve the identity prefix before dependent queries, but derive the suffix from evidence requirements (artifact paths do not receive an automatic IP/web hop).
 
 ### Phase 1 — Documentation v5.0 Source of Truth [Tags: REF-USENIX-TH, REF-FOR578]
 - [x] Rewrite `01_FINAL-ARCHITECTURE.md` to v5.0 with embedded literature tags.
@@ -38,6 +55,7 @@ contract, `02` is the executable method, and `03` is the literature traceability
 
 ### Phase 4 — Capability Binder & Logical Provider Operations [Tags: REF-AIQL, REF-MITRE-ANALYTICS, REF-MICROSOFT]
 - [x] Implement `CapabilityBinder` mapping relation goals to logical provider operations (`resolve_person_to_account`, `resolve_account_to_endpoint`, etc.).
+- [x] Bind endpoint artifact requirements directly to `find_process_from_endpoint` or `find_file_change_from_endpoint`; do not invent an intermediate process, IP, or web relation.
 - [x] Update Splunk adapter to register relation-first operations and validate field roles against sourcetypes.
 - [x] Update CDB adapter to register relation-first operations for replay testing.
 - [x] Ensure provider query compiler produces parameterized, bounded native queries.
@@ -69,7 +87,7 @@ contract, `02` is the executable method, and `03` is the literature traceability
 - [x] Unit tests for relation-aware action planner (`test_v5_action_planner.py`).
 - [x] Unit tests for provider adapters (`test_v5_adapters.py`).
 - [x] Amber Turing vertical slice test: proves full causal chain without broad web sweeps or server host confusion (`test_v5_amber_vertical_slice.py`).
-- [x] Regression test suite passes 100% with zero regressions (286 passed).
+- [x] Regression test suite passes 100% with zero regressions (`299 passed, 1 skipped`).
 
 ### Phase 9 — Production Refinements & Rigor Gated Verification [Tags: REF-TAHITI, REF-PEAK, REF-RAG-SEC, REF-ECTH]
 - [x] Fine-Grained Hypothesis Adjudication: Each hypothesis audited against required edge IDs and corroborating evidence cards; unproven attack mechanisms remain `UNKNOWN` rather than blanket `SUPPORTED` (verified on Amber Turing hunt).
@@ -78,7 +96,7 @@ contract, `02` is the executable method, and `03` is the literature traceability
 - [x] Two-Layer Evidence Separation: Full audit fidelity preserved in `ObservationLedger` without bloating reasoning context or token cost.
 - [x] Complete BOTSv1 Decoupling: Zero default fallbacks to `botsv1` across production `src/` codebase; native partition dynamically configured to `botsv2`.
 - [x] Zero Lint Errors: Strict `ruff check src tests` compliance (0 errors).
-- [x] Full Regression & Live Verification: 286 unit/integration tests passing; live Splunk BOTSv2 Amber Turing hunt resolves deterministic answer `www.berkbeer.com` with `STOP_RESOLVED`.
+- [x] Full Regression & Live Verification: `299 passed, 1 skipped`; live Splunk BOTSv2 artifact hunt executes endpoint file/process/web checks and returns truthful `INCONCLUSIVE`/`NO_EVIDENCE_FOUND` without fabricating a software version.
 
 ---
 

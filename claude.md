@@ -31,3 +31,10 @@ and `04` for verified checklist gates.
 
 - `report.md` is an ephemeral per-hunt output artifact, **not** an architecture document.
 - Every architectural change must update `01`, `02`, `03`, `04`, and `docs/01` first.
+
+---
+
+## Agent Autonomy & Execution Directive
+
+- **Autonomous Proactivity**: Do not ask the user for permission, clarification, or confirmation. Always decide the optimal implementation and execute directly to completion.
+

@@ -25,10 +25,15 @@ from hunting.contracts.hunt import (
     RequirementStatus,
     StoppingDecision,
 )
+from hunting.evidence.answer_verifier import verify_answer
 from hunting.m1_ledger.ledger import ObservationLedger
 
 
-def _derive_answer(objective: HuntObjective, cards: list[Any]) -> dict[str, Any]:
+def _derive_answer(
+    objective: HuntObjective,
+    cards: list[Any],
+    observations: list[Any] | None = None,
+) -> dict[str, Any]:
     """Derive a bounded lookup answer from typed evidence, never from free-text keywords."""
     spec = objective.answer_spec or {}
     if spec.get("mode") != "lookup" or spec.get("answer_type") in (None, "none"):
@@ -46,6 +51,11 @@ def _derive_answer(objective: HuntObjective, cards: list[Any]) -> dict[str, Any]
         "user": ("users",),
         "file": ("file_paths", "files"),
         "url": ("urls",),
+        "software_version": ("ProductVersion", "FileVersion", "Version", "version"),
+        "process_name": ("Image", "image", "process_name", "process_image"),
+        "file_path": ("Path", "path", "TargetFilename", "file_path"),
+        "email_address": ("sender_email", "recipient_email", "email"),
+        "timestamp": ("_time", "timestamp", "time"),
     }.get(answer_type, ())
     candidates: dict[str, dict[str, Any]] = {}
     for card in cards:
@@ -66,6 +76,38 @@ def _derive_answer(objective: HuntObjective, cards: list[Any]) -> dict[str, Any]
                 if query_id not in item["query_ids"]:
                     item["query_ids"].append(query_id)
 
+    # Cards are intentionally compressed. For answer fields that are not part
+    # of the standard fact summary, inspect the already persisted observations
+    # without sending them back to the LLM.
+    for observation in observations or []:
+        fields = getattr(observation, "fields", {})
+        if not isinstance(fields, dict):
+            continue
+        values_by_name = {
+            str(key).casefold(): value
+            for key, value in fields.items()
+            if value not in (None, "", [], {})
+        }
+        for field_name in field_names:
+            value = values_by_name.get(field_name.casefold())
+            if value in (None, "", [], {}):
+                continue
+            values = value if isinstance(value, (list, tuple, set)) else [value]
+            for raw_value in values:
+                value_text = str(raw_value).strip()
+                if not value_text:
+                    continue
+                item = candidates.setdefault(value_text, {"value": value_text, "weight": 0, "card_ids": [], "query_ids": []})
+                item["weight"] += 1
+                query_id = str(getattr(observation, "query_id", "") or "")
+                if query_id and query_id not in item["query_ids"]:
+                    item["query_ids"].append(query_id)
+                obs_id = str(getattr(observation, "id", "") or "")
+                for card in cards:
+                    if obs_id in getattr(card, "representative_observation_ids", []):
+                        if card.id not in item["card_ids"]:
+                            item["card_ids"].append(card.id)
+
     ranked = sorted(candidates.values(), key=lambda item: (-item["weight"], item["value"]))
     if not ranked:
         return {
@@ -80,6 +122,8 @@ def _derive_answer(objective: HuntObjective, cards: list[Any]) -> dict[str, Any]
         "question": spec.get("question", objective.statement),
         "value": ranked[0]["value"],
         "candidates": ranked[:10],
+        "card_ids": list(ranked[0].get("card_ids", [])),
+        "query_ids": list(ranked[0].get("query_ids", [])),
     }
 
 
@@ -390,7 +434,11 @@ def build_final_hunt_account(
     if cov.windows_never_covered:
         residual_list.append(f"Time windows never covered: {', '.join(cov.windows_never_covered)}")
 
-    answer = _derive_answer(obj, state.evidence_cards)
+    answer = _derive_answer(
+        obj,
+        state.evidence_cards,
+        list(ledger.observations) if ledger is not None else (),
+    )
     semantic_analysis = dict(state.semantic_analysis)
     llm_answer = semantic_analysis.get("answer") if isinstance(semantic_analysis.get("answer"), dict) else {}
     if llm_answer.get("status") in {"ANSWERED", "NOT_FOUND", "INCONCLUSIVE"}:
@@ -399,6 +447,20 @@ def build_final_hunt_account(
             **llm_answer,
             "answer_type": (obj.answer_spec or {}).get("answer_type", answer.get("answer_type", "value")),
         }
+
+    effective_answer_spec = dict(obj.answer_spec or {})
+    hunt_spec = getattr(obj, "hunt_spec", None) or getattr(state, "hunt_spec", None)
+    if hunt_spec is not None:
+        effective_answer_spec["required_fields"] = list(hunt_spec.answer_contract.required_fields)
+
+    answer = verify_answer(
+        answer=answer,
+        answer_spec=effective_answer_spec,
+        cards=state.evidence_cards,
+        observations=list(ledger.observations) if ledger is not None else (),
+        query_complete=all(getattr(result, "complete", True) for result in state.query_results)
+        if state.query_results else True,
+    )
 
     limitations: list[str] = []
     claim_verdicts: list[ClaimVerdict] = []

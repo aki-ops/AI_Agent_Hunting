@@ -1,0 +1,15 @@
+{
+  "operation": "find_process_version",
+  "operation_id": "find_process_version",
+  "reason": "selected from provider semantic capability",
+  "required_fields": [
+    "ProductVersion"
+  ],
+  "ready_for_answer": false,
+  "search_terms": [
+    "wrk-amber"
+  ],
+  "prompt_hash": "",
+  "validation_result": "DETERMINISTIC_CAPABILITY_MATCH",
+  "iteration": 2
+}

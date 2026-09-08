@@ -49,6 +49,7 @@ from hunting.contracts.hunt import (
     RequirementStatus,
     StoppingDecision,
 )
+from hunting.contracts.hunt_spec import HuntSpec
 from hunting.contracts.investigation_model import (
     GraphEdge,
     GraphNode,
@@ -72,6 +73,7 @@ from hunting.m1_ledger.ledger import ObservationLedger
 from hunting.m5_adapter.allowlist import validate_time_window_format
 from hunting.m5_adapter.cdb_adapter import CdbAdapter
 from hunting.m5_adapter.controls import license_valid_negative
+from hunting.planner.adaptive import AdaptiveOperationPlanner
 from hunting.planner.planner import CanonicalQueryPlanner
 from hunting.reporter.builder import build_final_hunt_account
 from hunting.reporter.renderer import render_analyst_report
@@ -103,6 +105,7 @@ class HypothesisHuntEngine:
         compiler: KnowledgeBehaviorCompiler | None = None,
         registry: dict[str, Any] | None = None,
         planner: CanonicalQueryPlanner | None = None,
+        adaptive_planner: AdaptiveOperationPlanner | None = None,
         cdb_adapter: CdbAdapter | None = None,
         budget_ledger: HuntBudgetLedger | None = None,
         evaluator: EvidenceEvaluator | None = None,
@@ -114,6 +117,14 @@ class HypothesisHuntEngine:
         self.cdb_adapter = cdb_adapter if cdb_adapter is not None else CdbAdapter()
         self.budget_ledger = budget_ledger if budget_ledger is not None else HuntBudgetLedger()
         self.llm_tracker = llm_tracker if llm_tracker is not None else LLMUsageTracker()
+        self.adaptive_planner = (
+            adaptive_planner
+            if adaptive_planner is not None
+            else AdaptiveOperationPlanner(
+                llm_generator=getattr(self.planner, "llm_generator", None),
+                llm_tracker=self.llm_tracker,
+            )
+        )
         self.group_builder = EvidenceGroupBuilder()
         self.reasoner = HypothesisReasoningEngine()
         self.evaluator = evaluator if evaluator is not None else EvidenceEvaluator()
@@ -123,6 +134,175 @@ class HypothesisHuntEngine:
         self.capability_binder = CapabilityBinder()
         self.action_planner = InvestigationActionPlanner(binder=self.capability_binder)
         self.relation_verifier = RelationVerifier()
+
+    def _run_semantic_discovery(
+        self,
+        state: HuntState,
+        active_adapter: Any,
+        scope: ProviderScope,
+        ledger: ObservationLedger,
+        step_callback: Callable[[str, dict[str, Any]], None] | None,
+    ) -> None:
+        """Run bounded provider-neutral content discovery before graph pivots."""
+        spec = state.hunt_spec
+        if spec is None or not spec.search_terms:
+            return
+        if getattr(active_adapter, "provider_id", "") != "splunk":
+            return
+        try:
+            descriptor = active_adapter.get_capability_descriptor()
+            operation_ids = {op.id for op in getattr(descriptor, "operations", ())}
+        except Exception:
+            operation_ids = set()
+        if "search_text" not in operation_ids:
+            return
+
+        query_id = f"qp-discovery-{state.turn or 0}"
+        terms = [term.value for term in spec.search_terms[:24]]
+        search_groups = spec.discovery_groups()
+        plan = QueryPlan(
+            id=query_id,
+            requirement_id="discovery",
+            provider_id=scope.provider_id,
+            scope_id=scope.scope_id,
+            operation_id="search_text",
+            parameters={
+                "window": state.objective.time_window if state.objective else "",
+                "limit": 500,
+                "terms": terms,
+                "term_groups": search_groups,
+                "purpose": "provider-neutral content discovery",
+            },
+            is_targeted=False,
+        )
+        if step_callback:
+            step_callback("TURN_ACTION", {
+                "turn": state.turn,
+                "action": "DISCOVER (content)",
+                "operation": "search_text",
+                "terms": terms,
+                "target": "provider scope",
+            })
+
+        import inspect
+        kwargs: dict[str, Any] = {
+            "operation_id": "search_text",
+            "entity": AnyEntity(),
+            "window": state.objective.time_window if state.objective else "",
+            "limit": 500,
+            "query_id": query_id,
+        }
+        if "search_terms" in inspect.signature(active_adapter.execute_query).parameters:
+            kwargs["search_terms"] = terms
+        if "search_groups" in inspect.signature(active_adapter.execute_query).parameters:
+            kwargs["search_groups"] = search_groups
+        qr = active_adapter.execute_query(**kwargs)
+        if hasattr(active_adapter, "last_query_text"):
+            plan.parameters["query_text"] = active_adapter.last_query_text
+        self.controller.record_query_execution(state, plan, qr)
+        state.discovery_completed = True
+
+        if not qr.rows:
+            return
+
+        candidates: list[str] = []
+        host_candidates: list[str] = []
+        new_observations: list[Observation] = []
+        for row in qr.rows:
+            host_value = str(row.get("host", "") or "").strip()
+            if host_value and host_value not in host_candidates and len(host_candidates) < 8:
+                host_candidates.append(host_value)
+            for key in ("host", "user", "Image", "image", "Path", "path", "TargetFilename"):
+                value = str(row.get(key, "") or "").strip()
+                if value and value not in candidates and len(candidates) < 50:
+                    candidates.append(value)
+            obs_id = f"obs-discovery-{len(ledger.observations) + 1}"
+            obs = Observation(
+                id=obs_id,
+                provider_scope=scope,
+                cell_id=f"discovery:{scope.scope_id}",
+                timestamp=str(row.get("timestamp", "")),
+                epistemic_type=EpistemicType.OBSERVED,
+                native_type=row.get("native_type"),
+                fields=dict(row),
+                entities=[],
+                raw_event=dict(row.get("raw_event") or row),
+                query_id=query_id,
+            )
+            ledger.add_observation(obs)
+            self.controller.add_observation(state, obs)
+            new_observations.append(obs)
+
+        state.discovery_anchor_values = candidates
+        self.group_builder.ingest_delta(new_observations)
+        self.controller.set_evidence_cards(state, self.group_builder.build_cards())
+
+        # A bounded adaptive pivot handles Splunk's explicit truncation signal.
+        # It searches the observed host(s) with the same semantic evidence
+        # group, instead of launching the legacy file/process sweep.
+        if not qr.complete and host_candidates and len(search_groups) >= 2:
+            followup_id = f"qp-discovery-followup-{state.turn or 0}"
+            followup_groups = [host_candidates[:4], search_groups[-1]]
+            followup_terms = [term for group in followup_groups for term in group]
+            followup_plan = QueryPlan(
+                id=followup_id,
+                requirement_id="discovery-followup",
+                provider_id=scope.provider_id,
+                scope_id=scope.scope_id,
+                operation_id="search_text",
+                parameters={
+                    "window": state.objective.time_window if state.objective else "",
+                    "limit": 500,
+                    "terms": followup_terms,
+                    "term_groups": followup_groups,
+                    "purpose": "bounded observed-anchor refinement",
+                },
+                is_targeted=True,
+            )
+            if step_callback:
+                step_callback("TURN_ACTION", {
+                    "turn": state.turn,
+                    "action": "REFINE (observed anchor)",
+                    "operation": "search_text",
+                    "terms": followup_terms,
+                    "target": ", ".join(host_candidates[:4]),
+                })
+            import inspect
+            followup_kwargs: dict[str, Any] = {
+                "operation_id": "search_text",
+                "entity": AnyEntity(),
+                "window": state.objective.time_window if state.objective else "",
+                "limit": 500,
+                "query_id": followup_id,
+            }
+            if "search_terms" in inspect.signature(active_adapter.execute_query).parameters:
+                followup_kwargs["search_terms"] = followup_terms
+            if "search_groups" in inspect.signature(active_adapter.execute_query).parameters:
+                followup_kwargs["search_groups"] = followup_groups
+            followup_qr = active_adapter.execute_query(**followup_kwargs)
+            if hasattr(active_adapter, "last_query_text"):
+                followup_plan.parameters["query_text"] = active_adapter.last_query_text
+            self.controller.record_query_execution(state, followup_plan, followup_qr)
+            followup_observations: list[Observation] = []
+            for row in followup_qr.rows:
+                obs_id = f"obs-discovery-{len(ledger.observations) + 1}"
+                obs = Observation(
+                    id=obs_id,
+                    provider_scope=scope,
+                    cell_id=f"discovery:{scope.scope_id}",
+                    timestamp=str(row.get("timestamp", "")),
+                    epistemic_type=EpistemicType.OBSERVED,
+                    native_type=row.get("native_type"),
+                    fields=dict(row),
+                    entities=[],
+                    raw_event=dict(row.get("raw_event") or row),
+                    query_id=followup_id,
+                )
+                ledger.add_observation(obs)
+                self.controller.add_observation(state, obs)
+                followup_observations.append(obs)
+            self.group_builder.ingest_delta(followup_observations)
+            self.controller.set_evidence_cards(state, self.group_builder.build_cards())
 
     def _evaluate_identity_linkage(
         self,
@@ -143,6 +323,12 @@ class HypothesisHuntEngine:
         known_web_servers = {"jabbah", "we1149srv", "web01", "iis01"}
         candidate_edges: list[GraphEdge] = []
         graph = state.relation_graph
+        # v5 relation-first hunts use InvestigationCase.graph and the
+        # RelationVerifier. This legacy helper operates on the older
+        # RelationGraph API and must not mutate the canonical case graph.
+        if graph is None or not hasattr(graph, "get_node_by_value"):
+            state.identity_mapping.setdefault("reason", "IDENTITY_UNRESOLVED")
+            return
 
         for row in rows:
             user = str(row.get("user", "")).strip()
@@ -302,9 +488,20 @@ class HypothesisHuntEngine:
             hypotheses=hypotheses,
             requirements=requirements,
             investigation_model=inv_model,
-            relation_graph=inv_model.graph if inv_model else (inv_case.graph if inv_case else None),
+            # InvestigationCase.graph is the canonical relation state for v5.
+            # Persisting the older model graph allowed legacy linkage code to
+            # inject an IP/web chain into artifact-only investigations.
+            relation_graph=inv_case.graph if inv_case else (inv_model.graph if inv_model else None),
             case=inv_case,
         )
+        if getattr(objective, "semantic_intent", None):
+            state.hunt_spec = HuntSpec.from_semantic(
+                objective.semantic_intent,
+                requirements,
+                time_window=objective.time_window,
+                answer_spec=objective.answer_spec,
+            )
+            objective.hunt_spec = state.hunt_spec
 
         if inv_model:
             val_res = self.inv_validator.validate_investigation_model(inv_model)
@@ -361,6 +558,204 @@ class HypothesisHuntEngine:
             state=CellState.UNEXPLORED,
         )
         self.controller.add_cell(state, wc_cell)
+
+        # Discovery runs before identity or causal graph pivots.  During this
+        # migration it is enabled for the live Splunk adapter; CDB will use
+        # the same primitive once its schema profiler is enabled.
+        self._run_semantic_discovery(
+            state=state,
+            active_adapter=active_adapter,
+            scope=scope,
+            ledger=ledger,
+            step_callback=step_callback,
+        )
+
+        descriptor = getattr(active_adapter, "get_versioned_descriptor", lambda: None)()
+        if state.hunt_spec is not None and descriptor is not None:
+            schema_fields: set[str] = set()
+            descriptor_operations = {
+                str(getattr(operation, "id", ""))
+                for operation in getattr(descriptor, "operations", ()) or ()
+            }
+            if "discover_schema" in descriptor_operations:
+                schema_query_id = f"qp-schema-{state.turn or 0}"
+                schema_plan = QueryPlan(
+                    id=schema_query_id,
+                    requirement_id="schema-discovery",
+                    provider_id=scope.provider_id,
+                    scope_id=scope.scope_id,
+                    operation_id="discover_schema",
+                    parameters={
+                        "window": objective.time_window,
+                        "limit": 500,
+                        "purpose": "runtime schema discovery",
+                    },
+                    is_targeted=False,
+                )
+                try:
+                    schema_result = active_adapter.execute_query(
+                        operation_id="discover_schema",
+                        entity=AnyEntity(),
+                        window=objective.time_window,
+                        limit=500,
+                        query_id=schema_query_id,
+                    )
+                except (TypeError, ValueError):
+                    schema_result = None
+                if schema_result is not None:
+                    if hasattr(active_adapter, "last_query_text"):
+                        schema_plan.parameters["query_text"] = active_adapter.last_query_text
+                    self.controller.record_query_execution(state, schema_plan, schema_result)
+                    for row in schema_result.rows or []:
+                        field_name = row.get("field") or row.get("field_name")
+                        if field_name:
+                            schema_fields.add(str(field_name))
+                        schema_fields.update(
+                            str(key) for key, value in row.items()
+                            if value not in (None, "", [], {}) and str(key) not in {"_raw", "_time"}
+                        )
+            # Adaptive query execution loop bounded to at most 2 iterations
+            MAX_ADAPTIVE_LOOPS = 2
+            attempted_adaptive_operations: list[str] = []
+
+            for adaptive_iter in range(1, MAX_ADAPTIVE_LOOPS + 1):
+                observed_fields = {
+                    str(field)
+                    for observation in ledger.observations
+                    for field, value in observation.fields.items()
+                    if value not in (None, "", [], {})
+                }
+                observed_fields.update(schema_fields)
+                decision = self.adaptive_planner.choose(
+                    state.hunt_spec,
+                    descriptor,
+                    observed_fields=observed_fields,
+                    attempted_operations=attempted_adaptive_operations,
+                    iteration=adaptive_iter,
+                )
+                state.adaptive_decision = {
+                    "operation": decision.operation,
+                    "operation_id": decision.operation_id,
+                    "reason": decision.reason,
+                    "required_fields": list(decision.required_fields),
+                    "ready_for_answer": decision.ready_for_answer,
+                    "search_terms": list(decision.search_terms),
+                    "prompt_hash": decision.prompt_hash,
+                    "validation_result": decision.validation_result,
+                    "iteration": adaptive_iter,
+                }
+
+                if decision.ready_for_answer:
+                    # Sufficient evidence observed for answering the question
+                    break
+
+                if not decision.operation_id or decision.operation_id in attempted_adaptive_operations:
+                    break
+
+                attempted_adaptive_operations.append(decision.operation_id)
+
+                # Determine target entity for adaptive query
+                target_host = ""
+                if state.discovery_anchor_values:
+                    target_host = next(
+                        (str(value) for value in state.discovery_anchor_values if str(value).strip() and "." not in str(value)),
+                        "",
+                    )
+                if not target_host and state.hunt_spec and state.hunt_spec.anchors:
+                    target_host = next(
+                        (str(a.value) for a in state.hunt_spec.anchors if getattr(a, "kind", "") in ("host", "endpoint") or ("." not in str(a.value) and " " not in str(a.value))),
+                        "",
+                    )
+
+                target_entity: EntityRef = Host(name=target_host) if target_host else AnyEntity()
+
+                adaptive_query_id = f"qp-adaptive-{state.turn or 0}-{adaptive_iter}"
+                adaptive_plan = self.adaptive_planner.make_plan(
+                    decision,
+                    provider_id=scope.provider_id,
+                    scope_id=scope.scope_id,
+                    query_id=adaptive_query_id,
+                    requirement_id="adaptive-answer",
+                    window=objective.time_window,
+                    anchors=[target_host] if target_host else [],
+                )
+                if adaptive_plan is not None:
+                    if step_callback:
+                        step_callback("TURN_ACTION", {
+                            "turn": state.turn,
+                            "action": f"TEST (adaptive capability loop {adaptive_iter})",
+                            "operation": decision.operation_id,
+                            "target": target_host or "ANY",
+                            "requirement": decision.reason,
+                        })
+
+                    exec_kwargs: dict[str, Any] = {
+                        "operation_id": decision.operation_id,
+                        "entity": target_entity,
+                        "window": objective.time_window,
+                        "limit": 500,
+                        "query_id": adaptive_query_id,
+                    }
+                    # Pass search_terms for all adaptive operations so the adapter
+                    # can use them as content filters (e.g., file name, software name).
+                    if decision.search_terms:
+                        import inspect
+                        sig = inspect.signature(active_adapter.execute_query)
+                        if "search_terms" in sig.parameters:
+                            exec_kwargs["search_terms"] = list(decision.search_terms)
+
+                    try:
+                        adaptive_result = active_adapter.execute_query(**exec_kwargs)
+                    except (TypeError, ValueError):
+                        adaptive_result = None
+                    if adaptive_result is not None:
+                        if hasattr(active_adapter, "last_query_text"):
+                            adaptive_plan.parameters["query_text"] = active_adapter.last_query_text
+                        self.controller.record_query_execution(state, adaptive_plan, adaptive_result)
+                        adaptive_observations: list[Observation] = []
+                        for row in adaptive_result.rows or []:
+                            obs_id = f"obs-adaptive-{len(ledger.observations) + 1}"
+                            observation = Observation(
+                                id=obs_id,
+                                provider_scope=scope,
+                                cell_id=f"adaptive:{scope.scope_id}",
+                                timestamp=str(row.get("timestamp", row.get("_time", ""))),
+                                epistemic_type=EpistemicType.OBSERVED,
+                                native_type=row.get("native_type"),
+                                fields=dict(row),
+                                entities=[target_entity] if not isinstance(target_entity, AnyEntity) else [],
+                                raw_event=dict(row.get("raw_event") or row),
+                                query_id=adaptive_query_id,
+                            )
+                            ledger.add_observation(observation)
+                            self.controller.add_observation(state, observation)
+                            adaptive_observations.append(observation)
+                        if adaptive_observations:
+                            self.group_builder.ingest_delta(adaptive_observations)
+                            self.controller.set_evidence_cards(state, self.group_builder.build_cards())
+
+            # Re-check readiness after loop completion
+            observed_fields = {
+                str(field)
+                for observation in ledger.observations
+                for field, value in observation.fields.items()
+                if value not in (None, "", [], {})
+            }
+            observed_fields.update(schema_fields)
+            final_decision = self.adaptive_planner.choose(
+                state.hunt_spec,
+                descriptor,
+                observed_fields=observed_fields,
+            )
+            state.adaptive_decision["ready_for_answer"] = final_decision.ready_for_answer
+
+        # A free-text discovery result is already a valid bounded execution
+        # epoch. Do not fall through into the legacy broad-sweep controller,
+        # which would invent a file/process path and pivot to unrelated hosts.
+        # The final semantic evaluator still runs below over the discovery
+        # cards and explains what the observed rows do and do not prove.
+        if state.discovery_completed and getattr(objective, "semantic_intent", None):
+            self.controller.set_stopping_decision(state, StoppingDecision.STOP_BOUNDED)
 
         # Discovered or targeted instance cells
         if request.entities:
@@ -422,8 +817,9 @@ class HypothesisHuntEngine:
         discovered_entities: set[str] = set()
 
         # 4. Action Loop:
-        # For person-anchored investigations, strictly enforce relation-first resolution
-        # (Person -> Account -> Endpoint -> Client IP -> Traffic) without premature broad sweeps.
+        # Discovery-first semantic hunts must not be intercepted by the legacy
+        # relation-first graph planner.  The graph planner remains available as
+        # a compatibility path for structured cases that already contain edges.
         subj_is_person = bool(
             state.objective
             and getattr(state.objective, "semantic_intent", None)
@@ -439,7 +835,8 @@ class HypothesisHuntEngine:
             )
         )
 
-        if (subj_is_person or has_identity_relations) and state.case and getattr(state.case, "graph", None) and state.case.graph.edges:
+        if (not state.discovery_completed and (subj_is_person or has_identity_relations)
+                and state.case and getattr(state.case, "graph", None) and state.case.graph.edges):
             while not state.stopping_decision:
                 self.budget_ledger.record_turn()
                 self.controller.advance_turn(state)
@@ -574,7 +971,7 @@ class HypothesisHuntEngine:
                             if r_et in ("dns_activity", "dns_query", "network_connection", "scope_records") or any(k in r_desc for k in ("dns", "ip", "dhcp", "network")):
                                 turn_reqs.append(req)
                         elif "logon" in edge.id or "logged_on" in rel_type_str:
-                            if r_et in ("authentication_activity", "process_ancestry") or any(k in r_desc for k in ("logon", "endpoint", "workstation", "login")):
+                            if r_et in ("authentication_activity", "identity") or any(k in r_desc for k in ("logon", "endpoint", "workstation", "login")):
                                 turn_reqs.append(req)
                         elif "owns" in edge.id or "owns" in rel_type_str:
                             if r_et in ("authentication_activity", "identity") or any(k in r_desc for k in ("account", "user", "person", "identity")):
@@ -583,14 +980,10 @@ class HypothesisHuntEngine:
                             if r_et in ("outbound_message_metadata", "email", "message", "communication") or any(k in r_desc for k in ("email", "mail", "message", "recipient", "sender", "outbound", "ceo")):
                                 turn_reqs.append(req)
 
-                    if not turn_reqs and state.requirements:
-                        unexec = [
-                            r for r in state.requirements
-                            if r.status in (RequirementStatus.DEFINED, RequirementStatus.PLANNED)
-                            and ("email" in r.evidence_type.lower() or "mail" in r.description.lower()) == any(k in edge.id for k in ("email", "message", "recipient", "role"))
-                        ]
-                        if unexec:
-                            turn_reqs.append(unexec[0])
+                    # No positional fallback is allowed here.  An edge that
+                    # has no explicit requirement mapping must not confirm an
+                    # arbitrary first requirement merely because its query
+                    # returned rows.
 
                     for req in turn_reqs:
                         if req.status in (RequirementStatus.DEFINED, RequirementStatus.PLANNED):
@@ -637,8 +1030,12 @@ class HypothesisHuntEngine:
                         elif tgt_type_str in ("recipient", "role"):
                             state.identity_mapping[tgt_type_str] = tgt_node.value
 
-                        delta_cards = self.group_builder.ingest_delta(new_obs_list)
-                        self.controller.set_evidence_cards(state, self.group_builder.build_cards())
+                        # Raw relation-resolution rows are retained in the
+                        # ledger, but their broad host-level groups are not
+                        # promoted to report evidence.  Only a verified edge
+                        # gets a case-specific evidence card below; this keeps
+                        # unrelated mail/web/server rows out of the answer.
+                        self.group_builder.ingest_delta(new_obs_list)
 
                         card_id = f"card-{edge.id}"
                         card = EvidenceCard(
@@ -681,6 +1078,38 @@ class HypothesisHuntEngine:
                             logger.info(f"Recipient role '{src_node.value}' -> Role remains UNKNOWN (telemetry limitation).")
                             for req in turn_reqs:
                                 if req.status in (RequirementStatus.DEFINED, RequirementStatus.PLANNED, RequirementStatus.EXECUTED):
+                                    self.controller.update_requirement_status(state, req, RequirementStatus.INCONCLUSIVE)
+                            self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
+                            break
+                        elif tgt_type_str in (
+                            "software", "software_version", "application", "version",
+                            "file", "file_artifact", "process", "process_name",
+                        ) or (
+                            tgt_type_str == "event"
+                            and str(edge.metadata.get("evidence_type", "")).lower()
+                            in ("web_request", "web_activity", "web_request_activity")
+                        ):
+                            # A complete query with no matching artifact is a
+                            # bounded negative observation for this edge.  It
+                            # must not terminate the hunt before independent
+                            # process/file requirements are tested.
+                            if getattr(qr, "complete", False):
+                                edge.status = RelationStatus.REFUTED
+                                edge.metadata["verification_diagnostic"] = v_res.diagnostic or "No matching artifact evidence found."
+                                for req in turn_reqs:
+                                    if req.status in (
+                                        RequirementStatus.DEFINED,
+                                        RequirementStatus.PLANNED,
+                                        RequirementStatus.EXECUTED,
+                                    ):
+                                        self.controller.update_requirement_status(state, req, RequirementStatus.NO_EVIDENCE_FOUND)
+                                continue
+                            for req in turn_reqs:
+                                if req.status in (
+                                    RequirementStatus.DEFINED,
+                                    RequirementStatus.PLANNED,
+                                    RequirementStatus.EXECUTED,
+                                ):
                                     self.controller.update_requirement_status(state, req, RequirementStatus.INCONCLUSIVE)
                             self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
                             break
@@ -885,7 +1314,11 @@ class HypothesisHuntEngine:
                     # Incremental delta grouping
                     delta_cards = self.group_builder.ingest_delta(new_observations)
                     self.controller.set_evidence_cards(state, self.group_builder.build_cards())
-                    for c in state.evidence_cards:
+                    # Only cards minted from this query may be associated with
+                    # its requirement.  Mutating every historical card here
+                    # makes an unrelated web/email row appear to satisfy a
+                    # file/process requirement.
+                    for c in delta_cards:
                         if exp.owner_explanation_id not in c.hypotheses:
                             c.hypotheses.append(exp.owner_explanation_id)
                         if req.id not in c.requirements:
@@ -948,7 +1381,7 @@ class HypothesisHuntEngine:
 
                     # Evaluate whether any delta or existing card satisfies this expectation
                     matched_card = next(
-                        (c for c in (delta_cards or state.evidence_cards) if self.evaluator.evaluate_card_against_expectation(c, exp)),
+                        (c for c in delta_cards if self.evaluator.evaluate_card_against_expectation(c, exp)),
                         None,
                     )
                     if matched_card is not None:
@@ -1290,9 +1723,9 @@ class HypothesisHuntEngine:
                             if resolved_h:
                                 host_counts[resolved_h] = host_counts.get(resolved_h, 0) + 100
 
-                    self.group_builder.ingest_delta(new_observations)
+                    delta_cards = self.group_builder.ingest_delta(new_observations)
                     self.controller.set_evidence_cards(state, self.group_builder.build_cards())
-                    for c in state.evidence_cards:
+                    for c in delta_cards:
                         if sweep_plan.id not in c.query_ids:
                             c.query_ids.append(sweep_plan.id)
                         if primary_req and primary_req.id not in c.requirements:
@@ -1604,6 +2037,14 @@ def persist_hunt_artifacts(
     }
     with open(artifact_dir / "request.json", "w", encoding="utf-8") as f:
         json.dump(req_dict, f, indent=2, ensure_ascii=False)
+
+    # 1b. Persist the provider-neutral planning boundary used before any
+    # provider operation or evidence graph pivot.
+    if getattr(state, "hunt_spec", None) is not None:
+        with open(artifact_dir / "hunt_spec.json", "w", encoding="utf-8") as f:
+            json.dump(state.hunt_spec.to_dict(), f, indent=2, ensure_ascii=False)
+    with open(artifact_dir / "adaptive_decision.json", "w", encoding="utf-8") as f:
+        json.dump(getattr(state, "adaptive_decision", {}), f, indent=2, ensure_ascii=False)
 
     # 2. hypotheses.json
     hyps_data = [
