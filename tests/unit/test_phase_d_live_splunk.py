@@ -15,8 +15,8 @@ from unittest.mock import MagicMock
 import pytest
 import requests
 
-from hunting.contracts.hunt import HuntRequest, HuntRequestKind, HuntObjective
-from hunting.contracts.hunt_spec import AnswerContract, Anchor, HuntSpec, SearchTerm
+from hunting.contracts.hunt import HuntObjective, HuntRequest, HuntRequestKind
+from hunting.contracts.hunt_spec import Anchor, AnswerContract, HuntSpec, SearchTerm
 from hunting.contracts.semantic_intent import (
     RequestedObject,
     SemanticHuntIntent,
@@ -24,7 +24,6 @@ from hunting.contracts.semantic_intent import (
 )
 from hunting.engine import HypothesisHuntEngine
 from hunting.m5_adapter.splunk_adapter import SplunkLiveAdapter
-
 
 # ---------------------------------------------------------------------------
 # Splunk availability guard
@@ -75,7 +74,7 @@ def _make_engine() -> HypothesisHuntEngine:
 # ---------------------------------------------------------------------------
 
 def _mock_compile(engine: HypothesisHuntEngine, obj: HuntObjective) -> None:
-    from hunting.contracts.hunt import Hypothesis, EvidenceRequirementV4
+    from hunting.contracts.hunt import EvidenceRequirementV4, Hypothesis
     hyp = Hypothesis(id="h1", statement=obj.statement, requirements=["r1"])
     req = EvidenceRequirementV4(id="r1", description=obj.statement, evidence_type="lookup")
     engine.compiler.compile = MagicMock(return_value=(obj, [hyp], [req]))

@@ -3,15 +3,11 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from unittest.mock import MagicMock
-
-import pytest
 
 from hunting.contracts.hunt_spec import AnswerContract, HuntSpec, SearchTerm
 from hunting.controller.cost import LLMUsageTracker
 from hunting.m2_abduction.provider import LLMTimeoutError
 from hunting.planner.adaptive import (
-    AdaptiveDecision,
     AdaptiveOperationPlanner,
     _contains_native_query,
 )

@@ -915,7 +915,7 @@ class KnowledgeBehaviorCompiler:
 
         except Exception as exc:
             # Under strict anti-hallucination policy, DO NOT fallback to keyword guessing!
-            logger.exception("Semantic compiler rejected LLM output: %s", exc)
+            logger.warning("Semantic compiler rejected LLM output: %s", exc)
             logger.info(
                 "[LLM_OBSERVABILITY] phase=compiler prompt_hash=%s selected_operation=semantic_compilation search_terms=[] validation_result=FAILED: %s",
                 prompt_hash,

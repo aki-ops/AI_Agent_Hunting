@@ -296,16 +296,25 @@ class ApiLLMProvider(LLMProvider):
             try:
                 with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
                     content_type = resp.headers.get("Content-Type", "")
-                    if "text/event-stream" in content_type:
-                        # Gateway returned Server-Sent Events (SSE) stream
+                    resp_bytes = resp.read()
+                    resp_text = resp_bytes.decode("utf-8", errors="replace")
+
+                    # Detect SSE by Content-Type OR by body starting with "data:"
+                    # (some servers return application/json even for SSE streams)
+                    is_sse = (
+                        "text/event-stream" in content_type
+                        or resp_text.lstrip().startswith("data:")
+                    )
+
+                    if is_sse:
                         chunks: list[str] = []
-                        for line in resp:
-                            line_str = line.decode("utf-8", errors="replace").strip()
-                            if line_str == "data: [DONE]":
+                        for line in resp_text.splitlines():
+                            line = line.strip()
+                            if line == "data: [DONE]":
                                 break
-                            if line_str.startswith("data:"):
+                            if line.startswith("data:"):
                                 try:
-                                    chunk_json = json.loads(line_str[5:].strip())
+                                    chunk_json = json.loads(line[5:].strip())
                                     for choice in chunk_json.get("choices", []):
                                         delta = choice.get("delta", {})
                                         if "content" in delta and delta["content"]:
@@ -314,8 +323,7 @@ class ApiLLMProvider(LLMProvider):
                                     continue
                         content = "".join(chunks).strip()
                     else:
-                        resp_bytes = resp.read()
-                        resp_json = json.loads(resp_bytes.decode("utf-8"))
+                        resp_json = json.loads(resp_text)
                         if isinstance(resp_json.get("content"), list):
                             content = "".join(
                                 b.get("text", "") for b in resp_json["content"]
@@ -376,6 +384,7 @@ class ApiLLMProvider(LLMProvider):
         if last_err:
             raise last_err
 
+
     def call_raw(self, prompt: str, system_instruction: str | None = None) -> str:
         """Execute HTTP POST request for generic prompt to external LLM API and return response text."""
         sys_inst = (
@@ -401,7 +410,7 @@ class ApiLLMProvider(LLMProvider):
                 ],
                 "temperature": 0.0,
                 "max_tokens": self.config.max_tokens,
-                "stream": False,
+                "stream": True,
             }
 
         headers = {
@@ -425,25 +434,42 @@ class ApiLLMProvider(LLMProvider):
             try:
                 with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
                     content_type = resp.headers.get("Content-Type", "")
-                    if "text/event-stream" in content_type:
+                    resp_bytes = resp.read()
+                    resp_text = resp_bytes.decode("utf-8", errors="replace")
+
+                    is_sse = (
+                        "text/event-stream" in content_type
+                        or resp_text.lstrip().startswith("data:")
+                    )
+
+                    if is_sse:
                         chunks: list[str] = []
-                        for line in resp:
-                            line_str = line.decode("utf-8", errors="replace").strip()
+                        for line in resp_text.splitlines():
+                            line_str = line.strip()
                             if line_str == "data: [DONE]":
                                 break
                             if line_str.startswith("data:"):
                                 try:
                                     chunk_json = json.loads(line_str[5:].strip())
+                                    usage = chunk_json.get("usage") or {}
+                                    if usage:
+                                        p_tok = usage.get("prompt_tokens") or usage.get("input_tokens")
+                                        c_tok = usage.get("completion_tokens") or usage.get("output_tokens")
+                                        self.last_usage = {
+                                            "prompt_tokens": int(p_tok) if p_tok is not None else None,
+                                            "completion_tokens": int(c_tok) if c_tok is not None else None,
+                                        }
                                     for choice in chunk_json.get("choices", []):
                                         delta = choice.get("delta", {})
                                         if "content" in delta and delta["content"]:
                                             chunks.append(delta["content"])
+                                        elif "text" in delta and delta["text"]:
+                                            chunks.append(delta["text"])
                                 except Exception:
                                     continue
                         content = "".join(chunks).strip()
                     else:
-                        resp_bytes = resp.read()
-                        resp_json = json.loads(resp_bytes.decode("utf-8"))
+                        resp_json = json.loads(resp_text)
                         # Extract usage metadata (OpenAI, Gemini, or Anthropic format)
                         usage = resp_json.get("usage") or resp_json.get("usageMetadata") or {}
                         p_tok = (

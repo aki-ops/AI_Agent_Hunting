@@ -6,12 +6,10 @@ from unittest.mock import MagicMock
 
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.hunt import HuntObjective, HuntRequest, HuntRequestKind
+from hunting.contracts.hunt_spec import Anchor, AnswerContract, HuntSpec, SearchTerm
 from hunting.contracts.queries import QueryOutcome, QueryResult
-from hunting.contracts.hunt_spec import AnswerContract, Anchor, HuntSpec, SearchTerm
-from hunting.contracts.observations import EpistemicType, Observation
 from hunting.contracts.semantic_intent import (
     RequestedObject,
-    SemanticEvidenceRequirement,
     SemanticHuntIntent,
     SubjectEntity,
 )
@@ -145,7 +143,7 @@ def test_engine_adaptive_loop_bounded_to_two_iterations():
         search_terms=[SearchTerm(value="Tor Browser")],
     )
 
-    from hunting.contracts.hunt import Hypothesis, EvidenceRequirementV4
+    from hunting.contracts.hunt import EvidenceRequirementV4, Hypothesis
     hyp = Hypothesis(id="h1", statement="Tor installed", requirements=["r1"])
     req1 = EvidenceRequirementV4(id="r1", description="Tor version", evidence_type="file_modification")
 
@@ -244,7 +242,7 @@ def test_engine_adaptive_loop_stops_early_when_evidence_found():
         search_terms=[SearchTerm(value="Tor Browser")],
     )
 
-    from hunting.contracts.hunt import Hypothesis, EvidenceRequirementV4
+    from hunting.contracts.hunt import EvidenceRequirementV4, Hypothesis
     hyp = Hypothesis(id="h1", statement="Tor installed", requirements=["r1"])
     req1 = EvidenceRequirementV4(id="r1", description="Tor version", evidence_type="file_modification")
 
