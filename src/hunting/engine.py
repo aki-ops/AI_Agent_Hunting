@@ -390,6 +390,16 @@ class HypothesisHuntEngine:
                     if obs.id not in version_obs_ids:
                         version_obs_ids.append(obs.id)
 
+        if not observed_versions and answer_type == "software_version":
+            from hunting.evidence.attribute_extractor import extract_attributes_from_observation
+            for obs in ledger.observations:
+                ext_list = extract_attributes_from_observation(obs, "software_version")
+                for ext in ext_list:
+                    if ext.value not in observed_versions:
+                        observed_versions.append(ext.value)
+                    if obs.id not in version_obs_ids:
+                        version_obs_ids.append(obs.id)
+
         ev_state = EvidenceState()
         if is_detected:
             ev_state.artifact = ArtifactEvidence(

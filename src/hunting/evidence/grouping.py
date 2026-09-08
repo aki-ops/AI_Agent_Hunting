@@ -26,6 +26,7 @@ class EvidenceGroupBuilder:
     def _build_card_from_group(self, fp: str, group_obs: list[Observation]) -> EvidenceCard:
         """Construct a single EvidenceCard from a list of grouped observations."""
         rep_ids = [o.id for o in group_obs[: self.max_representative_ids]]
+        all_ids = [o.id for o in group_obs]
         count = len(group_obs)
 
         # Determine primary fact type across group_obs
@@ -145,8 +146,17 @@ class EvidenceGroupBuilder:
             for k in ("software_version", "ProductVersion", "FileVersion", "Version", "version")
             if o.fields.get(k) and str(o.fields.get(k)).strip()
         }
+        if not software_versions:
+            from hunting.evidence.attribute_extractor import extract_attributes_from_observation
+            for o in group_obs:
+                ext_attrs = extract_attributes_from_observation(o, "software_version")
+                for ea in ext_attrs:
+                    software_versions.add(ea.value)
+
         if software_versions:
-            field_summary["software_versions"] = sorted(list(software_versions))[:5]
+            ver_list = sorted(list(software_versions))[:5]
+            field_summary["software_versions"] = ver_list
+            field_summary["software_version"] = ver_list
         domains = {str(o.fields.get("domain") or o.fields.get("query")) for o in group_obs if o.fields.get("domain") or o.fields.get("query")}
         if domains:
             field_summary["domains"] = sorted(list(domains))[:5]
@@ -311,6 +321,7 @@ class EvidenceGroupBuilder:
             query_ids=query_ids,
             replay=replay,
             representative_observation_ids=rep_ids,
+            all_observation_ids=all_ids,
             count=count,
             entity_summary=entity_summary,
             time_summary=time_summary,

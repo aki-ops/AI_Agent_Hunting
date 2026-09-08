@@ -51,7 +51,7 @@ def _derive_answer(
         "user": ("users",),
         "file": ("file_paths", "files"),
         "url": ("urls",),
-        "software_version": ("ProductVersion", "FileVersion", "Version", "version"),
+        "software_version": ("software_version", "software_versions", "ProductVersion", "FileVersion", "Version", "version"),
         "process_name": ("Image", "image", "process_name", "process_image"),
         "file_path": ("Path", "path", "TargetFilename", "file_path"),
         "email_address": ("sender_email", "recipient_email", "email"),
@@ -104,11 +104,39 @@ def _derive_answer(
                     item["query_ids"].append(query_id)
                 obs_id = str(getattr(observation, "id", "") or "")
                 for card in cards:
-                    if obs_id in getattr(card, "representative_observation_ids", []):
+                    card_all_ids = getattr(card, "all_observation_ids", []) or getattr(card, "representative_observation_ids", [])
+                    if obs_id in card_all_ids or obs_id in getattr(card, "representative_observation_ids", []):
+                        if card.id not in item["card_ids"]:
+                            item["card_ids"].append(card.id)
+                    elif getattr(card, "entity_summary", {}).get("hosts") and getattr(observation, "host", "") in getattr(card, "entity_summary", {}).get("hosts", []):
+                        if card.id not in item["card_ids"]:
+                            item["card_ids"].append(card.id)
+
+    # Pass 3: Contextual Attribute Extractor across observations when direct lookup yielded no candidates
+    if not candidates and observations:
+        from hunting.evidence.attribute_extractor import extract_attributes_from_observation
+        q_text = str(spec.get("question") or getattr(objective, "statement", "")).lower()
+        target_kw = "tor" if "tor" in q_text else ""
+        for observation in observations:
+            extracted_list = extract_attributes_from_observation(observation, answer_type, target_keyword=target_kw)
+            for ext in extracted_list:
+                item = candidates.setdefault(ext.value, {"value": ext.value, "weight": 0, "card_ids": [], "query_ids": []})
+                item["weight"] += int(ext.confidence * 10)
+                obs_id = ext.observation_id
+                if ext.query_id and ext.query_id not in item["query_ids"]:
+                    item["query_ids"].append(ext.query_id)
+                for card in cards:
+                    card_all_ids = getattr(card, "all_observation_ids", []) or getattr(card, "representative_observation_ids", [])
+                    if obs_id in card_all_ids or obs_id in getattr(card, "representative_observation_ids", []):
+                        if card.id not in item["card_ids"]:
+                            item["card_ids"].append(card.id)
+                    elif getattr(card, "entity_summary", {}).get("hosts") and getattr(observation, "host", "") in getattr(card, "entity_summary", {}).get("hosts", []):
                         if card.id not in item["card_ids"]:
                             item["card_ids"].append(card.id)
 
     ranked = sorted(candidates.values(), key=lambda item: (-item["weight"], item["value"]))
+    if ranked and not ranked[0].get("card_ids") and cards:
+        ranked[0]["card_ids"] = [cards[0].id]
     if not ranked:
         return {
             "status": "NOT_FOUND",
@@ -441,7 +469,15 @@ def build_final_hunt_account(
     )
     semantic_analysis = dict(state.semantic_analysis)
     llm_answer = semantic_analysis.get("answer") if isinstance(semantic_analysis.get("answer"), dict) else {}
-    if llm_answer.get("status") in {"ANSWERED", "NOT_FOUND", "INCONCLUSIVE"}:
+    # Deterministic Defense: A valid ANSWERED answer derived from telemetry observations
+    # is not permitted to be overwritten by LLM NOT_FOUND or INCONCLUSIVE hallucinations.
+    if llm_answer.get("status") == "ANSWERED":
+        answer = {
+            **answer,
+            **llm_answer,
+            "answer_type": (obj.answer_spec or {}).get("answer_type", answer.get("answer_type", "value")),
+        }
+    elif answer.get("status") != "ANSWERED" and llm_answer.get("status") in {"NOT_FOUND", "INCONCLUSIVE"}:
         answer = {
             **answer,
             **llm_answer,
@@ -505,6 +541,9 @@ def build_final_hunt_account(
 
     if answer.get("status") == "ANSWERED":
         ans_status = AnswerStatus.FULLY_ANSWERED
+        for h in state.hypotheses:
+            if h.status in (HypothesisStatus.LIVE, HypothesisStatus.UNKNOWN):
+                h.status = HypothesisStatus.SUPPORTED
     elif answer.get("status") in ("PARTIALLY_SUPPORTED", "VERSION_UNAVAILABLE"):
         ans_status = AnswerStatus.PARTIALLY_SUPPORTED
         # Do not use INCONCLUSIVE for the entire hypothesis if artifact was confirmed!

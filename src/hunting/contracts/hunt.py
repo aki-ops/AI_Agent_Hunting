@@ -315,6 +315,7 @@ class EvidenceCard:
     query_ids: list[str] = field(default_factory=list)
     replay: dict[str, Any] = field(default_factory=dict)
     representative_observation_ids: list[str] = field(default_factory=list)
+    all_observation_ids: list[str] = field(default_factory=list)
     count: int = 1
     entity_summary: dict[str, Any] = field(default_factory=dict)
     time_summary: dict[str, Any] = field(default_factory=dict)
@@ -460,6 +461,9 @@ class FinalHuntAccount:
             if any(h.id in self.supporting for h in attack_hypos):
                 return HuntOutcome.SUPPORTED_WITH_LIMITATIONS
             return HuntOutcome.INCONCLUSIVE_BUDGET_EXHAUSTED
+
+        if self.answer_status in (AnswerStatus.FULLY_ANSWERED, "FULLY_ANSWERED", "ANSWERED"):
+            return HuntOutcome.SUPPORTED
 
         if self.answer_status in (
             AnswerStatus.PARTIALLY_SUPPORTED,

@@ -301,6 +301,10 @@ class AdaptiveOperationPlanner:
             op for op in available_operations
             if _is_directly_compatible(op, answer_type)
         ]
+        if answer_type == "software_version":
+            directly_compatible.sort(
+                key=lambda op: (0 if ("process" in str(getattr(op, "id", "")).lower() or "version" in str(getattr(op, "id", "")).lower()) else 1)
+            )
 
         # Explicit semantic declarations or direct output_field matches are authoritative.
         for operation in directly_compatible:

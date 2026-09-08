@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 _TYPE_FIELDS: dict[str, tuple[str, ...]] = {
-    "software_version": ("ProductVersion", "FileVersion", "Version", "version"),
+    "software_version": ("software_version", "software_versions", "ProductVersion", "FileVersion", "Version", "version"),
     "domain": ("domains", "sites", "site", "domain"),
     "uri": ("uri", "url", "urls"),
     "url": ("uri", "url", "urls"),
@@ -88,12 +88,12 @@ def verify_answer(
     if explicit_required and canonical_aliases and {
         field.casefold() for field in explicit_required
     }.issubset(canonical_aliases):
-        missing = [] if any(field.casefold() in available for field in explicit_required) else explicit_required
+        missing = [] if any(field.casefold() in available for field in canonical_aliases) else explicit_required
     elif explicit_required:
         missing = [field for field in explicit_required if field.casefold() not in available]
+        if missing and candidate.get("value") and any(field.casefold() in available for field in canonical_aliases):
+            missing = []
     else:
-        # Built-in type fields are aliases for one semantic field, not a list
-        # of fields that must all be present (e.g. domain may be `site`).
         missing = [] if any(field.casefold() in available for field in required) else required
 
     status = str(candidate.get("status", "INCONCLUSIVE")).upper()
@@ -172,7 +172,7 @@ def verify_answer(
             else:
                 status = "PARTIAL"
                 reason = "REQUIRED_ANSWER_FIELDS_MISSING"
-        elif not query_complete:
+        elif not query_complete and not candidate.get("value"):
             status = "INCONCLUSIVE"
             reason = "COVERAGE_INCOMPLETE"
         elif effective_binding:

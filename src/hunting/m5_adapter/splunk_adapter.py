@@ -631,6 +631,7 @@ class SplunkLiveAdapter:
                 " | rex field=_raw \"(?i)ProductVersion[:= ]+(?<ProductVersion>[^\\r\\n,]+)\""
                 " | rex field=_raw \"(?i)FileVersion[:= ]+(?<FileVersion>[^\\r\\n,]+)\""
                 " | rex field=_raw \"(?i)version[\\\"':= ]+(?<Version>[0-9]+(\\.[0-9]+)+)\""
+                " | rex field=_raw \"(?i)[/\\\\\\(][a-zA-Z0-9_.-]*(?:install|setup|browser|update|v)[-_ ]*(?<software_version>[0-9]+(\\.[0-9]+)+)\""
             )
             return (
                 f'{search_head}{rex_version} | head {limit + 1} '
@@ -945,11 +946,12 @@ class SplunkLiveAdapter:
                 rex_clauses.extend([
                     '| rex field=_raw "<Data Name=\'TargetFilename\'>(?<file_path>[^<]+)</Data>"',
                     '| rex field=_raw "<Data Name=\'Image\'>(?<image>[^<]+)</Data>"',
-                    '| rex field=_raw "(?i)<Data Name=[\\\'\\\"ProductVersion[\\\'\\\">[^<]+</Data>"',
-                    '| rex field=_raw "(?i)<Data Name=[\\\'\\\"FileVersion[\\\'\\\">[^<]+</Data>"',
-                    '| rex field=_raw "(?i)ProductVersion[:= ]+([^\\r\\n,]+)"',
-                    '| rex field=_raw "(?i)FileVersion[:= ]+([^\\r\\n,]+)"',
-                    '| rex field=_raw "(?i)version[\\\'\\\":= ]+([0-9]+(\\.[0-9]+)+)"',
+                    '| rex field=_raw "(?i)<Data Name=[\'\\"]ProductVersion[\'\\"]>(?<ProductVersion>[^<]+)</Data>"',
+                    '| rex field=_raw "(?i)<Data Name=[\'\\"]FileVersion[\'\\"]>(?<FileVersion>[^<]+)</Data>"',
+                    '| rex field=_raw "(?i)ProductVersion[:= ]+(?<ProductVersion>[^\\r\\n,]+)"',
+                    '| rex field=_raw "(?i)FileVersion[:= ]+(?<FileVersion>[^\\r\\n,]+)"',
+                    '| rex field=_raw "(?i)version[\\\'\\\":= ]+(?<Version>[0-9]+(\\.[0-9]+)+)"',
+                    '| rex field=_raw "(?i)[/\\\\\\(][a-zA-Z0-9_.-]*(?:install|setup|browser|update|v)[-_ ]*(?<software_version>[0-9]+(\\.[0-9]+)+)"',
                 ])
             elif kind == "authentication_activity":
                 spl_parts.append('sourcetype="WinEventLog:Security" (EventCode=4624 OR EventCode=4625)')
@@ -987,6 +989,21 @@ class SplunkLiveAdapter:
                     spl_parts.append(f'("{d_name}")')
             elif isinstance(entity, File):
                 spl_parts.append(f'host="{entity.host}" ("{entity.path}")')
+
+        # 2.5 Search terms filtering for targeted operations
+        if search_groups:
+            term_clause = " ".join(
+                "(" + " OR ".join(f'"{str(term).replace(chr(34), "")}"' for term in group if str(term).strip()) + ")"
+                for group in search_groups if group
+            )
+            if term_clause and term_clause not in spl_parts:
+                spl_parts.append(term_clause)
+        elif search_terms:
+            safe_terms = [str(term).replace('"', "")[:200].strip() for term in search_terms if str(term).strip()]
+            if safe_terms:
+                term_clause = "(" + " OR ".join(f'"{t}"' for t in safe_terms) + ")"
+                if term_clause not in spl_parts:
+                    spl_parts.append(term_clause)
 
         # 3. Predicate filtering (SPL search-time)
         filter_clauses: list[str] = []
@@ -1131,12 +1148,23 @@ class SplunkLiveAdapter:
                 if k not in ("_raw", "_time") and val is not None and val != "":
                     row[k] = val
 
+            # Priority 1.5: Auto-flatten Sysmon/Windows XML <Data Name='Key'>Value</Data> tags from _raw
+            raw_text = r.get("_raw", "")
+            if isinstance(raw_text, str) and "<Data Name=" in raw_text:
+                import re
+                for m in re.finditer(r"<Data Name=['\"]([^'\"]+)['\"]>([^<]*)</Data>", raw_text):
+                    xml_k, xml_v = m.group(1), m.group(2).strip()
+                    if xml_k and xml_v and (xml_k not in row or not row[xml_k]):
+                        row[xml_k] = xml_v
+                eid_m = re.search(r"<EventID>(\d+)</EventID>", raw_text)
+                if eid_m and "EventCode" not in row:
+                    row["EventCode"] = eid_m.group(1)
+
             # Normalize user from TargetUserName if user is empty, "-" or machine account ending in $
             if row.get("TargetUserName") and (not row.get("user") or row.get("user") == "-" or str(row.get("user")).endswith("$")):
                 row["user"] = row["TargetUserName"]
 
             # Priority 2: Fallback to parsing _raw JSON if available (e.g. stream:dns, stream:http)
-            raw_text = r.get("_raw", "")
             raw_json: dict[str, Any] = {}
             if isinstance(raw_text, str) and "{" in raw_text and "}" in raw_text:
                 trimmed = raw_text.strip()
@@ -1286,21 +1314,24 @@ class SplunkLiveAdapter:
             # the original fields above for audit and replay.  Evidence and
             # grouping operate on these semantic aliases, not on one vendor's
             # capitalization convention.
-            if "Path" in r and r.get("Path") not in (None, ""):
-                row.setdefault("path", r["Path"])
-                row.setdefault("file_path", r["Path"])
-            if "TargetFilename" in r and r.get("TargetFilename") not in (None, ""):
-                row.setdefault("path", r["TargetFilename"])
-                row.setdefault("file_path", r["TargetFilename"])
-            if "Name" in r and r.get("Name") not in (None, ""):
-                row.setdefault("process_name", r["Name"])
-                row.setdefault("image", r["Name"])
-            if "ProductVersion" in r and r.get("ProductVersion") not in (None, ""):
-                row.setdefault("software_version", r["ProductVersion"])
-            elif "FileVersion" in r and r.get("FileVersion") not in (None, ""):
-                row.setdefault("software_version", r["FileVersion"])
-            elif "Version" in r and r.get("Version") not in (None, ""):
-                row.setdefault("software_version", r["Version"])
+            path_val = row.get("Path") or row.get("TargetFilename") or r.get("Path") or r.get("TargetFilename")
+            if path_val:
+                row.setdefault("path", path_val)
+                row.setdefault("file_path", path_val)
+                row.setdefault("TargetFilename", path_val)
+            name_val = row.get("Name") or row.get("Image") or r.get("Name") or r.get("Image")
+            if name_val:
+                row.setdefault("process_name", name_val)
+                row.setdefault("image", name_val)
+                row.setdefault("Image", name_val)
+            cmd_val = row.get("CommandLine") or row.get("cmdline") or r.get("CommandLine") or r.get("cmdline")
+            if cmd_val:
+                row.setdefault("cmdline", cmd_val)
+                row.setdefault("CommandLine", cmd_val)
+
+            ver_val = row.get("ProductVersion") or row.get("FileVersion") or row.get("Version") or r.get("ProductVersion") or r.get("FileVersion") or r.get("Version")
+            if ver_val and str(ver_val).strip() not in (None, "", "-"):
+                row.setdefault("software_version", str(ver_val).strip())
 
             normalized_rows.append(row)
 
