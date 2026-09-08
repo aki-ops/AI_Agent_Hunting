@@ -602,8 +602,10 @@ class StubSemanticCompiler:
         else:
             content = prompt.strip()
 
-        # Explicit fixture: Amber Turing / person investigation
-        if self.scenario in ("amber", "lookup") or "amber" in content.lower():
+        # Explicit fixture: Amber Turing / person investigation.  The fixture
+        # must be selected by the caller; matching words in user content would
+        # turn the test double into a hidden scenario classifier.
+        if self.scenario in ("amber", "lookup"):
             data = {
                 "normalized_claim": {
                     "text": "Amber Turing visited an external website",

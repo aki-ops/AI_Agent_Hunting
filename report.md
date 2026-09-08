@@ -2,14 +2,14 @@
 
 ## 1. Hypothesis / Question
 
-> Amber sent an email to the competitor's CEO. What is the recipient's name and email address?
+> Amber Turing sent an email to the CEO of a competitor. Find the CEO's name and email address.
 
-- **Subject:** `user`: `Amber`
-- **Requested Object:** `recipient_identity_record` (role: `answer`)
-- **Behavior:** User Amber sent an outbound email to the CEO of a competitor organization.
+- **Subject:** `person`: `Amber Turing`
+- **Requested Object:** `recipient_identity_and_email_address` (role: `answer`)
+- **Behavior:** Amber Turing sent an email communication to the CEO of a competitor organization.
 
-**Result:** `SUPPORTED_WITH_LIMITATIONS`  
-**Stopping:** `STOP_RESOLVED`
+**Result:** `INCONCLUSIVE`  
+**Stopping:** `STOP_INCONCLUSIVE_RELATION_UNPROVEN`
 
 - **Causal Path Coverage:** `80.0%` (4/5 relations verified)
 - **Wildcard Scope Coverage:** `0.0%` (0/1 broadsweep cells)
@@ -17,24 +17,25 @@
 
 **Answer Status:** `PARTIALLY_ANSWERED`
 
-**Answer (recipient_email):** `mberk@berkbeer.com`
-
 ## 2. Hypothesis analysis
 
-- `LIVE` — Amber intentionally transmitted sensitive or proprietary information to an external competitor's leadership.
-- `LIVE` — An unauthorized party compromised Amber's credentials and used her account to contact an external executive.
-- `LIVE` — The email communication represents routine, approved business correspondence or personal recruiting dialogue rather than malicious activity.
+- `LIVE` — Amber Turing knowingly or intentionally used corporate email services to transmit proprietary communications to an executive at a competitor organization.
+- `LIVE` — An unauthorized third party obtained credentials for Amber Turing's account and sent outbound emails to executive targets while impersonating the user.
+- `LIVE` — The email dispatched to the external executive constitutes benign, authorized inter-organizational outreach or standard recruitment/vendor correspondence.
 
 ### Proven Relation Chain (Causal Provenance)
 
 | Edge ID | Relation Path | Citations | Verified At |
 |---|---|---|---|
-| `edge-person-owns-account` | `Amber` **-[owns]->** `amber.turing` | `obs-1` | `2026-09-07T17:02:41.284350` |
-| `edge-account-has-email` | `amber.turing` **-[has_email]->** `aturing@froth.ly` | `obs-101` | `2026-09-07T17:02:42.086687` |
-| `edge-email-sent-message` | `aturing@froth.ly` **-[sent_message]->** `<SN1PR18MB058947DF30988EF32297D445D4890@SN1PR18MB0589.namprd18.prod.outlook.com>` | `obs-470` | `2026-09-07T17:02:43.071666` |
-| `edge-message-received-by` | `<SN1PR18MB058947DF30988EF32297D445D4890@SN1PR18MB0589.namprd18.prod.outlook.com>` **-[received_message]->** `mberk@berkbeer.com` | `obs-702` | `2026-09-07T17:02:43.278323` |
+| `edge-person-owns-account` | `Amber Turing` **-[owns]->** `amber.turing` | `obs-1` | `2026-09-08T01:19:22.784853` |
+| `edge-account-has-email` | `amber.turing` **-[has_email]->** `aturing@froth.ly` | `obs-101` | `2026-09-08T01:19:23.586390` |
+| `edge-email-sent-message` | `aturing@froth.ly` **-[sent_message]->** `<SN1PR18MB058947DF30988EF32297D445D4890@SN1PR18MB0589.namprd18.prod.outlook.com>` | `obs-470` | `2026-09-08T01:19:24.468784` |
+| `edge-message-received-by` | `<SN1PR18MB058947DF30988EF32297D445D4890@SN1PR18MB0589.namprd18.prod.outlook.com>` **-[received_message]->** `mberk@berkbeer.com` | `obs-702` | `2026-09-08T01:19:24.630701` |
 
-**Unresolved Mandatory Unknowns:** None (all causal relations verified).
+**Unresolved Mandatory Unknowns:**
+- `person(Amber Turing) -> logged_on_to -> endpoint`: Identify workstation endpoint used by Amber Turing
+- `endpoint -> originated_from -> ip`: Identify client IP address assigned to Amber Turing's endpoint
+- `recipient_role`: Verify whether recipient holds executive/competitor role
 
 ### Claims Evaluation
 
@@ -53,21 +54,17 @@
 
 | Evidence | Why it matters | Source |
 |---|---|---|
-| Verified relation <SN1PR18MB058947DF30988EF32297D445D4890@SN1PR18MB0589.namprd18.prod.outlook.com> -[RelationType.RECEIVED_MESSAGE]-> mberk@berkbeer.com | Verified relation establishing that message <SN1PR18MB058947DF30988EF32297D445D4890@SN1PR18MB0589.namprd18.prod.outlook.com> with subject 'Amber from Froth.ly' was received by mberk@berkbeer.com. Provides recipient email, but lacks recipient full name and role. | 1 event(s); representative observations: `obs-702` |
-| Telemetry observations (608 events on matar) | Telemetry on host matar showing message transmissions involving surveys@vindale.com and aturing@froth.ly. Unrelated to the outbound communication to mberk@berkbeer.com. | 608 event(s); representative observations: `obs-6`, `obs-14`, `obs-25` |
-| Telemetry observations (40 events on wrk-aturing) | Telemetry observations on host wrk-aturing confirming account activity for amber.turing between 2017-08-31T13:31:34Z and 2017-08-31T22:30:41Z, corroborating Amber's ownership of the workstation account. | 40 event(s); representative observations: `obs-1`, `obs-3`, `obs-4` |
-| Telemetry observations (36 events on mercury) | Telemetry observations on mercury for user amber.turing across 36 events. Indicates domain activity but provides no details regarding outbound emails or recipient identities. | 36 event(s); representative observations: `obs-2`, `obs-5`, `obs-10` |
-| Telemetry observations (18 events on venus) | Telemetry observations on venus for user amber.turing across 18 events. Demonstrates user activity across internal hosts but provides no recipient identity information. | 18 event(s); representative observations: `obs-9`, `obs-12`, `obs-23` |
+| Verified relation <SN1PR18MB058947DF30988EF32297D445D4890@SN1PR18MB0589.namprd18.prod.outlook.com> -[RelationType.RECEIVED_MESSAGE]-> mberk@berkbeer.com | Proves causal provenance step for edge-message-received-by | 1 event(s); representative observations: `obs-702` |
+| Telemetry observations (608 events on matar) | Observed operational telemetry within the monitored scope. | 608 event(s); representative observations: `obs-6`, `obs-14`, `obs-25` |
+| Telemetry observations (40 events on wrk-aturing) | Observed operational telemetry within the monitored scope. | 40 event(s); representative observations: `obs-1`, `obs-3`, `obs-4` |
+| Telemetry observations (36 events on mercury) | Observed operational telemetry within the monitored scope. | 36 event(s); representative observations: `obs-2`, `obs-5`, `obs-10` |
+| Telemetry observations (18 events on venus) | Observed operational telemetry within the monitored scope. | 18 event(s); representative observations: `obs-9`, `obs-12`, `obs-23` |
 
 ### Explanation
 
-- **Deterministic Graph Resolution:** The target object `mberk@berkbeer.com` was proven through the verified 4-step causal provenance chain.
-- **LLM Narrative Analysis:** The verified provenance subgraph and observation obs-702 (card-edge-message-received-by) establish that an email from Amber (amber.turing / aturing@froth.ly) was received by mberk@berkbeer.com with subject 'Amber from Froth.ly'. However, the bounded evidence does not contain the recipient's full name, nor does it confirm the recipient's status as a competitor CEO. Consequently, while the recipient email address is verified as mberk@berkbeer.com, the recipient's name remains unverified in the provided evidence.
-- Verified relation establishing that message <SN1PR18MB058947DF30988EF32297D445D4890@SN1PR18MB0589.namprd18.prod.outlook.com> with subject 'Amber from Froth.ly' was received by mberk@berkbeer.com. Provides recipient email, but lacks recipient full name and role.
-- Telemetry on host matar showing message transmissions involving surveys@vindale.com and aturing@froth.ly. Unrelated to the outbound communication to mberk@berkbeer.com.
-- Telemetry observations on host wrk-aturing confirming account activity for amber.turing between 2017-08-31T13:31:34Z and 2017-08-31T22:30:41Z, corroborating Amber's ownership of the workstation account.
-- Telemetry observations on mercury for user amber.turing across 36 events. Indicates domain activity but provides no details regarding outbound emails or recipient identities.
-- Telemetry observations on venus for user amber.turing across 18 events. Demonstrates user activity across internal hosts but provides no recipient identity information.
+- **LLM Explanation:** Unavailable (INVALID_JSON: Failed to decode JSON: Unterminated string starting at: line 42 column 9 (char 1924))
+- Proves causal provenance step for edge-message-received-by
+- Observed operational telemetry within the monitored scope.
 - Limitation: No definitive adversary presence or refutation established in searched frame.
 
 ## 4. Queries used
@@ -80,7 +77,7 @@
 Provider: `splunk`; completeness: `complete`
 
 ```spl
-search index="botsv2" (sourcetype="stream:smtp" OR sourcetype="stream:ldap" OR sourcetype="*security*" OR sourcetype="WinEventLog:Security" OR sourcetype="wineventlog:security") ("Amber" OR "Amber" OR TargetUserName="*Amber*") | rex field=_raw "New Logon:[\s\S]*?Account Name:\s*(?<TargetUserName>[^\r\n\s]+)" | rex field=_raw "Account Name:\s*(?<user>[^\r\n\s]+)" | head 101 | table _time, host, ComputerName, TargetUserName, user, sender, sender_email, receiver, receiver_email, IpAddress, WorkstationName, LogonType, _raw
+search index="botsv2" (sourcetype="stream:smtp" OR sourcetype="stream:ldap" OR sourcetype="*security*" OR sourcetype="WinEventLog:Security" OR sourcetype="wineventlog:security") ("Amber Turing" OR "Amber" OR TargetUserName="*Amber*") | rex field=_raw "New Logon:[\s\S]*?Account Name:\s*(?<TargetUserName>[^\r\n\s]+)" | rex field=_raw "Account Name:\s*(?<user>[^\r\n\s]+)" | head 101 | table _time, host, ComputerName, TargetUserName, user, sender, sender_email, receiver, receiver_email, IpAddress, WorkstationName, LogonType, _raw
 ```
 
 ### `qp-v5-2-resolve_account_to_email` — `edge-account-has-email`
@@ -131,5 +128,5 @@ search index="botsv2" (sourcetype="*active_directory*" OR sourcetype="*ldap*" OR
 
 - Model: `1/gemini-flash-3.8-high-omni`
 - Calls: `2`
-- Tokens: `9055`
-- Estimated cost: `$0.001172`
+- Tokens: `6550`
+- Estimated cost: `$0.000865`

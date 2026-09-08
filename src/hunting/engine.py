@@ -537,15 +537,36 @@ class HypothesisHuntEngine:
                         if not c.is_wildcard and c.entity == src_ent and c.time_bucket == objective.time_window:
                             self.controller.transition_cell_state(state, c, cell_state)
 
-                    # Update requirement status for v5 branch: mark requirements that map
-                    # to this edge as EXECUTED so requirement coverage is correctly accounted.
+                    # Update requirement status for v5 branch: mark only requirements
+                    # that are semantically served by this operation as EXECUTED.  A
+                    # broad keyword match is unsafe here: a requirement saying
+                    # "competitor CEO" must not be confirmed by a recipient-email
+                    # query alone.
                     turn_reqs: list[EvidenceRequirementV4] = []
                     rel_type_str = str(edge.relation_type.value if hasattr(edge.relation_type, "value") else edge.relation_type).lower()
+                    role_terms = ("role", "ceo", "executive", "leadership", "directory", "title")
                     for req in state.requirements:
                         r_desc = req.description.lower()
                         r_et = str(req.evidence_type).lower()
                         if req.id == edge.id or (hasattr(edge, "metadata") and edge.metadata.get("requirement_id") == req.id):
                             turn_reqs.append(req)
+                        elif op_name == "resolve_person_to_account":
+                            if r_et in ("identity", "account_resolution") or (
+                                any(k in r_desc for k in ("account username", "user account", "map person to account"))
+                                and not any(k in r_desc for k in ("authentication", "sign-in", "logon"))
+                            ):
+                                turn_reqs.append(req)
+                        elif op_name in ("resolve_account_to_email", "find_outbound_message_metadata", "resolve_recipient_identity"):
+                            # Recipient/email evidence cannot satisfy an executive-role
+                            # or directory requirement merely because its prose mentions
+                            # a competitor or CEO.
+                            if (
+                                r_et in ("email_outbound", "outbound_message_metadata", "message", "communication", "email")
+                            ) and not any(k in r_desc for k in role_terms):
+                                turn_reqs.append(req)
+                        elif op_name == "resolve_role_identity":
+                            if r_et in ("role_identity", "scope_records", "directory") or any(k in r_desc for k in role_terms):
+                                turn_reqs.append(req)
                         elif "requested" in edge.id or "requested" in rel_type_str:
                             if r_et in ("web_request", "dns_activity", "dns_query") or any(k in r_desc for k in ("web", "proxy", "egress", "domain", "uri", "browser", "visit", "competitor")):
                                 turn_reqs.append(req)
@@ -654,9 +675,14 @@ class HypothesisHuntEngine:
                             })
                         tgt_type_str = tgt_node.type if isinstance(tgt_node.type, str) else tgt_node.type.value
                         if tgt_type_str == "role" or "role" in edge.id:
-                            # Non-fatal limitation: recipient identity was proven, but executive role cannot be confirmed
+                            # The recipient may be known, but the claim that the
+                            # recipient holds an executive role remains unproven.
+                            # This is an epistemic blocker, not a successful stop.
                             logger.info(f"Recipient role '{src_node.value}' -> Role remains UNKNOWN (telemetry limitation).")
-                            self.controller.set_stopping_decision(state, StoppingDecision.STOP_RESOLVED)
+                            for req in turn_reqs:
+                                if req.status in (RequirementStatus.DEFINED, RequirementStatus.PLANNED, RequirementStatus.EXECUTED):
+                                    self.controller.update_requirement_status(state, req, RequirementStatus.INCONCLUSIVE)
+                            self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
                             break
                         elif tgt_type_str in ("account", "user", "endpoint", "host"):
                             self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED)

@@ -875,33 +875,47 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
                 q_info = f" (via `{e.origin_query_id}`)" if e.origin_query_id else ""
                 lines.append(f"- `{src_str} -[{e.relation_type}]-> {tgt_str}`{q_info}")
 
-    # Unresolved Mandatory Unknowns
-    if proofs:
+    # Unresolved Mandatory Unknowns. Partial proof is not a complete causal
+    # chain, so inspect case-graph unknowns even when earlier edges are proven.
+    case_unresolved = []
+    if case and hasattr(case, "unknowns") and case.unknowns:
+        case_unresolved = [
+            u for u in case.unknowns
+            if not getattr(u, "resolved_value", None)
+            and getattr(case.graph.get_edge(u.resolving_edge_id), "status", "") not in ("verified", RelationStatus.VERIFIED)
+        ]
+    model_unresolved = []
+    if account.investigation_model and account.investigation_model.unknowns:
+        model_unresolved = [u for u in account.investigation_model.unknowns if getattr(u, "status", "") == "UNRESOLVED"]
+
+    # Prefer the semantic model's relationship wording, then include case
+    # graph unknowns that are not already represented. This preserves both the
+    # human-readable relation and the concrete unresolved target (for example,
+    # recipient_role).
+    unresolved = list(model_unresolved)
+    seen_unknowns = {
+        getattr(u, "relation_to_resolve", "") or getattr(u, "variable_name", "")
+        for u in unresolved
+    }
+    for unknown in case_unresolved:
+        key = getattr(unknown, "relation_to_resolve", "") or getattr(unknown, "variable_name", "")
+        if key not in seen_unknowns:
+            unresolved.append(unknown)
+            seen_unknowns.add(key)
+    if unresolved:
+        lines.extend([
+            "",
+            "**Unresolved Mandatory Unknowns:**",
+            *(
+                f"- `{getattr(u, 'relation_to_resolve', '') or getattr(u, 'variable_name', '')}`: {u.description}"
+                for u in unresolved
+            ),
+        ])
+    elif proofs and (case or account.investigation_model):
         lines.extend([
             "",
             "**Unresolved Mandatory Unknowns:** None (all causal relations verified).",
         ])
-    elif account.investigation_model and account.investigation_model.unknowns:
-        unresolved = [u for u in account.investigation_model.unknowns if getattr(u, "status", "") == "UNRESOLVED"]
-        if unresolved:
-            lines.extend([
-                "",
-                "**Unresolved Mandatory Unknowns:**",
-                *(f"- `{u.relation_to_resolve}`: {u.description}" for u in unresolved),
-            ])
-    elif case and hasattr(case, "unknowns") and case.unknowns:
-        unresolved = [u for u in case.unknowns if not getattr(u, "resolved_value", None) and getattr(case.graph.get_edge(u.resolving_edge_id), "status", "") not in ("verified", RelationStatus.VERIFIED)]
-        if unresolved:
-            lines.extend([
-                "",
-                "**Unresolved Mandatory Unknowns:**",
-                *(f"- `{u.variable_name}`: {u.description}" for u in unresolved),
-            ])
-        else:
-            lines.extend([
-                "",
-                "**Unresolved Mandatory Unknowns:** None (all causal relations verified).",
-            ])
     elif intent and intent.uncertainties and not proofs:
         lines.extend([
             "",

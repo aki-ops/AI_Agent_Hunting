@@ -9,26 +9,36 @@ These tests ensure:
 """
 from __future__ import annotations
 
-import pytest
+import json
 
 from hunting.capabilities.binder import ActionCandidate, CapabilityBinder
 from hunting.contracts.case_graph import (
     FieldRole,
     GraphEdge,
     GraphNode,
-    InvestigationGraph,
     NodeStatus,
     NodeType,
-    RelationStatus,
     RelationType,
 )
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.observations import EpistemicType, Observation
 from hunting.evidence.relation_verifier import RelationVerifier
 from hunting.m1_ledger.ledger import ObservationLedger
+from hunting.m2_abduction.provider import StubSemanticCompiler
 from hunting.m5_adapter.splunk_adapter import SplunkLiveAdapter
 
 SCOPE = ProviderScope(provider_id="splunk", scope_id="botsv2_main", native_partition={"index": "botsv2"})
+
+
+def test_stub_fixture_requires_explicit_scenario_selection():
+    """The offline fixture must not classify arbitrary text by matching 'amber'."""
+    result = json.loads(
+        StubSemanticCompiler(scenario="generic")(
+            "Request content: Amber Turing sent an email to a competitor"
+        )
+    )
+    assert result["normalized_claim"]["text"] == "Generic free-text threat inquiry"
+    assert result["entities"] == []
 
 
 def test_verifier_does_not_invent_account_for_unknown_user():

@@ -180,7 +180,21 @@ def build_final_hunt_account(
     # Reconcile requirement coverage
     if state.requirements:
         req_cov = cov.requirement_coverage if cov.requirement_coverage else RequirementCoverage()
+        # A role/CEO requirement is satisfied only by a verified role edge.
+        # A message or recipient card can prove the email address, never the
+        # recipient's job title. This final guard also protects against legacy
+        # expectation code attaching a broad card to the wrong requirement.
+        role_edge = case_graph.get_edge("edge-recipient-holds-role") if case_graph else None
+        role_verified = bool(role_edge and role_edge.status in (RelationStatus.VERIFIED, "verified", "KNOWN"))
         for req in state.requirements:
+            req_desc = req.description.lower()
+            is_role_requirement = (
+                str(req.evidence_type).lower() in ("role_identity", "directory")
+                or any(term in req_desc for term in ("ceo", "executive", "leadership", "job title", "role identity"))
+            )
+            if is_role_requirement and not role_verified:
+                req.status = RequirementStatus.INCONCLUSIVE
+
             # If in v5 case graph: reconcile requirements from verified causal edges and cards
             if case_graph and case_graph.edges:
                 has_card = any(req.id in getattr(c, "requirements", []) for c in state.evidence_cards)
@@ -438,6 +452,10 @@ def build_final_hunt_account(
         if recipient_node and recipient_node.value and recipient_node.value != "?":
             if role_node and (not role_node.value or role_node.value == "?" or role_node.status != NodeStatus.KNOWN):
                 ans_status = AnswerStatus.PARTIALLY_ANSWERED
+                # The recipient email is known, but the requested executive
+                # identity is not. Do not expose a fully ANSWERED envelope.
+                if answer.get("status") == "ANSWERED":
+                    answer["status"] = AnswerStatus.PARTIALLY_ANSWERED.value
                 limitations.append("Chưa chứng minh được người nhận là CEO từ dữ liệu telemetry.")
                 limitations.append("Chưa có bằng chứng đủ mạnh về việc email thực sự do đối tượng trực tiếp soạn thảo.")
 
