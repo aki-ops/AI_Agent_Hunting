@@ -1,4 +1,12 @@
 """Canonical and operational hunting contracts."""
+from hunting.contracts.claim import (
+    AcceptanceRule,
+    Claim,
+    ClaimGraph,
+    ClaimStatus,
+    RefutationCondition,
+    RefutationRule,
+)
 from hunting.contracts.abduction import AbductionRuntime
 from hunting.contracts.capabilities import (
     CapabilityDescriptor,
