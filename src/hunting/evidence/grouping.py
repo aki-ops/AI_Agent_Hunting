@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
+from typing import Any
 
 from hunting.contracts.hunt import EvidenceCard
 from hunting.contracts.observations import Observation
@@ -200,31 +201,29 @@ class EvidenceGroupBuilder:
             img_label = imgs[0] if imgs else ""
             path_label = fps[0] if fps else ""
 
-            if any("tor" in s.lower() for s in imgs + fps):
-                if img_label and path_label:
-                    summary = f"Process: {img_label} Path: {path_label} Host: {host_label}"
-                elif img_label:
-                    summary = f"Process: {img_label} Host: {host_label}"
-                elif path_label:
-                    summary = f"Process: tor.exe Path: {path_label} Host: {host_label}"
-                else:
-                    summary = f"Process: tor.exe Host: {host_label}"
-                supports.append("Tor Browser was present")
-                supports.append("Tor Browser process executed")
-            elif parents and imgs:
+            # v6: generic process description — no "tor" keyword detection
+            if img_label and path_label:
+                summary = f"Process: {img_label} Path: {path_label} Host: {host_label}"
+            elif img_label:
+                summary = f"Process: {img_label} Host: {host_label}"
+            elif path_label:
+                summary = f"Process artifact: {path_label} Host: {host_label}"
+            else:
+                summary = f"Process execution observed on {host_label}"
+            if img_label:
+                supports.append(f"Process {img_label} was present on {host_label}")
+                supports.append(f"Process {img_label} executed on {host_label}")
+            if parents and imgs:
                 summary = f"{parents[0]} spawned {imgs[0]} on {host_label}"
                 supports.append(f"Process {imgs[0]} executed on {host_label}")
-            elif imgs:
+            elif imgs and not img_label:
                 summary = f"Process: {imgs[0]} executed on {host_label}"
                 if path_label:
                     summary += f" (Path: {path_label})"
                 supports.append(f"Process {imgs[0]} executed on {host_label}")
-            elif path_label:
+            elif path_label and not img_label:
                 summary = f"Process artifact observed on {host_label}: {path_label}"
                 supports.append(f"Artifact {path_label} present on {host_label}")
-            else:
-                summary = f"Process execution observed on {host_label}"
-                supports.append(f"Process execution on {host_label}")
 
             versions = field_summary.get("software_versions", [])
             if versions:
@@ -238,7 +237,7 @@ class EvidenceGroupBuilder:
             is_suspicious_lineage = any(
                 any(sp in p.lower() for sp in suspicious_parents) for p in parents
             ) and any(
-                any(ish in im.lower() for ish in imgs) for im in imgs
+                any(ish in im.lower() for ish in interactive_shells) for im in imgs
             )
             if is_suspicious_lineage:
                 why_it_matters = (
@@ -266,12 +265,9 @@ class EvidenceGroupBuilder:
         elif primary_fact_type == "file_modification":
             fps = field_summary.get("file_paths", [])
             f_label = fps[0] if fps else "file"
-            if any("tor" in s.lower() for s in fps):
-                summary = f"Process: tor.exe Path: {f_label} Host: {host_label}"
-                supports.append("Tor Browser was present")
-            else:
-                summary = f"File modification on {host_label}: {f_label}"
-                supports.append(f"File artifact present on {host_label}: {f_label}")
+            # v6: generic file description — no "tor" keyword detection
+            summary = f"File modification on {host_label}: {f_label}"
+            supports.append(f"File artifact present on {host_label}: {f_label}")
             versions = field_summary.get("software_versions", [])
             if versions:
                 supports.append(f"Software version: {', '.join(versions)}")
@@ -279,6 +275,7 @@ class EvidenceGroupBuilder:
                 does_not_prove.append("Exact software version")
             why_it_matters = "Observed disk write activity, indicating payload delivery, persistence creation, or artifact modification."
             confidence = "MEDIUM"
+
 
         elif primary_fact_type == "dns_activity":
             doms = field_summary.get("domains", [])

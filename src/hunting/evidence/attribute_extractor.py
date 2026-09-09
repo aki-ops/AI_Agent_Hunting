@@ -7,7 +7,7 @@ bridging the gap between semi-structured provider telemetry and structured hunt 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Iterable
 
 from hunting.contracts.observations import Observation

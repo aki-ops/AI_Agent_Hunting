@@ -1,11 +1,7 @@
 """Unit tests for Phase 7 & 8: PARTIALLY_SUPPORTED verdict, citation provenance, and deterministic evaluator fallback."""
 from types import SimpleNamespace
-from unittest.mock import MagicMock
-
-import pytest
 
 from hunting.contracts.cells import ProviderScope
-from hunting.contracts.coverage import CoverageBound
 from hunting.contracts.evidence_state import (
     AnswerAttributeState,
     ArtifactEvidence,
@@ -14,7 +10,6 @@ from hunting.contracts.evidence_state import (
 from hunting.contracts.hunt import (
     AnswerStatus,
     EvidenceCard,
-    FinalHuntAccount,
     HuntObjective,
     HuntOutcome,
     HuntState,
@@ -227,7 +222,7 @@ class TestPhase8EvaluatorFallback:
         res = evaluator.analyze_batch(
             cards=[card],
             hypotheses=[hyp],
-            answer_spec={"answer_type": "software_version"},
+            answer_spec={"answer_type": "software_version", "object_name": "Tor Browser"},
             question="What is the version of Tor Browser?",
         )
 

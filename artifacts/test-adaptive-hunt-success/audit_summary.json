@@ -1,6 +1,6 @@
 {
   "hunt_id": "test-adaptive-hunt-success",
-  "outcome": "INCONCLUSIVE",
+  "outcome": "SUPPORTED",
   "stopping_decision": "STOP_BOUNDED",
   "answer": {
     "status": "ANSWERED",
@@ -10,7 +10,7 @@
     "candidates": [
       {
         "value": "13.5.2",
-        "weight": 1,
+        "weight": 3,
         "card_ids": [
           "card-e5d92fdeb056"
         ],
@@ -41,10 +41,10 @@
     ],
     "missing_fields": [],
     "artifact_detected": true,
-    "claim": "Tor Browser executed on wrk-amber",
+    "claim": "wrk-amber executed on wrk-amber",
     "citations": [
       {
-        "claim": "Tor Browser executed on wrk-amber",
+        "claim": "wrk-amber executed on wrk-amber",
         "observation_ids": [
           "obs-adaptive-2",
           "obs-discovery-1"
@@ -58,7 +58,7 @@
         ]
       }
     ],
-    "citation_text": "Tor Browser executed on wrk-amber Evidence: obs-adaptive-2, obs-discovery-1 Query: qp-adaptive-0-1, qp-discovery-0 Fields: Path"
+    "citation_text": "wrk-amber executed on wrk-amber Evidence: obs-adaptive-2, obs-discovery-1 Query: qp-adaptive-0-1, qp-discovery-0 Fields: Path"
   },
   "llm_usage": {
     "model": "stub",

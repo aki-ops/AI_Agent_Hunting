@@ -819,8 +819,10 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
     elif answer.get("status") in ("PARTIALLY_SUPPORTED", "VERSION_UNAVAILABLE"):
         lines.extend([
             "",
-            f"**Answer:** {answer.get('explanation') or 'Tor Browser was observed on wrk-aturing. Requested version: Not available in the retrieved telemetry.'}",
+            # v6: generic fallback — no hardcoded artifact name or host
+            f"**Answer:** {answer.get('explanation') or 'The artifact was observed but the requested attribute value was not found in the retrieved telemetry.'}",
         ])
+
         if answer.get("citation_text"):
             lines.extend(["", f"**Evidence Citation:** {answer['citation_text']}"])
     elif answer.get("status") == "NOT_FOUND":

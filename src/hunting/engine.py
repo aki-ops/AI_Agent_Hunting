@@ -31,6 +31,11 @@ from hunting.contracts.case_graph import (
 )
 from hunting.contracts.cells import Cell, CellState, ProviderScope
 from hunting.contracts.entities import Account, AnyEntity, Domain, EntityRef, Host, IPAddress
+from hunting.contracts.evidence_state import (
+    AnswerAttributeState,
+    ArtifactEvidence,
+    EvidenceState,
+)
 from hunting.contracts.expectations import (
     EvidenceRequirement,
     Expectation,
@@ -48,12 +53,6 @@ from hunting.contracts.hunt import (
     QueryPlan,
     RequirementStatus,
     StoppingDecision,
-)
-from hunting.contracts.evidence_state import (
-    AnswerAttributeState,
-    ArtifactEvidence,
-    AttributeEvidence,
-    EvidenceState,
 )
 from hunting.contracts.hunt_spec import HuntSpec
 from hunting.contracts.investigation_model import (
@@ -328,25 +327,61 @@ class HypothesisHuntEngine:
         self._update_evidence_state(state, ledger)
 
     def _update_evidence_state(self, state: HuntState, ledger: ObservationLedger) -> None:
-        """Derive structured EvidenceState tracking artifact and attribute observations."""
+        """Derive structured EvidenceState tracking artifact and attribute observations.
+
+        v6: artifact_name is extracted from HuntSpec/semantic_intent, not from keyword
+        scanning of the question text. This removes hardcoded "Tor Browser" detection.
+        """
         answer_spec = (state.objective.answer_spec or {}) if state.objective else {}
         answer_type = str(answer_spec.get("answer_type") or "software_version").lower()
-        question = (state.objective.statement or "") if state.objective else ""
 
-        target_artifact_name = "Tor Browser" if "tor" in question.lower() or any("tor" in str(getattr(c, "summary", "")).lower() for c in state.evidence_cards) else ""
+        # v6: Derive target artifact name from structured spec, NOT from "tor" keyword.
+        # Priority order:
+        # 1. HuntSpec search_terms (LLM-derived, high confidence)
+        # 2. semantic_intent.behavior (LLM proposed)
+        # 3. answer_spec object name
+        # 4. Empty string (artifact name unknown — do not assume)
+        target_artifact_name = ""
+        hunt_spec = getattr(getattr(state.objective, "semantic_intent", None) or {}, "hunt_spec", None) \
+            or getattr(state.objective, "hunt_spec", None)
+        if hunt_spec is None:
+            # Try to get from semantic_intent directly
+            sem_intent = getattr(state.objective, "semantic_intent", None)
+            behavior = str(getattr(sem_intent, "behavior", "") or "").strip()
+            if behavior and behavior.lower() not in {"unknown", ""}:
+                target_artifact_name = behavior
+            req_obj = getattr(sem_intent, "requested_object", None)
+            if not target_artifact_name and req_obj:
+                rv = str(getattr(req_obj, "value", "") or "").strip()
+                if rv and rv.lower() not in {"unknown", "", "?"}:
+                    target_artifact_name = rv
+        else:
+            # Use HuntSpec search_terms filtered by confidence
+            high_conf = [t.value for t in getattr(hunt_spec, "search_terms", [])
+                         if getattr(t, "confidence", 0) >= 0.8 and t.value.strip()]
+            if high_conf:
+                target_artifact_name = high_conf[0]
+
         artifact_host = ""
         artifact_path = None
         artifact_proc = None
         artifact_obs_ids: list[str] = []
         is_detected = False
 
+        # --- Detect artifact from evidence cards ---
+        # v6: detection is based on card.fact_type and field content, not "tor" keyword
         for card in state.evidence_cards:
             fps = [str(x) for x in card.field_summary.get("file_paths", [])]
             imgs = [str(x) for x in card.field_summary.get("process_names", []) or card.field_summary.get("images", [])]
             hosts = [str(x) for x in card.entity_summary.get("hosts", []) if str(x).strip()]
             c_sum = str(getattr(card, "summary", ""))
-            has_tor = any("tor" in s.lower() for s in (fps + imgs + [c_sum]))
-            if card.fact_type in ("process_execution", "software_artifact", "file_modification") or has_tor:
+            # Match against known artifact names (from spec) or fact_type
+            name_lower = target_artifact_name.lower() if target_artifact_name else ""
+            has_artifact = (
+                card.fact_type in ("process_execution", "software_artifact", "file_modification")
+                or (name_lower and any(name_lower in s.lower() for s in (fps + imgs + [c_sum])))
+            )
+            if has_artifact:
                 is_detected = True
                 if hosts and not artifact_host:
                     artifact_host = hosts[0]
@@ -354,17 +389,23 @@ class HypothesisHuntEngine:
                     artifact_path = fps[0]
                 if imgs and not artifact_proc:
                     artifact_proc = imgs[0]
-                if not target_artifact_name and has_tor:
-                    target_artifact_name = "Tor Browser"
+                # Derive artifact name from card data if still unknown
+                if not target_artifact_name and fps:
+                    import os
+                    target_artifact_name = os.path.basename(fps[0])
                 artifact_obs_ids.extend(card.representative_observation_ids)
 
+        # --- Detect artifact from raw observations ---
         for obs in ledger.observations:
             f = obs.fields
             img = str(f.get("Image") or f.get("image") or f.get("process_name") or "")
             path = str(f.get("Path") or f.get("path") or f.get("TargetFilename") or "")
             cmd = str(f.get("CommandLine") or f.get("cmdline") or "")
             h = str(f.get("host") or "")
-            if any("tor" in s.lower() for s in (img, path, cmd)):
+            name_lower = target_artifact_name.lower() if target_artifact_name else ""
+            # Match if we have a known artifact name OR if fact_type signals artifact presence
+            has_artifact_obs = name_lower and any(name_lower in s.lower() for s in (img, path, cmd) if s)
+            if has_artifact_obs:
                 is_detected = True
                 if h and not artifact_host:
                     artifact_host = h
@@ -372,10 +413,9 @@ class HypothesisHuntEngine:
                     artifact_path = path
                 if img and not artifact_proc:
                     artifact_proc = img
-                if not target_artifact_name:
-                    target_artifact_name = "Tor Browser"
                 if obs.id not in artifact_obs_ids:
                     artifact_obs_ids.append(obs.id)
+
 
         version_fields = ("ProductVersion", "FileVersion", "Version", "version", "software_version")
         observed_versions: list[str] = []
@@ -612,8 +652,8 @@ class HypothesisHuntEngine:
             inv_model = build_investigation_model_from_intent(objective.semantic_intent, hypotheses, requirements)
 
         inv_case = getattr(objective, "case", None)
-        if inv_case is None and getattr(objective, "semantic_intent", None):
-            inv_case = build_investigation_case_from_intent(objective.semantic_intent, hypotheses, requirements)
+        if inv_case is None and getattr(objective, "claim_graph", None):
+            inv_case = build_investigation_case_from_intent(objective.claim_graph)
 
         state = HuntState(
             objective=objective,

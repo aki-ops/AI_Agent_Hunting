@@ -11,8 +11,8 @@ from hunting.contracts.case_graph import (
     build_investigation_case_from_intent,
 )
 from hunting.contracts.cells import ProviderScope
+from hunting.contracts.claim import AcceptanceRule, Claim, ClaimEvidenceRequirement, ClaimGraph
 from hunting.contracts.hunt import EvidenceRequirementV4
-from hunting.contracts.investigation_model import build_investigation_model_from_intent
 from hunting.contracts.observations import EpistemicType, Observation
 from hunting.contracts.semantic_intent import RequestedObject, SemanticHuntIntent, SubjectEntity
 from hunting.evidence.relation_verifier import RelationVerifier
@@ -55,22 +55,34 @@ def _requirements() -> list[EvidenceRequirementV4]:
 
 
 def test_artifact_question_does_not_get_forced_through_ip_or_web() -> None:
-    case = build_investigation_case_from_intent(_tor_intent(), [], _requirements())
+    claim_graph = ClaimGraph(
+        id="graph-artifact",
+        request_id="req-artifact",
+        objective="Determine installed software version",
+        claims=[
+            Claim(
+                id="claim-version",
+                claim_type="attribute",
+                subject="endpoint:wrk-amber",
+                predicate="has_version",
+                value_type="software_version",
+                provenance="request",
+                source_request_id="req-artifact",
+                observation_requirements=(
+                    ClaimEvidenceRequirement(id="req-file", fact_kind="file_modification", required_fields=("TargetFilename", "ProductVersion")),
+                ),
+                acceptance_rule=AcceptanceRule(required_fields=("ProductVersion",)),
+            )
+        ],
+    )
+    case = build_investigation_case_from_intent(claim_graph)
     edges = list(case.graph.edges.values())
-    operations = [op for edge in edges for op in edge.acceptable_operations]
 
-    assert "resolve_person_to_account" in operations
-    assert "resolve_account_to_endpoint" in operations
-    assert "find_file_change_from_endpoint" in operations
-    assert "find_process_from_endpoint" in operations
-    assert "find_web_activity_from_endpoint" in operations
-    assert "resolve_endpoint_to_client_ip" not in operations
-    assert "find_web_activity_from_client_ip" not in operations
-    assert all(edge.metadata.get("requirement_id") for edge in edges if edge.id.startswith("edge-artifact-"))
-
-    model = build_investigation_model_from_intent(_tor_intent(), [], _requirements())
-    assert not any(edge.id == "edge-endpoint-ip" for edge in model.graph.edges.values())
-    assert model.acceptance_criteria[0].required_path == ["person", "endpoint", "software_version"]
+    assert len(edges) == 1
+    assert edges[0].relation_type == "has_version"
+    assert edges[0].acceptance_predicate["fact_kinds"] == ["file_modification"]
+    assert not any(node.type == NodeType.IP for node in case.graph.nodes.values())
+    assert not any(edge.relation_type in (RelationType.REQUESTED, RelationType.ACCESSED) for edge in edges)
 
 
 def test_file_endpoint_operation_is_provider_neutral_and_compilable() -> None:

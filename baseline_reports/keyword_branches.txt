@@ -1,0 +1,72 @@
+﻿# Baseline Keyword-Driven Branches Audit — Phase 0
+# Generated: 2026-09-09T10:02:48Z
+# Purpose: Catalog all keyword/scenario-specific branches that violate v6 architecture.
+# Reference: 01_FINAL-ARCHITECTURE.md §1: "The runtime must not branch on email, Tor, CVE, web,
+#            process, event_family, or request_mode to select a prewritten investigation story."
+
+## CRITICAL BRANCHES TO REMOVE IN PHASE 2
+
+### 1. engine.py — "Tor Browser" hardcoded 3 times
+---
+File: src/hunting/engine.py
+Line 336: target_artifact_name = "Tor Browser" if "tor" in question.lower() or any(...)
+Line 358: target_artifact_name = "Tor Browser"
+Line 376: target_artifact_name = "Tor Browser"
+Severity: CRITICAL — controls artifact name used by evaluator and verifier
+Phase to fix: Phase 2 (Semantic Compiler) — derive from ClaimGraph.claims[].object_or_value
+
+### 2. evaluator.py — "Tor Browser" hardcoded 2 times
+---
+File: src/hunting/evidence/evaluator.py
+Line 256: artifact_name = "Tor Browser" if "tor" in question.lower() or any(...)
+Line 279: artifact_name = "Tor Browser"
+Severity: CRITICAL — LLM evaluator uses hardcoded name to assess evidence
+Phase to fix: Phase 7 (Claim Verification) — evaluator must get artifact from ClaimGraph
+
+### 3. answer_verifier.py — "Tor Browser" hardcoded 1 time
+---
+File: src/hunting/evidence/answer_verifier.py
+Line 120: artifact_name = "Tor Browser" if "tor" in str(spec).lower() or any(...)
+Severity: HIGH — verifier uses keyword to determine what to verify
+Phase to fix: Phase 7 (Claim Verification)
+
+### 4. grouping.py — "Tor Browser" hardcoded strings
+---
+File: src/hunting/evidence/grouping.py
+Line 212: supports.append("Tor Browser was present")
+Line 213: supports.append("Tor Browser process executed")
+Line 271: supports.append("Tor Browser was present")
+Severity: HIGH — creates hardcoded support strings not grounded in evidence
+Phase to fix: Phase 6 (EvidenceGraph)
+
+### 5. reporter/renderer.py — hardcoded Tor Browser fallback string
+---
+File: src/hunting/reporter/renderer.py
+Line 822: f"**Answer:** {answer.get('explanation') or 'Tor Browser was observed on wrk-aturing...'}"
+Severity: MEDIUM — fallback message hardcoded to Tor Browser
+Phase to fix: Phase 9 (Report)
+
+### 6. contracts/case_graph.py — is_email flag controls graph construction
+---
+File: src/hunting/contracts/case_graph.py
+Line 596-600: is_email = (any(k in intent_text for k in ("email", "mail", ...)) or ...)
+Line 656: if not is_email and subj_type in ("person", "user") and artifact_target:
+Line 843: elif is_email and subj_type in ("person", "user"):
+Severity: CRITICAL — is_email flag creates scenario-specific graph construction
+Phase to fix: Phase 2 (Semantic Compiler)
+
+## ALREADY CORRECT (v6 compliant)
+- contracts/cells.py L54-55: raises ValueError if event_family axis is used [CORRECT]
+- contracts/expectations.py: EvidenceRequirement enum, no keyword inference [CORRECT]
+- m2_abduction/schema.py L181-182: raises ValueError if event_family in expectations [CORRECT]
+- contracts/claim.py (NEW): ClaimStatus, Claim, ClaimGraph — v6 contract [CORRECT]
+
+## BORDERLINE (review in Phase 2)
+- contracts/case_graph.py: _artifact_terms() — uses regex on intent text (not keyword branch)
+  -> Acceptable if used only for query hints, not for graph construction
+- contracts/hunt_spec.py L160: comment mentions "Tor Browser" as example only
+  -> Acceptable — documentation only
+
+## SUMMARY
+Total critical branches: 6 locations, 10 lines of code
+Files affected: engine.py, evaluator.py, answer_verifier.py, grouping.py, renderer.py, case_graph.py

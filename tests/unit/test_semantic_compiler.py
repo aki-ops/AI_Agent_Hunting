@@ -28,29 +28,35 @@ def test_nl_lookup_compiles_explicit_answer_spec():
     """Information questions carry a typed answer target into reporting."""
     def lookup_llm(prompt: str) -> str:
         return """{
-          "normalized_claim": {"text": "Find the website domain visited", "status": "UNVERIFIED"},
-          "mechanism_status": "UNKNOWN",
-          "answer_spec": {
+          "id": "claim-graph-hunt-lookup",
+          "request_id": "hunt-lookup",
+          "objective": "Find the website domain visited by Amber Turing",
+          "answer_contract": {
             "mode": "lookup",
             "answer_type": "domain",
-            "evidence_types": ["web_request", "dns_activity"],
+            "required_fields": ["site"],
             "question": "What is the website domain that she visited?"
           },
-          "hypotheses": [{
-            "id": "hypo-lookup",
-            "statement": "Amber Turing visited a website represented in web or DNS telemetry.",
-            "class": "unclassified",
-            "assumptions": [],
-            "requirements": ["req-web"]
-          }],
-          "requirements": [{
-            "id": "req-web",
-            "semantic_intent": "web_request_activity",
-            "necessity": "CRITICAL",
-            "search_hints": [],
-            "falsification_condition": "No matching web or DNS record exists",
-            "description": "Find the visited website domain",
-            "source_refs": ["USER_QUESTION"]
+          "claims": [{
+            "id": "claim-lookup",
+            "claim_type": "relation",
+            "subject": "person:Amber Turing",
+            "predicate": "visited",
+            "object_or_value": null,
+            "value_type": "domain",
+            "provenance": "request",
+            "source_request_id": "hunt-lookup",
+            "dependencies": [],
+            "evidence_requirements": [],
+            "observation_requirements": [
+              {"id": "req-web", "fact_kind": "web_request", "required_fields": ["site"], "field_roles": [], "completeness_required": false},
+              {"id": "req-dns", "fact_kind": "dns_activity", "required_fields": ["query"], "field_roles": [], "completeness_required": false}
+            ],
+            "acceptance_rule": {"min_observations": 1, "required_fields": ["site"], "requires_query_complete": false, "value_must_match": null},
+            "refutation_rule": null,
+            "optional": false,
+            "is_prerequisite": false,
+            "reason": "The request explicitly asks which domain Amber visited"
           }]
         }"""
 
@@ -64,7 +70,10 @@ def test_nl_lookup_compiles_explicit_answer_spec():
 
     assert objective.answer_spec["mode"] == "lookup"
     assert objective.answer_spec["answer_type"] == "domain"
-    assert objective.answer_spec["evidence_types"] == ["web_request", "dns_activity"]
+    assert {req.fact_kind for req in objective.claim_graph.claims[0].observation_requirements} == {
+        "web_request",
+        "dns_activity",
+    }
 
 
 def test_1_known_cve_zero_llm():

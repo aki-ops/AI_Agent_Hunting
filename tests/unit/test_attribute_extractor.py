@@ -1,12 +1,9 @@
 """Unit tests for Contextual Attribute Extractor across semi-structured telemetry."""
 from __future__ import annotations
 
-import pytest
-
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.observations import EpistemicType, Observation, Provenance
 from hunting.evidence.attribute_extractor import (
-    ExtractedAttribute,
     extract_attributes_from_observation,
     extract_best_attribute,
 )

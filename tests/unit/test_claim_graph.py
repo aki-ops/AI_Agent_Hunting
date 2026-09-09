@@ -24,7 +24,6 @@ from hunting.contracts.claim import (
     RefutationRule,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -80,12 +79,14 @@ def test_valid_claim_graph() -> None:
         id="claim-presence",
         predicate="installed_software",
         value_type="software_version",
+        source_request_id="req-tor-001",
         reason="Request asks whether Tor Browser was installed",
     )
     claim_version = _make_claim(
         id="claim-version",
         predicate="has_version",
         value_type="software_version",
+        source_request_id="req-tor-001",
         dependencies=("claim-presence",),
         reason="Request asks for the specific version of Tor Browser",
         acceptance_rule=AcceptanceRule(
@@ -143,6 +144,10 @@ def test_raw_spl_rejected() -> None:
     # KQL: table pipe
     with pytest.raises(ValueError, match="raw SPL"):
         _make_claim(predicate="DeviceEvents | where Timestamp")
+
+    # SQL
+    with pytest.raises(ValueError, match="raw SPL"):
+        _make_claim(predicate="SELECT host FROM events")
 
 
 def test_raw_spl_in_object_rejected() -> None:
@@ -349,6 +354,28 @@ def test_valid_refutation_rule() -> None:
     assert rule.condition == RefutationCondition.FIELD_ABSENT
 
 
+def test_claim_mismatched_request_id_rejected() -> None:
+    """A claim whose source_request_id does not match the graph is rejected."""
+    claim = _make_claim(source_request_id="req-other")
+    with pytest.raises(ValueError, match="does not match ClaimGraph.request_id"):
+        ClaimGraph(
+            id="graph-bad",
+            request_id="req-001",
+            objective="Test",
+            claims=[claim],
+        )
+
+
+def test_raw_spl_in_graph_objective_rejected() -> None:
+    with pytest.raises(ValueError, match="raw SPL"):
+        ClaimGraph(
+            id="graph-spl",
+            request_id="req-001",
+            objective="search index=botsv2 amber",
+            claims=[_make_claim()],
+        )
+
+
 def test_claimgraph_to_dict_round_trip() -> None:
     """ClaimGraph.to_dict() must return a serializable dict."""
     graph = _make_graph()
@@ -360,3 +387,150 @@ def test_claimgraph_to_dict_round_trip() -> None:
     claim_d = d["claims"][0]
     assert "acceptance_rule" in claim_d
     assert claim_d["status"] == ClaimStatus.UNPROVEN.value
+
+
+def test_all_four_claim_types() -> None:
+    """Claim must represent attribute, relation, behaviour and controlled_absence."""
+    types = ("attribute", "relation", "behaviour", "controlled_absence")
+    claims = [
+        _make_claim(id=f"c-{t}", claim_type=t, predicate=t, object_or_value=None)
+        for t in types
+    ]
+    graph = ClaimGraph(
+        id="graph-types",
+        request_id="req-001",
+        objective="Cover all claim predicates",
+        claims=claims,
+    )
+    assert {c.claim_type for c in graph.claims} == set(types)
+
+
+def test_counterfactual_same_keyword_different_claims() -> None:
+    """Same keyword 'email' yields different claims when the request differs."""
+    lookup = ClaimGraph(
+        id="graph-email-lookup",
+        request_id="req-001",
+        objective="What is Amber's personal email?",
+        claims=[
+            _make_claim(
+                id="c-email",
+                claim_type="attribute",
+                predicate="has_personal_email",
+                object_or_value=None,
+                value_type="email_address",
+                reason="Request asks for Amber's personal email value",
+            )
+        ],
+    )
+    sent = ClaimGraph(
+        id="graph-email-sent",
+        request_id="req-001",
+        objective="Amber sent mail to the CEO",
+        claims=[
+            _make_claim(
+                id="c-message",
+                claim_type="relation",
+                predicate="sent_message",
+                object_or_value=None,
+                value_type="message",
+                reason="Request asserts an outbound message",
+            ),
+            _make_claim(
+                id="c-recipient",
+                claim_type="relation",
+                predicate="message_recipient",
+                object_or_value=None,
+                value_type="email_address",
+                dependencies=("c-message",),
+                reason="Request names a recipient role",
+            ),
+        ],
+    )
+    assert [c.predicate for c in lookup.claims] == ["has_personal_email"]
+    assert "sent_message" in {c.predicate for c in sent.claims}
+    assert "has_personal_email" not in {c.predicate for c in sent.claims}
+    assert type(lookup.claims[0]) is Claim
+    assert type(sent.claims[0]) is Claim
+
+
+def test_capability_graph_records_selection_audit() -> None:
+    from hunting.contracts.capabilities import (
+        CapabilityGraph,
+        ProviderCapabilityCatalog,
+        ProviderSelectionAudit,
+    )
+    from hunting.contracts.queries import ProviderOperation
+
+    graph = CapabilityGraph(
+        id="cap-001",
+        census_version="2026.1.0",
+        providers=[
+            ProviderCapabilityCatalog(
+                provider_id="splunk",
+                status="ONLINE",
+                observable_fields=["user", "src_ip"],
+            ),
+            ProviderCapabilityCatalog(
+                provider_id="cdb",
+                status="ONLINE",
+                observable_fields=["event_id"],
+            ),
+        ],
+        operations=[
+            ProviderOperation(
+                id="find_attribute",
+                provider_id="splunk",
+                scope_ids=("botsv2",),
+                input_entity_kinds=("user",),
+                output_fields=("user",),
+                output_fact_kinds=("attribute",),
+                completeness="cursor",
+            )
+        ],
+        audit=[
+            ProviderSelectionAudit(
+                provider_id="splunk",
+                selected=True,
+                reason="has user field for attribute claim",
+                claim_id="c-email",
+            ),
+            ProviderSelectionAudit(
+                provider_id="cdb",
+                selected=False,
+                reason="missing required field user",
+                status="UNSUPPORTED",
+                claim_id="c-email",
+            ),
+        ],
+    )
+    assert graph.selected_providers() == ["splunk"]
+    assert graph.rejected_providers() == ["cdb"]
+    assert graph.to_dict()["census_version"] == "2026.1.0"
+
+
+def test_capability_graph_rejects_empty_id() -> None:
+    from hunting.contracts.capabilities import CapabilityGraph
+
+    with pytest.raises(ValueError, match="CapabilityGraph.id"):
+        CapabilityGraph(id="", census_version="1")
+    with pytest.raises(ValueError, match="census_version"):
+        CapabilityGraph(id="cap-1", census_version="")
+
+
+def test_query_result_coverage_is_explicit() -> None:
+    from hunting.contracts.queries import QueryOutcome, QueryResult
+
+    result = QueryResult(
+        query_id="q-1",
+        outcome=QueryOutcome.ROWS,
+        executed_ok=True,
+        complete=False,
+        rows=[{"user": "amber"}],
+        row_count=1,
+        coverage={"cells": 1, "complete": False},
+        cursor="next-page",
+    )
+    assert result.complete is False
+    assert result.row_count == 1
+    assert result.coverage is not None
+    assert result.cursor == "next-page"

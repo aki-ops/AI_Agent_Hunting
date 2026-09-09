@@ -623,21 +623,21 @@ def build_final_hunt_account(
 
     # Guard: Cannot conclude NOT_FOUND if identity is required but unresolved, queries incomplete, or execution halted before search
     if answer.get("status") == "NOT_FOUND":
-        if stopping_dec == StoppingDecision.STOP_INSUFFICIENT or not state.queries:
+        identity_required = bool(
+            obj.semantic_intent
+            and getattr(obj.semantic_intent.subject, "type", "") == "person"
+        )
+        if identity_required and not getattr(state, "identity_resolved", False):
+            answer["status"] = "INCONCLUSIVE"
+            answer["reason"] = "IDENTITY_UNRESOLVED"
+            answer["explanation"] = "Cannot conclude NOT_FOUND: Subject person identity could not be bound to an endpoint or client IP."
+        elif stopping_dec == StoppingDecision.STOP_INSUFFICIENT or not state.queries:
             answer["status"] = "INCONCLUSIVE"
             answer["reason"] = "EXECUTION_HALTED_BEFORE_SEARCH"
             answer["explanation"] = "Cannot conclude NOT_FOUND: Investigation was halted before telemetry search could be executed."
         else:
-            identity_required = False
-            if obj.semantic_intent and getattr(obj.semantic_intent.subject, "type", "") == "person":
-                identity_required = True
             all_queries_complete = all(getattr(qr, "complete", True) for qr in state.query_results) if state.query_results else True
-
-            if identity_required and not getattr(state, "identity_resolved", False):
-                answer["status"] = "INCONCLUSIVE"
-                answer["reason"] = "IDENTITY_UNRESOLVED"
-                answer["explanation"] = "Cannot conclude NOT_FOUND: Subject person identity could not be bound to an endpoint or client IP."
-            elif not all_queries_complete:
+            if not all_queries_complete:
                 answer["status"] = "INCONCLUSIVE"
                 answer["reason"] = "COVERAGE_INCOMPLETE"
                 answer["explanation"] = "Cannot conclude NOT_FOUND: One or more telemetry queries were incomplete or truncated."

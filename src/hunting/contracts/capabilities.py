@@ -34,6 +34,74 @@ class ProviderCapabilityCatalog:
     observable_fields: list[str] = field(default_factory=list)
     retention_days: int = 4000
     details: dict[str, Any] = field(default_factory=dict)
+    operations: list[ProviderOperation] = field(default_factory=list)
+    permissions: list[str] = field(default_factory=list)
+    completeness_semantics: str = "provider-defined"
+
+
+@dataclass(frozen=True)
+class ProviderSelectionAudit:
+    """Why a provider was selected or rejected for a claim."""
+
+    provider_id: str
+    selected: bool
+    reason: str
+    status: str = "ONLINE"
+    claim_id: str = ""
+
+
+@dataclass
+class CapabilityGraph:
+    """Versioned census of live providers, operations and selection audit.
+
+    A reachable provider that cannot satisfy any outstanding claim is recorded
+    as rejected, not used as fallback.
+    """
+
+    id: str
+    census_version: str
+    providers: list[ProviderCapabilityCatalog] = field(default_factory=list)
+    operations: list[ProviderOperation] = field(default_factory=list)
+    audit: list[ProviderSelectionAudit] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.id.strip():
+            raise ValueError("CapabilityGraph.id must not be empty")
+        if not self.census_version.strip():
+            raise ValueError("CapabilityGraph.census_version must not be empty")
+
+    def selected_providers(self) -> list[str]:
+        return [a.provider_id for a in self.audit if a.selected]
+
+    def rejected_providers(self) -> list[str]:
+        return [a.provider_id for a in self.audit if not a.selected]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "census_version": self.census_version,
+            "providers": [
+                {
+                    "provider_id": p.provider_id,
+                    "status": p.status,
+                    "indices": list(p.indices),
+                    "observable_fields": list(p.observable_fields),
+                    "retention_days": p.retention_days,
+                }
+                for p in self.providers
+            ],
+            "operations": [op.id for op in self.operations],
+            "audit": [
+                {
+                    "provider_id": a.provider_id,
+                    "selected": a.selected,
+                    "reason": a.reason,
+                    "status": a.status,
+                    "claim_id": a.claim_id,
+                }
+                for a in self.audit
+            ],
+        }
 
 
 @dataclass(frozen=True)
@@ -105,4 +173,11 @@ class CapabilityMatcher:
         return MatchResult(binding=binding, operation=operation, diagnostic=None)
 
 
-__all__ = ["CapabilityDescriptor", "ProviderCapabilityCatalog", "CapabilityMatcher", "MatchResult"]
+__all__ = [
+    "CapabilityDescriptor",
+    "ProviderCapabilityCatalog",
+    "ProviderSelectionAudit",
+    "CapabilityGraph",
+    "CapabilityMatcher",
+    "MatchResult",
+]

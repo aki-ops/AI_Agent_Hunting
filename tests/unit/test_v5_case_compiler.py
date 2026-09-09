@@ -32,39 +32,44 @@ def test_free_text_llm_compiler_emits_investigation_case():
     """Verify free-text compilation with LLM caller produces a valid InvestigationCase."""
     def stub_llm(prompt: str) -> str:
         return json.dumps({
-            "semantic_intent": {
-                "subject": {"type": "person", "value": "Amber Turing"},
-                "requested_object": {"type": "domain", "role": "answer"},
-                "behavior": "visited competitor beer website",
-                "evidence_requirements": [
-                    {
-                        "semantic_intent": "web_navigation",
-                        "required_fields": ["site", "uri"],
-                        "necessity": "CRITICAL",
-                        "description": "Find visited web domain",
-                    }
-                ],
+            "id": "claim-graph-hunt-amber-01",
+            "request_id": "hunt-amber-01",
+            "objective": "Determine which competitor website Amber Turing visited",
+            "answer_contract": {
+                "mode": "lookup",
+                "answer_type": "domain",
+                "required_fields": ["site"],
+                "question": "Which competitor website did Amber Turing visit?",
             },
-            "hypotheses": [
-                {
-                    "id": "hypo-1",
-                    "statement": "Amber Turing accessed competitor website.",
-                    "class": "unclassified",
-                    "assumptions": ["Amber was logged on to a corporate endpoint"],
-                    "requirements": ["req-1"],
-                }
-            ],
-            "requirements": [
-                {
+            "claims": [{
+                "id": "claim-visited-domain",
+                "claim_type": "relation",
+                "subject": "person:Amber Turing",
+                "predicate": "visited",
+                "object_or_value": None,
+                "value_type": "domain",
+                "provenance": "request",
+                "source_request_id": "hunt-amber-01",
+                "dependencies": [],
+                "evidence_requirements": [],
+                "observation_requirements": [{
                     "id": "req-1",
-                    "semantic_intent": "web_navigation",
-                    "necessity": "CRITICAL",
-                    "search_hints": ["competitor-beer.com"],
-                    "falsification_condition": "no matching web or proxy activity",
-                    "description": "Identify web request from client IP",
-                    "source_refs": ["USER_INPUT"],
-                }
-            ],
+                    "fact_kind": "web_navigation",
+                    "required_fields": ["site", "uri"],
+                    "field_roles": ["client_identity", "requested_domain"],
+                    "completeness_required": False,
+                }],
+                "acceptance_rule": {
+                    "min_observations": 1,
+                    "required_fields": ["site"],
+                    "requires_query_complete": False,
+                    "value_must_match": None,
+                },
+                "refutation_rule": None,
+                "optional": False,
+                "is_prerequisite": False,
+                "reason": "The request explicitly asks which website Amber visited",
+            }],
         })
 
     compiler = KnowledgeBehaviorCompiler(llm_caller=stub_llm)
@@ -79,20 +84,19 @@ def test_free_text_llm_compiler_emits_investigation_case():
     assert isinstance(obj.case, InvestigationCase)
     assert obj.case_graph is not None
 
-    # Invariant: Person subject MUST have mandatory endpoint unknown inserted
+    # ClaimGraph projection must not invent technical prerequisite entities.
     unknown_types = [u.entity_type for u in obj.case.unknowns]
-    assert NodeType.ENDPOINT in unknown_types
-    assert NodeType.ACCOUNT in unknown_types
-    assert NodeType.IP in unknown_types
+    assert unknown_types == [NodeType.DOMAIN]
+    assert not any(
+        node.type in (NodeType.ENDPOINT, NodeType.ACCOUNT, NodeType.IP)
+        for node in obj.case.graph.nodes.values()
+    )
 
-    # Invariant: Case graph contains the causal chain
-    assert len(obj.case.graph.edges) >= 4
+    # The case contains exactly the relation explicitly requested.
     edges = list(obj.case.graph.edges.values())
-    rel_types = [e.relation_type for e in edges]
-    assert RelationType.OWNS in rel_types
-    assert RelationType.LOGGED_ON_TO in rel_types
-    assert RelationType.ASSIGNED_IP in rel_types
-    assert RelationType.REQUESTED in rel_types
+    assert len(edges) == 1
+    assert edges[0].relation_type == "visited"
+    assert edges[0].metadata["claim_id"] == "claim-visited-domain"
 
 
 def test_deterministic_cve_compiles_to_case_with_zero_llm():

@@ -84,6 +84,9 @@ class ProviderOperation:
     semantic_intents: tuple[str, ...] = ()
     input_entity_kinds: tuple[str, ...] = ()
     output_fields: tuple[str, ...] = ()
+    output_fact_kinds: tuple[str, ...] = ()
+    completeness: str = ""
+    expected_cost: int | None = None
 
 
 @dataclass(frozen=True)
@@ -131,6 +134,8 @@ class QueryResult:
     sourcetype: str | None = None
     execution_time_ms: float = 0.0
     row_count: int = 0
+    raw_count: int | None = None
+    coverage: dict[str, Any] | None = None
 
 
 @dataclass

@@ -650,11 +650,114 @@ class StubSemanticCompiler:
     def __call__(self, prompt: str) -> str:
         return self.compile(prompt)
 
+    def _to_claim_graph(self, data: dict[str, Any], content: str, prompt: str) -> str:
+        """Convert an explicit legacy fixture into the v6 ClaimGraph test contract."""
+        request_match = re.search(r"REQUEST ID:\s*([^\r\n]+)", prompt, re.IGNORECASE)
+        request_id = request_match.group(1).strip() if request_match else "fixture-request"
+        semantic = data.get("semantic_intent", {}) if isinstance(data.get("semantic_intent"), dict) else {}
+        subject = semantic.get("subject", {}) if isinstance(semantic.get("subject"), dict) else {}
+        subject_ref = f"{subject.get('type', 'entity')}:{subject.get('value', 'unknown')}"
+        requested = semantic.get("requested_object", {}) if isinstance(semantic.get("requested_object"), dict) else {}
+        answer_spec = data.get("answer_spec", {}) if isinstance(data.get("answer_spec"), dict) else {}
+        requirements = {
+            str(item.get("id", "")): item
+            for item in data.get("requirements", [])
+            if isinstance(item, dict) and str(item.get("id", "")).strip()
+        }
+        claims = []
+        hypothesis_classes: dict[str, str] = {}
+        hypothesis_assumptions: dict[str, list[str]] = {}
+        requirement_search_hints: dict[str, list[str]] = {}
+        for index, hypothesis in enumerate(data.get("hypotheses", []), start=1):
+            if not isinstance(hypothesis, dict):
+                continue
+            claim_id = str(hypothesis.get("id", f"claim-{index}")).strip()
+            req_ids = [str(value).strip() for value in hypothesis.get("requirements", []) if str(value).strip()]
+            observation_requirements = []
+            required_fields: list[str] = []
+            for req_id in req_ids:
+                requirement = requirements.get(req_id, {})
+                fact_kind = str(requirement.get("evidence_type") or requirement.get("semantic_intent") or "telemetry").strip()
+                requirement_search_hints[req_id] = [
+                    str(value).strip()
+                    for value in requirement.get("search_hints", [])
+                    if str(value).strip()
+                ]
+                observation_requirements.append({
+                    "id": req_id,
+                    "fact_kind": fact_kind,
+                    "required_fields": [],
+                    "field_roles": [],
+                    "completeness_required": fact_kind == "scope_records",
+                })
+            claims.append({
+                "id": claim_id,
+                "claim_type": "behaviour",
+                "subject": subject_ref,
+                "predicate": "observed_behavior",
+                "object_or_value": None,
+                "value_type": str(requested.get("type", answer_spec.get("answer_type", "outcome"))),
+                "provenance": "request",
+                "source_request_id": request_id,
+                "dependencies": [],
+                "evidence_requirements": [],
+                "observation_requirements": observation_requirements,
+                "acceptance_rule": {
+                    "min_observations": 1,
+                    "required_fields": required_fields,
+                    "requires_query_complete": False,
+                    "value_must_match": None,
+                },
+                "refutation_rule": None,
+                "optional": False,
+                "is_prerequisite": False,
+                "reason": str(hypothesis.get("statement", "Explicit fixture claim")),
+            })
+            hypothesis_classes[claim_id] = str(hypothesis.get("class", hypothesis.get("hypothesis_class", "unclassified")))
+            hypothesis_assumptions[claim_id] = [str(value) for value in hypothesis.get("assumptions", [])]
+
+        if not claims:
+            claims.append({
+                "id": "claim-fixture",
+                "claim_type": "behaviour",
+                "subject": subject_ref,
+                "predicate": "observed_behavior",
+                "object_or_value": None,
+                "value_type": str(requested.get("type", answer_spec.get("answer_type", "outcome"))),
+                "provenance": "request",
+                "source_request_id": request_id,
+                "dependencies": [],
+                "evidence_requirements": [],
+                "observation_requirements": [],
+                "acceptance_rule": {"min_observations": 1, "required_fields": [], "requires_query_complete": False, "value_must_match": None},
+                "reason": "Explicit fixture claim",
+            })
+        objective = str(data.get("normalized_claim", {}).get("text", content)) if isinstance(data.get("normalized_claim"), dict) else content
+        return json.dumps({
+            "id": f"claim-graph-{request_id}",
+            "request_id": request_id,
+            "objective": objective,
+            "answer_contract": {
+                "mode": answer_spec.get("mode", "hunt"),
+                "answer_type": answer_spec.get("answer_type", requested.get("type", "outcome")),
+                "required_fields": answer_spec.get("required_fields", []),
+                "question": answer_spec.get("question", semantic.get("question", content)),
+            },
+            "claims": claims,
+            "metadata": {
+                "request_content": content,
+                "question": answer_spec.get("question", semantic.get("question", content)),
+                "hypothesis_classes": hypothesis_classes,
+                "hypothesis_assumptions": hypothesis_assumptions,
+                "requirement_search_hints": requirement_search_hints,
+            },
+        })
+
     def compile(self, prompt: str) -> str:
         prompt_lower = prompt.lower()
         if "request content:" in prompt_lower:
             idx = prompt_lower.index("request content:") + len("request content:")
-            content = prompt[idx:]
+            content = prompt[idx:].strip()
             if "\n\n" in content:
                 content = content.split("\n\n", 1)[0].strip()
         else:
@@ -744,7 +847,7 @@ class StubSemanticCompiler:
                     },
                 ],
             }
-            return json.dumps(data)
+            return self._to_claim_graph(data, content, prompt)
 
         # Explicit fixture: database compromise
         if self.scenario == "database":
@@ -818,7 +921,7 @@ class StubSemanticCompiler:
                     },
                 ],
             }
-            return json.dumps(data)
+            return self._to_claim_graph(data, content, prompt)
 
         # Explicit fixture: web/domain access. Domain extraction is entity
         # parsing for the fixture, not semantic classification.
@@ -920,7 +1023,7 @@ class StubSemanticCompiler:
                     },
                 ],
             }
-            return json.dumps(data)
+            return self._to_claim_graph(data, content, prompt)
 
         # Generic fallback
         data = {
@@ -967,7 +1070,7 @@ class StubSemanticCompiler:
                 },
             ],
         }
-        return json.dumps(data)
+        return self._to_claim_graph(data, content, prompt)
 
 
 __all__ = [

@@ -1,0 +1,45 @@
+{
+  "frozen_at": "2026-09-09T03:44:55Z",
+  "note": "Historical baseline only. Do not use as v6 architecture evidence.",
+  "summary": {
+    "tests": 360,
+    "passed": 356,
+    "failed": 3,
+    "skipped": 1,
+    "errors": 0,
+    "time_s": 63.861
+  },
+  "failures": [
+    {
+      "name": "tests.unit.test_phase7_8_answer_verifier_and_evaluator.TestPhase8EvaluatorFallback::test_deterministic_fallback_on_llm_failure",
+      "message": "AssertionError: assert 'Tor Browser' in 'Deterministic explanation: firefox.exe process evidence was found on wrk-aturing. No populated software version field was observed.'"
+    },
+    {
+      "name": "tests.unit.test_v5_email_case_graph::test_email_case_graph_construction",
+      "message": "assert (None is not None)"
+    },
+    {
+      "name": "tests.unit.test_v5_email_case_graph::test_email_relation_verification",
+      "message": "AttributeError: 'NoneType' object has no attribute 'type'"
+    }
+  ],
+  "skipped": [
+    {
+      "name": "tests.integration.test_botsv1_web_compromise::test_botsv1_web_compromise_live_replay",
+      "reason": "Splunk index 'botsv1' not available at localhost:8089"
+    }
+  ],
+  "failure_meaning": {
+    "test_deterministic_fallback_on_llm_failure": "v5 keyword branch: evaluator expected hardcoded Tor Browser string",
+    "test_email_case_graph_construction": "v5 is_email graph no longer emits message/recipient/CEO chain from keyword",
+    "test_email_relation_verification": "same email-graph construction gap"
+  },
+  "keyword_branches": "baseline_keyword_branches.txt",
+  "reports": [
+    "baseline_reports/baseline_report.md",
+    "baseline_reports/report.md",
+    "baseline_reports/test-adaptive-hunt.md",
+    "baseline_reports/test-adaptive-hunt-success.md",
+    "baseline_reports/junit.xml"
+  ]
+}

@@ -253,13 +253,15 @@ class EvidenceEvaluator:
         spec = answer_spec or {}
         answer_type = str(spec.get("answer_type", "value")).lower()
 
-        artifact_name = "Tor Browser" if "tor" in question.lower() or any("tor" in str(getattr(c, "summary", "")).lower() for c in cards) else ""
+        # v6: artifact_name from answer_spec or card data — no keyword scanning
+        artifact_name = str(spec.get("artifact_name", "") or spec.get("object_name", "")).strip()
         artifact_host = ""
         has_artifact = False
         observed_versions: list[str] = []
         matching_card_ids: list[str] = []
         matching_obs_ids: list[str] = []
 
+        name_lower = artifact_name.lower() if artifact_name else ""
         for c in cards:
             hosts = [str(h) for h in c.entity_summary.get("hosts", []) if str(h).strip()]
             if hosts and not artifact_host:
@@ -269,14 +271,16 @@ class EvidenceEvaluator:
             vers = [str(x) for x in c.field_summary.get("software_versions", []) if str(x).strip()]
             if vers:
                 observed_versions.extend(vers)
-            if c.fact_type in ("process_execution", "software_artifact", "file_modification") or any(
-                "tor" in s.lower() for s in (fps + imgs + [c.summary])
-            ):
+            has_name_match = name_lower and any(name_lower in s.lower() for s in (fps + imgs + [c.summary]))
+            if c.fact_type in ("process_execution", "software_artifact", "file_modification") or has_name_match:
                 has_artifact = True
                 matching_card_ids.append(c.id)
                 matching_obs_ids.extend(c.representative_observation_ids)
-                if not artifact_name and any("tor" in s.lower() for s in (fps + imgs + [c.summary])):
-                    artifact_name = "Tor Browser"
+                # Derive artifact name from first matching file path if still unknown
+                if not artifact_name and fps:
+                    import os
+                    artifact_name = os.path.basename(fps[0])
+
 
         evaluations: list[dict[str, Any]] = []
         compatibility: dict[str, list[str]] = {}

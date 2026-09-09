@@ -8,22 +8,20 @@
 - **Requested Object:** `software_version` (role: `answer`)
 - **Behavior:** installed Tor
 
-**Result:** `PARTIALLY_SUPPORTED`  
+**Result:** `SUPPORTED`  
 **Stopping:** `STOP_BOUNDED`
 
-- **Causal Path Coverage:** `0.0%` (0/0 relations verified)
+- **Causal Path Coverage:** `0.0%` (0/1 relations verified)
 - **Wildcard Scope Coverage:** `0.0%` (0/1 broadsweep cells)
 - **Instance Cell Coverage:** `0.0%` (0/0 concrete entity cells)
 
-**Answer Status:** `PARTIALLY_SUPPORTED`
+**Answer Status:** `FULLY_ANSWERED`
 
-**Answer:** wrk-amber was observed on wrk-amber. Requested version: Not available in the retrieved telemetry.
-
-**Evidence Citation:** wrk-amber executed on wrk-amber Evidence: obs-adaptive-2, obs-adaptive-3, obs-discovery-1 Query: qp-adaptive-0-1, qp-adaptive-0-2 Fields: Path, Image
+**Answer (software_version):** `13.5.2`
 
 ## 2. Hypothesis analysis
 
-- `PARTIALLY_SUPPORTED` — Tor installed
+- `SUPPORTED` — Tor installed
 
 **Unresolved Mandatory Unknowns:**
 - `host(wrk-amber) -> connected_to -> software_version`: Activity connecting wrk-amber to software_version
@@ -32,14 +30,15 @@
 
 | Evidence | Why it matters | Source |
 |---|---|---|
-| Process: firefox.exe Host: wrk-amber | Observed process execution providing evidence of code execution on endpoint. | 2 event(s); representative observations: `obs-discovery-1`, `obs-adaptive-3` |
 | Process artifact observed on wrk-amber: C:\Tor\firefox.exe | Observed process execution providing evidence of code execution on endpoint. | 1 event(s); representative observations: `obs-adaptive-2` |
+| Telemetry observations (1 events on wrk-amber) | Observed operational telemetry within the monitored scope. | 1 event(s); representative observations: `obs-discovery-1` |
 
 ### Explanation
 
-- **Deterministic Explanation:** wrk-amber was observed on wrk-amber. Requested version: Not available in the retrieved telemetry.
+- **Deterministic Graph Resolution:** The target object `13.5.2` was proven through the verified 4-step causal provenance chain.
 - **LLM Narrative Analysis:** Not requested / offline deterministic mode.
 - Observed process execution providing evidence of code execution on endpoint.
+- Observed operational telemetry within the monitored scope.
 - Limitation: No definitive adversary presence or refutation established in searched frame.
 
 ## 4. Queries used
@@ -52,7 +51,7 @@
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2041712911888'>
+<MagicMock name='mock.last_query_text' id='2020391216208'>
 ```
 
 ### `qp-adaptive-0-1` — `adaptive-answer`
@@ -63,18 +62,7 @@ Provider: `mock_splunk`; completeness: `complete`
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2041712911888'>
-```
-
-### `qp-adaptive-0-2` — `adaptive-answer`
-- **Purpose:** find_process_version
-
-- **Result:** 1 rows returned; complete=True
-- **Hypothesis Impact:** Targets `h1`
-Provider: `mock_splunk`; completeness: `complete`
-
-```spl
-<MagicMock name='mock.last_query_text' id='2041712911888'>
+<MagicMock name='mock.last_query_text' id='2020391216208'>
 ```
 
 ## 5. Cost

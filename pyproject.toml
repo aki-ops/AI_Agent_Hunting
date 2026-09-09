@@ -26,6 +26,7 @@ pythonpath = ["src"]
 [tool.ruff]
 line-length = 120
 target-version = "py310"
+exclude = [".claude", "artifacts", "baseline_reports"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]

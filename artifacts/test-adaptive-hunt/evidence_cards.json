@@ -1,7 +1,7 @@
 [
   {
     "id": "card-eef7b0502355",
-    "summary": "Process: firefox.exe executed on wrk-amber",
+    "summary": "Process: firefox.exe Host: wrk-amber",
     "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
     "fact_type": "process_execution",
     "count": 2,
@@ -48,7 +48,7 @@
   },
   {
     "id": "card-e5d92fdeb056",
-    "summary": "Process: tor.exe Path: C:\\Tor\\firefox.exe Host: wrk-amber",
+    "summary": "Process artifact observed on wrk-amber: C:\\Tor\\firefox.exe",
     "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
     "fact_type": "process_execution",
     "count": 1,

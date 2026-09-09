@@ -8,10 +8,10 @@
 - **Requested Object:** `software_version` (role: `answer`)
 - **Behavior:** installed Tor
 
-**Result:** `INCONCLUSIVE`  
+**Result:** `SUPPORTED`  
 **Stopping:** `STOP_BOUNDED`
 
-- **Causal Path Coverage:** `0.0%` (0/1 relations verified)
+- **Causal Path Coverage:** `0.0%` (0/0 relations verified)
 - **Wildcard Scope Coverage:** `0.0%` (0/1 broadsweep cells)
 - **Instance Cell Coverage:** `0.0%` (0/0 concrete entity cells)
 
@@ -21,7 +21,7 @@
 
 ## 2. Hypothesis analysis
 
-- `LIVE` — Tor installed
+- `SUPPORTED` — Tor installed
 
 **Unresolved Mandatory Unknowns:**
 - `host(wrk-amber) -> connected_to -> software_version`: Activity connecting wrk-amber to software_version
@@ -30,7 +30,7 @@
 
 | Evidence | Why it matters | Source |
 |---|---|---|
-| Process: tor.exe Path: C:\Tor\firefox.exe Host: wrk-amber | Observed process execution providing evidence of code execution on endpoint. | 1 event(s); representative observations: `obs-adaptive-2` |
+| Process artifact observed on wrk-amber: C:\Tor\firefox.exe | Observed process execution providing evidence of code execution on endpoint. | 1 event(s); representative observations: `obs-adaptive-2` |
 | Telemetry observations (1 events on wrk-amber) | Observed operational telemetry within the monitored scope. | 1 event(s); representative observations: `obs-discovery-1` |
 
 ### Explanation
@@ -51,7 +51,7 @@
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2385217660688'>
+<MagicMock name='mock.last_query_text' id='2041710972240'>
 ```
 
 ### `qp-adaptive-0-1` — `adaptive-answer`
@@ -62,7 +62,7 @@ Provider: `mock_splunk`; completeness: `complete`
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2385217660688'>
+<MagicMock name='mock.last_query_text' id='2041710972240'>
 ```
 
 ## 5. Cost

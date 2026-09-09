@@ -116,18 +116,44 @@ def test_3_compile_structured_hypotheses_without_llm():
 def test_4_llm_normalization_for_unstructured_input():
     """4. Use LLM only for unstructured/novel input with schema validation."""
     mock_llm_response = json.dumps({
-        "hypotheses": [
-            {"id": "hypo-nl-01", "statement": "Unauthorized daemon running on container fleet"}
-        ],
-        "requirements": [
-            {
+        "id": "claim-graph-hunt-nl-01",
+        "request_id": "hunt-nl-01",
+        "objective": "Determine whether unauthorized background daemons run across the container fleet",
+        "answer_contract": {
+            "mode": "hunt",
+            "answer_type": "daemon_activity",
+            "required_fields": ["process_name"],
+            "question": "Are unauthorized background daemons running across the container fleet?",
+        },
+        "claims": [{
+            "id": "claim-nl-01",
+            "claim_type": "behaviour",
+            "subject": "container_fleet:requested",
+            "predicate": "runs_unauthorized_daemon",
+            "object_or_value": None,
+            "value_type": "daemon_activity",
+            "provenance": "request",
+            "source_request_id": "hunt-nl-01",
+            "dependencies": [],
+            "evidence_requirements": [],
+            "observation_requirements": [{
                 "id": "er-nl-01",
-                "description": "Container process creation matching anomalous binary",
-                "evidence_type": "process_ancestry",
-                "falsification_condition": "container telemetry shows only approved image hashes",
-                "source_refs": ["ANALYST_QUERY"],
-            }
-        ],
+                "fact_kind": "process_ancestry",
+                "required_fields": ["process_name"],
+                "field_roles": [],
+                "completeness_required": False,
+            }],
+            "acceptance_rule": {
+                "min_observations": 1,
+                "required_fields": ["process_name"],
+                "requires_query_complete": False,
+                "value_must_match": None,
+            },
+            "refutation_rule": None,
+            "optional": False,
+            "is_prerequisite": False,
+            "reason": "The request explicitly asks whether unauthorized daemons are running",
+        }],
     })
 
     def mock_caller(prompt: str) -> str:

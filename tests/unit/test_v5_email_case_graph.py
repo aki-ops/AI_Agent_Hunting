@@ -10,6 +10,7 @@ from hunting.contracts.case_graph import (
     build_investigation_case_from_intent,
 )
 from hunting.contracts.cells import ProviderScope
+from hunting.contracts.claim import AcceptanceRule, Claim, ClaimEvidenceRequirement, ClaimGraph
 from hunting.contracts.coverage import CoverageBound
 from hunting.contracts.hunt import (
     AnswerStatus,
@@ -26,7 +27,6 @@ from hunting.contracts.observations import EpistemicType, Observation
 from hunting.contracts.semantic_intent import (
     RequestedObject,
     SemanticCapabilityProposal,
-    SemanticClaim,
     SemanticHuntIntent,
     SubjectEntity,
 )
@@ -62,65 +62,82 @@ def test_runtime_source_inventory_matching():
     assert FieldRole.RECIPIENT_EMAIL.value in field_bindings
 
 
-def test_email_case_graph_construction():
-    """Verify that build_investigation_case_from_intent produces an email causal chain."""
-    intent = SemanticHuntIntent(
-        original_request="Amber sent an email to competitor CEO. What is the recipient's name and email?",
-        question="What is the recipient's name and email address?",
-        subject=SubjectEntity(type="person", value="Amber Turing"),
-        requested_object=RequestedObject(type="email_address", role="recipient"),
-        behavior="sent email to competitor CEO",
-        required_correlations=[
-            "resolve person to account",
-            "resolve account to email",
-            "find outbound message",
-            "resolve recipient email",
-            "resolve role identity",
-        ],
-        capability_proposals=[
-            SemanticCapabilityProposal(
-                capability_name="outbound_message_metadata",
-                description="Outbound SMTP message logs",
-                required_roles=[FieldRole.SENDER_EMAIL.value, FieldRole.RECIPIENT_EMAIL.value],
-            )
-        ],
-        claims=[
-            SemanticClaim(id="claim-sent", statement="Amber sent an email", required_capability="outbound_message_metadata"),
-            SemanticClaim(id="claim-recipient", statement="Recipient email is identified", required_capability="recipient_identity"),
-            SemanticClaim(id="claim-ceo", statement="Recipient is the CEO", required_capability="role_identity"),
-        ],
+def _email_claim_graph(include_message: bool = True) -> ClaimGraph:
+    claims = [
+        Claim(
+            id="claim-email",
+            claim_type="attribute",
+            subject="person:Amber Turing",
+            predicate="has_email",
+            value_type="email_address",
+            provenance="request",
+            source_request_id="req-email",
+            observation_requirements=(
+                ClaimEvidenceRequirement(
+                    id="req-email",
+                    fact_kind="identity_binding",
+                    required_fields=("user", "mail"),
+                    field_roles=("account_name", "sender_email"),
+                ),
+            ),
+            acceptance_rule=AcceptanceRule(required_fields=("mail",)),
+        )
+    ]
+    if include_message:
+        claims.extend([
+            Claim(
+                id="claim-message",
+                claim_type="relation",
+                subject="claim:claim-email",
+                predicate="sent_message",
+                value_type="message",
+                provenance="request",
+                source_request_id="req-email",
+                dependencies=("claim-email",),
+                observation_requirements=(
+                    ClaimEvidenceRequirement(id="req-message", fact_kind="outbound_message_metadata", required_fields=("sender_email", "msg_id")),
+                ),
+                acceptance_rule=AcceptanceRule(required_fields=("sender_email", "msg_id")),
+            ),
+            Claim(
+                id="claim-recipient",
+                claim_type="relation",
+                subject="claim:claim-message",
+                predicate="received_message",
+                value_type="email_address",
+                provenance="request",
+                source_request_id="req-email",
+                dependencies=("claim-message",),
+                observation_requirements=(
+                    ClaimEvidenceRequirement(id="req-recipient", fact_kind="recipient_identity", required_fields=("msg_id", "receiver_email")),
+                ),
+                acceptance_rule=AcceptanceRule(required_fields=("receiver_email",)),
+            ),
+        ])
+    return ClaimGraph(
+        id="graph-email",
+        request_id="req-email",
+        objective="Identify the email facts explicitly requested",
+        claims=claims,
+        metadata={"request_content": "Amber sent an email", "question": "Who received Amber's email?"},
     )
 
-    case = build_investigation_case_from_intent(intent, hypotheses=[], requirements=[])
-    graph = case.graph
 
-    # Verify nodes
-    node_person = graph.get_node("node-subject-person")
-    node_account = graph.get_node("node-subject-account")
-    node_email = graph.get_node("node-subject-email")
-    node_message = graph.get_node("node-outbound-message")
-    node_recipient = graph.get_node("node-target-recipient")
-    node_role = graph.get_node("node-target-role")
+def test_email_case_graph_construction():
+    graph = build_investigation_case_from_intent(_email_claim_graph()).graph
 
-    assert node_person is not None and node_person.type == NodeType.PERSON and node_person.value == "Amber Turing"
-    assert node_account is not None and node_account.type == NodeType.ACCOUNT
-    assert node_email is not None and node_email.type == NodeType.EMAIL_ADDRESS
-    assert node_message is not None and node_message.type == NodeType.MESSAGE
-    assert node_recipient is not None and node_recipient.type == NodeType.EMAIL_ADDRESS
-    assert node_role is not None and node_role.type == NodeType.ROLE
+    assert len(graph.edges) == 3
+    assert graph.get_edge("edge-claim-email").relation_type == RelationType.HAS_EMAIL
+    assert graph.get_edge("edge-claim-message").relation_type == RelationType.SENT_MESSAGE
+    assert graph.get_edge("edge-claim-recipient").relation_type == RelationType.RECEIVED_MESSAGE
+    assert all(edge.metadata["claim_id"] for edge in graph.edges.values())
 
-    # Verify edges
-    edge_owns = graph.get_edge("edge-person-owns-account")
-    edge_has_email = graph.get_edge("edge-account-has-email")
-    edge_sent = graph.get_edge("edge-email-sent-message")
-    edge_rcvd = graph.get_edge("edge-message-received-by")
-    edge_role = graph.get_edge("edge-recipient-holds-role")
 
-    assert edge_owns is not None and edge_owns.relation_type == RelationType.OWNS
-    assert edge_has_email is not None and edge_has_email.relation_type == RelationType.HAS_EMAIL
-    assert edge_sent is not None and edge_sent.relation_type == RelationType.SENT_MESSAGE
-    assert edge_rcvd is not None and edge_rcvd.relation_type == RelationType.RECEIVED_MESSAGE
-    assert edge_role is not None and edge_role.relation_type == RelationType.HOLDS_ROLE
+def test_email_lookup_does_not_spawn_message_recipient_or_role():
+    graph = build_investigation_case_from_intent(_email_claim_graph(include_message=False)).graph
+
+    assert list(graph.edges) == ["edge-claim-email"]
+    assert not any(node.type in (NodeType.MESSAGE, NodeType.ROLE) for node in graph.nodes.values())
 
 
 def test_email_relation_verification():
@@ -140,23 +157,14 @@ def test_email_relation_verification():
     )
     ledger.add_observation(obs_ad)
 
-    intent = SemanticHuntIntent(
-        original_request="Amber sent email",
-        question="Who received Amber's email?",
-        subject=SubjectEntity(type="person", value="Amber Turing"),
-        requested_object=RequestedObject(type="email_address", role="recipient"),
-        behavior="sent email",
-    )
-    case = build_investigation_case_from_intent(intent, hypotheses=[], requirements=[])
+    case = build_investigation_case_from_intent(_email_claim_graph())
     graph = case.graph
 
-    # Update account node to known
-    acct_node = graph.get_node("node-subject-account")
+    email_edge = graph.get_edge("edge-claim-email")
+    acct_node = graph.get_node(email_edge.source_id)
     acct_node.value = "aturing"
     acct_node.status = NodeStatus.KNOWN
-
-    email_edge = graph.get_edge("edge-account-has-email")
-    email_node = graph.get_node("node-subject-email")
+    email_node = graph.get_node(email_edge.target_id)
     res_email = verifier.verify_candidate_edge(email_edge, acct_node, email_node, ledger, [obs_ad])
     assert res_email.verified is True
     assert res_email.target_value == "aturing@froth.ly"
@@ -183,8 +191,8 @@ def test_email_relation_verification():
     )
     ledger.add_observation(obs_smtp)
 
-    sent_edge = graph.get_edge("edge-email-sent-message")
-    msg_node = graph.get_node("node-outbound-message")
+    sent_edge = graph.get_edge("edge-claim-message")
+    msg_node = graph.get_node(sent_edge.target_id)
     res_sent = verifier.verify_candidate_edge(sent_edge, email_node, msg_node, ledger, [obs_smtp])
     assert res_sent.verified is True
     assert res_sent.target_value == "<201708250315.msg001@froth.ly>"
@@ -193,8 +201,8 @@ def test_email_relation_verification():
     assert msg_node.status == NodeStatus.KNOWN
 
     # 3. Message -> Recipient
-    rcvd_edge = graph.get_edge("edge-message-received-by")
-    rcpt_node = graph.get_node("node-target-recipient")
+    rcvd_edge = graph.get_edge("edge-claim-recipient")
+    rcpt_node = graph.get_node(rcvd_edge.target_id)
     res_rcvd = verifier.verify_candidate_edge(rcvd_edge, msg_node, rcpt_node, ledger, [obs_smtp])
     assert res_rcvd.verified is True
     assert res_rcvd.target_value == "val.smith@berkbeer.com"
@@ -202,12 +210,6 @@ def test_email_relation_verification():
     verifier.apply_verification_to_graph(res_rcvd, rcvd_edge, rcpt_node, graph)
     assert rcpt_node.status == NodeStatus.KNOWN
 
-    # 4. Recipient -> Role (CEO unobservable from telemetry wire stream)
-    role_edge = graph.get_edge("edge-recipient-holds-role")
-    role_node = graph.get_node("node-target-role")
-    res_role = verifier.verify_candidate_edge(role_edge, rcpt_node, role_node, ledger, [obs_smtp])
-    # Role cannot be confirmed without explicit role field
-    assert res_role.verified is False
 
 
 def test_email_report_rendering_with_claims_and_limitations():
@@ -219,7 +221,7 @@ def test_email_report_rendering_with_claims_and_limitations():
         requested_object=RequestedObject(type="email_address", role="recipient"),
         behavior="sent email to competitor CEO",
     )
-    case = build_investigation_case_from_intent(intent, hypotheses=[], requirements=[])
+    case = build_investigation_case_from_intent(_email_claim_graph())
 
     cov = CoverageBound(
         known_cells_wildcard=1,

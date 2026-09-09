@@ -115,9 +115,10 @@ def verify_answer(
     if effective_binding is None:
         effective_binding = bool(spec.get("requires_binding", False))
 
-    # Detect artifact presence from evidence_state
+    # v6: artifact_name from evidence_state (populated by engine from structured spec),
+    # NOT from keyword scanning of spec text. No "tor" detection here.
     artifact_detected = False
-    artifact_name = "Tor Browser" if "tor" in str(spec).lower() or any("tor" in str(getattr(c, "summary", "")).lower() for c in cards_list) else ""
+    artifact_name = ""  # Will be populated from evidence_state.artifact below
     artifact_host = ""
     artifact_obs_ids: list[str] = []
     artifact_query_ids: list[str] = []

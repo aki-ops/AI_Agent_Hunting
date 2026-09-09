@@ -1,248 +1,200 @@
-# 02 — METHOD AND IMPLEMENTATION PLAN (v5.1)
+# 02 — METHOD AND IMPLEMENTATION PLAN (v6)
 
-## 0. Current execution contract: discovery before correlation
+`01_FINAL-ARCHITECTURE.md` defines the contracts. This file defines the
+executable method and migration sequence. No step may claim more than its
+evidence supports.
 
-For a free-text hypothesis, execution starts with semantic compilation into a
-provider-neutral `HuntSpec`, followed by capability/schema discovery and a
-bounded `search_text` operation. The search primitive is deliberately generic:
-it accepts term groups, preserves native rows, and does not assume a specific
-event family, EventCode, sourcetype or application path.
+## 1. End-to-end method
 
-Only after observations exist may the controller create identity, process,
-network or other relation edges. The old relation-first graph flow remains a
-compatibility path for structured inputs, not the default for natural-language
-hunting. This ordering is what prevents a guessed identity chain from causing
-the agent to miss relevant mail, web, host or application telemetry.
+### Step 0 — Accept and freeze the request
 
-Every answer must be tied to an explicit answer contract. If the evidence only
-supports a domain but the question asks for a URI, the result is partial or
-inconclusive; it must not be promoted to a fully supported conclusion.
+Preserve the exact `HuntRequest`, time policy, entities and provider hints.
+Do not parse a keyword into an attack scenario. Assign a run ID and budget
+ledger.
 
-The first implemented enforcement point is `answer_verifier`: it checks cited
-cards, available native fields, query completeness and required answer fields
-before the final account is built. It never creates an answer value itself.
+Output: immutable request record.
 
-Operation selection is adaptive. Provider-declared semantic capabilities are
-preferred; otherwise the LLM receives only the answer contract, schema,
-anchors and available operation IDs. It returns a semantic operation, not
-SPL/SQL/KQL. Invalid or unavailable selections fall back to `search_text`.
+Basis: hypothesis-driven hunting starts from an unverified objective. The
+request contract is a thesis engineering decision grounded by TaHiTI,
+Evidential Cyber Threat Hunting and MITRE hunting practice.
 
-`01_FINAL-ARCHITECTURE.md` defines WHAT the system is. This file defines the
-executable HOW. `03` contains literature sources and traceability; `04` records
-the active implementation checklist and test gates.
+### Step 1 — Provider Census
 
----
+Inspect all configured providers without assuming a provider, index, event
+family or field. Record reachability, native partitions, schemas, aliases,
+retention, permissions, pagination and completeness.
 
-## 1. End-to-End Execution Flow [Tags: REF-ECTH, REF-TAHITI, REF-PEAK, REF-SLEUTH]
+Output: versioned `CapabilityGraph` and source-selection audit.
+
+If no source can satisfy any required claim, return an explicit unsupported or
+unreachable result. A reachable but irrelevant provider is not a valid fallback.
+
+Basis: OCSF, MITRE Data Components and Microsoft's schema-aware hunting
+assistant. The exact census implementation is local.
+
+### Step 2 — Semantic Claim-Plan Proposal
+
+Send the request plus a compact capability summary to the LLM. Require a
+schema-strict `ClaimGraph` containing objective, answer contract, atomic
+claims, dependencies, evidence requirements, acceptance/refutation rules,
+allowed expansion reasons and provenance.
+
+The LLM must not emit SPL/KQL/SQL, invent evidence, add an unrequested attack
+story, or silently change scope.
+
+Output: candidate `ClaimGraph`.
+
+Basis: ThreatRaptor demonstrates structured behaviour extraction before query
+synthesis; AIQL demonstrates typed logical investigation queries. The exact
+LLM schema, prompt and reliability are thesis work and require metrics.
+
+### Step 3 — Deterministic Plan Validation
+
+Validate schema, objective preservation, claim provenance, dependency
+acyclicity, acceptable output fields and forbidden unsupported expansion.
+Reject or reduce invalid plans. Never repair an invalid plan by adding a
+hard-coded scenario.
+
+Required invariants:
+
+- every non-prerequisite claim traces to request/source/verified observation;
+- every required claim has an acceptance rule;
+- technical prerequisites are explicitly labelled;
+- no claim has raw provider syntax;
+- no claim is accepted merely because a schema field exists.
+
+Basis: typed query and safe tool-use research; the validator is local.
+
+### Step 4 — Claim-to-Capability Binding
+
+For each unresolved claim, find operations whose required inputs are known or
+can be obtained and whose outputs can satisfy the claim. Preserve candidate
+bindings and their reasons.
+
+No operation is selected only because its name contains a keyword. No provider
+fallback is valid unless its output contract matches the claim.
+
+Basis: AIQL, ATT&CK analytics separation and Microsoft schema-aware query
+selection. Binding implementation is local.
+
+### Step 5 — Deterministic Action Selection
+
+Score candidates with transparent factors: expected unresolved-claim
+reduction, source relevance, completeness confidence, cost and risk. If two
+valid candidates remain equivalent, an LLM may rank candidate IDs only; the
+controller can abstain.
+
+Output: one bounded action or a truthful stop. The score is an engineering
+hypothesis to compare experimentally, not a hidden prompt policy.
+
+### Step 6 — Native Query Compilation and Execution
+
+The adapter receives a logical operation, validated parameters and provider
+capabilities. It compiles native SPL/KQL/SQL/API calls, allowlists syntax,
+executes pagination/time splits, and returns:
 
 ```text
-HuntRequest (NL Question, CTI, CVE, TTP, IOC)
-    │
-    ▼ Step 1: Compilation
-SemanticCaseCompiler
-    │  ├─ Free-text input: Bounded LLM API generates InvestigationCase schema
-    │  └─ CVE/TTP/IOC input: Deterministic knowledge templates generate Behavior Graph
-    ▼
-InvestigationCase (Nodes, Directed Edges, Mandatory Unknowns, Acceptance Criteria)
-    │
-    ▼ Step 2: Dependency Analysis & Action Selection [REF-PROVSEEK, REF-HOLMES]
-Relation-Aware Action Planner
-    │  ├─ Scans unproven mandatory edges whose source node is KNOWN
-    │  └─ Prioritizes entity/identity resolution over traffic testing
-    ▼
-ActionCandidate (e.g. resolve_person_to_account, resolve_account_to_endpoint)
-    │
-    ▼ Step 3: Capability Binding [REF-AIQL, REF-MITRE-ANALYTICS]
-CapabilityBinder
-    │  ├─ Matches logical operation to provider capability catalog
-    │  └─ Validates observable fields, scope partitions, and permissions
-    ▼
-LogicalQueryPlan → NativeQueryPlan (SPL, SQL, API request)
-    │
-    ▼ Step 4: Parameterized Execution [REF-OCSF, REF-MICROSOFT]
-Provider Adapter (SplunkLiveAdapter / CdbAdapter)
-    │  ├─ Executes search with L+1 limit for completeness detection
-    │  └─ Records QueryResult envelope (status, rows, cursor, complete)
-    ▼
-ObservationLedger (Append-only storage; preserves native_type and raw fields) [REF-OMEGALOG]
-    │
-    ▼ Step 5: Deterministic Relation Verification [REF-HUNTERAGENT, REF-FOR508, REF-FOR572]
-RelationVerifier
-    │  ├─ Audits observation citations
-    │  ├─ Enforces strict field roles (client_ip ≠ server_ip; rejects web servers as endpoints)
-    │  └─ Mints verified RelationProof; promotes target node to KNOWN
-    ▼
-Updated InvestigationGraph (Graph state transitions; cycle repeats if edges remain)
-    │
-    ▼ Step 6: Evidence Subgraph Extraction & Narrative Reporting [REF-RAG-SEC, REF-EXCYTIN]
-Grounded Report Generator
-    │  ├─ Extracts minimal EvidenceSubgraph for proven causal path
-    │  ├─ Generates grounded LLM explanation bounded strictly to subgraph
-    │  └─ Emits FinalHuntAccount and Section 2 Provenance Chain
-    ▼
-StoppingDecision & Detection/Knowledge Feedback [REF-TAHITI]
+QueryResult {
+  query_id, provider, native_query,
+  rows, raw_count, cursor_state,
+  complete, coverage, diagnostics, error_state
+}
 ```
 
----
+`complete` is explicit; row count is never interpreted as EOF. Basis: AIQL and
+provider query systems. The exact adapter contract is local and must be tested.
 
-## 2. Compilation and Graph Synthesis [Tags: REF-HUNTERAGENT, REF-THREATRAPTOR, REF-MITRE-DC]
+### Step 7 — Observation and Fact Construction
 
-### 2.1 Deterministic Paths
-Known CVE records use versioned knowledge templates separating exposure, preconditions,
-exploitation indicators, post-exploitation, and coverage gaps. Known TTPs and IOCs
-compile directly into typed behavior graphs. These paths do not call an LLM.
+Append raw rows unchanged. Extract normalized facts and strict field roles as
+an additional view. Preserve unknown native fields/types. Group repeated rows
+into evidence cards only if representative IDs and held-out recall are retained.
 
-### 2.2 Free-Text Semantic Path
-For unstructured `HYPOTHESIS` and `NL_QUESTION` requests:
-1. The request text is dispatched to the semantic compiler with a strict JSON schema.
-2. The schema enforces:
-   - `known_entities`: Seed nodes extracted from input (e.g. `Person: "Amber Turing"`).
-   - `claims`: Core behaviors asserted in the request.
-   - `mandatory_unknowns`: Required missing nodes (e.g. endpoint host, client IP).
-   - `required_relation_paths`: Sequence of typed edges required to prove the claim.
-   - `acceptance_criteria`: Logical criteria required to resolve or refute the hunt.
-3. `InvestigationValidator` deterministically audits the compiled model:
-   - Blocks raw SPL, index names, or provider-specific keywords.
-   - Mandates that any `Person` subject without a pre-linked workstation produces a mandatory `unknown` for `endpoint` and sets state to `READY_FOR_DISCOVERY`.
-   - If the API times out, fails, or violates schema, the engine raises `LLMTimeoutError` or stops with `STOP_INSUFFICIENT`; fabrication is strictly barred.
+Output: observations, facts, cards and candidate evidence edges.
 
----
+Basis: SLEUTH, HOLMES, OmegaLog and OCSF. Grouping thresholds and aliases are
+local and require malicious-event recall tests.
 
-## 3. Case Graph Dependency Analysis & Edge Selection [Tags: REF-SLEUTH, REF-HOLMES, REF-PROVSEEK]
+### Step 8 — Claim Verification
 
-The action planner evaluates the `InvestigationGraph` using backward and forward dependency chaining:
+Verify cited observation IDs, field role and identity, temporal constraints,
+requested values, source/query completeness and the claim acceptance rule.
 
-1. **Find Actionable Edges**: Identify directed edges where:
-   - `status == UNPROVEN`
-   - `source_node.status == KNOWN`
-   - Edge is marked `MANDATORY`
-2. **The dependency-first path rule** (`REF-FOR508`, `REF-FOR572`):
-   - The historical web path shown below is only one possible path. The compiler must derive downstream edges from evidence requirements: artifact objectives use `Person -> Account -> Endpoint -> Process/File -> Answer`, while web/DNS objectives may use the IP/web suffix. Unused edges are never inserted.
-   - Path: $	ext{Person(Amber)} ightarrow 	ext{Account} ightarrow 	ext{Endpoint} ightarrow 	ext{Client IP} ightarrow 	ext{Web Activity} ightarrow 	ext{Domain}$.
-   - While $	ext{Person} ightarrow 	ext{Account}$ or $	ext{Account} ightarrow 	ext{Endpoint}$ is unproven:
-     The planner **only** permits `RESOLVE_ENTITY` actions targeting identity.
-   - Global or wildcard web queries (`sourcetype="stream:http"`, `sourcetype="iis"`) are **prohibited**.
+Output: `SUPPORTED`, `REFUTED`, `PARTIAL`, `UNKNOWN` or `INCONCLUSIVE` claim
+status. This verifier is the epistemic gate; LLM text never promotes a claim.
 
----
+### Step 9 — Bounded Replanning
 
-## 4. Capability Binding & Logical Operations [Tags: REF-AIQL, REF-MITRE-ANALYTICS, REF-MICROSOFT]
+Re-invoke the LLM only at a material boundary: unresolved ambiguity, new
+evidence changing dependencies, or a capability/coverage gap with a valid
+alternative. Pass compact deltas and claim state, not the raw ledger. Every
+new claim returns through Step 3.
 
-Logical operations express provider-neutral forensic intents:
-- `resolve_person_to_account`: Queries directory or authentication services.
-- `resolve_account_to_endpoint`: Queries endpoint logon events (e.g. Windows Event ID 4624).
-- `resolve_endpoint_to_client_ip`: Queries DHCP, network interface, or local IP bindings.
-- `find_web_activity_from_client_ip`: Queries web proxy or HTTP stream logs for requests originating from the client IP.
-- `find_dns_activity_from_client_ip`: Queries DNS resolver logs for queries originating from the client IP.
-- `find_process_from_endpoint`: Queries process creation telemetry (Sysmon Event ID 1, EDR).
-- `find_file_change_from_process`: Queries file creation/modification telemetry.
+Stop replanning when no claim-reducing action remains, no progress occurs, or a
+budget is reached. Basis: adaptive threat hunting and plan/retrieve/generate
+research; call/card limits are local experimental parameters.
 
-The `CapabilityBinder` matches an actionable edge to the provider's registered operations based on
-target entity type, observable field roles, and required time window.
+### Step 10 — Final account
 
----
+Render request → claim analysis → evidence/explanation → queries → answer and
+limitations → cost. Include observation IDs and coverage diagnostics. If the
+explainer fails, render deterministic verified facts and the parse failure.
 
-## 5. Execution, Completeness & Negative Controls [Tags: REF-OCSF, REF-MICROSOFT, REF-TAHITI]
+## 2. Code migration plan
 
-Providers return a `QueryResult` envelope with native records, execution status, and explicit `complete: bool`.
+### Phase A — Contracts
 
-### 5.1 The L+1 Completeness Rule
-The adapter queries for $L + 1$ records where $L$ is the configured row limit (e.g. 100).
-- If $> L$ rows are returned: Adapter returns $L$ rows, sets `complete = False`, and provides a continuation cursor.
-- If $\le L$ rows are returned: Adapter sets `complete = True`.
-- **Epistemic Rule**: A partial query (`complete = False`) can **never** license negative evidence or refute a hypothesis.
+Add/reconcile `Claim`, `ClaimGraph`, `EvidenceRequirement`, `AcceptanceRule`,
+`RefutationRule`, `CapabilityGraph`, `ProviderOperation` and `QueryResult`.
+Keep `Cell` only for execution coverage. Existing graph types become evidence
+projections, not a prewritten planner story.
 
-### 5.2 Negative Controls
-To conclude absence of activity, three deterministic controls must pass:
-1. `ScopeHealthControl`: Provider and scope are online and reachable.
-2. `AnyRecordInScope`: Baseline telemetry confirms the scope was actively logging during the target window.
-3. `PredicateObservabilityControl`: The queried field exists and is observable in the provider catalog.
+### Phase B — Compiler
 
-### 5.3 Cell Lifecycle & Triple Coverage Accounting
-Each query execution updates or instantiates a concrete `Cell(scope, entity, time_bucket)`:
-- `complete == True` $\rightarrow$ `CellState.EXPLORED`.
-- `complete == False` $\rightarrow$ `CellState.PARTIAL`.
-- Query execution error $\rightarrow$ `CellState.UNQUERYABLE` or `UNREACHABLE`.
-- Wildcard scope cells (`entity == ANY`) remain unsearched during targeted instance resolution.
+Replace scenario/template routing with schema-strict ClaimGraph output. Remove
+unconditional branches such as `is_email` that create message, recipient, role,
+IP or web edges. A relation is created only when the plan or verified evidence
+requires it. The active free-text compiler makes one proposal call, rejects
+invalid output without an LLM repair call, and projects the validated claims
+mechanically into the compatibility case graph. Legacy runtime hypotheses and
+evidence requirements are compatibility projections only; they add no claims.
 
-Coverage is computed and reported via three independent dimensions:
-1. **Causal Path Coverage**: Verified causal edges / total required causal edges.
-2. **Wildcard Scope Coverage**: Explored wildcard cells / total wildcard cells (remains 0.0% during targeted resolution).
-3. **Instance Cell Coverage**: Explored instance cells / total instance cells (100.0% when all targeted entity coordinates are completed).
+### Phase C — Provider census and binding
 
----
+Make auto-provider selection produce a source audit. Add operation input/output
+contracts, native partitions, completeness and permissions. Reject irrelevant
+fallbacks. Do not expand provider count until Splunk and CDB contracts pass.
 
-## 6. Observation Ledger & Fact Extraction [Tags: REF-OMEGALOG, REF-OCSF]
+### Phase D — Execution and evidence
 
-Every raw provider row is stored immutably in the `ObservationLedger`:
-- Assigns unique `observation_id` (e.g. `obs-splunk-104`).
-- Preserves native provider fields and original `native_type`.
-- Extracts normalized facts with explicit field roles:
-  - `client_ip`: Originating client IP address.
-  - `server_ip`: Target server IP address.
-  - `endpoint_host`: Host machine executing the action or hosting the session.
-  - `account_name`: Authenticated username.
-  - `uri_stem`, `domain_name`, `process_name`, `command_line`.
+Unify adapters behind `QueryResult`; preserve raw observations; implement fact
+roles, evidence cards and claim citations. Test unknown native events and
+partial queries.
 
----
+### Phase E — Controller
 
-## 7. Deterministic Relation Verification & Provenance Graph [Tags: REF-HUNTERAGENT, REF-SLEUTH, REF-FOR572]
+Drive actions from unresolved claims and valid capabilities. Remove hard-coded
+entity prefix/suffix paths as mandatory rules. Technical prerequisites may be
+derived from operation contracts only.
 
-The `RelationVerifier` audits candidate edges against ledger observations before state transitions occur:
+### Phase F — Verification and reporting
 
-1. **Citation Integrity**: Each asserted edge must cite valid `observation_id`s in the ledger.
-2. **Field Role Isolation**:
-   - Matches for `person` or `account` must occur strictly in user identity fields (`user`, `Account_Name`).
-   - Matches for `endpoint` must occur in computer name fields (`host`, `ComputerName`).
-   - Rejects web servers: Server hostnames (`jabbah`, `we1149srv`, IIS instances) are permanently prohibited from being bound as user endpoints.
-   - Rejects destination IPs: `destination_ip` and `server_ip` cannot satisfy a `client_ip` requirement.
-3. **Promotion**: Upon successful verification, the verifier mints an immutable `RelationProof`, marks the edge as `VERIFIED`, and transitions the target node to `KNOWN`.
+Make claim verification the only promotion gate. Reduce the report to the
+required evidence narrative and expose raw artifacts by ID. Keep LLM as a
+bounded explainer, never as a source of facts.
 
----
+### Phase G — Evaluation
 
-## 8. Action Controller & Epistemic State Loop [Tags: REF-PROVSEEK, REF-CASCADE, REF-CDB]
+Build labelled lookup, artifact, causal and hypothesis datasets. Measure claim
+F1, evidence precision/recall, edge F1, answer exact-match/F1, citation
+grounding, coverage, latency, query volume and LLM cost. Do not claim global F1
+on unlabeled production telemetry.
 
-The controller drives the iterative investigation loop under strict budget limits:
-```text
-max_turns = 15
-max_queries = 60
-max_llm_calls = 3
-max_scan_cells = 100
-max_runtime_seconds = 300
-```
+## 3. Definition of done
 
-Action precedence:
-$$\text{RESOLVE\_ENTITY} \rightarrow \text{TEST} \rightarrow \text{CORRELATE} \rightarrow \text{EXPAND} \rightarrow \text{DISCOVER} \rightarrow \text{PIVOT} \rightarrow \text{REFINE} \rightarrow \text{STOP}$$
-
-If the controller runs out of actions or exhausts budget:
-- If mandatory identity edge is unproven $\rightarrow$ `STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED`.
-- If intermediate causal edge is unproven $\rightarrow$ `STOP_INCONCLUSIVE_RELATION_UNPROVEN`.
-- If coverage was incomplete or scope missing $\rightarrow$ `STOP_INCONCLUSIVE_COVERAGE_GAP`.
-- If all acceptance criteria satisfied $\rightarrow$ `STOP_RESOLVED`.
-
----
-
-## 9. Grounded Reporting & Feedback [Tags: REF-RAG-SEC, REF-EXCYTIN, REF-TAHITI]
-
-The analyst-facing report (`report.md`) is structured into five concise sections:
-1. **Hypothesis / Question**: Seed request, subject, requested object, triple coverage metrics (Causal Path, Wildcard Scope, Instance Cell), and deterministic verdict.
-2. **Hypothesis Analysis & Provenance Graph**:
-   - Competing hypotheses adjudicated individually (supported vs unknown/weakened).
-   - Proven Relation Chain: the request-specific typed path selected by the case graph, with citations; artifact-only cases do not report an IP/web hop.
-   - Unresolved Mandatory Unknowns: Explicit listing of unproven variables if inconclusive.
-3. **Evidence and Explanation**:
-   - Two-Layer Separation: Raw forensic records preserved in `ObservationLedger` (audit layer); LLM evaluator receives bounded `EvidenceSubgraph` (max 20 cards) with noise domains (CDNs, ads, telemetry trackers) stripped.
-   - Robust Parser & Graceful Degradation: Markdown code fences stripped, `{...}` JSON substring extracted, with explicit `ParseStatus` tracking (`SUCCESS`, `INVALID_JSON`, `SCHEMA_REJECTED`, `TIMEOUT`, `PROVIDER_ERROR`).
-   - If LLM narrative is unavailable, deterministic graph resolution (`target_node.value`) is reported directly.
-4. **Queries Used**: Parameterized queries, semantic reasons, and completeness status.
-5. **Resource & Cost Accounting**: Calls, tokens, latency, and estimated USD cost.
-
----
-
-## 10. Verification Plan & Benchmark Strategy [Tags: REF-CDB, REF-EXCYTIN]
-
-1. **Unit Test Suite**: Known-answer tests for contracts, verifier, capability binder, and action planner.
-2. **Amber Vertical Slice**: Proves the complete causal path on Splunk BOTSv2 without global web traffic sweeps or server host confusion.
-3. **Multi-Dataset Replay**:
-   - Splunk BOTSv2 (Enterprise SIEM & network stream logs; live-validated against Amber Turing scenario).
-   - OTRF Security-Datasets (Sysmon, Windows Security, Active Directory).
-   - DARPA Transparent Computing / Provenance datasets (System-level causal graphs).
+The migration is complete only when unrelated requests create request-derived
+ClaimGraphs without scenario branches; every final value has an observation or
+fact citation; irrelevant fallback is rejected; incomplete telemetry cannot
+produce a negative verdict; graph edges derive from claims/evidence; F1 and
+cost are measured on labelled data; and `01–04`, code and tests describe the
+same contracts.

@@ -45,6 +45,7 @@ class HuntRequestKind(str, Enum):
     IOC = "IOC"
     CVE = "CVE"
     CTI_REPORT = "CTI_REPORT"
+    QUESTION = "QUESTION"
     NL_QUESTION = "NL_QUESTION"
     SCHEDULED = "SCHEDULED"
 
@@ -95,6 +96,7 @@ class HuntObjective:
     # It is intentionally structured so reporting does not guess from keywords.
     answer_spec: dict[str, Any] = field(default_factory=dict)
     semantic_intent: SemanticHuntIntent | None = None
+    claim_graph: Any | None = None
     investigation_model: InvestigationModel | None = None
     case: Any | None = None
     case_graph: Any | None = None

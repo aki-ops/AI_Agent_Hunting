@@ -60,6 +60,7 @@ def test_1_hunt_request_without_alert():
         (HuntRequestKind.HYPOTHESIS, "Lateral movement via WMI across finance subnet"),
         (HuntRequestKind.CTI_REPORT, "APT29 campaign advisory 2026-03"),
         (HuntRequestKind.NL_QUESTION, "Are any web servers running unauthorized processes?"),
+        (HuntRequestKind.QUESTION, "What is Amber's personal email?"),
         (HuntRequestKind.SCHEDULED, "Weekly persistence sweep"),
     ]
 

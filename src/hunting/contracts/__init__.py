@@ -1,18 +1,12 @@
 """Canonical and operational hunting contracts."""
-from hunting.contracts.claim import (
-    AcceptanceRule,
-    Claim,
-    ClaimGraph,
-    ClaimStatus,
-    RefutationCondition,
-    RefutationRule,
-)
 from hunting.contracts.abduction import AbductionRuntime
 from hunting.contracts.capabilities import (
     CapabilityDescriptor,
+    CapabilityGraph,
     CapabilityMatcher,
     MatchResult,
     ProviderCapabilityCatalog,
+    ProviderSelectionAudit,
 )
 from hunting.contracts.case_graph import (
     ActionCandidate,
@@ -31,6 +25,15 @@ from hunting.contracts.case_graph import (
     RelationType,
 )
 from hunting.contracts.cells import Cell, CellState, ProviderScope
+from hunting.contracts.claim import (
+    AcceptanceRule,
+    Claim,
+    ClaimEvidenceRequirement,
+    ClaimGraph,
+    ClaimStatus,
+    RefutationCondition,
+    RefutationRule,
+)
 from hunting.contracts.conflicts import Conflict, HumanInput
 from hunting.contracts.coverage import CoverageBound, RequirementCoverage, SamplingStats
 from hunting.contracts.entities import (
@@ -46,6 +49,12 @@ from hunting.contracts.entities import (
     IPAddress,
     Process,
     User,
+)
+from hunting.contracts.evidence_state import (
+    AnswerAttributeState,
+    ArtifactEvidence,
+    AttributeEvidence,
+    EvidenceState,
 )
 from hunting.contracts.expectations import (
     EvidenceRequirement,
@@ -86,12 +95,6 @@ from hunting.contracts.hunt import (
     StoppingDecision,
     SubjectEntity,
     TimePolicy,
-)
-from hunting.contracts.evidence_state import (
-    AnswerAttributeState,
-    ArtifactEvidence,
-    AttributeEvidence,
-    EvidenceState,
 )
 from hunting.contracts.hunt_spec import (
     Anchor,
@@ -202,9 +205,22 @@ __all__ = [
     "HumanInput",
     "AbductionRuntime",
     "CapabilityDescriptor",
+    "CapabilityGraph",
     "ProviderCapabilityCatalog",
+    "ProviderSelectionAudit",
     "CapabilityMatcher",
     "MatchResult",
+    "Claim",
+    "ClaimGraph",
+    "ClaimStatus",
+    "ClaimEvidenceRequirement",
+    "AcceptanceRule",
+    "RefutationRule",
+    "RefutationCondition",
+    "AnswerAttributeState",
+    "ArtifactEvidence",
+    "AttributeEvidence",
+    "EvidenceState",
     # Entities
     "EntityRef",
     "EntityKind",

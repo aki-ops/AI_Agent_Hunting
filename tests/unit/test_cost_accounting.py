@@ -178,27 +178,57 @@ def test_splunk_compiler_no_domain_pollution_in_endpoint_queries():
 
 def test_compiler_llm_decomposition_active():
     mock_decomp = json.dumps({
-        "hypotheses": [
-            {"id": "hypo-web-attack", "statement": "Web application compromise via public exploit"},
-            {"id": "hypo-web-benign", "statement": "Benign normal web baseline"}
-        ],
-        "requirements": [
+        "id": "claim-graph-hunt-test-decomp",
+        "request_id": "hunt-test-decomp",
+        "objective": "Determine whether the web application was compromised",
+        "answer_contract": {
+            "mode": "hunt",
+            "answer_type": "compromise",
+            "required_fields": [],
+            "question": "Was the web application compromised?",
+        },
+        "claims": [
             {
-                "id": "req-web-http",
-                "description": "Inbound HTTP requests to web application",
-                "evidence_type": "web_request",
-                "search_hints": ["www.imreallynotbatman.com"],
-                "falsification_condition": "no HTTP requests",
-                "source_refs": ["MITRE-T1190"]
+                "id": "hypo-web-attack",
+                "claim_type": "behaviour",
+                "subject": "web_application:requested",
+                "predicate": "compromised",
+                "object_or_value": None,
+                "value_type": "compromise",
+                "provenance": "request",
+                "source_request_id": "hunt-test-decomp",
+                "dependencies": [],
+                "evidence_requirements": [],
+                "observation_requirements": [
+                    {"id": "req-web-http", "fact_kind": "web_request", "required_fields": ["uri"], "field_roles": [], "completeness_required": False},
+                    {"id": "req-web-proc", "fact_kind": "process_ancestry", "required_fields": ["parent_process", "process_name"], "field_roles": [], "completeness_required": False},
+                ],
+                "acceptance_rule": {"min_observations": 1, "required_fields": [], "requires_query_complete": False, "value_must_match": None},
+                "refutation_rule": None,
+                "optional": False,
+                "is_prerequisite": False,
+                "reason": "The request asks whether compromise occurred",
             },
             {
-                "id": "req-web-proc",
-                "description": "Child process spawned by web server",
-                "evidence_type": "process_ancestry",
-                "falsification_condition": "no child processes",
-                "source_refs": ["MITRE-T1059"]
-            }
-        ]
+                "id": "hypo-web-benign",
+                "claim_type": "controlled_absence",
+                "subject": "web_application:requested",
+                "predicate": "matches_baseline",
+                "object_or_value": None,
+                "value_type": "baseline",
+                "provenance": "request",
+                "source_request_id": "hunt-test-decomp",
+                "dependencies": [],
+                "evidence_requirements": [],
+                "observation_requirements": [{"id": "req-web-baseline", "fact_kind": "scope_records", "required_fields": [], "field_roles": [], "completeness_required": True}],
+                "acceptance_rule": {"min_observations": 1, "required_fields": [], "requires_query_complete": True, "value_must_match": None},
+                "refutation_rule": None,
+                "optional": False,
+                "is_prerequisite": False,
+                "reason": "A complete baseline is needed to support the benign alternative",
+            },
+        ],
+        "metadata": {"requirement_search_hints": {"req-web-http": ["www.imreallynotbatman.com"]}},
     })
 
     def mock_caller(prompt: str) -> str:
@@ -217,11 +247,11 @@ def test_compiler_llm_decomposition_active():
     # Ensure Domain is NOT injected into request.entities
     assert not any(isinstance(e, Domain) for e in req.entities)
 
-    # Ensure web requirement was enriched with site predicate
+    # Semantic compilation preserves fixture search hints but does not invent
+    # a field predicate; capability binding owns that later translation.
     web_r = next(r for r in reqs if r.evidence_type == "web_request")
-    assert web_r.predicate is not None
-    assert web_r.predicate.field == "site"
-    assert "imreallynotbatman.com" in web_r.predicate.value
+    assert web_r.predicate is None
+    assert web_r.search_hints == ["www.imreallynotbatman.com"]
 
 
 def test_web_request_fact_classification_with_domain():

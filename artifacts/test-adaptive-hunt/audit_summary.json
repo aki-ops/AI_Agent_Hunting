@@ -24,10 +24,10 @@
       "ProductVersion"
     ],
     "artifact_detected": true,
-    "claim": "Tor Browser was observed on wrk-amber. Requested version: Not available in the retrieved telemetry.",
+    "claim": "wrk-amber was observed on wrk-amber. Requested version: Not available in the retrieved telemetry.",
     "citations": [
       {
-        "claim": "Tor Browser executed on wrk-amber",
+        "claim": "wrk-amber executed on wrk-amber",
         "observation_ids": [
           "obs-adaptive-2",
           "obs-adaptive-3",
@@ -43,9 +43,9 @@
         ]
       }
     ],
-    "citation_text": "Tor Browser executed on wrk-amber Evidence: obs-adaptive-2, obs-adaptive-3, obs-discovery-1 Query: qp-adaptive-0-1, qp-adaptive-0-2 Fields: Path, Image",
+    "citation_text": "wrk-amber executed on wrk-amber Evidence: obs-adaptive-2, obs-adaptive-3, obs-discovery-1 Query: qp-adaptive-0-1, qp-adaptive-0-2 Fields: Path, Image",
     "reason": "VERSION_UNAVAILABLE",
-    "explanation": "Tor Browser was observed on wrk-amber. Requested version: Not available in the retrieved telemetry."
+    "explanation": "wrk-amber was observed on wrk-amber. Requested version: Not available in the retrieved telemetry."
   },
   "llm_usage": {
     "model": "stub",

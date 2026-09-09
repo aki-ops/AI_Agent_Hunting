@@ -123,6 +123,33 @@ class RefutationRule:
 
 
 # ---------------------------------------------------------------------------
+# ClaimEvidenceRequirement — observation shape a claim needs
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ClaimEvidenceRequirement:
+    """Observation shape required to test a claim. Not a vendor event family."""
+
+    id: str
+    fact_kind: str
+    required_fields: tuple[str, ...] = ()
+    field_roles: tuple[str, ...] = ()
+    completeness_required: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.id.strip():
+            raise ValueError("ClaimEvidenceRequirement.id must not be empty")
+        if not self.fact_kind.strip():
+            raise ValueError("ClaimEvidenceRequirement.fact_kind must not be empty")
+        _check_no_native_syntax("fact_kind", self.fact_kind)
+        if isinstance(self.required_fields, list):
+            object.__setattr__(self, "required_fields", tuple(self.required_fields))
+        if isinstance(self.field_roles, list):
+            object.__setattr__(self, "field_roles", tuple(self.field_roles))
+
+
+# ---------------------------------------------------------------------------
 # Claim
 # ---------------------------------------------------------------------------
 
@@ -148,6 +175,7 @@ class Claim:
     value_type: str | None = None
     dependencies: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = ()
+    observation_requirements: tuple[ClaimEvidenceRequirement, ...] = ()
     acceptance_rule: AcceptanceRule = field(default_factory=AcceptanceRule)
     refutation_rule: RefutationRule | None = None
     optional: bool = False
@@ -184,6 +212,8 @@ class Claim:
             object.__setattr__(self, "dependencies", tuple(self.dependencies))
         if isinstance(self.evidence_requirements, list):
             object.__setattr__(self, "evidence_requirements", tuple(self.evidence_requirements))
+        if isinstance(self.observation_requirements, list):
+            object.__setattr__(self, "observation_requirements", tuple(self.observation_requirements))
 
     def is_resolved(self) -> bool:
         return self.status in {
@@ -209,6 +239,16 @@ class Claim:
             "source_request_id": self.source_request_id,
             "dependencies": list(self.dependencies),
             "evidence_requirements": list(self.evidence_requirements),
+            "observation_requirements": [
+                {
+                    "id": req.id,
+                    "fact_kind": req.fact_kind,
+                    "required_fields": list(req.required_fields),
+                    "field_roles": list(req.field_roles),
+                    "completeness_required": req.completeness_required,
+                }
+                for req in self.observation_requirements
+            ],
             "acceptance_rule": {
                 "min_observations": self.acceptance_rule.min_observations,
                 "required_fields": list(self.acceptance_rule.required_fields),
@@ -258,6 +298,7 @@ class ClaimGraph:
             raise ValueError("ClaimGraph.request_id must not be empty")
         if not self.objective.strip():
             raise ValueError("ClaimGraph.objective must not be empty")
+        _check_no_native_syntax("objective", self.objective)
 
         seen_ids: set[str] = set()
         for claim in self.claims:
@@ -266,6 +307,12 @@ class ClaimGraph:
                     f"Duplicate Claim.id '{claim.id}' in ClaimGraph '{self.id}'"
                 )
             seen_ids.add(claim.id)
+            if not claim.is_prerequisite and claim.source_request_id != self.request_id:
+                raise ValueError(
+                    f"Claim '{claim.id}' source_request_id '{claim.source_request_id}' "
+                    f"does not match ClaimGraph.request_id '{self.request_id}'. "
+                    "Non-prerequisite claims must originate from the graph request."
+                )
 
         for claim in self.claims:
             for dep_id in claim.dependencies:
@@ -323,12 +370,83 @@ class ClaimGraph:
             "metadata": dict(self.metadata),
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> "ClaimGraph":
+        graph_request_id = str(request_id or data.get("request_id", "")).strip()
+        claims: list[Claim] = []
+        for item in data.get("claims", []):
+            if not isinstance(item, dict):
+                raise ValueError("ClaimGraph.claims must contain JSON objects")
+
+            acceptance_data = item.get("acceptance_rule")
+            if not isinstance(acceptance_data, dict):
+                raise ValueError(f"Claim '{item.get('id', '')}' has no AcceptanceRule")
+            acceptance = AcceptanceRule(
+                min_observations=int(acceptance_data.get("min_observations", 1)),
+                required_fields=tuple(str(value).strip() for value in acceptance_data.get("required_fields", []) if str(value).strip()),
+                requires_query_complete=bool(acceptance_data.get("requires_query_complete", False)),
+                value_must_match=(str(acceptance_data["value_must_match"]).strip() if acceptance_data.get("value_must_match") is not None else None),
+                custom_doc=(str(acceptance_data["custom_doc"]).strip() if acceptance_data.get("custom_doc") is not None else None),
+            )
+
+            refutation = None
+            refutation_data = item.get("refutation_rule")
+            if isinstance(refutation_data, dict):
+                refutation = RefutationRule(
+                    condition=RefutationCondition(str(refutation_data.get("condition", "")).strip().lower()),
+                    field=str(refutation_data.get("field", "")).strip(),
+                    value=str(refutation_data.get("value", "")).strip(),
+                    contradicts_claim_id=(str(refutation_data["contradicts_claim_id"]).strip() if refutation_data.get("contradicts_claim_id") else None),
+                    reason=str(refutation_data.get("reason", "")).strip(),
+                )
+
+            observation_requirements = tuple(
+                ClaimEvidenceRequirement(
+                    id=str(req.get("id", "")).strip(),
+                    fact_kind=str(req.get("fact_kind", "")).strip(),
+                    required_fields=tuple(str(value).strip() for value in req.get("required_fields", []) if str(value).strip()),
+                    field_roles=tuple(str(value).strip() for value in req.get("field_roles", []) if str(value).strip()),
+                    completeness_required=bool(req.get("completeness_required", False)),
+                )
+                for req in item.get("observation_requirements", [])
+                if isinstance(req, dict)
+            )
+            claims.append(
+                Claim(
+                    id=str(item.get("id", "")).strip(),
+                    claim_type=str(item.get("claim_type", "")).strip().lower(),
+                    subject=str(item.get("subject", "")).strip(),
+                    predicate=str(item.get("predicate", "")).strip(),
+                    provenance=str(item.get("provenance", "request")).strip().lower(),
+                    source_request_id=str(item.get("source_request_id", graph_request_id)).strip(),
+                    object_or_value=(str(item["object_or_value"]).strip() if item.get("object_or_value") is not None else None),
+                    value_type=(str(item["value_type"]).strip() if item.get("value_type") is not None else None),
+                    dependencies=tuple(str(value).strip() for value in item.get("dependencies", []) if str(value).strip()),
+                    evidence_requirements=tuple(str(value).strip() for value in item.get("evidence_requirements", []) if str(value).strip()),
+                    observation_requirements=observation_requirements,
+                    acceptance_rule=acceptance,
+                    refutation_rule=refutation,
+                    optional=bool(item.get("optional", False)),
+                    is_prerequisite=bool(item.get("is_prerequisite", False)),
+                    reason=str(item.get("reason", "")).strip(),
+                )
+            )
+
+        return cls(
+            id=str(data.get("id", "")).strip(),
+            request_id=graph_request_id,
+            objective=str(data.get("objective", "")).strip(),
+            claims=claims,
+            metadata=dict(data.get("metadata", {})) if isinstance(data.get("metadata", {}), dict) else {},
+        )
+
 
 __all__ = [
     "ClaimStatus",
     "AcceptanceRule",
     "RefutationCondition",
     "RefutationRule",
+    "ClaimEvidenceRequirement",
     "Claim",
     "ClaimGraph",
 ]

@@ -16,3 +16,7 @@ data/*.sqlite
 artifacts/hunt-*
 artifacts/req-hunt-*
 
+# Claude tool worktrees
+.claude/
+
+

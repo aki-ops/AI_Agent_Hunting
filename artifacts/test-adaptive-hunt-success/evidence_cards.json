@@ -1,7 +1,7 @@
 [
   {
     "id": "card-e5d92fdeb056",
-    "summary": "Process: tor.exe Path: C:\\Tor\\firefox.exe Host: wrk-amber",
+    "summary": "Process artifact observed on wrk-amber: C:\\Tor\\firefox.exe",
     "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
     "fact_type": "process_execution",
     "count": 1,
@@ -33,6 +33,9 @@
         "C:\\Tor\\firefox.exe"
       ],
       "software_versions": [
+        "13.5.2"
+      ],
+      "software_version": [
         "13.5.2"
       ]
     },

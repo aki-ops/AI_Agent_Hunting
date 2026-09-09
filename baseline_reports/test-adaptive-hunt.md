@@ -11,7 +11,7 @@
 **Result:** `PARTIALLY_SUPPORTED`  
 **Stopping:** `STOP_BOUNDED`
 
-- **Causal Path Coverage:** `0.0%` (0/0 relations verified)
+- **Causal Path Coverage:** `0.0%` (0/1 relations verified)
 - **Wildcard Scope Coverage:** `0.0%` (0/1 broadsweep cells)
 - **Instance Cell Coverage:** `0.0%` (0/0 concrete entity cells)
 
@@ -52,7 +52,7 @@
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2041712911888'>
+<MagicMock name='mock.last_query_text' id='2020391090512'>
 ```
 
 ### `qp-adaptive-0-1` — `adaptive-answer`
@@ -63,7 +63,7 @@ Provider: `mock_splunk`; completeness: `complete`
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2041712911888'>
+<MagicMock name='mock.last_query_text' id='2020391090512'>
 ```
 
 ### `qp-adaptive-0-2` — `adaptive-answer`
@@ -74,7 +74,7 @@ Provider: `mock_splunk`; completeness: `complete`
 Provider: `mock_splunk`; completeness: `complete`
 
 ```spl
-<MagicMock name='mock.last_query_text' id='2041712911888'>
+<MagicMock name='mock.last_query_text' id='2020391090512'>
 ```
 
 ## 5. Cost

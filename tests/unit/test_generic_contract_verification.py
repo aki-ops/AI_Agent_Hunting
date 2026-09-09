@@ -37,8 +37,16 @@ def test_stub_fixture_requires_explicit_scenario_selection():
             "Request content: Amber Turing sent an email to a competitor"
         )
     )
-    assert result["normalized_claim"]["text"] == "Generic free-text threat inquiry"
-    assert result["entities"] == []
+    assert result["objective"] == "Generic free-text threat inquiry"
+    assert result["metadata"]["request_content"] == "Amber Turing sent an email to a competitor"
+    assert len(result["claims"]) == 2
+    assert all(claim["subject"] == "entity:unknown" for claim in result["claims"])
+    assert not any("email" in str(claim).lower() for claim in result["claims"])
+
+    # The fixture is now a ClaimGraph producer. Scenario selection remains
+    # explicit on the fixture constructor, never inferred from request words.
+    assert "normalized_claim" not in result
+    assert "entities" not in result
 
 
 def test_verifier_does_not_invent_account_for_unknown_user():
