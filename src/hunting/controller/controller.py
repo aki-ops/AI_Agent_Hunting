@@ -15,6 +15,7 @@ from typing import Any
 
 from hunting.contracts.case_graph import RelationStatus
 from hunting.contracts.cells import Cell, CellState
+from hunting.contracts.claim import ClaimStatus
 from hunting.contracts.expectations import Expectation, TestStatus
 from hunting.contracts.hunt import (
     EvidenceAssessment,
@@ -175,6 +176,25 @@ class CanonicalActionController:
             decision = StoppingDecision.STOP_UNREACHABLE
             self.set_stopping_decision(state, decision)
             return decision
+
+        # ClaimGraph is the v6 stopping authority.  Do not infer a verdict from
+        # legacy hypothesis wording or evidence-card labels when a validated
+        # claim plan is active.
+        claim_graph = getattr(state.objective, "claim_graph", None) if state.objective else None
+        if claim_graph is not None and not getattr(claim_graph, "metadata", {}).get("legacy_fixture_projection"):
+            mandatory_claims = [claim for claim in claim_graph.claims if not claim.optional]
+            statuses = {claim.status for claim in mandatory_claims}
+            if mandatory_claims and all(claim.is_resolved() for claim in mandatory_claims):
+                if ClaimStatus.INCONCLUSIVE in statuses:
+                    decision = StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP
+                elif ClaimStatus.UNKNOWN in statuses:
+                    decision = StoppingDecision.STOP_BOUNDED
+                elif statuses and statuses.issubset({ClaimStatus.REFUTED}):
+                    decision = StoppingDecision.STOP_REFUTED
+                else:
+                    decision = StoppingDecision.STOP_RESOLVED
+                self.set_stopping_decision(state, decision)
+                return decision
 
         # Web compromise & multi-stage chain guard:
         # Process creation or web request alone cannot conclude full web compromise.

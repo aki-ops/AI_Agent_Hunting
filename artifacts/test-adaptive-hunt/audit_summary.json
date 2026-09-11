@@ -4,6 +4,7 @@
   "stopping_decision": "STOP_BOUNDED",
   "answer": {
     "status": "PARTIALLY_SUPPORTED",
+    "reason": "VERSION_UNAVAILABLE",
     "answer_type": "software_version",
     "question": "What version of Tor was installed on wrk-amber?",
     "candidates": [],
@@ -30,8 +31,7 @@
         "claim": "wrk-amber executed on wrk-amber",
         "observation_ids": [
           "obs-adaptive-2",
-          "obs-adaptive-3",
-          "obs-discovery-1"
+          "obs-adaptive-3"
         ],
         "query_ids": [
           "qp-adaptive-0-1",
@@ -43,8 +43,7 @@
         ]
       }
     ],
-    "citation_text": "wrk-amber executed on wrk-amber Evidence: obs-adaptive-2, obs-adaptive-3, obs-discovery-1 Query: qp-adaptive-0-1, qp-adaptive-0-2 Fields: Path, Image",
-    "reason": "VERSION_UNAVAILABLE",
+    "citation_text": "wrk-amber executed on wrk-amber Evidence: obs-adaptive-2, obs-adaptive-3 Query: qp-adaptive-0-1, qp-adaptive-0-2 Fields: Path, Image",
     "explanation": "wrk-amber was observed on wrk-amber. Requested version: Not available in the retrieved telemetry."
   },
   "llm_usage": {
@@ -60,5 +59,35 @@
   },
   "total_observations": 3,
   "total_cards": 2,
-  "total_queries": 3
+  "total_queries": 3,
+  "semantic_graph_id": null,
+  "proof_plan_id": null,
+  "semantic_analysis": {
+    "source_profile": {
+      "status": "NO_LLM_CALLER",
+      "readiness": [],
+      "profiling_goal_ids": [],
+      "retrieval": [],
+      "census_profile_discovery": {},
+      "proposals": [],
+      "rejected": [],
+      "relation_calls": [],
+      "runtime_capabilities": [],
+      "runtime_operation_ids": []
+    }
+  },
+  "source_profile_audit": {
+    "status": "NO_LLM_CALLER",
+    "readiness": [],
+    "profiling_goal_ids": [],
+    "retrieval": [],
+    "census_profile_discovery": {},
+    "proposals": [],
+    "rejected": [],
+    "relation_calls": [],
+    "runtime_capabilities": [],
+    "runtime_operation_ids": []
+  },
+  "runtime_capabilities": [],
+  "semantic_route_assessments": []
 }

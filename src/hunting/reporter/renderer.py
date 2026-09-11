@@ -19,6 +19,36 @@ from hunting.contracts.hunt import (
 )
 
 
+def _display_report_value(value: object, max_chars: int = 220) -> str:
+    """Render compact evidence/query values without exposing raw payloads."""
+    if isinstance(value, (list, tuple, set)):
+        text = ", ".join(_display_report_value(item, max_chars) for item in list(value)[:8])
+    elif isinstance(value, dict):
+        text = "; ".join(
+            f"{key}={_display_report_value(item, max_chars)}"
+            for key, item in list(value.items())[:8]
+        )
+    else:
+        text = str(value)
+    text = text.replace("\n", " ").replace("|", "\\|")
+    return text if len(text) <= max_chars else text[: max_chars - 3] + "..."
+
+
+def _readable_card_fields(card: object) -> str:
+    fields = getattr(card, "field_summary", {}) or {}
+    if not isinstance(fields, dict):
+        return "not summarized"
+    ignored = {"observation_ids", "all_observation_ids", "raw_event", "_raw"}
+    parts = []
+    for key, value in fields.items():
+        if key in ignored or value in (None, "", [], {}):
+            continue
+        parts.append(f"{key}={_display_report_value(value)}")
+        if len(parts) >= 6:
+            break
+    return "; ".join(parts) if parts else "no readable fields summarized"
+
+
 def render_final_hunt_account(account: FinalHuntAccount) -> str:
     """Render canonical Markdown report from FinalHuntAccount.
 
@@ -652,8 +682,8 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
             targeted = "YES" if q.get("is_targeted") else "NO (Broad)"
             lines.append(f"| `{qid}` | `{rid}` | `{pid}` | `{sid}` | `{opid}` | `{cc}` | `{targeted}` |")
 
-        # Executable query statements
-        queries_with_text = [q for q in account.queries if q.get("query_text")]
+        # Executed provider statements come only from QueryResult.native_query.
+        queries_with_text = [q for q in account.queries if q.get("native_query")]
         if queries_with_text:
             lines.extend([
                 "",
@@ -669,7 +699,7 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
             for q in queries_with_text:
                 qid = q.get("query_id", "N/A")
                 opid = q.get("operation_id", "N/A")
-                qtext = str(q.get("query_text", "")).strip()
+                qtext = str(q.get("native_query", "")).strip()
                 lang = "spl" if "search " in qtext.lower() else "sql"
                 lines.extend([
                     f"#### Query: `{qid}` ({opid})",
@@ -828,7 +858,10 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
     elif answer.get("status") == "NOT_FOUND":
         lines.extend(["", "**Answer:** No matching value was found in the searched telemetry."])
     elif answer.get("status") == "INCONCLUSIVE":
-        lines.extend(["", f"**Answer:** Inconclusive ({answer.get('reason', 'IDENTITY_UNRESOLVED')})"])
+        lines.extend([
+            "",
+            f"**Answer:** Inconclusive ({answer.get('reason') or 'UNRESOLVED_REASON_UNAVAILABLE'})",
+        ])
     if answer.get("explanation") and answer.get("status") not in ("PARTIALLY_SUPPORTED", "VERSION_UNAVAILABLE"):
         lines.extend(["", f"**Answer explanation:** {answer['explanation']}"])
 
@@ -840,6 +873,200 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             lines.append(f"- `{status}` — {statement}")
     else:
         lines.append("- No testable hypothesis was produced.")
+
+    # Expose the actual semantic decomposition and proof route.  The old
+    # report only printed the one-line hypothesis, which made it impossible
+    # to audit why a query was selected or why a downstream goal was skipped.
+    graph = getattr(account, "semantic_goal_graph", None)
+    plan = getattr(account, "semantic_logical_plan", None)
+    if graph is not None:
+        lines.extend(["", "### Semantic decomposition", ""])
+        for variable in graph.variables:
+            value = f" = `{variable.value}`" if variable.value not in (None, "") else ""
+            constraints = f"; constraints: {', '.join(item.text() for item in variable.constraints)}" if variable.constraints else ""
+            lines.append(
+                f"- `{variable.id}`: `{variable.entity_type}`{value}{constraints}; "
+                f"origin=`{variable.value_origin}`, verification=`{variable.verification_status}`"
+            )
+        for relation in graph.relations:
+            lines.append(f"- Claim `{relation.id}`: `{relation.subject}` — `{relation.relation}` → `{relation.object}`")
+        for qualifier in graph.qualifiers:
+            expected = f" = `{qualifier.value_text()}`" if qualifier.expected_value is not None else ""
+            lines.append(f"- Qualifier `{qualifier.target_goal_id}`: `{qualifier.qualifier}`{expected}")
+        for answer_goal in graph.answers:
+            lines.append(f"- Answer: `{answer_goal.variable_id}` as `{answer_goal.answer_type}`")
+    compiler_trace = (account.semantic_analysis or {}).get("compiler_trace", {})
+    if compiler_trace:
+        lines.extend(["", "### LLM compilation audit", ""])
+        lines.append(
+            f"- Validation: `{compiler_trace.get('validation_result', 'UNKNOWN')}`; "
+            f"output: `{compiler_trace.get('output_kind', 'UNKNOWN')}`; "
+            f"response length: `{compiler_trace.get('response_length', 0)}` characters; "
+            f"prompt hash: `{compiler_trace.get('prompt_hash', 'N/A')}`"
+        )
+        if compiler_trace.get("validation_error"):
+            lines.append(f"- Validation error: `{compiler_trace['validation_error']}`")
+        lines.append(
+            "- The structured graph above is the LLM planning output; native queries "
+            "are normally generated by the provider adapter."
+        )
+    source_profile_audit = getattr(account, "source_profile_audit", {}) or {}
+    if source_profile_audit:
+        lines.extend(["", "### Source capability profiling", ""])
+        lines.append(
+            f"- Status: `{source_profile_audit.get('status', 'UNKNOWN')}`; "
+            f"accepted proposals: `{len(source_profile_audit.get('proposals', []))}`; "
+            f"rejected: `{len(source_profile_audit.get('rejected', []))}`"
+        )
+        lines.append(
+            "- Proposals are candidates only; a provider probe is required before "
+            "they become executable capabilities."
+        )
+        retrieval_audit = source_profile_audit.get("retrieval", []) or []
+        if retrieval_audit:
+            lines.append("- Relation-scoped source retrieval:")
+            for item in retrieval_audit:
+                candidates = item.get("candidates", []) or []
+                rendered_candidates = ", ".join(
+                    f"{candidate.get('source_id', 'unknown')} "
+                    f"(score={candidate.get('score', 0)}, rank={candidate.get('rank', '?')})"
+                    for candidate in candidates
+                ) or "none"
+                profile_discovery = source_profile_audit.get("census_profile_discovery", {}) or {}
+                gap_count = len(profile_discovery.get("unprofiled_source_types", []) or [])
+                completeness = "complete" if profile_discovery.get("complete", True) else f"incomplete ({gap_count} source gap(s))"
+                lines.append(
+                    f"  - `{item.get('relation', 'unknown')}`: "
+                    f"batches=`{item.get('batch_count', 0)}`, "
+                    f"ordering_only=`{item.get('ordering_only', False)}`, "
+                    f"candidates={rendered_candidates}; census profiles=`{completeness}`"
+                )
+        if source_profile_audit.get("error"):
+            lines.append(f"- Profiling error: `{source_profile_audit['error']}`")
+        runtime_capabilities = getattr(account, "runtime_capabilities", []) or []
+        if runtime_capabilities:
+            lines.append("- Validated runtime capabilities:")
+            for capability in runtime_capabilities:
+                lines.append(
+                    f"  - `{capability.get('relation', 'unknown')}` from "
+                    f"`{capability.get('source_id', 'unknown')}`; "
+                    f"probe=`{capability.get('probe_query_id', 'unknown')}`; "
+                    f"status=`{capability.get('status', 'unknown')}`"
+                )
+    semantic_routes = list(getattr(account, "semantic_route_assessments", ()) or ())
+    if semantic_routes:
+        lines.extend(["", "### Semantic route assessments", ""])
+        for route in semantic_routes:
+            status = getattr(route, "status", "UNPLANNED")
+            status = status.value if hasattr(status, "value") else str(status)
+            readiness = getattr(route, "readiness", "CAPABILITY_GAP")
+            readiness = readiness.value if hasattr(readiness, "value") else str(readiness)
+            terminal = getattr(route, "terminal_cause", None)
+            terminal = terminal.value if hasattr(terminal, "value") else terminal
+            lines.append(
+                f"- Goal `{route.goal_id}` (`{route.relation}`): status=`{status}`, "
+                f"execution_complete=`{route.execution_complete}`, "
+                f"proof_complete=`{route.proof_complete}`, "
+                f"route_exhausted=`{route.route_exhausted}`, readiness=`{readiness}`, "
+                f"terminal=`{terminal or 'none'}`"
+            )
+            if getattr(route, "proof_gaps", None):
+                lines.append(
+                    "  - Proof gaps: "
+                    + ", ".join(f"`{item}`" for item in route.proof_gaps)
+                )
+            if getattr(route, "capability_gaps", None):
+                lines.append(
+                    "  - Capability gaps: "
+                    + ", ".join(f"`{item}`" for item in route.capability_gaps)
+                )
+            for attempt in getattr(route, "attempts", ()) or ():
+                lines.append(
+                    f"  - Attempt `{attempt.attempt_id}`: operation=`{attempt.operation_id}`, "
+                    f"source=`{attempt.source_id}`, schema=`{attempt.schema_fingerprint or 'unknown'}`, "
+                    f"stage=`{attempt.stage_id}`, query=`{attempt.query_id or 'none'}`, "
+                    f"complete=`{attempt.result_complete}`, rows=`{attempt.row_count}`, "
+                    f"trigger=`{attempt.trigger_reason}`, "
+                    f"negative_license=`{attempt.negative_evidence_capable}`, "
+                    f"alternatives=`{list(attempt.alternatives_considered)}`"
+                )
+    if plan is not None:
+        lines.extend(["", "### Proof plan", ""])
+        methods = getattr(plan, "proof_methods", []) or []
+        selected = getattr(plan, "selected_method_ids", {}) or {}
+        for method in methods:
+            marker = "selected" if selected.get(method.goal_id) == method.id else "alternative"
+            prerequisites = (
+                f"; requires {', '.join(f'`{goal_id}`' for goal_id in method.prerequisite_goal_ids)}"
+                if method.prerequisite_goal_ids else ""
+            )
+            lines.append(f"- `{marker}` `{method.goal_id}` via `{', '.join(method.operation_ids)}` (cost={method.expected_cost}{prerequisites})")
+        unresolved = getattr(plan, "unresolved_goal_ids", []) or []
+        if unresolved:
+            lines.append(f"- Unresolved goals: {', '.join(f'`{item}`' for item in unresolved)}")
+    proof_state = (account.semantic_analysis or {}).get("proof_state", {})
+    if proof_state:
+        lines.extend(["", "### Proof state", ""])
+        for goal_id, status in proof_state.items():
+            lines.append(f"- `{goal_id}`: `{status}`")
+    unverified_restrictions = (account.semantic_analysis or {}).get("unverified_restrictions", {})
+    if unverified_restrictions:
+        lines.extend(["", "### Unverified restrictions", ""])
+        lines.append("The retrieved rows prove only the declared relation. These request restrictions were not proven by a declared provider capability:")
+        for goal_id, restrictions in unverified_restrictions.items():
+            lines.append(f"- `{goal_id}`: {', '.join(f'`{value}`' for value in restrictions)}")
+    binding_provenance = (account.semantic_analysis or {}).get("binding_provenance", {})
+    if binding_provenance:
+        lines.extend(["", "### Runtime bindings", ""])
+        for variable_id, values in binding_provenance.items():
+            rendered = ", ".join(
+                f"`{item.get('value', '')}` ({item.get('status', 'UNVERIFIED')}) "
+                f"from `{item.get('query_id') or item.get('source', '')}`"
+                for item in values
+            )
+            lines.append(f"- `{variable_id}`: {rendered}")
+
+    # Human-readable execution trace.  This is deliberately a trace of
+    # actions/results and binding provenance, not hidden chain-of-thought.
+    # It answers: what ran, with which input, what came back, and why the next
+    # step did or did not run.
+    semantic_analysis = account.semantic_analysis or {}
+    page_trace = semantic_analysis.get("page_trace", []) or []
+    goal_verdicts = semantic_analysis.get("goal_verdicts", []) or []
+    candidate_warnings = semantic_analysis.get("candidate_input_warnings", {}) or {}
+    unresolved_reasons = semantic_analysis.get("unresolved_reasons", {}) or {}
+    if page_trace or goal_verdicts or unresolved_reasons:
+        lines.extend(["", "### Execution trace", ""])
+        goal_by_query = {
+            str(query_id): verdict
+            for verdict in goal_verdicts
+            if isinstance(verdict, dict)
+            for query_id in verdict.get("query_ids", [])
+        }
+        for index, page in enumerate(page_trace, start=1):
+            step_id = page.get("step_id", "unknown-step")
+            operation_id = page.get("operation_id", "unknown-operation")
+            query_id = str(page.get("query_id", ""))
+            result = (
+                f"{page.get('rows', 0)} row(s), complete={page.get('complete')}, "
+                f"executed_ok={page.get('executed_ok')}"
+            )
+            diagnostic = page.get("diagnostic")
+            if diagnostic:
+                result += f", diagnostic={diagnostic}"
+            impact = goal_by_query.get(query_id)
+            impact_text = ""
+            if impact:
+                impact_text = f"; goal `{impact.get('goal_id')}` => `{impact.get('status')}`"
+            lines.append(
+                f"{index}. `{step_id}` gọi `{operation_id}` "
+                f"(candidate #{page.get('candidate_index', 0) + 1}, page {page.get('page', 1)}): "
+                f"{result}{impact_text}."
+            )
+        for step_id, warning in candidate_warnings.items():
+            lines.append(f"- `{step_id}`: **Candidate path** — {warning}")
+        for step_id, reason in unresolved_reasons.items():
+            lines.append(f"- `{step_id}` chưa chạy/hoàn tất: {reason}")
 
     if intent and intent.required_correlations:
         lines.extend([
@@ -989,8 +1216,8 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
     cards = cards[:12]
     if cards:
         lines.extend([
-            "| Evidence | Why it matters | Source |",
-            "|---|---|---|",
+            "| Evidence | Why it matters | Observed values | Source |",
+            "|---|---|---|---|",
         ])
         assessments_by_card = {assessment.card_id: assessment for assessment in account.evidence_assessments}
         for card in cards:
@@ -1010,10 +1237,22 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
                 else card.why_it_matters or "Supports the related evidence requirement."
             )
             reps = ", ".join(f"`{value}`" for value in card.representative_observation_ids[:3]) or "not recorded"
-            source = f"{card.count} event(s); representative observations: {reps}"
+            source = (
+                f"{card.count} event(s); query: "
+                + (", ".join(f"`{value}`" for value in card.query_ids[:3]) or "not recorded")
+                + f"; observations: {reps}"
+            )
             summary_md = summary.replace("|", "\\|")
             why_md = why.replace("|", "\\|")
-            lines.append(f"| {summary_md} | {why_md} | {source} |")
+            observed = _readable_card_fields(card)
+            lines.append(f"| {summary_md} | {why_md} | {_display_report_value(observed)} | {source} |")
+        lines.extend(["", "### Evidence details", ""])
+        for card in cards:
+            lines.extend([
+                f"- `{card.id}` — fact=`{card.fact_type or 'telemetry'}`, "
+                f"count=`{card.count}`, completeness=`{card.completeness}`; "
+                f"observed: {_readable_card_fields(card)}",
+            ])
     else:
         lines.append("No evidence cards were produced.")
 
@@ -1025,7 +1264,11 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         llm_expl = str(sem["answer"].get("explanation", "")).strip()
 
     if answer.get("status") == "ANSWERED":
-        lines.append(f"- **Deterministic Graph Resolution:** The target object `{answer.get('value')}` was proven through the verified 4-step causal provenance chain.")
+        edge_count = getattr(cb, "causal_path_verified_edges", 0) if cb else 0
+        lines.append(
+            f"- **Deterministic Graph Resolution:** The target object `{answer.get('value')}` "
+            f"was proven through {edge_count} verified claim relation(s)."
+        )
 
     det_expl = sem.get("deterministic_explanation") or (
         sem.get("answer", {}).get("explanation", "") if "Deterministic explanation:" in str(sem.get("answer", {}).get("explanation", "")) else ""
@@ -1043,7 +1286,14 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         err_detail = sem.get("error_message", parse_status)
         lines.append(f"- **LLM Narrative Analysis:** Unavailable ({parse_status}: {err_detail} — fell back to deterministic explanation)")
     elif not sem or not account.llm_usage or parse_status == "OFFLINE_DETERMINISTIC":
-        lines.append("- **LLM Narrative Analysis:** Not requested / offline deterministic mode.")
+        calls_made = int((account.llm_usage or {}).get("calls_made", 0) or 0)
+        if calls_made > 0:
+            lines.append(
+                f"- **LLM Narrative Analysis:** No narrative assessment was produced; "
+                f"LLM was called {calls_made} time(s) for semantic compilation."
+            )
+        else:
+            lines.append("- **LLM Narrative Analysis:** Not requested / offline deterministic mode.")
 
 
     explanations: list[str] = []
@@ -1071,7 +1321,7 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         for query in account.queries:
             query_id = query.get("query_id", "unknown-query")
             requirement = query.get("requirement_id", "unknown requirement")
-            query_text = str(query.get("native_query") or query.get("query_text", "")).strip()
+            query_text = str(query.get("native_query", "")).strip()
             purpose = query.get("purpose", "")
             reason = query.get("semantic_intent", "")
             result_sum = query.get("result_summary", "")
@@ -1080,15 +1330,36 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
                 f"### `{query_id}` — `{requirement}`",
                 f"- **Purpose:** {purpose}" if purpose else "",
                 f"- **Semantic Reason:** `{reason}`" if reason else "",
+                f"- **Input binding:** `{query.get('entity_binding') or 'ANY'}`",
+                f"- **Expected output fields:** {', '.join(f'`{field}`' for field in query.get('expected_fields', [])) or '`provider-declared`'}",
                 f"- **Result:** {result_sum}" if result_sum else "",
+                f"- **Observed fields:** {', '.join(f'`{field}`' for field in query.get('observed_fields', [])) or 'none'}",
+                f"- **Execution:** executed_ok=`{query.get('executed_ok')}`, diagnostic=`{query.get('diagnostic') or 'none'}`",
                 f"- **Hypothesis Impact:** Targets `{', '.join(hypo_ids)}`" if hypo_ids else "",
                 f"Provider: `{query.get('provider_id', 'unknown')}`; completeness: `{query.get('completeness_contract', 'unknown')}`",
                 "",
-                "```spl",
+                (
+                    f"- **Provider pages:** `{len(query.get('page_trace', []))}`; "
+                    f"continuation=`{bool(query.get('continuation'))}`"
+                ) if query.get("page_trace") or query.get("continuation") else "",
+                f"```{query.get('native_language', 'text')}",
                 query_text or "(native query text not captured)",
                 "```",
                 "",
             ])
+            samples = query.get("sample_rows", []) or []
+            if samples:
+                lines.extend(["**Returned sample rows (raw payload omitted):**", ""])
+                for row_index, row in enumerate(samples, start=1):
+                    if isinstance(row, dict):
+                        rendered = "; ".join(
+                            f"{key}={_display_report_value(value)}"
+                            for key, value in row.items()
+                        )
+                    else:
+                        rendered = _display_report_value(row)
+                    lines.append(f"- Row {row_index}: {rendered}")
+                lines.append("")
             # Filter out empty strings from lines
             lines = [line for line in lines if line is not None]
     else:
@@ -1100,6 +1371,8 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         "",
         f"- Model: `{usage.get('model', 'unknown')}`",
         f"- Calls: `{usage.get('calls_made', 0)}`",
+        f"- Physical API attempts: `{sum(int(item.get('physical_attempts', 0) or 0) for item in usage.get('calls', []))}`",
+        f"- Failed calls: `{sum(1 for item in usage.get('calls', []) if item.get('status') == 'FAILED')}`",
         f"- Tokens: `{usage.get('total_tokens', 0)}`",
         f"- Estimated cost: `${float(usage.get('estimated_cost_usd', 0.0)):.6f}`",
     ])

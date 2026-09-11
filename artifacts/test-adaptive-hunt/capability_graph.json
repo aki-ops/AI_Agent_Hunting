@@ -1,0 +1,48 @@
+{
+  "id": "capability-graph:runtime",
+  "census_version": "2026.1.0",
+  "providers": [
+    {
+      "provider_id": "splunk",
+      "status": "ONLINE",
+      "indices": [],
+      "sourcetypes": {},
+      "supported_evidence_types": [],
+      "observable_fields": [],
+      "retention_days": 4000,
+      "details": {
+        "descriptor_status": "LEGACY_UNTYPED"
+      },
+      "scopes": [
+        "main"
+      ],
+      "operations": [],
+      "permissions": [],
+      "completeness_semantics": "provider-defined",
+      "partitions": {
+        "main": {
+          "native_partition": {
+            "index": "test"
+          },
+          "coverage_start": null,
+          "coverage_end": null,
+          "retention_days": null,
+          "known_gaps": []
+        }
+      },
+      "schemas": {},
+      "aliases": {},
+      "source_profiles": []
+    }
+  ],
+  "operations": [],
+  "audit": [
+    {
+      "provider_id": "splunk",
+      "selected": true,
+      "reason": "provider is online; no ClaimGraph was available for relevance filtering",
+      "status": "ONLINE",
+      "claim_id": ""
+    }
+  ]
+}

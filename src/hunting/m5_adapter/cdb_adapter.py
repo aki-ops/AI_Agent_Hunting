@@ -18,11 +18,12 @@ Implements the executable M5 adapter vertical slice for replayable testing:
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime
 from typing import Any
 
-from hunting.contracts.capabilities import CapabilityDescriptor
+from hunting.contracts.capabilities import CapabilityDescriptor, ProviderCapabilityCatalog
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.entities import ANY, Account, Domain, EntityRef, File, Host, IPAddress, Process
 from hunting.contracts.expectations import EvidenceRequirement, FieldOp, FieldPredicate
@@ -34,6 +35,7 @@ from hunting.contracts.queries import (
     QueryOutcome,
     QueryResult,
 )
+from hunting.contracts.source_profile import ProbeSpec, TelemetrySourceProfile
 from hunting.m5_adapter.allowlist import validate_query_params, validate_time_window_format
 from hunting.m5_adapter.controls import (
     execute_any_record_in_scope,
@@ -98,30 +100,231 @@ class CdbAdapter:
                 vals = [ev.get(col) for col in cols]
                 self._conn.execute(sql, vals)
 
+    def discover_full_capabilities(self) -> ProviderCapabilityCatalog:
+        """Return the runtime census catalog for the SQLite deployment."""
+        descriptor = self.get_capability_descriptor()
+        table_fields = [
+            "id", "timestamp", "event_id", "native_type", "host", "user",
+            "pid", "ppid", "cmdline", "image", "ip", "port", "domain",
+            "file_path", "action", "status", "raw_ref",
+        ]
+        return ProviderCapabilityCatalog(
+            provider_id=self.provider_id,
+            status="ONLINE",
+            supported_evidence_types=sorted(
+                {binding.evidence_requirement.value for binding in descriptor.bindings}
+            ),
+            observable_fields=table_fields,
+            retention_days=self.scope.retention_days or 4000,
+            details={"database": self.db_path, "table": "events"},
+            operations=list(descriptor.operations),
+            permissions=["read_sqlite"],
+            completeness_semantics="complete only on EOF; limit+1 detects pagination",
+            partitions={
+                self.scope.scope_id: {
+                    "native_partition": dict(self.scope.native_partition),
+                    "coverage_start": self.scope.coverage_start,
+                    "coverage_end": self.scope.coverage_end,
+                    "retention_days": self.scope.retention_days,
+                    "known_gaps": [dict(value) for value in self.scope.known_gaps],
+                }
+            },
+            schemas={"events": {"fields": table_fields}},
+            aliases={
+                "client_ip": ("ip",),
+                "endpoint_host": ("host",),
+                "account_name": ("user",),
+                "domain_name": ("domain",),
+                "process_name": ("image",),
+            },
+        )
+
+    def execute_capability_probe(
+        self,
+        *,
+        profile: TelemetrySourceProfile,
+        probe: ProbeSpec,
+        time_window: str | None = None,
+        query_id: str = "probe-001",
+    ) -> QueryResult:
+        """Run a bounded schema/co-occurrence probe for the CDB source.
+
+        Column identifiers are resolved from the already-censused profile and
+        checked against SQLite metadata before interpolation. This probe
+        establishes observability only; it never promotes a hunt claim.
+        """
+        if profile.provider_id != self.provider_id or profile.source_id != "cdb:source:events":
+            return QueryResult(
+                query_id=query_id, outcome=QueryOutcome.UNKNOWN, executed_ok=False,
+                complete=False, diagnostic=Diagnostic.UNSUPPORTED_REQUIREMENT,
+                truncation_reason="profile does not belong to this CDB source",
+                provider=self.provider_id, index=self.db_path,
+            )
+        valid_columns = {
+            str(row[1])
+            for row in self._conn.execute("PRAGMA table_info(events)").fetchall()
+        }
+        selected: list[str] = []
+        for field_id in probe.field_ids:
+            field = profile.field(field_id)
+            if field is None or field.name not in valid_columns:
+                return QueryResult(
+                    query_id=query_id, outcome=QueryOutcome.UNKNOWN, executed_ok=False,
+                    complete=False, diagnostic=Diagnostic.PARSE_FAILED,
+                    truncation_reason=f"probe field is not a CDB column: {field_id}",
+                    provider=self.provider_id, index=self.db_path,
+                )
+            selected.append(field.name)
+        if not selected:
+            selected = ["timestamp", "native_type"]
+
+        where = ""
+        params: list[Any] = []
+        if time_window:
+            start, end = validate_time_window_format(time_window)
+            where = " WHERE timestamp >= ? AND timestamp <= ?"
+            params.extend([start.isoformat(), end.isoformat()])
+        quoted = ", ".join('"' + name.replace('"', '""') + '"' for name in selected)
+        sql = f"SELECT {quoted} FROM events{where} LIMIT ?"
+        params.append(probe.max_rows + 1)
+        try:
+            rows = [dict(row) for row in self._conn.execute(sql, params).fetchall()]
+        except Exception as error:
+            return QueryResult(
+                query_id=query_id, outcome=QueryOutcome.UNKNOWN, executed_ok=False,
+                complete=False, diagnostic=Diagnostic.QUERY_FAILED,
+                truncation_reason=str(error), native_query=sql,
+                provider=self.provider_id, index=self.db_path,
+            )
+        complete = len(rows) <= probe.max_rows
+        returned = rows[:probe.max_rows]
+        return QueryResult(
+            query_id=query_id,
+            outcome=QueryOutcome.ROWS if returned else QueryOutcome.UNKNOWN,
+            executed_ok=True,
+            complete=complete,
+            rows=returned,
+            observed_fields=selected,
+            native_query=sql,
+            provider=self.provider_id,
+            index=self.db_path,
+            row_count=len(returned),
+            cursor=None if complete else str(probe.max_rows),
+            truncation_reason=None if complete else "probe_limit_exceeded",
+        )
+
     def get_capability_descriptor(self) -> CapabilityDescriptor:
         """Publish the machine-readable capability descriptor for CDB."""
         op_scope_ids = (self.scope.scope_id,)
 
+        def operation(
+            operation_id: str,
+            fact_kinds: tuple[str, ...],
+            input_kinds: tuple[str, ...],
+            output_fields: tuple[str, ...],
+            params_schema: dict[str, Any] | None = None,
+            *,
+            input_roles: tuple[str, ...] = (),
+            output_roles: tuple[str, ...] = (),
+            output_entity_kinds: tuple[str, ...] = (),
+            native_field_bindings: dict[str, tuple[str, ...]] | None = None,
+            guaranteed_relations: tuple[str, ...] = (),
+            output_value_bindings: dict[str, tuple[str, ...]] | None = None,
+            output_binding_entity_kinds: dict[str, str] | None = None,
+            supported_constraints: tuple[str, ...] = (),
+            searchable_constraints: tuple[str, ...] = (),
+            query_builder: str = "",
+        ) -> ProviderOperation:
+            relation_by_fact = {
+                "identity_binding": "associated_with",
+                "web_request": "visited",
+                "web_request_activity": "visited",
+                "web_navigation": "visited",
+                "dns_activity": "resolved",
+                "network_connection": "communicated_with",
+                "process_ancestry": "executed",
+                "server_side_execution": "executed",
+                "file_modification": "modified",
+                "file_artifact": "modified",
+                "authentication_activity": "authenticated",
+                "remote_authentication": "authenticated",
+                "persistence_change": "persisted",
+                "software_version": "has_version",
+            }
+            declared_relations = guaranteed_relations or tuple(dict.fromkeys(
+                relation_by_fact[fact] for fact in fact_kinds if fact in relation_by_fact
+            ))
+            value_fields = tuple(
+                field_name for field_name in output_fields
+                if field_name.casefold() not in {"timestamp", "host", "user", "native_type", "sourcetype"}
+            )
+            derived_output_kinds = tuple(dict.fromkeys(
+                kind for field_name in output_fields
+                for kind, markers in {
+                    "account": ("user", "username"),
+                    "host": ("host", "computer"),
+                    "ip": ("ip", "client_ip", "server_ip", "source_ip", "destination_ip"),
+                    "domain": ("domain", "site", "query", "cs_host"),
+                    "process": ("image", "process", "cmdline"),
+                    "file": ("file_path", "path", "targetfilename"),
+                    "version": ("version", "productversion", "fileversion"),
+                }.items() if field_name.casefold() in {marker.casefold() for marker in markers}
+            ))
+            if operation_id == "resolve_person_to_account" and output_value_bindings is None:
+                output_value_bindings = {"object": ("user",)}
+            return ProviderOperation(
+                operation_id,
+                "cdb",
+                op_scope_ids,
+                params_schema=params_schema or {"window": "interval"},
+                pagination="offset",
+                limit_semantics="complete only on EOF",
+                input_entity_kinds=input_kinds,
+                output_entity_kinds=output_entity_kinds or derived_output_kinds,
+                output_fields=output_fields,
+                output_fact_kinds=fact_kinds,
+                input_roles=input_roles,
+                output_roles=output_roles,
+                native_field_bindings=native_field_bindings or {},
+                guaranteed_relations=declared_relations,
+                output_value_bindings=output_value_bindings or ({"object": value_fields} if value_fields else {}),
+                output_binding_entity_kinds=output_binding_entity_kinds or {},
+                supported_constraints=supported_constraints,
+                searchable_constraints=searchable_constraints,
+                query_builder=query_builder,
+                completeness="limit+1 EOF proof",
+            )
+
         operations = (
-            ProviderOperation("cdb_scope_scan", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("search_text", "cdb", op_scope_ids, params_schema={"terms": "list[string]", "window": "interval"}, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("cdb_process_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("cdb_auth_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("cdb_net_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("cdb_persistence_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("cdb_file_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("cdb_dns_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("cdb_web_requests", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("cdb_web_search", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("resolve_person_to_account", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("resolve_account_to_endpoint", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("resolve_endpoint_to_client_ip", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("find_web_activity_from_client_ip", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("find_dns_activity_from_client_ip", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("find_web_activity_from_endpoint", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("find_process_from_endpoint", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("find_file_change_from_endpoint", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
-            ProviderOperation("find_file_change_from_process", "cdb", op_scope_ids, pagination="offset", limit_semantics="eof_required"),
+            operation("cdb_scope_scan", ("scope_records", "operational_baseline"), ("ANY",), ("native_type", "timestamp")),
+            operation("search_text", ("scope_records", "operational_baseline"), ("ANY",), ("raw_ref", "native_type"), {"terms": "list[string]", "window": "interval"}),
+            operation("cdb_process_search", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), ("host", "user", "pid", "ppid", "cmdline", "image")),
+            operation("cdb_auth_search", ("authentication_activity", "remote_authentication"), ("host", "account"), ("host", "user", "event_id", "status")),
+            operation("cdb_net_search", ("network_connection",), ("host", "ip", "process"), ("host", "ip", "port")),
+            operation("cdb_persistence_search", ("persistence_change",), ("host", "account"), ("host", "action", "file_path")),
+            operation("cdb_file_search", ("file_modification", "file_artifact"), ("host", "process", "file"), ("host", "image", "file_path", "action")),
+            operation("cdb_dns_search", ("dns_activity",), ("host", "ip", "domain"), ("host", "ip", "domain")),
+            operation("cdb_web_requests", ("web_request", "web_request_activity", "web_navigation"), ("host", "ip", "domain"), ("host", "ip", "domain", "native_type")),
+            operation("cdb_web_search", ("web_request", "web_request_activity", "web_navigation"), ("host", "ip", "domain"), ("host", "ip", "domain", "native_type")),
+            operation("resolve_person_to_account", ("identity_binding",), ("person",), ("user",), output_roles=("subject_identity", "account_identity"), native_field_bindings={"subject_identity": ("user",), "account_identity": ("user",)}, query_builder="cdb.identity.person_to_account.v1"),
+            operation(
+                "resolve_account_to_endpoint", ("identity_binding",), ("account",),
+                ("user", "host", "ComputerName", "WorkstationName"),
+                output_entity_kinds=("host",),
+                # WorkstationName is the client workstation in Windows logon
+                # telemetry, not the endpoint that owns the event.  Binding
+                # it first caused an identity pivot to an unrelated host.
+                output_value_bindings={"object": ("ComputerName", "host")},
+                output_binding_entity_kinds={"object": "host"},
+                guaranteed_relations=("associated_with",),
+            ),
+            operation("resolve_endpoint_to_client_ip", ("identity_binding",), ("host",), ("host", "ip")),
+            operation("find_web_activity_from_client_ip", ("web_request", "web_request_activity", "web_navigation"), ("ip",), ("ip", "domain", "native_type")),
+            operation("find_dns_activity_from_client_ip", ("dns_activity",), ("ip",), ("ip", "domain")),
+            operation("find_web_activity_from_endpoint", ("web_request", "web_request_activity", "web_navigation"), ("host",), ("host", "domain", "native_type")),
+            operation("find_process_from_endpoint", ("process_ancestry", "server_side_execution"), ("host",), ("host", "pid", "ppid", "image", "cmdline")),
+            operation("find_file_change_from_endpoint", ("file_modification", "file_artifact"), ("host",), ("host", "file_path", "action")),
+            operation("find_file_change_from_process", ("file_modification", "file_artifact"), ("process",), ("host", "image", "file_path", "action")),
         )
 
         bindings = (
@@ -153,10 +356,18 @@ class CdbAdapter:
         query_id: str = "q-001",
         native_query: str | None = None,
         search_terms: list[str] | tuple[str, ...] | None = None,
+        parameters: dict[str, Any] | None = None,
+        query_intent: dict[str, Any] | None = None,
     ) -> QueryResult:
         """Execute a parameterized query over SQLite events table with EOF completeness check."""
+        parameters = dict(parameters or {})
         params = {"window": window, "limit": limit}
         validate_query_params(operation_id, params)
+
+        if operation_id.startswith("runtime:") and isinstance(parameters.get("runtime_capability"), dict):
+            return self._execute_runtime_capability(
+                parameters["runtime_capability"], entity, window, limit, offset, query_id
+            )
 
         start_dt, end_dt = validate_time_window_format(window)
         start_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -171,6 +382,16 @@ class CdbAdapter:
             for term in terms:
                 conditions.append("(" + " OR ".join(f"COALESCE({col}, '') LIKE ?" for col in text_cols) + ")")
                 sql_params.extend([f"%{term}%"] * len(text_cols))
+
+        # A person is a semantic search seed, not a provider entity type.  It
+        # must still constrain identity resolution; otherwise the operation
+        # returns the first arbitrary users in the database and the next
+        # graph step can silently pivot from Mallory to Alice.
+        if operation_id == "resolve_person_to_account" and isinstance(entity, str):
+            person = entity.strip()
+            if person:
+                conditions.append("(user LIKE ? OR raw_ref LIKE ?)")
+                sql_params.extend([f"%{person}%", f"%{person}%"])
 
         # Entity filtering
         if entity and entity != ANY:
@@ -282,6 +503,9 @@ class CdbAdapter:
                 complete=False,
                 diagnostic=Diagnostic.QUERY_FAILED,
                 truncation_reason=str(err),
+                native_query=sql,
+                provider=self.provider_id,
+                index=self.db_path,
             )
 
         if len(rows) > limit:
@@ -308,6 +532,112 @@ class CdbAdapter:
             observed_fields=observed_fields,
             native_types=native_types,
             cursor=cursor,
+            native_query=sql,
+            provider=self.provider_id,
+            index=self.db_path,
+        )
+
+    def _execute_runtime_capability(
+        self,
+        runtime_capability: dict[str, Any],
+        entity: EntityRef | None,
+        window: str,
+        limit: int,
+        offset: int,
+        query_id: str,
+    ) -> QueryResult:
+        """Execute a probed source mapping without semantic name heuristics."""
+        if runtime_capability.get("source_id") != "cdb:source:events":
+            return QueryResult(
+                query_id=query_id, outcome=QueryOutcome.UNKNOWN, executed_ok=False,
+                complete=False, diagnostic=Diagnostic.UNSUPPORTED_REQUIREMENT,
+                truncation_reason="runtime source is not the CDB events source",
+                provider=self.provider_id, index=self.db_path,
+            )
+        columns = {
+            str(row[1])
+            for row in self._conn.execute("PRAGMA table_info(events)").fetchall()
+        }
+        field_groups = runtime_capability.get("native_field_bindings", {})
+        output_groups = runtime_capability.get("output_value_bindings", {})
+        requested = [
+            str(name)
+            for values in (*field_groups.values(), *output_groups.values())
+            if isinstance(values, (list, tuple))
+            for name in values
+        ]
+        requested = list(dict.fromkeys(requested))
+        if not requested or any(
+            not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", name) or name not in columns
+            for name in requested
+        ):
+            return QueryResult(
+                query_id=query_id, outcome=QueryOutcome.UNKNOWN, executed_ok=False,
+                complete=False, diagnostic=Diagnostic.PARSE_FAILED,
+                truncation_reason="runtime fields are not valid CDB columns",
+                provider=self.provider_id, index=self.db_path,
+            )
+
+        start_dt, end_dt = validate_time_window_format(window)
+        start_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        selected = list(dict.fromkeys(["id", "timestamp", "native_type", *requested]))
+        conditions = ["timestamp >= ?", "timestamp <= ?"]
+        values: list[Any] = [start_iso, end_iso]
+        if entity is not None and entity != ANY:
+            if isinstance(entity, Account):
+                value = entity.username
+            elif isinstance(entity, Host):
+                value = entity.name
+            elif isinstance(entity, IPAddress):
+                value = entity.address
+            elif isinstance(entity, Domain):
+                value = entity.name
+            elif isinstance(entity, File):
+                value = entity.path
+            elif isinstance(entity, Process):
+                value = str(entity.pid)
+            else:
+                value = str(entity)
+            input_fields = [
+                str(name)
+                for names in field_groups.values()
+                if isinstance(names, (list, tuple))
+                for name in names
+                if str(name) in columns
+            ]
+            if value and input_fields:
+                conditions.append("(" + " OR ".join(f"{name} = ?" for name in input_fields) + ")")
+                values.extend([str(value)] * len(input_fields))
+        sql = (
+            f"SELECT {', '.join(selected)} FROM events WHERE {' AND '.join(conditions)} "
+            f"ORDER BY timestamp ASC LIMIT ? OFFSET ?"
+        )
+        values.extend([limit + 1, offset])
+        self.last_query_text = sql
+        try:
+            rows = [dict(row) for row in self._conn.execute(sql, values).fetchall()]
+        except Exception as error:
+            return QueryResult(
+                query_id=query_id, outcome=QueryOutcome.UNKNOWN, executed_ok=False,
+                complete=False, diagnostic=Diagnostic.QUERY_FAILED,
+                truncation_reason=str(error), native_query=sql,
+                provider=self.provider_id, index=self.db_path,
+            )
+        complete = len(rows) <= limit
+        returned = rows[:limit]
+        return QueryResult(
+            query_id=query_id,
+            outcome=QueryOutcome.ROWS if returned else QueryOutcome.UNKNOWN,
+            executed_ok=True,
+            complete=complete,
+            rows=returned,
+            observed_fields=list(dict.fromkeys(key for row in returned for key in row)),
+            native_query=sql,
+            provider=self.provider_id,
+            index=self.db_path,
+            cursor=None if complete else str(offset + limit),
+            row_count=len(returned),
         )
 
     # -----------------------------------------------------------------------

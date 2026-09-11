@@ -80,6 +80,7 @@ def test_verifier_rejects_web_server_as_user_endpoint():
             "host": "jabbah",
             "user": "amber.turing",
             "uri": "/login.aspx",
+            "asset_role": "server",
         }
     )
     ledger.add_observation(obs_iis)
@@ -94,7 +95,7 @@ def test_verifier_rejects_web_server_as_user_endpoint():
 
     result = verifier.verify_candidate_edge(edge, node_person, node_endpoint, ledger)
     assert result.verified is False
-    assert any("Web server" in v or "IIS" in v for v in result.violations)
+    assert any("server-like role" in v for v in result.violations)
 
 
 def test_verifier_rejects_server_ip_as_client_ip():

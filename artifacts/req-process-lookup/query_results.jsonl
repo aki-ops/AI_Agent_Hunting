@@ -1,0 +1,1 @@
+{"query_id": "qp-v5-1-cdb_process_search", "logical_plan_id": null, "executed_ok": true, "complete": true, "rows_count": 1, "native_query": "SELECT * FROM events WHERE timestamp >= ? AND timestamp <= ? AND (pid IS NOT NULL OR image IS NOT NULL OR cmdline IS NOT NULL) ORDER BY timestamp ASC LIMIT ? OFFSET ?"}

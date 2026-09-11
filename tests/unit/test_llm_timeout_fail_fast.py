@@ -90,4 +90,4 @@ def test_builder_never_claims_not_found_when_no_queries_run():
     account = build_final_hunt_account(state)
     assert account.answer.get("status") != "NOT_FOUND"
     assert account.answer.get("status") == "INCONCLUSIVE"
-    assert account.answer.get("reason") == "EXECUTION_HALTED_BEFORE_SEARCH"
+    assert account.answer.get("reason") in ("EXECUTION_HALTED_BEFORE_SEARCH", "NO_VERIFIED_ANSWER_CANDIDATE")

@@ -92,6 +92,28 @@ class ObservationLedger:
         """Export ledger observations to JSONL format."""
         self.store.export_jsonl(path)
 
+    def get_observation(self, obs_id: str) -> Observation | None:
+        """Retrieve an observation by its unique ID."""
+        return self._observation_by_id.get(obs_id)
+
+    def get_query_result(self, query_id: str) -> QueryResult | None:
+        """Retrieve a QueryResult by its exact query_id."""
+        for res in self._query_results:
+            if getattr(res, "query_id", None) == query_id:
+                return res
+        return None
+
+    def record_query_result(self, result: QueryResult) -> None:
+        """Record a QueryResult in the ledger."""
+        self._query_results.append(result)
+        if result.diagnostic:
+            self._diagnostics.append(result.diagnostic)
+
+    @property
+    def query_results(self) -> list[QueryResult]:
+        """All recorded query results."""
+        return list(self._query_results)
+
     @property
     def observations(self) -> list[Observation]:
         return list(self._observations)

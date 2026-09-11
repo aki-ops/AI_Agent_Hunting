@@ -77,6 +77,7 @@ class AcceptanceRule:
     """
     min_observations: int = 1
     required_fields: tuple[str, ...] = ()
+    required_roles: tuple[str, ...] = ()
     requires_query_complete: bool = False
     value_must_match: str | None = None
     custom_doc: str | None = None
@@ -88,6 +89,8 @@ class AcceptanceRule:
             raise ValueError(
                 f"AcceptanceRule.value_must_match contains {_SPL_KQL_DESCRIPTION}"
             )
+        if isinstance(self.required_roles, list):
+            object.__setattr__(self, "required_roles", tuple(self.required_roles))
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +138,7 @@ class ClaimEvidenceRequirement:
     fact_kind: str
     required_fields: tuple[str, ...] = ()
     field_roles: tuple[str, ...] = ()
+    required_roles: tuple[str, ...] = ()
     completeness_required: bool = False
 
     def __post_init__(self) -> None:
@@ -147,6 +151,8 @@ class ClaimEvidenceRequirement:
             object.__setattr__(self, "required_fields", tuple(self.required_fields))
         if isinstance(self.field_roles, list):
             object.__setattr__(self, "field_roles", tuple(self.field_roles))
+        if isinstance(self.required_roles, list):
+            object.__setattr__(self, "required_roles", tuple(self.required_roles))
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +251,7 @@ class Claim:
                     "fact_kind": req.fact_kind,
                     "required_fields": list(req.required_fields),
                     "field_roles": list(req.field_roles),
+                    "required_roles": list(req.required_roles),
                     "completeness_required": req.completeness_required,
                 }
                 for req in self.observation_requirements
@@ -252,6 +259,7 @@ class Claim:
             "acceptance_rule": {
                 "min_observations": self.acceptance_rule.min_observations,
                 "required_fields": list(self.acceptance_rule.required_fields),
+                "required_roles": list(self.acceptance_rule.required_roles),
                 "requires_query_complete": self.acceptance_rule.requires_query_complete,
                 "value_must_match": self.acceptance_rule.value_must_match,
             },
@@ -384,6 +392,7 @@ class ClaimGraph:
             acceptance = AcceptanceRule(
                 min_observations=int(acceptance_data.get("min_observations", 1)),
                 required_fields=tuple(str(value).strip() for value in acceptance_data.get("required_fields", []) if str(value).strip()),
+                required_roles=tuple(str(value).strip() for value in acceptance_data.get("required_roles", []) if str(value).strip()),
                 requires_query_complete=bool(acceptance_data.get("requires_query_complete", False)),
                 value_must_match=(str(acceptance_data["value_must_match"]).strip() if acceptance_data.get("value_must_match") is not None else None),
                 custom_doc=(str(acceptance_data["custom_doc"]).strip() if acceptance_data.get("custom_doc") is not None else None),
@@ -406,6 +415,7 @@ class ClaimGraph:
                     fact_kind=str(req.get("fact_kind", "")).strip(),
                     required_fields=tuple(str(value).strip() for value in req.get("required_fields", []) if str(value).strip()),
                     field_roles=tuple(str(value).strip() for value in req.get("field_roles", []) if str(value).strip()),
+                    required_roles=tuple(str(value).strip() for value in req.get("required_roles", []) if str(value).strip()),
                     completeness_required=bool(req.get("completeness_required", False)),
                 )
                 for req in item.get("observation_requirements", [])

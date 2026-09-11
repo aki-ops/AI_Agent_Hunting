@@ -370,17 +370,11 @@ class EvidenceEvaluator:
                 "deterministic_explanation": det_res["explanation"],
             }
 
-        # Filter out noise cards (ad networks, web trackers, CDNs)
-        noise_domains = (
-            "cnn.com", "doubleclick", "rubiconproject", "outbrain", "adnxs",
-            "fwmrm.net", "krxd.net", "gigya.com", "doubleverify", "sharethrough",
-            "akamai", "afy11.net", "tapad.com", "wayfair.com", "chartbeat.net",
-            "symcd.com", "microsoft.com",
-        )
-
         def _is_noise_card(c: EvidenceCard) -> bool:
-            f_str = str(c.field_summary).lower()
-            return any(d in f_str for d in noise_domains)
+            # Noise is a provider/data-quality classification, not a domain
+            # deny-list. Keep all values unless an upstream capability
+            # explicitly marks the card as noise.
+            return str(c.field_summary.get("telemetry_class", "")).casefold() == "noise"
 
         subgraph_provenance = ""
         if subgraph is not None:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 
 class HuntAction(str, Enum):
@@ -37,6 +38,9 @@ class HuntBudgetLedger:
     llm_calls: int = 0
     scan_cells: int = 0
     start_time: float = field(default_factory=time.time)
+    # The LLMUsageTracker is the authoritative call budget for live API mode.
+    # The field is optional so offline/unit-test ledgers remain independent.
+    llm_tracker: Any | None = field(default=None, repr=False, compare=False)
 
     def record_turn(self) -> None:
         """Increment turn count."""
@@ -69,6 +73,8 @@ class HuntBudgetLedger:
 
     @property
     def is_llm_exhausted(self) -> bool:
+        if self.llm_tracker is not None:
+            return bool(self.llm_tracker.is_exhausted)
         return self.llm_calls >= self.max_llm_calls
 
     @property

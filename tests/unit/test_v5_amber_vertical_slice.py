@@ -92,6 +92,7 @@ def test_amber_vertical_slice_causal_chain_resolution():
         fields={"TargetUserName": "amber.turing", "user": "amber.turing"}
     )
     ledger.add_observation(obs_1)
+    actionable[0].citations = [obs_1.id]
     res_1 = verifier.verify_candidate_edge(actionable[0], n_person, n_account, ledger, [obs_1])
     assert res_1.verified is True
     verifier.apply_verification_to_graph(res_1, actionable[0], n_account, graph)
@@ -110,6 +111,7 @@ def test_amber_vertical_slice_causal_chain_resolution():
         fields={"TargetUserName": "amber.turing", "ComputerName": "wrk-amber.froth.ly"}
     )
     ledger.add_observation(obs_2)
+    actionable[0].citations = [obs_2.id]
     res_2 = verifier.verify_candidate_edge(actionable[0], n_account, n_endpoint, ledger, [obs_2])
     assert res_2.verified is True
     verifier.apply_verification_to_graph(res_2, actionable[0], n_endpoint, graph)
@@ -128,6 +130,7 @@ def test_amber_vertical_slice_causal_chain_resolution():
         fields={"host": "wrk-amber.froth.ly", "IpAddress": "10.0.1.25"}
     )
     ledger.add_observation(obs_3)
+    actionable[0].citations = [obs_3.id]
     res_3 = verifier.verify_candidate_edge(actionable[0], n_endpoint, n_client_ip, ledger, [obs_3])
     assert res_3.verified is True
     verifier.apply_verification_to_graph(res_3, actionable[0], n_client_ip, graph)
@@ -150,6 +153,7 @@ def test_amber_vertical_slice_causal_chain_resolution():
         fields={"src_ip": "10.0.1.25", "site": "competitor-beer.com", "uri": "/contact-execs"}
     )
     ledger.add_observation(obs_4)
+    actionable[0].citations = [obs_4.id]
     res_4 = verifier.verify_candidate_edge(actionable[0], n_client_ip, n_domain, ledger, [obs_4])
     assert res_4.verified is True
     verifier.apply_verification_to_graph(res_4, actionable[0], n_domain, graph)
@@ -221,21 +225,21 @@ def test_amber_rejects_jabbah_server_and_destination_ip():
     obs_jabbah = Observation(
         id="obs-jabbah-1", provider_scope=SCOPE, cell_id="cell-1", timestamp="2026-09-01T08:00:00Z",
         epistemic_type=EpistemicType.OBSERVED, native_type="iis",
-        fields={"host": "jabbah", "user": "amber.turing", "dest_ip": "172.31.7.2"}
+        fields={"host": "jabbah", "user": "amber.turing", "dest_ip": "172.31.7.2", "asset_role": "server"}
     )
     ledger.add_observation(obs_jabbah)
-
+    e_logon.citations = [obs_jabbah.id]
     res_jabbah = verifier.verify_candidate_edge(e_logon, n_account, n_endpoint, ledger, [obs_jabbah])
     assert res_jabbah.verified is False
-    assert any("jabbah" in v or "IIS" in v for v in res_jabbah.violations)
+    assert any("server-like role" in v for v in res_jabbah.violations)
 
     # 2. Reject dest_ip / server_ip as client IP
     n_client_ip = GraphNode(id="n_client_ip", type=NodeType.IP, value="?", status=NodeStatus.UNKNOWN)
     e_ip = GraphEdge(
         id="e_ip", source_id="n_endpoint", source_entity_type=NodeType.ENDPOINT,
-        relation_type=RelationType.ASSIGNED_IP, target_id="n_client_ip", target_entity_type=NodeType.IP
+        relation_type=RelationType.ASSIGNED_IP, target_id="n_client_ip", target_entity_type=NodeType.IP,
+        citations=[obs_jabbah.id],
     )
     res_ip = verifier.verify_candidate_edge(e_ip, n_endpoint, n_client_ip, ledger, [obs_jabbah])
     assert res_ip.verified is False
     assert any("server/destination IP" in v for v in res_ip.violations)
-

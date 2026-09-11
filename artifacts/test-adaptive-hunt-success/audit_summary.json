@@ -46,19 +46,17 @@
       {
         "claim": "wrk-amber executed on wrk-amber",
         "observation_ids": [
-          "obs-adaptive-2",
-          "obs-discovery-1"
+          "obs-adaptive-2"
         ],
         "query_ids": [
-          "qp-adaptive-0-1",
-          "qp-discovery-0"
+          "qp-adaptive-0-1"
         ],
         "fields": [
           "Path"
         ]
       }
     ],
-    "citation_text": "wrk-amber executed on wrk-amber Evidence: obs-adaptive-2, obs-discovery-1 Query: qp-adaptive-0-1, qp-discovery-0 Fields: Path"
+    "citation_text": "wrk-amber executed on wrk-amber Evidence: obs-adaptive-2 Query: qp-adaptive-0-1 Fields: Path"
   },
   "llm_usage": {
     "model": "stub",
@@ -72,6 +70,36 @@
     "calls": []
   },
   "total_observations": 2,
-  "total_cards": 2,
-  "total_queries": 2
+  "total_cards": 1,
+  "total_queries": 2,
+  "semantic_graph_id": null,
+  "proof_plan_id": null,
+  "semantic_analysis": {
+    "source_profile": {
+      "status": "NO_LLM_CALLER",
+      "readiness": [],
+      "profiling_goal_ids": [],
+      "retrieval": [],
+      "census_profile_discovery": {},
+      "proposals": [],
+      "rejected": [],
+      "relation_calls": [],
+      "runtime_capabilities": [],
+      "runtime_operation_ids": []
+    }
+  },
+  "source_profile_audit": {
+    "status": "NO_LLM_CALLER",
+    "readiness": [],
+    "profiling_goal_ids": [],
+    "retrieval": [],
+    "census_profile_discovery": {},
+    "proposals": [],
+    "rejected": [],
+    "relation_calls": [],
+    "runtime_capabilities": [],
+    "runtime_operation_ids": []
+  },
+  "runtime_capabilities": [],
+  "semantic_route_assessments": []
 }

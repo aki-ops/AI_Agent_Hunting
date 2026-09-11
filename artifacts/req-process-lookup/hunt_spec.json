@@ -1,0 +1,62 @@
+{
+  "question": "Which process was observed on SRV-01?",
+  "answer_contract": {
+    "answer_type": "process",
+    "required_fields": [
+      "image"
+    ],
+    "requires_binding": true,
+    "allowed_values": []
+  },
+  "anchors": [
+    {
+      "value": "SRV-01",
+      "kind": "host",
+      "origin": "input",
+      "confidence": 1.0
+    }
+  ],
+  "search_terms": [
+    {
+      "value": "SRV-01",
+      "origin": "input",
+      "confidence": 1.0
+    }
+  ],
+  "evidence_predicates": [
+    {
+      "semantic_intent": "process_ancestry",
+      "description": "Observation required for claim claim-process: process_ancestry",
+      "necessity": "CRITICAL",
+      "required_fields": []
+    }
+  ],
+  "alternative_paths": [
+    {
+      "name": "raw_text_search",
+      "predicate_types": [
+        "discovery"
+      ]
+    },
+    {
+      "name": "process_telemetry",
+      "predicate_types": [
+        "process"
+      ]
+    },
+    {
+      "name": "file_telemetry",
+      "predicate_types": [
+        "file"
+      ]
+    },
+    {
+      "name": "registry_or_inventory",
+      "predicate_types": [
+        "metadata"
+      ]
+    }
+  ],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "uncertainties": []
+}

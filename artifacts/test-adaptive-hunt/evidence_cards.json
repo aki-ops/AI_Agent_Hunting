@@ -1,52 +1,5 @@
 [
   {
-    "id": "card-eef7b0502355",
-    "summary": "Process: firefox.exe Host: wrk-amber",
-    "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
-    "fact_type": "process_execution",
-    "count": 2,
-    "confidence": "MEDIUM",
-    "hypotheses": [],
-    "requirements": [],
-    "query_ids": [
-      "qp-adaptive-0-2",
-      "qp-discovery-0"
-    ],
-    "replay": {
-      "artifact": "observations.jsonl",
-      "query_ids": [
-        "qp-adaptive-0-2",
-        "qp-discovery-0"
-      ],
-      "command": "python -m hunting.cli show-observation --observation-id obs-discovery-1"
-    },
-    "entity_summary": {
-      "hosts": [
-        "wrk-amber"
-      ],
-      "users": [
-        "amber"
-      ]
-    },
-    "time_summary": {
-      "earliest": "2026-09-02T10:00:00Z",
-      "latest": "2026-09-02T10:10:00Z",
-      "span_events": 2
-    },
-    "field_summary": {
-      "images": [
-        "firefox.exe"
-      ],
-      "process_names": [
-        "firefox.exe"
-      ]
-    },
-    "representative_observation_ids": [
-      "obs-discovery-1",
-      "obs-adaptive-3"
-    ]
-  },
-  {
     "id": "card-e5d92fdeb056",
     "summary": "Process artifact observed on wrk-amber: C:\\Tor\\firefox.exe",
     "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
@@ -82,6 +35,47 @@
     },
     "representative_observation_ids": [
       "obs-adaptive-2"
+    ]
+  },
+  {
+    "id": "card-eef7b0502355",
+    "summary": "Process: firefox.exe Host: wrk-amber",
+    "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
+    "fact_type": "process_execution",
+    "count": 1,
+    "confidence": "MEDIUM",
+    "hypotheses": [],
+    "requirements": [],
+    "query_ids": [
+      "qp-adaptive-0-2"
+    ],
+    "replay": {
+      "artifact": "observations.jsonl",
+      "query_ids": [
+        "qp-adaptive-0-2"
+      ],
+      "command": "python -m hunting.cli show-observation --observation-id obs-adaptive-3"
+    },
+    "entity_summary": {
+      "hosts": [
+        "wrk-amber"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2026-09-02T10:10:00Z",
+      "latest": "2026-09-02T10:10:00Z",
+      "span_events": 1
+    },
+    "field_summary": {
+      "images": [
+        "firefox.exe"
+      ],
+      "process_names": [
+        "firefox.exe"
+      ]
+    },
+    "representative_observation_ids": [
+      "obs-adaptive-3"
     ]
   }
 ]

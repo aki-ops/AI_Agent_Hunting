@@ -85,20 +85,6 @@ class InvestigationValidator:
                         existing_unk.mandatory = True
                         existing_unk.status = "UNRESOLVED"
 
-        # 4. Prohibit asserting unverified entity bindings in graph
-        for edge in model.graph.edges.values():
-            if edge.status == NodeStatus.KNOWN and edge.source == "input":
-                # Only input-stipulated facts can be KNOWN from input;
-                # Web server bindings or hypothetical claims cannot be KNOWN.
-                src_node = model.graph.get_node(edge.source_id)
-                tgt_node = model.graph.get_node(edge.target_id)
-                if src_node and tgt_node:
-                    if src_node.type in ("person", "user") and tgt_node.type in ("host", "endpoint"):
-                        if tgt_node.value.lower() in {"jabbah", "we1149srv", "web01", "iis01"}:
-                            violations.append(
-                                f"Invalid binding: web server '{tgt_node.value}' cannot be pre-bound as user endpoint."
-                            )
-
         if violations:
             return ValidationResult(
                 valid=False,

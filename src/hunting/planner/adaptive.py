@@ -171,6 +171,20 @@ def compatible_operations(
     if not operations or not attr_lower:
         return []
 
+    # v6 descriptors carry typed fact contracts.  Use those contracts directly
+    # and do not infer incompatibility from an operation's name.  The older
+    # answer-type/operation-name filter below is retained for descriptors that
+    # predate output_fact_kinds, so old replay fixtures remain executable.
+    if any(getattr(op, "output_fact_kinds", ()) for op in operations):
+        result = []
+        for op in operations:
+            facts = {str(value).casefold() for value in getattr(op, "output_fact_kinds", ())}
+            intents = {str(value).casefold() for value in getattr(op, "semantic_intents", ())}
+            fields = {str(value).casefold() for value in getattr(op, "output_fields", ())}
+            if attr_lower in facts or attr_lower in intents or attr_lower in fields:
+                result.append(op)
+        return result
+
     compatible: list[Any] = []
     for op in operations:
         if _is_forbidden_operation(op, attr_lower):
@@ -280,12 +294,18 @@ class AdaptiveOperationPlanner:
                 validation_result="OPERATIONS_EXHAUSTED",
             )
 
-        # Attribute Planner: Exclude operations strictly forbidden for the requested attribute.
-        # For software_version, identity, email, DNS, and network operations are strictly forbidden.
-        available_operations = [
-            op for op in available_operations
-            if not _is_forbidden_operation(op, answer_type)
-        ]
+        typed_descriptor = any(
+            getattr(op, "output_fact_kinds", ())
+            for op in available_operations
+        )
+        # v6 typed capabilities are authoritative.  Legacy answer-type
+        # filtering is used only for old descriptors that do not expose a
+        # fact contract.
+        if not typed_descriptor:
+            available_operations = [
+                op for op in available_operations
+                if not _is_forbidden_operation(op, answer_type)
+            ]
         if not available_operations:
             return AdaptiveDecision(
                 operation_id=None,
@@ -297,10 +317,23 @@ class AdaptiveOperationPlanner:
             )
 
         # Prioritize directly compatible operations (matching semantic intents or output_fields)
-        directly_compatible = [
-            op for op in available_operations
-            if _is_directly_compatible(op, answer_type)
-        ]
+        if typed_descriptor:
+            directly_compatible = [
+                op for op in available_operations
+                if answer_type in {
+                    str(value).casefold()
+                    for value in (
+                        *getattr(op, "output_fact_kinds", ()),
+                        *getattr(op, "semantic_intents", ()),
+                        *getattr(op, "output_fields", ()),
+                    )
+                }
+            ]
+        else:
+            directly_compatible = [
+                op for op in available_operations
+                if _is_directly_compatible(op, answer_type)
+            ]
         if answer_type == "software_version":
             directly_compatible.sort(
                 key=lambda op: (0 if ("process" in str(getattr(op, "id", "")).lower() or "version" in str(getattr(op, "id", "")).lower()) else 1)

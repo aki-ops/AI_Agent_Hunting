@@ -1,4 +1,4 @@
-# Real-Provider Specifications (v6)
+# Real-Provider Specifications (v7)
 
 This document defines the provider boundary. Providers expose capabilities and
 typed logical operations; they do not define the semantic investigation path.
@@ -16,6 +16,41 @@ ProviderScope
 tenant) and temporal bounds. `Cell = (ProviderScope, entity | ANY,
 time_bucket)` tracks execution and coverage. Native records and unknown native
 types are preserved.
+
+A provider operation must expose three separate contracts: execution
+completeness, semantic proof capability, and retrieval-route policy. A complete
+empty result means only that the bounded request reached the provider's declared
+completion point. It is not a valid negative unless the operation declares the
+required negative/completeness semantics and the controller has exhausted every
+permitted route.
+
+Retrieval policy is declarative and bounded. It may identify predicate classes
+that are safe to relax for candidate discovery, but every stage retains the
+verified entity binding, provider scope, time interval, projection, row/page
+limit and proof obligations. Each attempt has an auditable stage and
+no-progress signature. Providers must not implement a hidden broad-sweep
+fallback.
+
+Capabilities that are statically reachable but do not declare the roles and
+constraints needed to prove a requested relation remain retrieval-only. The
+engine may invoke relation-scoped census/profiling and a bounded probe; only a
+successful probe can publish a runtime capability. Source names and operation
+IDs are identifiers, not semantic evidence.
+
+Provider results should preserve `native_query` on the result that executed it,
+observed fields, completeness, cursor/page information, diagnostics and source
+schema provenance. A synthetic binding/user-selection event is not a provider
+query and must not inherit mutable adapter query state.
+
+When a provider represents an artifact transition, its validated operation must
+declare exact native field IDs through `action_roles`, `state_roles`,
+`temporal_roles`, `artifact_identity_roles` and/or `correlation_roles`. The
+verifier accepts only cited observations present in the ledger, from one
+provider/scope and a compatible typed entity, with parseable ordered timestamps
+inside the edge's declared correlation bound. At least one action or explicit
+before/after-state contract and one stable artifact identity/correlation value
+must agree across the cited rows. A filename suffix or source label cannot
+establish a state transition, encryption, or ransomware causality.
 
 ## 2. Field roles
 

@@ -104,6 +104,10 @@ from hunting.contracts.hunt_spec import (
     HuntSpec,
     SearchTerm,
 )
+from hunting.contracts.native_query import (
+    NativeQueryCandidate,
+    NativeQueryValidationResult,
+)
 from hunting.contracts.observations import (
     EpistemicType,
     Observation,
@@ -118,6 +122,35 @@ from hunting.contracts.queries import (
     Query,
     QueryOutcome,
     QueryResult,
+    RetrievalPolicy,
+    RetrievalStage,
+)
+from hunting.contracts.query_intent import QueryIntentSpec, QueryPredicateSpec
+from hunting.contracts.semantic_graph import (
+    LogicalPlan,
+    PlanStep,
+    ProofMethod,
+    SemanticAnswerGoal,
+    SemanticConstraint,
+    SemanticGoalGraph,
+    SemanticQualifierGoal,
+    SemanticRelationGoal,
+    SemanticVariable,
+    goal_graph_from_claim_graph,
+)
+from hunting.contracts.semantic_route import (
+    CapabilityReadiness,
+    SemanticAttempt,
+    SemanticRouteAssessment,
+    SemanticRouteStatus,
+    SemanticTerminalCause,
+)
+from hunting.contracts.source_profile import (
+    ProbeSpec,
+    RuntimeCapability,
+    SourceCapabilityProposal,
+    TelemetryFieldProfile,
+    TelemetrySourceProfile,
 )
 from hunting.contracts.state import (
     Alert,
@@ -196,6 +229,22 @@ __all__ = [
     "QueryResult",
     "QueryOutcome",
     "ProviderOperation",
+    "RetrievalPolicy",
+    "RetrievalStage",
+    "QueryIntentSpec",
+    "QueryPredicateSpec",
+    "CapabilityReadiness",
+    "SemanticAttempt",
+    "SemanticRouteAssessment",
+    "SemanticRouteStatus",
+    "SemanticTerminalCause",
+    "NativeQueryCandidate",
+    "NativeQueryValidationResult",
+    "TelemetryFieldProfile",
+    "TelemetrySourceProfile",
+    "SourceCapabilityProposal",
+    "ProbeSpec",
+    "RuntimeCapability",
     "Diagnostic",
     "DiagnosticClass",
     "CoverageBound",
@@ -247,4 +296,14 @@ __all__ = [
     "RequestedObject",
     "SemanticEvidenceRequirement",
     "SemanticHuntIntent",
+    "SemanticVariable",
+    "SemanticConstraint",
+    "SemanticRelationGoal",
+    "SemanticQualifierGoal",
+    "SemanticAnswerGoal",
+    "SemanticGoalGraph",
+    "PlanStep",
+    "LogicalPlan",
+    "ProofMethod",
+    "goal_graph_from_claim_graph",
 ]

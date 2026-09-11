@@ -1,12 +1,14 @@
-"""Relation-First Capability Binder (v5.0).
+"""Claim/capability binder.
 
-Binds unresolved relations in the InvestigationCaseGraph to provider-neutral
-logical operations and compiles them to native provider queries (Splunk, CDB).
+Binds unresolved claim/evidence edges to provider-neutral logical operations.
+The v6 path uses the runtime CapabilityGraph first; the legacy edge mapping is
+kept only as a compatibility fallback for older structured tests.
 """
 from __future__ import annotations
 
 from typing import Any
 
+from hunting.contracts.capabilities import CapabilityGraph
 from hunting.contracts.case_graph import (
     ActionCandidate,
     GraphEdge,
@@ -17,8 +19,27 @@ from hunting.contracts.case_graph import (
 class CapabilityBinder:
     """Binds unresolved relations to logical provider operations."""
 
+    def __init__(
+        self,
+        capability_graph: CapabilityGraph | None = None,
+        provider_id: str | None = None,
+    ) -> None:
+        self.capability_graph = capability_graph
+        self.provider_id = provider_id
+
+    def set_capability_graph(
+        self,
+        capability_graph: CapabilityGraph | None,
+        provider_id: str | None = None,
+    ) -> None:
+        """Attach the current provider census for claim-driven binding."""
+        self.capability_graph = capability_graph
+        if provider_id is not None:
+            self.provider_id = provider_id
+
     SUPPORTED_OPERATIONS = (
         "resolve_person_to_account",
+        "resolve_person_to_endpoint",
         "resolve_account_to_endpoint",
         "resolve_endpoint_to_client_ip",
         "find_web_activity_from_client_ip",
@@ -35,6 +56,10 @@ class CapabilityBinder:
 
     def identify_operation_for_edge(self, edge: GraphEdge, source_node: GraphNode, target_node: GraphNode) -> str | None:
         """Determine the logical operation required to prove or resolve an edge."""
+        generic = self._identify_from_capability_graph(edge, source_node)
+        if generic:
+            return generic
+
         src_t = source_node.type if isinstance(source_node.type, str) else source_node.type.value
         tgt_t = target_node.type if isinstance(target_node.type, str) else target_node.type.value
         rel_t = edge.relation_type if isinstance(edge.relation_type, str) else edge.relation_type.value
@@ -60,7 +85,10 @@ class CapabilityBinder:
             return "resolve_role_identity"
 
         # 6. Account/Person -> Endpoint
-        if src_t in ("person", "account") and tgt_t in ("endpoint", "host"):
+        if src_t == "person" and tgt_t in ("endpoint", "host"):
+            return "resolve_person_to_endpoint"
+
+        if src_t == "account" and tgt_t in ("endpoint", "host"):
             return "resolve_account_to_endpoint"
 
         # 7. Endpoint -> IP
@@ -104,6 +132,73 @@ class CapabilityBinder:
 
         return None
 
+    def _identify_from_capability_graph(
+        self,
+        edge: GraphEdge,
+        source_node: GraphNode,
+    ) -> str | None:
+        """Select an operation from declared claim evidence contracts.
+
+        This method deliberately knows nothing about email, Tor, CVE or any
+        other scenario. It matches the edge's provider-neutral fact kinds and
+        the source node's typed input against live capabilities.
+        """
+        graph = self.capability_graph
+        if graph is None:
+            return None
+
+        source_type = str(
+            source_node.type.value if hasattr(source_node.type, "value") else source_node.type
+        ).strip().lower()
+        fact_kinds = {
+            str(value).strip().lower()
+            for value in edge.acceptance_predicate.get("fact_kinds", [])
+            if str(value).strip()
+        }
+        required_roles = {
+            str(value).strip().lower()
+            for value in edge.acceptance_predicate.get("required_roles", [])
+            if str(value).strip()
+        }
+        target_type = str(
+            edge.target_entity_type.value
+            if hasattr(edge.target_entity_type, "value")
+            else edge.target_entity_type
+        ).strip().lower()
+        explicit = {str(value).strip() for value in edge.acceptable_operations if str(value).strip()}
+        candidates = []
+        for operation in graph.operations:
+            if self.provider_id and operation.provider_id != self.provider_id:
+                continue
+            if explicit and operation.id not in explicit:
+                continue
+            outputs = {str(value).strip().lower() for value in operation.output_fact_kinds}
+            if fact_kinds and not fact_kinds.intersection(outputs):
+                continue
+            inputs = {str(value).strip().lower() for value in operation.input_entity_kinds}
+            if inputs and "any" not in inputs and source_type not in inputs:
+                continue
+            candidates.append(operation)
+
+        if not candidates:
+            return None
+        role_aware = bool(required_roles) and any(operation.output_roles for operation in candidates)
+        scored = []
+        for operation in candidates:
+            role_overlap = required_roles.intersection(
+                {str(value).strip().lower() for value in operation.output_roles}
+            )
+            typed_output_match = target_type in {
+                str(value).strip().lower() for value in operation.output_entity_kinds
+            }
+            if role_aware and not role_overlap and not typed_output_match:
+                continue
+            scored.append((operation, len(role_overlap) + (1 if typed_output_match else 0)))
+        if not scored:
+            return None
+        scored.sort(key=lambda item: (-item[1], item[0].expected_cost is None, item[0].expected_cost or 0, item[0].id))
+        return scored[0][0].id
+
     def create_candidate(
         self,
         edge: GraphEdge,
@@ -124,13 +219,57 @@ class CapabilityBinder:
         params["target_type"] = target_node.type if isinstance(target_node.type, str) else target_node.type.value
         params["relation_type"] = edge.relation_type if isinstance(edge.relation_type, str) else edge.relation_type.value
 
-        # Priority calculation: entity resolution is priority 1 (highest), activity queries priority 2
-        if op_name in ("resolve_person_to_account", "resolve_account_to_email", "resolve_account_to_endpoint", "resolve_endpoint_to_client_ip"):
+        # The claim graph, not the provider operation name, defines whether an
+        # edge is a prerequisite.  This keeps execution generic when a provider
+        # calls the same capability ``lookup_7`` or exposes a completely new
+        # operation.  The name-based ranking remains only for the legacy
+        # compatibility path where no runtime capability graph was published.
+        if self.capability_graph is not None:
+            priority = 1 if bool(edge.metadata.get("is_prerequisite", False)) else 2
+        elif op_name in (
+            "resolve_person_to_account",
+            "resolve_person_to_endpoint",
+            "resolve_account_to_email",
+            "resolve_account_to_endpoint",
+            "resolve_endpoint_to_client_ip",
+        ):
             priority = 1
         elif op_name in ("resolve_recipient_identity", "resolve_role_identity"):
             priority = 3
         else:
             priority = 2
+
+        capability_diagnostics: dict[str, Any] = {
+            "provider_id": self.provider_id or "legacy",
+            "claim_id": edge.metadata.get("claim_id", ""),
+            "fact_kinds": list(edge.acceptance_predicate.get("fact_kinds", [])),
+        }
+        completeness = ""
+        expected_cost: int | None = None
+        if self.capability_graph is not None:
+            operation = next(
+                (
+                    item for item in self.capability_graph.operations
+                    if item.id == op_name and (not self.provider_id or item.provider_id == self.provider_id)
+                ),
+                None,
+            )
+            if operation is not None:
+                completeness = operation.completeness or operation.limit_semantics
+                expected_cost = operation.expected_cost
+                capability_diagnostics.update({
+                    "input_entity_kinds": list(operation.input_entity_kinds),
+                    "output_fact_kinds": list(operation.output_fact_kinds),
+                    "output_entity_kinds": list(operation.output_entity_kinds),
+                    "output_fields": list(operation.output_fields),
+                    "input_roles": list(operation.input_roles),
+                    "output_roles": list(operation.output_roles),
+                    "native_field_bindings": {
+                        name: list(values)
+                        for name, values in operation.native_field_bindings.items()
+                    },
+                    "query_builder": operation.query_builder,
+                })
 
         return ActionCandidate(
             operation_name=op_name,
@@ -140,6 +279,10 @@ class CapabilityBinder:
             parameters=params,
             priority=priority,
             reason=f"Prove relation {source_node.value} -[{edge.relation_type}]-> {target_node.value or '?'}",
+            relevance=1.0,
+            completeness=completeness,
+            expected_cost=expected_cost,
+            diagnostics=capability_diagnostics,
         )
 
     def compile_operation_query(
@@ -156,13 +299,20 @@ class CapabilityBinder:
 
         if provider_id == "splunk":
             if op == "resolve_person_to_account":
-                # Search Active Directory / Windows Security / LDAP / SMTP for account matching person name
-                first_name = clean_val.split()[0] if clean_val else clean_val
+                # Identity discovery is intentionally provider-native but
+                # source-agnostic.  Do not assume SMTP/LDAP/Security: a
+                # person may appear in EDR, SMB, file, endpoint or any other
+                # indexed telemetry.  Only explicit identity fields may be
+                # bound as an account.
                 return (
-                    f'search index="{index}" (sourcetype="stream:smtp" OR sourcetype="stream:ldap" OR sourcetype="*security*" OR sourcetype="wineventlog:security") '
-                    f'("{clean_val}" OR "{first_name}" OR TargetUserName="*{first_name}*") '
-                    f'| head {limit} '
-                    f'| table _time, host, ComputerName, TargetUserName, user, sender, sender_email, receiver, receiver_email, IpAddress, WorkstationName, LogonType, _raw'
+                    f'search index="{index}" "{clean_val}" '
+                    f'| rex field=_raw "New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)" '
+                    f'| rex field=_raw "Account Name:\\s*(?<user>[^\\r\\n\\s]+)" '
+                    f'| eval _account_candidate=coalesce(TargetUserName,user,Account_Name,account,username,src_user) '
+                    f'| where isnotnull(_account_candidate) AND _account_candidate!="" AND _account_candidate!="-" '
+                    f'| dedup _account_candidate | head {limit + 1} '
+                    f'| rename _account_candidate as user '
+                    f'| table _time, user, host, ComputerName, sourcetype'
                 )
 
             if op == "resolve_account_to_email":
@@ -203,13 +353,16 @@ class CapabilityBinder:
                     f'| table _time, host, sender, receiver, subject, title, role, department, _raw'
                 )
 
-            if op == "resolve_account_to_endpoint":
-                first_name = clean_val.split()[0] if clean_val else clean_val
+            if op in ("resolve_person_to_endpoint", "resolve_account_to_endpoint"):
                 return (
-                    f'search index="{index}" sourcetype="WinEventLog:Security" (EventCode=4624 OR EventCode=4625) '
-                    f'(TargetUserName="*{clean_val}*" OR TargetUserName="*{first_name}*" OR user="*{clean_val}*" OR "{clean_val}") '
-                    f'| head {limit} '
-                    f'| table _time, host, ComputerName, TargetUserName, user, IpAddress, WorkstationName, LogonType, _raw'
+                    f'search index="{index}" "{clean_val}" '
+                    f'| rex field=_raw "Workstation Name:\\s*(?<WorkstationName>[^\\r\\n\\s]+)" '
+                    f'| rex field=_raw "New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)" '
+                    f'| eval _host_candidate=coalesce(host,ComputerName) '
+                    f'| where isnotnull(_host_candidate) AND _host_candidate!="" AND _host_candidate!="-" '
+                    f'| dedup _host_candidate | head {limit + 1} '
+                    f'| rename _host_candidate as host '
+                    f'| table _time, host, ComputerName, TargetUserName, user, IpAddress, WorkstationName, LogonType, sourcetype'
                 )
 
             if op == "resolve_endpoint_to_client_ip":

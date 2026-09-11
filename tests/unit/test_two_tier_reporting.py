@@ -14,9 +14,11 @@ from hunting.contracts.hunt import (
     HuntState,
     Hypothesis,
     HypothesisStatus,
+    QueryPlan,
     StoppingDecision,
 )
 from hunting.contracts.observations import EpistemicType, Observation
+from hunting.contracts.queries import QueryOutcome, QueryResult
 from hunting.reporter.builder import build_final_hunt_account
 from hunting.reporter.renderer import render_analyst_report, render_final_hunt_account
 
@@ -117,6 +119,51 @@ def test_analyst_report_answers_lookup_and_keeps_only_useful_sections():
     assert "## 5. Cost" in report
     assert "obs-1" in report
     assert "## 1. Coverage Accounting" not in report
+
+
+def test_analyst_report_explains_query_results_and_evidence_values():
+    card = EvidenceCard(
+        id="card-host",
+        fingerprint="fp-host",
+        fact_type="identity_binding",
+        summary="Mallory activity on candidate endpoints",
+        why_it_matters="The returned host values are the candidates passed to the next graph step.",
+        count=2,
+        query_ids=["q-host"],
+        field_summary={"hosts": ["MACLORY-AIR13", "jupiter"], "users": ["mallory"]},
+        representative_observation_ids=["obs-host-1"],
+    )
+    state = HuntState(
+        objective=HuntObjective(request_id="hunt-report-trace", statement="Find Mallory's endpoint"),
+        hypotheses=[Hypothesis(id="h1", statement="Mallory is associated with an endpoint")],
+        evidence_cards=[card],
+        queries=[QueryPlan(
+            id="q-host", requirement_id="req-host", provider_id="splunk",
+            scope_id="splunk_botsv2", operation_id="resolve_account_to_endpoint",
+            parameters={"entity": "mallory"},
+        )],
+        query_results=[QueryResult(
+            query_id="q-host", outcome=QueryOutcome.ROWS, executed_ok=True,
+            complete=True, row_count=2, observed_fields=["host", "user"],
+            rows=[{"host": "MACLORY-AIR13", "user": "mallory"}, {"host": "jupiter", "user": "mallory"}],
+            native_query='search index="botsv2" "mallory" | table host | dedup host',
+            provider="splunk", index="botsv2",
+        )],
+        semantic_analysis={
+            "page_trace": [{"step_id": "step-host", "operation_id": "resolve_account_to_endpoint", "query_id": "q-host", "candidate_index": 0, "page": 1, "rows": 2, "complete": True, "executed_ok": True}],
+            "goal_verdicts": [{"goal_id": "goal-host", "query_ids": ["q-host"], "status": "SUPPORTED"}],
+        },
+        stopping_decision=StoppingDecision.STOP_RESOLVED,
+    )
+    report = render_analyst_report(build_final_hunt_account(state))
+
+    assert "### Execution trace" in report
+    assert "2 row(s), complete=True" in report
+    assert "MACLORY-AIR13" in report
+    assert "jupiter" in report
+    assert "Returned sample rows" in report
+    assert "raw payload omitted" in report
+    assert "representative observation IDs" not in report
 
 
 def test_proportional_recommendations_tiering():

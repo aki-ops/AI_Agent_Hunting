@@ -18,7 +18,7 @@ from hunting.contracts.investigation_model import (
     RelationGraph,
     RelationType,
 )
-from hunting.evidence.relation_verifier import KNOWN_WEB_SERVERS, is_prohibited_server
+from hunting.evidence.relation_verifier import observation_declares_server_role
 from hunting.m1_ledger.ledger import ObservationLedger
 
 
@@ -74,21 +74,18 @@ class InvestigationAdjudicator:
             violations.append(f"Edge nodes ({edge.source_id} -> {edge.target_id}) not found in graph.")
             return AdjudicationDecision(accepted=False, edge=edge, reason="Dangling edge", violations=violations)
 
-        # 3. Web Server Isolation Guard
+        # 3. Explicit server-role guard. Host names and sourcetypes are not
+        # identity evidence; only a provider-emitted role flag/value can
+        # classify a target as server-like.
         if (
             edge.relation_type in (RelationType.LOGGED_ON_TO.value, RelationType.OWNS.value)
             and src_node.type in (NodeType.PERSON.value, NodeType.ACCOUNT.value)
             and tgt_node.type in (NodeType.HOST.value, NodeType.ENDPOINT.value)
         ):
-            host_val = tgt_node.value.lower()
-            if is_prohibited_server(host_val):
-                violations.append(
-                    f"Web server host '{host_val}' cannot be bound as user endpoint for {src_node.value}."
-                )
             for obs in cited_obs:
-                if "iis" in str(obs.native_type).lower():
+                if observation_declares_server_role(obs.fields):
                     violations.append(
-                        f"IIS web server telemetry cannot prove user endpoint logon for {src_node.value}."
+                        f"Telemetry explicitly declares a server-like role and cannot prove user endpoint logon for {src_node.value}."
                     )
 
         # 4. Predicate check: Ensure cited observations contain the claimed values in appropriate fields
@@ -217,4 +214,4 @@ class InvestigationAdjudicator:
         return result
 
 
-__all__ = ["InvestigationAdjudicator", "AdjudicationDecision", "AdjudicationResult", "KNOWN_WEB_SERVERS"]
+__all__ = ["InvestigationAdjudicator", "AdjudicationDecision", "AdjudicationResult"]

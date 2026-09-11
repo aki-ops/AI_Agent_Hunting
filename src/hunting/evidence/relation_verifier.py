@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from email.utils import parseaddr
+from typing import Any
 
 from hunting.contracts.case_graph import (
     GraphEdge,
@@ -20,18 +22,72 @@ from hunting.contracts.case_graph import (
     RelationStatus,
     RelationType,
 )
-from hunting.contracts.observations import Observation
+from hunting.contracts.observations import EpistemicType, Observation
+from hunting.contracts.queries import ProviderOperation, QueryResult
 from hunting.m1_ledger.ledger import ObservationLedger
 
-KNOWN_WEB_SERVERS = {"jabbah", "we1149srv", "web01", "iis01", "venus"}
+SERVER_ROLE_FIELDS = (
+    "asset_role", "host_role", "endpoint_role", "device_role",
+    "telemetry_role", "server_role", "is_server", "is_web_server",
+)
+SERVER_ROLE_VALUES = {
+    "server", "web_server", "web-server", "server_endpoint", "collector",
+    "sensor", "true", "1", "yes",
+}
 
 
-def is_prohibited_server(name: str | None) -> bool:
-    if not name:
+def observation_declares_server_role(fields: dict[str, object] | None) -> bool:
+    """Return whether telemetry explicitly declares a server-like role.
+
+    Host names and native event/source names are not reliable role evidence:
+    an endpoint can be named ``srv-*`` and a server can have a user session.
+    The verifier rejects an endpoint binding only when the provider actually
+    emits a typed role flag/value. Missing role metadata remains unknown.
+    """
+    if not isinstance(fields, dict):
         return False
-    nl = str(name).lower().strip()
-    root = nl.split(".")[0]
-    return root in KNOWN_WEB_SERVERS or any(s in nl for s in ("jabbah", "we1149srv", "web01", "iis", "venus", "dc01", "srv"))
+    for key, value in fields.items():
+        if str(key).casefold() not in SERVER_ROLE_FIELDS:
+            continue
+        normalized = str(value).strip().casefold()
+        if normalized in SERVER_ROLE_VALUES:
+            return True
+        if normalized in {"endpoint", "workstation", "client", "user_device", "desktop", "laptop"}:
+            return False
+    return False
+
+
+def _parse_timestamp(ts: Any) -> datetime | None:
+    """Parse string/numeric/datetime into UTC timezone-aware datetime."""
+    if isinstance(ts, datetime):
+        return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+    if isinstance(ts, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(ts), tz=timezone.utc)
+        except Exception:
+            return None
+    if not isinstance(ts, str) or not ts.strip():
+        return None
+    s = ts.strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        pass
+    for fmt in (
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S.%f",
+    ):
+        try:
+            dt = datetime.strptime(s, fmt)
+            return dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
 
 
 @dataclass
@@ -65,26 +121,224 @@ class RelationVerifier:
         "software_version", "app_version", "displayversion", "package_version",
     )
     ARTIFACT_FIELDS = ("image", "targetfilename", "target_filename", "file_path", "path", "commandline", "cmdline")
-    KNOWN_NOISE_DOMAINS = (
-        "doubleclick.net", "rubiconproject.com", "bing.com", "msn.com",
-        "microsoft.com", "adnxs.com", "gigya.com", "criteo.com", "fwmrm.net",
-        "outbrain.com", "krxd.net", "atwola.com", "demdex.net", "quantserve.com",
-        "sharethrough.com", "media.net", "doubleverify.com", "lijit.com",
-        "scorecardresearch.com", "chartbeat.net", "symcd.com", "symcb.com",
-        "windowsupdate.com", "digicert.com", "godaddy.com", "turner.com",
-        "cnn.com", "akamaihd.net", "akamaized.net", "akamai.net",
-        "googlesyndication.com", "google.com", "googleapis.com", "gvt1.com",
-        "advertising.com", "amazon-adsystem.com", "bounceexchange.com",
-        "smartclip.net", "revsci.net", "afy11.net", "imrworldwide.com",
-        "switchadhub.com", "livefyre.com", "frothly.local", "mercury",
-        "verisign", "globalsign", "entrust", "msocsp", "chartbeat.com",
-        "360yield.com", "bidswitch.net", "bizographics.com", "dotomi.com",
-        "dvtps.com", "mathtag.com", "nexage.com", "office.com", "office.net",
-        "postrelease.com", "s3xified.com", "serving-sys.com", "spotxchange.com",
-        "tapad.com", "tubemogul.com", "usabilla.com", "videoamp.com",
-        "volvelle.tech", "yahoo.com", "edgesuite.net", "exelator.com",
-        "cnn.io", "wayfair.com"
-    )
+    # Provider-neutral aliases used only to evaluate a ClaimEvidenceRequirement
+    # against the fields returned by an already-bound provider operation.  They
+    # are not scenario routes: a claim declares its fact kind/roles and the
+    # adapter declares which native fields it emits.
+    CONTRACT_FIELD_ALIASES = {
+        "email": {"email", "mail", "sender", "sender_email", "receiver", "receiver_email", "recipient_email"},
+        "email_address": {"email", "mail", "sender", "sender_email", "receiver", "receiver_email", "recipient_email"},
+        "domain": {"domain", "site", "cs_host", "query", "url", "uri", "dest_host"},
+        "ip": {"ip", "ipaddress", "src_ip", "source_ip", "client_ip", "c_ip", "dest_ip", "destination_ip", "server_ip"},
+        "account": {"user", "username", "account", "account_name", "targetusername", "samaccountname"},
+        "person": {"user", "username", "displayname", "display_name", "sender", "receiver", "name"},
+        "endpoint": {"host", "hostname", "computername", "workstationname", "workstation_name", "target_host"},
+        "host": {"host", "hostname", "computername", "workstationname", "workstation_name", "target_host"},
+        "process": {"image", "process", "process_name", "commandline", "cmdline", "pid"},
+        "file": {"file", "file_path", "path", "targetfilename", "target_filename"},
+        "software": {"software", "product", "product_name", "application", "image", "file_path"},
+        "software_version": {"version", "productversion", "product_version", "fileversion", "file_version", "software_version", "app_version", "displayversion"},
+        "message": {"message", "message_id", "msg_id", "subject", "sender", "receiver", "body"},
+        "role": {"role", "title", "job_title", "department"},
+    }
+
+    CONTRACT_ROLE_ALIASES = {
+        "account_name": {"user", "username", "account", "account_name", "targetusername", "samaccountname"},
+        "person_name": {"user", "username", "displayname", "display_name", "sender", "receiver", "name"},
+        "email_address": {"email", "mail", "sender", "sender_email", "receiver", "receiver_email", "recipient_email"},
+        "sender_email": {"mail", "sender", "sender_email", "from", "from_email"},
+        "recipient_email": {"receiver", "receiver_email", "recipient", "recipient_email", "to", "to_email"},
+        "domain_name": {"domain", "site", "cs_host", "query", "url", "uri", "dest_host"},
+        "client_ip": {"ip", "ipaddress", "src_ip", "source_ip", "client_ip", "c_ip", "host_addr"},
+        "source_ip": {"ip", "ipaddress", "src_ip", "source_ip", "client_ip", "c_ip", "host_addr"},
+        "destination_ip": {"dest_ip", "destination_ip", "server_ip", "s_ip"},
+        "endpoint_host": {"host", "hostname", "computername", "workstationname", "workstation_name", "target_host"},
+        "process_name": {"image", "process", "process_name", "commandline", "cmdline"},
+        "file_path": {"file", "file_path", "path", "targetfilename", "target_filename"},
+        "uri_path": {"uri", "url", "uri_path", "path"},
+        "message_id": {"message", "message_id", "msg_id", "id"},
+        "role_name": {"role", "title", "job_title", "department"},
+    }
+
+    @staticmethod
+    def _contract_fields(observation: Observation) -> dict[str, str]:
+        """Flatten native/raw fields into a case-insensitive scalar view."""
+        merged: dict[str, str] = {}
+        raw_event = getattr(observation, "raw_event", {}) or {}
+        sources = [raw_event, getattr(observation, "fields", {}) or {}]
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            for key, value in source.items():
+                if isinstance(value, list):
+                    value = value[0] if value else ""
+                if isinstance(value, dict) or value in (None, "", [], {}):
+                    continue
+                merged[str(key).casefold()] = str(value).strip()
+        return merged
+
+    @classmethod
+    def _contract_aliases(cls, value: str) -> set[str]:
+        normalized = str(value or "").strip().casefold()
+        return set(cls.CONTRACT_FIELD_ALIASES.get(normalized, {normalized}))
+
+    @classmethod
+    def _contract_role_aliases(cls, value: str) -> set[str]:
+        normalized = str(value or "").strip().casefold()
+        return set(
+            cls.CONTRACT_ROLE_ALIASES.get(
+                normalized,
+                cls.CONTRACT_FIELD_ALIASES.get(normalized, {normalized}),
+            )
+        )
+
+    @staticmethod
+    def _contract_contains(fields: dict[str, str], needle: str) -> bool:
+        target = str(needle or "").strip().casefold()
+        if not target or target == "?":
+            return True
+        target_tokens = [token for token in re.split(r"[^a-z0-9@._-]+", target) if token]
+        values = [value.casefold() for value in fields.values()]
+        return any(target in value or (target_tokens and all(token in value for token in target_tokens)) for value in values)
+
+    @classmethod
+    def _verify_claim_contract(
+        cls,
+        edge: GraphEdge,
+        source_node: GraphNode,
+        target_node: GraphNode,
+        candidate_obs: list[Observation],
+    ) -> VerificationResult:
+        """Verify an edge using only its declared claim contract.
+
+        This is deliberately small and deterministic: the LLM may propose the
+        fact kind and field roles, but it cannot promote an observation.  The
+        provider adapter has already been selected from those same contracts.
+        """
+        predicate = edge.acceptance_predicate or {}
+        if predicate.get("completeness_required") and not predicate.get("query_complete", False):
+            return VerificationResult(
+                verified=False,
+                diagnostic="Claim contract requires a complete query result.",
+                violations=["query_result_incomplete"],
+            )
+        required_fields = {
+            str(value).strip().casefold()
+            for value in predicate.get("required_fields", [])
+            if str(value).strip()
+        }
+        min_observations = max(1, int(predicate.get("min_observations", 1) or 1))
+        target_type = str(getattr(target_node.type, "value", target_node.type)).casefold()
+        source_type = str(getattr(source_node.type, "value", source_node.type)).casefold()
+        source_value = str(source_node.value or "").strip()
+        target_value = str(target_node.value or "").strip()
+        source_role = edge.required_field_roles.get("source") if edge.required_field_roles else None
+        target_role = edge.required_field_roles.get("target") if edge.required_field_roles else None
+        target_aliases = cls._contract_role_aliases(str(target_role or target_type))
+        required_aliases = set(required_fields)
+        for field_name in list(required_fields):
+            required_aliases.update(cls._contract_aliases(field_name))
+
+        matches: list[tuple[Observation, dict[str, str]]] = []
+        for observation in candidate_obs:
+            fields = cls._contract_fields(observation)
+            if not fields:
+                continue
+
+            # Required fields are satisfied by native aliases declared by the
+            # contract/adapter, never by a prose keyword match.
+            if required_fields and any(
+                not cls._contract_aliases(field_name).intersection(fields)
+                for field_name in required_fields
+            ):
+                continue
+
+            if source_role:
+                source_aliases = cls._contract_role_aliases(str(source_role))
+                source_fields = {key: value for key, value in fields.items() if key in source_aliases}
+                if source_fields and not cls._contract_contains(source_fields, source_value):
+                    continue
+
+            value_must_match = str(predicate.get("value_must_match") or "").strip()
+            if value_must_match and not cls._contract_contains(fields, value_must_match):
+                continue
+            if target_value and target_value != "?" and not cls._contract_contains(fields, target_value):
+                continue
+
+            matches.append((observation, fields))
+
+        if len(matches) < min_observations:
+            return VerificationResult(
+                verified=False,
+                diagnostic=(
+                    "Claim contract not satisfied: required fields/value were not "
+                    f"observed in at least {min_observations} row(s)."
+                ),
+                violations=["claim_acceptance_rule_not_satisfied"],
+            )
+
+        first_obs, first_fields = matches[0]
+        discovered = target_value if target_value and target_value != "?" else None
+        field_matches: dict[str, str] = {}
+        if target_value and target_value != "?":
+            field_matches["target"] = target_value
+        else:
+            preferred_target_keys = {
+                "message": ("message_id", "msg_id", "message", "id", "subject"),
+                "email_address": ("email", "mail", "sender_email", "receiver_email", "sender", "receiver"),
+                "identity": ("identity", "signer", "user", "username", "account"),
+                "domain": ("domain", "site", "cs_host", "query", "url", "uri"),
+                "ip": ("ip", "ipaddress", "client_ip", "src_ip", "source_ip", "dest_ip", "server_ip"),
+                "role": ("role", "title", "job_title", "department"),
+            }.get(target_type, ())
+            # Typed relation direction supplies an additional deterministic
+            # ordering when a row contains both sides of a communication.
+            # This is not an email route: it is the same source/target role
+            # constraint used for any directed relation.
+            if source_type == "message" and target_type == "email_address":
+                preferred_target_keys = (
+                    "receiver_email", "recipient_email", "receiver", "recipient",
+                    *preferred_target_keys,
+                )
+            for key in (*preferred_target_keys, *sorted(target_aliases)):
+                value = first_fields.get(key)
+                if key in target_aliases and value:
+                    discovered = value
+                    field_matches[key] = value
+                    break
+            if discovered is None and required_fields:
+                for key, value in first_fields.items():
+                    if key in required_aliases and value:
+                        discovered = value
+                        field_matches[key] = value
+                        break
+
+        if discovered is None:
+            return VerificationResult(
+                verified=False,
+                diagnostic="Claim contract matched rows but yielded no target value.",
+                violations=["target_value_not_observed"],
+            )
+
+        citations = [observation.id for observation, _ in matches]
+        proof = RelationProof(
+            id=f"proof-{edge.id}",
+            edge_id=edge.id,
+            source_node_id=source_node.id,
+            source_value=source_node.value,
+            target_node_id=target_node.id,
+            target_value=str(discovered),
+            relation_type=edge.relation_type if isinstance(edge.relation_type, str) else edge.relation_type.value,
+            citations=citations,
+            field_matches=field_matches,
+            verified_by="ClaimContractVerifier",
+        )
+        return VerificationResult(
+            verified=True,
+            proof=proof,
+            target_value=str(discovered),
+            diagnostic=f"Claim contract verified with {len(citations)} observation(s).",
+        )
 
     @classmethod
     def _artifact_value(
@@ -129,6 +383,296 @@ class RelationVerifier:
                 return val, {"software_term": next(t for t in terms if t in searchable), key: val}
         return None, {}
 
+    def _admit_evidence(
+        self,
+        edge: GraphEdge,
+        ledger: ObservationLedger,
+        supplied_observations: list[Observation] | None = None,
+        query_results: list[QueryResult] | dict[str, QueryResult] | None = None,
+    ) -> tuple[list[Observation] | None, VerificationResult | None]:
+        """Universal admission gate for all relation verification.
+
+        Enforces:
+        - Edge must have explicit citations.
+        - All cited observations must exist in the ledger.
+        - Supplied observations must be cited and in the ledger.
+        - All candidate observations must be EpistemicType.OBSERVED (testimony rejected).
+        - QueryResult completeness: observations from failed, incomplete, or truncated
+          queries are rejected as proof.
+        """
+        if not edge.citations:
+            return None, VerificationResult(
+                verified=False,
+                diagnostic="Verification failed: Edge requires explicit observation citations.",
+                violations=["citations_required"],
+            )
+
+        ledger_obs_map: dict[str, Observation] = {o.id: o for o in ledger.observations}
+
+        for cid in edge.citations:
+            if cid not in ledger_obs_map:
+                return None, VerificationResult(
+                    verified=False,
+                    diagnostic=f"Verification failed: Cited observation '{cid}' does not exist in ledger.",
+                    violations=["cited_observation_not_in_ledger"],
+                )
+
+        if supplied_observations is not None:
+            for so in supplied_observations:
+                if so.id not in edge.citations:
+                    return None, VerificationResult(
+                        verified=False,
+                        diagnostic=f"Verification failed: Supplied observation '{so.id}' is not cited on edge.",
+                        violations=["supplied_observation_not_cited"],
+                    )
+                if so.id not in ledger_obs_map:
+                    return None, VerificationResult(
+                        verified=False,
+                        diagnostic=f"Verification failed: Supplied observation '{so.id}' does not exist in ledger.",
+                        violations=["supplied_observation_not_in_ledger"],
+                    )
+
+        candidate_obs = [ledger_obs_map[cid] for cid in edge.citations]
+
+        for obs in candidate_obs:
+            if getattr(obs, "epistemic_type", None) != EpistemicType.OBSERVED:
+                return None, VerificationResult(
+                    verified=False,
+                    diagnostic=f"Verification failed: Observation '{obs.id}' epistemic type is not OBSERVED (found '{getattr(obs, 'epistemic_type', None)}').",
+                    violations=["evidence_not_observed"],
+                )
+
+        qr_map: dict[str, QueryResult] = {}
+        if query_results:
+            if isinstance(query_results, dict):
+                qr_map.update(query_results)
+            elif isinstance(query_results, list):
+                for qr in query_results:
+                    if getattr(qr, "query_id", None):
+                        qr_map[qr.query_id] = qr
+        if hasattr(ledger, "query_results"):
+            for qr in ledger.query_results:
+                if getattr(qr, "query_id", None) and qr.query_id not in qr_map:
+                    qr_map[qr.query_id] = qr
+
+        for obs in candidate_obs:
+            qid = getattr(obs, "query_id", None)
+            if qid and qid in qr_map:
+                qr = qr_map[qid]
+                if not getattr(qr, "executed_ok", True):
+                    return None, VerificationResult(
+                        verified=False,
+                        diagnostic=f"Verification failed: Originating query '{qid}' failed execution.",
+                        violations=["query_result_failed"],
+                    )
+                if not getattr(qr, "complete", True):
+                    return None, VerificationResult(
+                        verified=False,
+                        diagnostic=f"Verification failed: Originating query '{qid}' was incomplete or partial.",
+                        violations=["incomplete_query_result"],
+                    )
+                if getattr(qr, "truncation_reason", None):
+                    return None, VerificationResult(
+                        verified=False,
+                        diagnostic=f"Verification failed: Originating query '{qid}' was truncated: {qr.truncation_reason}.",
+                        violations=["query_result_truncated"],
+                    )
+
+        return candidate_obs, None
+
+    @classmethod
+    def _verify_state_transition(
+        cls,
+        edge: GraphEdge,
+        source_node: GraphNode,
+        target_node: GraphNode,
+        candidate_obs: list[Observation],
+        operation: ProviderOperation | None = None,
+    ) -> VerificationResult:
+        """Generic ProviderOperation-driven state transition verifier.
+
+        Enforces:
+        - Cross-provider and cross-scope evidence rejection.
+        - Minimum 2 observations (before and after states).
+        - Valid timestamps and strict chronological ordering.
+        - Correlation bound delta enforcement.
+        - Operation artifact identity and action/state role proof.
+        - Separation of ransomware causality from generic file transitions.
+        """
+        provider_ids = {obs.provider_scope.provider_id for obs in candidate_obs if obs.provider_scope}
+        scope_ids = {obs.provider_scope.scope_id for obs in candidate_obs if obs.provider_scope}
+        if len(provider_ids) > 1:
+            return VerificationResult(
+                verified=False,
+                diagnostic="Verification failed: Cross-provider observations cannot prove a state transition.",
+                violations=["cross_provider_evidence"],
+            )
+        if len(scope_ids) > 1:
+            return VerificationResult(
+                verified=False,
+                diagnostic="Verification failed: Cross-scope observations cannot prove a state transition.",
+                violations=["cross_scope_evidence"],
+            )
+
+        if len(candidate_obs) < 2:
+            return VerificationResult(
+                verified=False,
+                diagnostic="Verification failed: State transition requires at least two chronological observations (before and after).",
+                violations=["insufficient_transition_observations"],
+            )
+
+        parsed_timestamps: list[tuple[datetime, Observation]] = []
+        for obs in candidate_obs:
+            if not obs.timestamp:
+                return VerificationResult(
+                    verified=False,
+                    diagnostic=f"Verification failed: Observation '{obs.id}' has missing timestamp.",
+                    violations=["missing_timestamp"],
+                )
+            dt = _parse_timestamp(obs.timestamp)
+            if dt is None:
+                return VerificationResult(
+                    verified=False,
+                    diagnostic=f"Verification failed: Observation '{obs.id}' has invalid timestamp '{obs.timestamp}'.",
+                    violations=["invalid_timestamp"],
+                )
+            parsed_timestamps.append((dt, obs))
+
+        for i in range(len(parsed_timestamps) - 1):
+            if parsed_timestamps[i][0] > parsed_timestamps[i + 1][0]:
+                return VerificationResult(
+                    verified=False,
+                    diagnostic="Verification failed: Observations are in reversed temporal ordering.",
+                    violations=["reversed_temporal_ordering"],
+                )
+
+        parsed_timestamps.sort(key=lambda x: x[0])
+        t_before, obs_before = parsed_timestamps[0]
+        t_after, obs_after = parsed_timestamps[-1]
+        delta_s = (t_after - t_before).total_seconds()
+        if delta_s < 0:
+            return VerificationResult(
+                verified=False,
+                diagnostic="Verification failed: Reversed temporal ordering detected.",
+                violations=["reversed_temporal_ordering"],
+            )
+
+        pred = edge.acceptance_predicate or {}
+        max_delta = pred.get("max_time_delta_seconds")
+        if max_delta is not None and delta_s > float(max_delta):
+            return VerificationResult(
+                verified=False,
+                diagnostic=f"Verification failed: Transition delta {delta_s}s exceeds declared bound {max_delta}s.",
+                violations=["temporal_bound_exceeded"],
+            )
+
+        if operation is None:
+            return VerificationResult(
+                verified=False,
+                diagnostic="Verification failed: State transition verification requires an exact validated ProviderOperation.",
+                violations=["operation_declaration_required"],
+            )
+
+        id_fields: list[str] = []
+        if operation.artifact_identity_roles:
+            for roles in operation.artifact_identity_roles.values():
+                id_fields.extend(roles)
+        if not id_fields:
+            return VerificationResult(
+                verified=False,
+                diagnostic="Verification failed: ProviderOperation does not declare artifact_identity_roles.",
+                violations=["missing_artifact_identity_role"],
+            )
+
+        fields_before = cls._contract_fields(obs_before)
+        fields_after = cls._contract_fields(obs_after)
+
+        id_val_before = next((fields_before[f.casefold()] for f in id_fields if f.casefold() in fields_before), None)
+        id_val_after = next((fields_after[f.casefold()] for f in id_fields if f.casefold() in fields_after), None)
+
+        if not id_val_before or not id_val_after:
+            return VerificationResult(
+                verified=False,
+                diagnostic="Verification failed: Artifact identity field not observed in transition records.",
+                violations=["missing_artifact_identity"],
+            )
+        if id_val_before.casefold() != id_val_after.casefold():
+            return VerificationResult(
+                verified=False,
+                diagnostic=f"Verification failed: Artifact identity mismatch ('{id_val_before}' vs '{id_val_after}').",
+                violations=["artifact_identity_mismatch"],
+            )
+
+        action_fields: list[str] = []
+        if operation.action_roles:
+            for roles in operation.action_roles.values():
+                action_fields.extend(roles)
+        state_fields: list[str] = []
+        if operation.state_roles:
+            for roles in operation.state_roles.values():
+                state_fields.extend(roles)
+
+        if not action_fields and not state_fields:
+            return VerificationResult(
+                verified=False,
+                diagnostic="Verification failed: ProviderOperation does not declare action_roles or state_roles.",
+                violations=["missing_action_or_state_role"],
+            )
+
+        state_before = next((fields_before[f.casefold()] for f in state_fields if f.casefold() in fields_before), None)
+        state_after = next((fields_after[f.casefold()] for f in state_fields if f.casefold() in fields_after), None)
+        if state_fields and state_before is not None and state_after is not None:
+            if state_before.casefold() == state_after.casefold():
+                return VerificationResult(
+                    verified=False,
+                    diagnostic=f"Verification failed: No state change observed between records (both '{state_before}').",
+                    violations=["state_transition_not_observed"],
+                )
+
+        is_ransomware = (
+            edge.relation_type in ("encrypted", "ransomware_encrypted")
+            or pred.get("qualifier") == "ransomware"
+            or edge.metadata.get("qualifier") == "ransomware"
+        )
+        if is_ransomware:
+            has_ransomware_evidence = bool(
+                pred.get("ransomware_indicators_verified")
+                or pred.get("ransomware_evidence")
+                or edge.metadata.get("ransomware_indicators_verified")
+            )
+            if not has_ransomware_evidence:
+                return VerificationResult(
+                    verified=False,
+                    diagnostic="Verification failed: File modification observed, but ransomware causality requires independent qualifier evidence.",
+                    violations=["ransomware_qualifier_unproven"],
+                )
+
+        citations = [obs.id for obs in candidate_obs]
+        target_val = str(target_node.value if target_node.value and target_node.value != "?" else id_val_after)
+        proof = RelationProof(
+            id=f"proof-{edge.id}",
+            edge_id=edge.id,
+            source_node_id=source_node.id,
+            source_value=source_node.value,
+            target_node_id=target_node.id,
+            target_value=target_val,
+            relation_type=edge.relation_type if isinstance(edge.relation_type, str) else edge.relation_type.value,
+            citations=citations,
+            field_matches={
+                "artifact_identity": id_val_after,
+                "delta_seconds": str(delta_s),
+                "state_before": str(state_before or ""),
+                "state_after": str(state_after or ""),
+            },
+            verified_by="StateTransitionVerifier",
+        )
+        return VerificationResult(
+            verified=True,
+            proof=proof,
+            target_value=target_val,
+            diagnostic=f"State transition verified with {len(citations)} observation(s) across {delta_s}s.",
+        )
+
     def verify_candidate_edge(
         self,
         edge: GraphEdge,
@@ -136,20 +680,30 @@ class RelationVerifier:
         target_node: GraphNode,
         ledger: ObservationLedger,
         observations: list[Observation] | None = None,
+        query_results: list[QueryResult] | dict[str, QueryResult] | None = None,
+        operation: ProviderOperation | None = None,
     ) -> VerificationResult:
-        # 1. Collect cited observations
-        candidate_obs = observations or []
-        if not candidate_obs:
-            obs_ids = edge.citations or edge.metadata.get("observation_ids", [])
-            if not obs_ids and edge.origin_query_id:
-                obs_ids = [o.id for o in ledger.observations if o.query_id == edge.origin_query_id]
-            candidate_obs = [o for o in ledger.observations if o.id in obs_ids]
+        candidate_obs, admission_failure = self._admit_evidence(
+            edge, ledger, observations, query_results
+        )
+        if admission_failure is not None:
+            return admission_failure
+        assert candidate_obs is not None
 
-        if not candidate_obs:
-            return VerificationResult(
-                verified=False,
-                diagnostic="Verification failed: No observation citations found in ledger.",
-                violations=["No observation citations found."],
+        if (
+            edge.metadata.get("verification_mode") in ("state_transition", "transition")
+            or (operation is not None and operation.proof_mode in ("state_transition", "transition"))
+        ):
+            return self._verify_state_transition(
+                edge, source_node, target_node, candidate_obs, operation
+            )
+
+        if edge.metadata.get("verification_mode") == "claim_contract":
+            return self._verify_claim_contract(
+                edge,
+                source_node,
+                target_node,
+                candidate_obs,
             )
 
         src_type = source_node.type if isinstance(source_node.type, str) else source_node.type.value
@@ -178,14 +732,10 @@ class RelationVerifier:
                     combined_fields[k.lower()] = str(v)
             fields = combined_fields
 
-            raw_type = str(obs.native_type).lower()
-            if tgt_type in ("endpoint", "host") and "iis" in raw_type:
-                diagnostic_violations.append("IIS web server telemetry cannot prove client workstation logon.")
-                continue
             if tgt_type in ("endpoint", "host"):
-                for f_name, f_val in obs.fields.items():
-                    if f_name.lower() in self.HOST_FIELDS and str(f_val).lower() in KNOWN_WEB_SERVERS:
-                        diagnostic_violations.append(f"Web server '{f_val}' is prohibited from being bound as user client endpoint.")
+                if observation_declares_server_role(fields):
+                    diagnostic_violations.append("Telemetry explicitly declares a server-like role; it cannot prove a user endpoint binding.")
+                    continue
             if tgt_type == "ip":
                 has_client_ip = any(k.lower() in self.CLIENT_IP_FIELDS for k in fields)
                 has_server_ip = any(k.lower() in self.SERVER_IP_FIELDS for k in fields)
@@ -425,17 +975,17 @@ class RelationVerifier:
                     # Extract endpoint host, prioritizing specific workstation name
                     candidate_host = None
                     ws_val = fields.get("workstationname") or fields.get("workstation_name")
-                    if ws_val and not is_prohibited_server(ws_val) and ws_val.lower() not in ("source", "-", "unknown", ""):
+                    if ws_val and not observation_declares_server_role(fields) and ws_val.lower() not in ("source", "-", "unknown", ""):
                         candidate_host = ws_val
                     elif fields.get("host", "").lower().startswith("wrk") or fields.get("computername", "").lower().startswith("wrk"):
                         candidate_host = fields.get("host") or fields.get("computername")
                     else:
                         for hf in ("workstationname", "workstation_name", "host", "computername", "target_host"):
                             hval = fields.get(hf)
-                            if hval and not is_prohibited_server(hval) and hval.lower() not in ("source", "-", "unknown", ""):
+                            if hval and not observation_declares_server_role(fields) and hval.lower() not in ("source", "-", "unknown", ""):
                                 candidate_host = hval
                                 break
-                    if candidate_host and not is_prohibited_server(candidate_host):
+                    if candidate_host and not observation_declares_server_role(fields):
                         discovered_target_val = candidate_host
                         matching_obs_ids.append(obs.id)
                         field_matches["user"] = matched_user
@@ -484,13 +1034,11 @@ class RelationVerifier:
                         dval = fields.get(df)
                         if dval and str(dval).strip() not in ("-", ""):
                             dval_clean = str(dval).lower().strip()
-                            noise_matches = any(dval_clean.endswith(nd) or nd in dval_clean for nd in self.KNOWN_NOISE_DOMAINS)
-                            if not noise_matches:
-                                if target_node.value and target_node.value != "?" and target_node.value.lower() in dval_clean:
-                                    priority = 0
-                                else:
-                                    priority = 1
-                                domain_candidates.append((priority, str(dval).strip(), obs.id, str(matched_ip or src_val)))
+                            if target_node.value and target_node.value != "?" and target_node.value.lower() in dval_clean:
+                                priority = 0
+                            else:
+                                priority = 1
+                            domain_candidates.append((priority, str(dval).strip(), obs.id, str(matched_ip or src_val)))
 
         if domain_candidates and not discovered_target_val:
             domain_candidates.sort(key=lambda c: c[0])

@@ -73,6 +73,40 @@ bindings:
             assert adapter.binding_mode == "discovery"
             assert adapter.index == "custom_idx"
 
+    def test_profile_limit_is_audited_as_incomplete_discovery(self) -> None:
+        with patch.object(SplunkLiveAdapter, "_discover_capabilities"):
+            adapter = SplunkLiveAdapter(
+                splunk_url="https://mock-splunk:8089",
+                auth=("user", "pass"),
+                index="custom_idx",
+                profile_source_limit=1,
+            )
+        adapter.discovered_sourcetypes = {"source:a": 10, "source:b": 20}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"results": [{"field": "host"}]}
+        with patch("requests.post", return_value=mock_resp):
+            profiles = adapter._discover_telemetry_profiles(adapter.profile_source_limit)
+        assert len(profiles) == 1
+        assert adapter.profile_discovery_audit["complete"] is False
+        assert adapter.profile_discovery_audit["unprofiled_source_types"] == ["source:b"]
+
+    def test_dynamic_discovery_does_not_classify_sourcetype_by_name(self) -> None:
+        with patch.object(SplunkLiveAdapter, "_discover_capabilities"):
+            adapter = SplunkLiveAdapter(
+                splunk_url="https://mock-splunk:8089",
+                auth=("user", "pass"),
+                index="custom_idx",
+            )
+        adapter.discovered_sourcetypes = {"looks-like-sysmon": 10, "looks-like-smtp": 20}
+        with patch.object(adapter, "is_available", return_value=True), \
+             patch.object(adapter, "list_indexes", return_value=[{"name": "custom_idx", "disabled": False}]), \
+             patch.object(adapter, "_discover_capabilities"), \
+             patch.object(adapter, "_discover_telemetry_profiles", return_value=[]):
+            catalog = adapter.discover_full_capabilities()
+        assert catalog.supported_evidence_types == ["scope_records"]
+        assert catalog.details["semantic_bindings_from_descriptor"] is False
+
     def test_l_plus_1_completeness_truncation(self) -> None:
         """Verify the L+1 rule: when rows > limit, results are truncated and complete=False."""
         adapter = SplunkLiveAdapter(
@@ -277,5 +311,3 @@ class TestSplunkLiveAdapterIntegration:
         assert qr.row_count > 0
         assert qr.native_query is not None
         assert qr.execution_time_ms > 0
-
-

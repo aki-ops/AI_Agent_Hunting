@@ -13,7 +13,11 @@ Request
   -> Provider Census
   -> Semantic Claim-Plan Proposal
   -> Plan Validation
-  -> Capability Binding and Action Selection
+  -> Relation-scoped Capability Retrieval
+  -> LLM Source-Capability Proposal
+  -> Deterministic Validation and Bounded Capability Probes
+  -> Runtime Capability Binding and Action Selection
+  -> QueryIntent Compilation or Quarantined Native-Query Validation
   -> Safe Native Query Execution
   -> Observation / Fact / Evidence Graph Update
   -> Claim Verification and Bounded Replanning
@@ -61,10 +65,14 @@ The request is treated as an objective, not as evidence. User text and all
 retrieved log text are untrusted instructions; neither can mutate scope,
 provider policy, budget or final verdict.
 
-### 2. Claim graph
+### 2. Semantic goal graph
 
 **Input:** `HuntRequest`, compact provider census.  
-**Output:** `ClaimGraph` proposed by the LLM, then schema-validated.
+**Output:** `SemanticGoalGraph` proposed by the LLM, then schema-validated.
+
+`ClaimGraph` remains only as a compatibility input and is projected into the
+semantic graph before capability binding. The executable plan is a
+`LogicalPlan` containing typed AND dependencies and declared OR alternatives.
 
 A claim is a testable statement, not a scenario label:
 
@@ -112,9 +120,12 @@ Operation {
   operation_id, provider, native partitions,
   required input entity/value kinds,
   output fact kinds and fields,
+  supported semantic constraint keys and their proof mode,
+  searchable semantic constraint keys (retrieval-only, never proof),
   time/retention limits, permission requirements,
   pagination and completeness semantics,
-  upper-bound cost/scan behaviour
+  upper-bound cost/scan behaviour,
+  supported semantic constraints
 }
 ```
 
@@ -160,15 +171,19 @@ multiple contexts; OCSF supports semantic normalization with extensibility.^2
 | Step | Input → output | Who decides | Invariant | Foundation / status |
 |---|---|---|---|---|
 | A. Provider census | configured environment → capability graph | Adapter, deterministic | No content query before source/schema state is recorded. | Supported by schema-aware hunting practice; exact method is local.^7 |
-| B. Claim-plan proposal | request + compact capability graph → claims/dependencies/acceptance rules | LLM | No raw SPL/KQL/SQL, no asserted evidence, every claim records provenance. | Structured intermediate representation is supported; exact prompt/schema is local.^4 ^5 |
+| B. Claim-plan proposal | request only → claims/dependencies/acceptance rules | LLM | No provider catalog, raw SPL/KQL/SQL or asserted evidence; every claim records provenance. | Structured intermediate representation is supported; exact prompt/schema is local.^4 ^5 |
 | C. Plan validation | proposed graph → accepted/rejected/reduced graph | Deterministic policy | Each non-prerequisite claim must trace to request, CTI, or verified evidence. | Defence-in-depth is supported; rules are local.^9 |
-| D. Capability binding | outstanding claim + capabilities → candidate operations | Deterministic binder | Candidate operation must accept known inputs and be able to output required facts. | Supported by typed query/capability principles.^5 ^6 |
-| E. Action selection | candidates + cost/coverage/evidence state → one bounded action | Deterministic scorer; LLM may rank ties only | Never route on a scenario label; no query without a claim it can reduce. | Adaptive evidence collection is supported; scoring function is local.^10 |
-| F. Native execution | operation + parameters → `QueryResult` envelope | Adapter, deterministic | Parameterized/allowlisted query, pagination, explicit `complete`; row count is not EOF. | Query safety/completeness policy is local, necessary for valid negative claims. |
-| G. Evidence update | raw rows → facts/cards/candidate edges | Deterministic extractor | Native rows append-only; card is a view, never a replacement. | Supported by provenance/semantic fusion principles.^2 ^8 |
-| H. Claim verification | evidence graph + acceptance rule → claim status | Deterministic verifier | No conclusion without citations and required completeness/observability controls. | Evidence-grounding principle; exact logic is local.^9 |
-| I. Bounded replan | unresolved claims + delta cards → revised claims or next action | LLM only at a decision boundary | New claim needs provenance; repeated non-progress is blocked. | Plan–retrieve–generate supports iterative evidence-conditioned planning; gating is local.^11 |
-| J. Stop and report | claim states + coverage + budgets → final account | Deterministic controller; LLM explains only verified evidence | `NO_EVIDENCE_FOUND` is never rendered as benign when coverage is inadequate. | Hypothesis/evidential hunting supports explicit uncertainty; stop taxonomy is local.^10 ^12 |
+| D. Relation-scoped batching | complete census + unresolved relation → exhaustive compact batches and coverage audit | Deterministic | Every discovered source/field is scheduled; score only orders batches; profile gaps remain visible. | Retrieval/schema-linking work supports staged context selection; exhaustive batching is the local recall-preserving choice.^15 ^16 ^18 ^19 |
+| E. Source-capability profiling | unresolved graph relation + bounded census slice → source/field-role/probe candidates | LLM | Source/field IDs must come from census; output is candidate only, never evidence. | LLM schema matching can bootstrap candidates; validation/probe design is local.^15 ^16 |
+| F. Proposal validation and probe | proposal + census → validated/rejected runtime capability | Deterministic adapter/policy | A source name alone proves nothing; probe result establishes observability, not incident evidence. | OCSF/schema-matching principles support semantic mapping; probe protocol is local.^6 ^15 |
+| G. Capability binding | outstanding graph relation + validated capabilities → candidate operations | Deterministic binder | Candidate operation must accept known typed inputs and output the requested fact type; proof-capable restrictions are preferred, while searchable-only restrictions remain explicit residuals. | Supported by typed query/capability principles.^5 ^6 |
+| H. Action selection | candidates + cost/coverage/evidence state → one bounded action | Deterministic scorer; LLM may rank ties only | Never route on a scenario label; no query without a claim it can reduce. | Adaptive evidence collection is supported; scoring function is local.^10 |
+| I. Native execution | QueryIntent + validated bindings → `QueryResult` envelope | Adapter, deterministic | Parameterized/allowlisted query, pagination, explicit `complete`; row count is not EOF. | Query safety/completeness policy is local, necessary for valid negative claims. |
+| J. Quarantined native fallback | intent not expressible + bounded source profile → accepted/rejected AST-gated native query | LLM candidate; deterministic gate | Read-only AST, census-known identifiers, trusted values, time/result/scan bounds and dry-run are required before dispatch. | Safe tool-use supports verified execution; exact grammar/policy is local.^9 |
+| K. Evidence update | raw rows → facts/cards/candidate edges | Deterministic extractor | Native rows append-only; card is a view, never a replacement. | Supported by provenance/semantic fusion principles.^2 ^8 |
+| L. Claim verification | evidence graph + relation/restriction contract → claim status | Deterministic verifier | A row proves only its declared relation; unsupported restrictions remain inconclusive. No conclusion without citations and completeness/observability controls. | Evidence-grounding principle; exact logic is local.^9 |
+| M. Bounded replan | unresolved claims + delta cards → revised claims or next action | LLM only at a decision boundary | New claim needs provenance; repeated non-progress is blocked. | Plan–retrieve–generate supports iterative evidence-conditioned planning; gating is local.^11 |
+| N. Stop and report | claim states + coverage + budgets → final account | Deterministic controller; LLM explains only verified evidence | `NO_EVIDENCE_FOUND` is never rendered as benign when coverage is inadequate. | Hypothesis/evidential hunting supports explicit uncertainty; stop taxonomy is local.^10 ^12 |
 
 ### Selection rule
 
@@ -199,7 +214,8 @@ authoritative.
 |---|---:|---|
 | Interpret unfamiliar natural language and propose claims | Yes | Schema, provenance and objective validator |
 | See source capabilities and suggest a semantic operation | Yes, only among filtered candidates | Capability binder accepts/rejects |
-| Generate native provider query syntax | No | Adapter owns compilation and query safety |
+| Generate normal native provider query syntax | Indirectly, through a typed `QueryIntent` | Adapter owns binding, compilation and query safety |
+| Propose a novel native provider query | Yes, only as a quarantined fallback candidate | AST parser, policy, census IDs, trusted values, cost gate and dry-run must accept it before execution |
 | Admit telemetry into the ledger | No | Adapter/envelope checks |
 | Determine whether a fact is observed | No | Fact extractor + claim verifier |
 | Promote/refute a claim | No | Acceptance/refutation rule + citations |
@@ -227,7 +243,7 @@ The analyst report contains only:
 2. Claim plan: each required claim, provenance and reason it was necessary.
 3. Evidence: cited observations/facts, explanation and explicit gaps.
 4. Queries: logical purpose, provider operation, native query, completeness and
-   result cardinality.
+   result cardinality and compact returned sample fields (raw payload omitted).
 5. Final answer/claim states, coverage and limitations.
 6. Cost: LLM calls/tokens/latency/USD estimate and query/runtime cost.
 
@@ -274,18 +290,22 @@ Minimum acceptance tests:
 
 ## Migration decision for this repository
 
-The current relation-first compatibility code and especially any
-`is_email`/keyword-derived graph construction conflict with this reference
-architecture. They should be removed only as part of a controlled migration:
+The remaining compatibility code and especially any `is_email`/keyword-derived
+graph construction must not control the semantic path. The remaining work is:
 
-1. Introduce `Claim`, `ClaimGraph`, plan provenance and acceptance rules.
-2. Make the existing case graph a projection of validated claims and observed
-   evidence, not the input-specific planner.
-3. Extend capability descriptors with typed inputs/outputs and source
-   relevance; preserve adapter-owned query compilation.
-4. Replace keyword/template routing with semantic-plan validation.
-5. Add the acceptance tests and a labelled evaluation corpus before claiming
-   generality or reporting F1.
+1. Add real provider-side implementations for declared semantic constraint
+   keys; each key must explicitly declare whether it is retrieval-only or
+   proof-capable, and the runtime must preserve that distinction.
+2. Add alternate graph paths such as `person -> account -> host` OR
+   `person -> host`, with ambiguity/fan-out decisions and provenance.
+3. Finish claim verification and query-envelope migration for legacy paths.
+4. Add labelled evaluation corpora and report plan, evidence, edge and answer
+   F1 separately from cost and coverage.
+5. Run live Splunk replays with a healthy LLM endpoint before production claims.
+
+The architecture documents are now synchronized with the semantic runtime;
+the remaining relation-first text below is historical compatibility guidance
+and must not be treated as the active execution path.
 6. Once tests pass, reconcile `01`–`04` against this document and retire
    relation-first compatibility prose.
 
@@ -333,3 +353,8 @@ adapter implementation; it must not force a new architecture.
    [Publication](https://www.microsoft.com/en-us/research/publication/excytin-bench-evaluating-llm-agents-on-cyber-threat-investigation/).
 14. DARPA I2O. “Transparent Computing Dataset.”
    [Repository](https://github.com/darpa-i2o/Transparent-Computing/blob/master/README.md).
+15. Parciak, M. et al. “Schema Matching with Large Language Models: an
+    Experimental Study.” *VLDBW TaDA*, 2024.
+    [Paper](https://arxiv.org/abs/2407.11852).
+16. Sheetrit, E. et al. “ReMatch: Retrieval Enhanced Schema Matching with
+    LLMs.” 2024. [Paper](https://arxiv.org/abs/2403.01567).

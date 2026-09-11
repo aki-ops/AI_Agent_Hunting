@@ -8,21 +8,38 @@
     "semantic_intent": "",
     "purpose": "search_text",
     "entity_binding": "None",
+    "binding_provenance": {},
     "expected_fields": [
       "host",
       "timestamp"
     ],
+    "retrieval_stage": "",
+    "removed_retrieval_keys": [],
     "provider": "mock_splunk",
     "provider_id": "mock_splunk",
-    "native_query": "<MagicMock name='mock.last_query_text' id='2041712911888'>",
-    "query_text": "<MagicMock name='mock.last_query_text' id='2041712911888'>",
+    "native_language": "text",
+    "native_query": "",
     "rows_count": 1,
+    "raw_count": null,
+    "observed_fields": [],
+    "sample_rows": [
+      {
+        "host": "wrk-amber",
+        "timestamp": "2026-09-02T10:00:00Z",
+        "user": "amber"
+      }
+    ],
     "complete": true,
+    "executed_ok": true,
+    "diagnostic": null,
+    "truncation_reason": null,
     "result_summary": "1 rows returned; complete=True",
     "completeness_contract": "complete",
     "is_targeted": false,
     "operation_id": "search_text",
-    "scope_id": "main"
+    "scope_id": "main",
+    "page_trace": [],
+    "continuation": {}
   },
   {
     "query_id": "qp-adaptive-0-1",
@@ -33,21 +50,38 @@
     "semantic_intent": "",
     "purpose": "find_file_version",
     "entity_binding": "None",
+    "binding_provenance": {},
     "expected_fields": [
       "host",
       "timestamp"
     ],
+    "retrieval_stage": "",
+    "removed_retrieval_keys": [],
     "provider": "mock_splunk",
     "provider_id": "mock_splunk",
-    "native_query": "<MagicMock name='mock.last_query_text' id='2041712911888'>",
-    "query_text": "<MagicMock name='mock.last_query_text' id='2041712911888'>",
+    "native_language": "text",
+    "native_query": "",
     "rows_count": 1,
+    "raw_count": null,
+    "observed_fields": [],
+    "sample_rows": [
+      {
+        "host": "wrk-amber",
+        "timestamp": "2026-09-02T10:05:00Z",
+        "Path": "C:\\Tor\\firefox.exe"
+      }
+    ],
     "complete": true,
+    "executed_ok": true,
+    "diagnostic": null,
+    "truncation_reason": null,
     "result_summary": "1 rows returned; complete=True",
     "completeness_contract": "complete",
     "is_targeted": true,
     "operation_id": "find_file_version",
-    "scope_id": "main"
+    "scope_id": "main",
+    "page_trace": [],
+    "continuation": {}
   },
   {
     "query_id": "qp-adaptive-0-2",
@@ -58,20 +92,37 @@
     "semantic_intent": "",
     "purpose": "find_process_version",
     "entity_binding": "None",
+    "binding_provenance": {},
     "expected_fields": [
       "host",
       "timestamp"
     ],
+    "retrieval_stage": "",
+    "removed_retrieval_keys": [],
     "provider": "mock_splunk",
     "provider_id": "mock_splunk",
-    "native_query": "<MagicMock name='mock.last_query_text' id='2041712911888'>",
-    "query_text": "<MagicMock name='mock.last_query_text' id='2041712911888'>",
+    "native_language": "text",
+    "native_query": "",
     "rows_count": 1,
+    "raw_count": null,
+    "observed_fields": [],
+    "sample_rows": [
+      {
+        "host": "wrk-amber",
+        "timestamp": "2026-09-02T10:10:00Z",
+        "Image": "firefox.exe"
+      }
+    ],
     "complete": true,
+    "executed_ok": true,
+    "diagnostic": null,
+    "truncation_reason": null,
     "result_summary": "1 rows returned; complete=True",
     "completeness_contract": "complete",
     "is_targeted": true,
     "operation_id": "find_process_version",
-    "scope_id": "main"
+    "scope_id": "main",
+    "page_trace": [],
+    "continuation": {}
   }
 ]

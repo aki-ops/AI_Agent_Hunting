@@ -318,6 +318,10 @@ class ActionCandidate:
     parameters: dict[str, Any] = field(default_factory=dict)
     priority: int = 1
     reason: str = ""
+    relevance: float = 1.0
+    completeness: str = ""
+    expected_cost: int | None = None
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -328,6 +332,10 @@ class ActionCandidate:
             "parameters": dict(self.parameters),
             "priority": self.priority,
             "reason": self.reason,
+            "relevance": self.relevance,
+            "completeness": self.completeness,
+            "expected_cost": self.expected_cost,
+            "diagnostics": dict(self.diagnostics),
         }
 
 
@@ -638,11 +646,13 @@ def build_investigation_case_from_intent(claim_graph: Any) -> "InvestigationCase
         target_nodes[claim.id] = target_node
 
         field_roles: list[str] = []
+        required_roles: list[str] = list(claim.acceptance_rule.required_roles)
         required_fields: list[str] = []
         fact_kinds: list[str] = []
         completeness_required = claim.acceptance_rule.requires_query_complete
         for requirement in claim.observation_requirements:
             field_roles.extend(requirement.field_roles)
+            required_roles.extend(requirement.required_roles or requirement.field_roles)
             required_fields.extend(requirement.required_fields)
             fact_kinds.append(requirement.fact_kind)
             completeness_required = completeness_required or requirement.completeness_required
@@ -665,6 +675,7 @@ def build_investigation_case_from_intent(claim_graph: Any) -> "InvestigationCase
                 "claim_id": claim.id,
                 "claim_type": claim.claim_type,
                 "required_fields": list(dict.fromkeys((*claim.acceptance_rule.required_fields, *required_fields))),
+                "required_roles": list(dict.fromkeys(required_roles)),
                 "min_observations": claim.acceptance_rule.min_observations,
                 "value_must_match": claim.acceptance_rule.value_must_match,
                 "completeness_required": completeness_required,
@@ -674,7 +685,23 @@ def build_investigation_case_from_intent(claim_graph: Any) -> "InvestigationCase
             metadata={
                 "claim_id": claim.id,
                 "dependencies": list(claim.dependencies),
-                "evidence_requirements": list(claim.evidence_requirements),
+                # Keep both layers of the claim contract.  ``evidence_requirements``
+                # is the compatibility requirement linkage; observation
+                # requirements are the actual provider-neutral facts that this
+                # edge can prove.  The executor must use these IDs rather than
+                # inferring ownership from operation names or prose keywords.
+                "evidence_requirements": list(
+                    dict.fromkeys(
+                        (
+                            *claim.evidence_requirements,
+                            *(requirement.id for requirement in claim.observation_requirements),
+                        )
+                    )
+                ),
+                "observation_requirements": [
+                    requirement.id for requirement in claim.observation_requirements
+                ],
+                "verification_mode": "claim_contract",
                 "optional": claim.optional,
                 "is_prerequisite": claim.is_prerequisite,
                 "reason": claim.reason,

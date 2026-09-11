@@ -12,6 +12,7 @@ from hunting.contracts.cells import ProviderScope
 from hunting.contracts.entities import EntityRef
 from hunting.contracts.expectations import EvidenceRequirement
 from hunting.contracts.queries import CapabilityBinding, Diagnostic, ProviderOperation
+from hunting.contracts.source_profile import TelemetrySourceProfile
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,14 @@ class ProviderCapabilityCatalog:
     operations: list[ProviderOperation] = field(default_factory=list)
     permissions: list[str] = field(default_factory=list)
     completeness_semantics: str = "provider-defined"
+    # Provider-native partitions and schemas are retained as census data.  The
+    # adapter may add fields that are not understood by the core planner.
+    partitions: dict[str, dict[str, Any]] = field(default_factory=dict)
+    schemas: dict[str, dict[str, Any]] = field(default_factory=dict)
+    aliases: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Raw census profiles. Semantic meaning is added only by a validated
+    # runtime capability; this list is never a source-role authority.
+    source_profiles: list[TelemetrySourceProfile] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -71,10 +80,16 @@ class CapabilityGraph:
             raise ValueError("CapabilityGraph.census_version must not be empty")
 
     def selected_providers(self) -> list[str]:
-        return [a.provider_id for a in self.audit if a.selected]
+        return list(dict.fromkeys(a.provider_id for a in self.audit if a.selected))
 
     def rejected_providers(self) -> list[str]:
-        return [a.provider_id for a in self.audit if not a.selected]
+        return list(dict.fromkeys(a.provider_id for a in self.audit if not a.selected))
+
+    def get_provider(self, provider_id: str) -> ProviderCapabilityCatalog | None:
+        return next(
+            (provider for provider in self.providers if provider.provider_id == provider_id),
+            None,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -85,12 +100,56 @@ class CapabilityGraph:
                     "provider_id": p.provider_id,
                     "status": p.status,
                     "indices": list(p.indices),
+                    "sourcetypes": dict(p.sourcetypes),
+                    "supported_evidence_types": list(p.supported_evidence_types),
                     "observable_fields": list(p.observable_fields),
                     "retention_days": p.retention_days,
+                    "details": dict(p.details),
+                    "scopes": list(p.partitions.keys()),
+                    "operations": [op.id for op in p.operations],
+                    "permissions": list(p.permissions),
+                    "completeness_semantics": p.completeness_semantics,
+                    "partitions": dict(p.partitions),
+                    "schemas": dict(p.schemas),
+                    "aliases": {
+                        name: list(values)
+                        for name, values in p.aliases.items()
+                    },
+                    "source_profiles": [profile.to_dict() for profile in p.source_profiles],
                 }
                 for p in self.providers
             ],
-            "operations": [op.id for op in self.operations],
+            "operations": [
+                {
+                    "id": op.id,
+                    "provider_id": op.provider_id,
+                    "scope_ids": list(op.scope_ids),
+                    "params_schema": dict(op.params_schema),
+                    "pagination": op.pagination,
+                    "limit_semantics": op.limit_semantics,
+                    "semantic_intents": list(op.semantic_intents),
+                    "input_entity_kinds": list(op.input_entity_kinds),
+                    "output_entity_kinds": list(op.output_entity_kinds),
+                    "output_fields": list(op.output_fields),
+                    "output_fact_kinds": list(op.output_fact_kinds),
+                    "guaranteed_relations": list(op.guaranteed_relations),
+                    "input_roles": list(op.input_roles),
+                    "output_roles": list(op.output_roles),
+                    "native_field_bindings": {
+                        name: list(values)
+                        for name, values in op.native_field_bindings.items()
+                    },
+                    "output_value_bindings": {
+                        name: list(values)
+                        for name, values in op.output_value_bindings.items()
+                    },
+                    "query_builder": op.query_builder,
+                    "completeness": op.completeness,
+                    "expected_cost": op.expected_cost,
+                    "runtime_source_id": op.runtime_source_id,
+                }
+                for op in self.operations
+            ],
             "audit": [
                 {
                     "provider_id": a.provider_id,

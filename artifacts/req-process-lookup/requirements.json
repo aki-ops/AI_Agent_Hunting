@@ -1,0 +1,9 @@
+[
+  {
+    "id": "req-process",
+    "description": "Observation required for claim claim-process: process_ancestry",
+    "evidence_type": "process_ancestry",
+    "status": "CONFIRMED",
+    "necessity": "CRITICAL"
+  }
+]

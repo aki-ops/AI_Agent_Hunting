@@ -1,0 +1,94 @@
+{
+  "question": "Which process was observed on SRV-01?",
+  "claims": [
+    {
+      "id": "claim-process",
+      "statement": "host:SRV-01 observed_process process",
+      "subject_node_id": "node-subj-host",
+      "target_node_id": "node-target-object",
+      "required_relations": [],
+      "status": "PENDING"
+    }
+  ],
+  "subjects": [
+    {
+      "id": "node-subj-host",
+      "type": "host",
+      "value": "SRV-01",
+      "status": "KNOWN",
+      "confidence": 1.0,
+      "source": "input",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {}
+    }
+  ],
+  "requested_answer": {
+    "type": "process",
+    "role": "answer"
+  },
+  "assumptions": [],
+  "unknowns": [
+    {
+      "id": "unk-host-activity",
+      "entity_type": "process",
+      "description": "Activity connecting SRV-01 to process",
+      "relation_to_resolve": "host(SRV-01) -> connected_to -> process",
+      "mandatory": true,
+      "status": "UNRESOLVED"
+    }
+  ],
+  "evidence_requirements": [],
+  "required_correlations": [],
+  "acceptance_criteria": [
+    {
+      "id": "crit-host-chain",
+      "description": "Connection between SRV-01 and target object",
+      "required_path": [
+        "host",
+        "process"
+      ]
+    }
+  ],
+  "alternative_explanations": [],
+  "graph": {
+    "nodes": {
+      "node-subj-host": {
+        "id": "node-subj-host",
+        "type": "host",
+        "value": "SRV-01",
+        "status": "KNOWN",
+        "confidence": 1.0,
+        "source": "input",
+        "timestamp": null,
+        "origin_query_id": null,
+        "metadata": {}
+      },
+      "node-target-object": {
+        "id": "node-target-object",
+        "type": "process",
+        "value": "UNKNOWN_TARGET",
+        "status": "UNKNOWN",
+        "confidence": 1.0,
+        "source": "inference",
+        "timestamp": null,
+        "origin_query_id": null,
+        "metadata": {}
+      }
+    },
+    "edges": {
+      "edge-host-target": {
+        "id": "edge-host-target",
+        "source_id": "node-subj-host",
+        "target_id": "node-target-object",
+        "relation_type": "connected_to",
+        "status": "UNKNOWN",
+        "confidence": 1.0,
+        "source": "inference",
+        "timestamp": null,
+        "origin_query_id": null,
+        "metadata": {}
+      }
+    }
+  }
+}

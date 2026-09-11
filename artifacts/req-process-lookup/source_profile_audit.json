@@ -1,0 +1,71 @@
+{
+  "status": "NO_LLM_CALLER",
+  "readiness": [
+    {
+      "goal_id": "claim-process",
+      "relation": "observed_process",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [],
+      "capability_gaps": [
+        "no_typed_reachable_route"
+      ],
+      "terminal_cause": null
+    }
+  ],
+  "profiling_goal_ids": [
+    "claim-process"
+  ],
+  "retrieval": [
+    {
+      "relation": "observed_process",
+      "query_terms": [
+        "asks",
+        "entity",
+        "observed",
+        "process",
+        "request"
+      ],
+      "profile_count": 1,
+      "candidate_count": 1,
+      "candidates": [
+        {
+          "relation": "observed_process",
+          "source_id": "cdb:source:events",
+          "score": 0.0,
+          "matched_terms": [],
+          "matched_field_ids": [],
+          "rank": 1,
+          "low_confidence": true
+        }
+      ],
+      "selected_source_ids": [
+        "cdb:source:events"
+      ],
+      "source_coverage": {
+        "discovered": 1,
+        "scheduled": 1,
+        "complete": true
+      },
+      "field_coverage": {
+        "discovered": 17,
+        "scheduled": 17,
+        "complete": true
+      },
+      "batch_count": 1,
+      "max_profiles_per_batch": 8,
+      "max_fields_per_source_per_batch": 48,
+      "ordering_only": true
+    }
+  ],
+  "census_profile_discovery": {},
+  "proposals": [],
+  "rejected": [],
+  "relation_calls": [],
+  "runtime_capabilities": [],
+  "runtime_operation_ids": []
+}

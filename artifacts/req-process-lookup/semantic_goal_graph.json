@@ -1,0 +1,39 @@
+{
+  "id": "semantic-graph-process-lookup",
+  "request_id": "req-process-lookup",
+  "objective": "Find the process observed on SRV-01",
+  "variables": [
+    {
+      "id": "host_srv_01",
+      "entity_type": "entity",
+      "value": "host:SRV-01",
+      "constraints": [],
+      "value_origin": "request",
+      "verification_status": "UNVERIFIED"
+    },
+    {
+      "id": "object_1",
+      "entity_type": "process",
+      "value": null,
+      "constraints": [],
+      "value_origin": "request",
+      "verification_status": "UNVERIFIED"
+    }
+  ],
+  "relations": [
+    {
+      "id": "claim-process",
+      "subject": "host_srv_01",
+      "relation": "observed_process",
+      "object": "object_1",
+      "required": true,
+      "description": "The request asks for the observed process"
+    }
+  ],
+  "qualifiers": [],
+  "answers": [],
+  "assumptions": [],
+  "uncertainties": [
+    "Bridge generated from legacy ClaimGraph; semantic compiler migration pending"
+  ]
+}

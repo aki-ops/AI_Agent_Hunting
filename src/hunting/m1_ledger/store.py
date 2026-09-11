@@ -123,19 +123,14 @@ class ObservationStore:
 
         if hasattr(state, "query_results"):
             for qr in state.query_results:
-                if getattr(qr, "native_query", None):
-                    if qid and hasattr(qr, "logical_plan_id") and qr.logical_plan_id == qid:
-                        trace["native_query"] = qr.native_query
-                        trace["query_result"] = {
-                            "rows_count": len(getattr(qr, "rows", []) or []),
-                            "executed_ok": qr.executed_ok,
-                        }
-                        break
-            if trace["native_query"] is None and qid and hasattr(state, "native_query_plans"):
-                for nqp in state.native_query_plans:
-                    if getattr(nqp, "id", None) == qid or getattr(nqp, "logical_plan_id", None) == qid:
-                        trace["native_query"] = nqp.native_query
-                        break
+                if qid and getattr(qr, "query_id", None) == qid:
+                    trace["native_query"] = getattr(qr, "native_query", None)
+                    trace["query_result"] = {
+                        "rows_count": len(getattr(qr, "rows", []) or []),
+                        "executed_ok": qr.executed_ok,
+                        "complete": qr.complete,
+                    }
+                    break
 
         # If hypotheses not yet populated from card, infer from requirements
         if not trace["hypotheses"] and trace["requirements"] and hasattr(state, "hypotheses"):

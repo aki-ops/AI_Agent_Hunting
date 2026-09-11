@@ -7,7 +7,7 @@ The defensible approach is to compose established principles and explicitly
 test the local composition:
 
 ```text
-Request -> ClaimGraph -> CapabilityGraph -> EvidenceGraph -> verified account
+Request -> SemanticGoalGraph -> LogicalPlan/CapabilityGraph -> EvidenceGraph -> verified account
 ```
 
 This is a general contract, not a universal attack path. It must not contain
@@ -19,7 +19,7 @@ branches such as `if email`, `if Tor`, `if CVE`, `event_family` or
 | Principle used in v6 | Evidence | Limit |
 |---|---|---|
 | Provenance and multi-hop evidence | [SLEUTH](https://www.usenix.org/system/files/conference/usenixsecurity17/sec17-hossain.pdf), [HOLMES](https://ieeexplore.ieee.org/document/8835390/), [OmegaLog](https://experts.illinois.edu/en/publications/omegalog-high-fidelity-attack-investigation-via-transparent-multi/) | Supports causal reconstruction, not a mandatory path for every question. |
-| Typed logical query layer | [AIQL](https://www.usenix.org/system/files/conference/atc18/atc18-gao.pdf), [ThreatRaptor](https://github.com/peng-gao-lab/threatraptor) | Supports an intermediate representation, not our exact ClaimGraph. |
+| Typed logical query layer | [AIQL](https://www.usenix.org/system/files/conference/atc18/atc18-gao.pdf), [ThreatRaptor](https://github.com/peng-gao-lab/threatraptor) | Supports an intermediate representation, not our exact SemanticGoalGraph. |
 | Hypothesis/evidence/action loop | [Evidential Cyber Threat Hunting](https://arxiv.org/abs/2104.10319), [ATHAFI](https://arxiv.org/abs/2003.03663), [TaHiTI](https://www.nvb.nl/themas/veilig-bankieren/tahiti/) | Supports uncertainty and adaptive collection; budgets/stopping are local. |
 | Heterogeneous schema/capability binding | [OCSF](https://ocsf.io/), [MITRE Data Components](https://attack.mitre.org/datacomponents/), [Microsoft Threat Hunting Assistant](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-security-copilot) | No standard covers every provider-native field. |
 | Bounded LLM/tool execution | [ExCyTIn-Bench](https://www.microsoft.com/en-us/research/publication/excytin-bench-evaluating-llm-agents-on-cyber-threat-investigation/), [Verifiably Safe Tool Use](https://doi.org/10.1145/3786582.3786839) | Current LLMs remain unreliable on multistep cyber investigation. |
@@ -29,7 +29,7 @@ branches such as `if email`, `if Tor`, `if CVE`, `event_family` or
 
 The following are not externally proven and must be evaluated in this repo:
 
-- `ClaimGraph`, `CapabilityGraph` and `EvidenceGraph` schemas;
+- `SemanticGoalGraph`, `LogicalPlan`, `CapabilityGraph` and `EvidenceGraph` schemas;
 - the action relevance/completeness/cost score;
 - budgets, card limits, stopping enums and expansion policy;
 - native adapter contracts and source fallback policy;

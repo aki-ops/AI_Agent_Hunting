@@ -8,6 +8,7 @@ Enforces:
 from __future__ import annotations
 
 import hashlib
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -53,6 +54,9 @@ class LLMCallRecord:
     validation_result: str = ""
     selected_operation: str = ""
     search_terms: list[str] = field(default_factory=list)
+    status: str = "SUCCESS"
+    physical_attempts: int = 1
+    error: str = ""
 
 
 class LLMUsageTracker:
@@ -82,6 +86,55 @@ class LLMUsageTracker:
     def is_exhausted(self) -> bool:
         return self.call_count >= self.max_calls or self.total_tokens >= self.max_total_tokens
 
+    @staticmethod
+    def estimate_tokens(text: str) -> int:
+        """Return the same conservative character-based estimate used by the ledger.
+
+        This is intentionally a preflight estimate, not a tokenizer claim.  The
+        provider's usage metadata remains authoritative after a successful call.
+        """
+        return max(1, math.ceil(len(text or "") / 4))
+
+    @property
+    def remaining_tokens(self) -> int:
+        return max(0, self.max_total_tokens - self.total_tokens)
+
+    def preflight(
+        self,
+        prompt: str,
+        *,
+        expected_completion_tokens: int = 0,
+        component: str = "generic",
+    ) -> dict[str, int | str]:
+        """Check a call before network execution.
+
+        The old implementation discovered an oversized prompt only after the
+        provider had already accepted it.  Preflight makes that failure local,
+        deterministic and auditable: no request is sent when the conservative
+        prompt plus reserved completion budget cannot fit the hunt budget.
+        """
+        if self.call_count >= self.max_calls:
+            raise RuntimeError(
+                f"LLM budget exhausted for component '{component}': "
+                f"maximum {self.max_calls} calls already used"
+            )
+        prompt_tokens = self.estimate_tokens(prompt)
+        reserved_completion = max(0, int(expected_completion_tokens))
+        projected = prompt_tokens + reserved_completion
+        if projected > self.remaining_tokens:
+            raise RuntimeError(
+                f"LLM budget preflight rejected component '{component}': "
+                f"estimated prompt {prompt_tokens} + reserved completion "
+                f"{reserved_completion} = {projected} tokens exceeds "
+                f"remaining budget {self.remaining_tokens}"
+            )
+        return {
+            "component": component,
+            "estimated_prompt_tokens": prompt_tokens,
+            "reserved_completion_tokens": reserved_completion,
+            "remaining_tokens": self.remaining_tokens,
+        }
+
     def record_call(
         self,
         component: str,
@@ -95,6 +148,9 @@ class LLMUsageTracker:
         validation_result: str = "",
         selected_operation: str = "",
         search_terms: list[str] | tuple[str, ...] = (),
+        status: str = "SUCCESS",
+        physical_attempts: int = 1,
+        error: str = "",
     ) -> LLMCallRecord:
         """Record an LLM call and update token and cost accounting."""
         if self.call_count >= self.max_calls:
@@ -103,8 +159,8 @@ class LLMUsageTracker:
             )
 
         # Prioritize actual token counts from API metadata; fallback to ~4 chars/token
-        prompt_tokens = actual_prompt_tokens if (actual_prompt_tokens is not None and actual_prompt_tokens > 0) else max(1, len(prompt) // 4)
-        comp_tokens = actual_completion_tokens if (actual_completion_tokens is not None and actual_completion_tokens > 0) else max(1, len(response) // 4)
+        prompt_tokens = actual_prompt_tokens if (actual_prompt_tokens is not None and actual_prompt_tokens > 0) else self.estimate_tokens(prompt)
+        comp_tokens = actual_completion_tokens if (actual_completion_tokens is not None and actual_completion_tokens > 0) else self.estimate_tokens(response)
         active_model = model or self.model_name
         pricing = get_model_pricing(active_model)
         call_cost = (prompt_tokens * pricing["prompt"]) + (comp_tokens * pricing["completion"])
@@ -124,6 +180,9 @@ class LLMUsageTracker:
             validation_result=validation_result,
             selected_operation=selected_operation,
             search_terms=list(search_terms),
+            status=status,
+            physical_attempts=max(0, int(physical_attempts)),
+            error=error,
         )
         self.calls.append(record)
         self.total_prompt_tokens += prompt_tokens
@@ -157,6 +216,9 @@ class LLMUsageTracker:
                     "validation_result": c.validation_result,
                     "selected_operation": c.selected_operation,
                     "search_terms": c.search_terms,
+                    "status": c.status,
+                    "physical_attempts": c.physical_attempts,
+                    "error": c.error,
                 }
                 for c in self.calls
             ],

@@ -213,6 +213,8 @@ class ApiLLMProvider(LLMProvider):
 
     def __init__(self, config: ApiLLMConfig) -> None:
         self.config = config
+        self.last_attempt_count = 0
+        self.last_usage: dict[str, int] = {}
 
     def generate(self, prompt_context: dict[str, Any]) -> str:
         """Execute real HTTP POST request to external LLM API and return structured JSON string."""
@@ -250,6 +252,32 @@ class ApiLLMProvider(LLMProvider):
             "Valid evidence_requirement values: 'process_ancestry', 'authentication_activity', 'network_connection', 'persistence_change', 'file_modification', 'dns_activity', 'scope_records'.\n"
             "Valid field_predicate ops: 'EQUALS', 'CONTAINS', 'EXISTS', 'ABSENT'."
         )
+
+        # Source profiling is a separate bounded component.  It must not use
+        # the legacy M2 hypothesis prompt because that prompt can fabricate
+        # scenario expectations instead of returning source mappings.
+        if prompt_context.get("component") == "source_profiler":
+            system_instruction = (
+                "You are a telemetry schema-matching assistant. Return only valid JSON "
+                "with a top-level proposals array. Propose candidate mappings from "
+                "the supplied census IDs to semantic roles and relations. Never invent "
+                "source IDs, field IDs, values, native queries, evidence or verdicts. "
+                "Each proposal must use {source_id, relation, input_roles, "
+                "output_roles, proof_mode, probe_kind, projection_roles, "
+                "supported_constraints, searchable_constraints, "
+                "temporal_roles, action_roles, state_roles, "
+                "artifact_identity_roles, correlation_roles, "
+                "relaxable_constraint_keys, rationale_refs, confidence}; "
+                "role values must be census field IDs and constraint keys must "
+                "come from the supplied semantic requirement. "
+                "Use supported_constraints only for constraints the source can "
+                "prove; use searchable_constraints only for retrieval hints. "
+                "Relaxable keys must be a subset of searchable_constraints. "
+                "Every proposal must reference existing census IDs. Use only these "
+                "proof_mode values: retrieval_only, relation_observable. Use only "
+                "these probe_kind values: cooccurrence, schema, value_presence, temporal. "
+                "Return {\"proposals\": []} when no mapping is justified."
+            )
 
 
 
@@ -292,7 +320,10 @@ class ApiLLMProvider(LLMProvider):
 
         max_retries = 2
         last_err: Exception | None = None
+        self.last_attempt_count = 0
+        self.last_usage = {}
         for attempt in range(1, max_retries + 1):
+            self.last_attempt_count = attempt
             try:
                 with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
                     content_type = resp.headers.get("Content-Type", "")
@@ -430,7 +461,10 @@ class ApiLLMProvider(LLMProvider):
 
         max_retries = 2
         last_err: Exception | None = None
+        self.last_attempt_count = 0
+        self.last_usage = {}
         for attempt in range(1, max_retries + 1):
+            self.last_attempt_count = attempt
             try:
                 with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
                     content_type = resp.headers.get("Content-Type", "")
@@ -557,6 +591,16 @@ def create_llm_caller(
     def caller(prompt: str) -> str:
         if tracker is not None and tracker.is_exhausted:
             raise RuntimeError(f"LLM budget exhausted for component '{component}' - maximum {tracker.max_calls} calls exceeded")
+        if tracker is not None and hasattr(tracker, "preflight"):
+            # Reserve the provider's configured completion ceiling before any
+            # network request.  This prevents a large schema/catalog prompt
+            # from consuming the budget and only failing after the response.
+            configured_completion = int(getattr(getattr(provider, "config", None), "max_tokens", 4000) or 4000)
+            tracker.preflight(
+                prompt,
+                expected_completion_tokens=configured_completion,
+                component=component,
+            )
         t0 = time.perf_counter()
         resp = "{}"
         try:
@@ -578,6 +622,12 @@ def create_llm_caller(
                         "Select provider-neutral semantic operations and search terms matching the investigation spec. "
                         "Do NOT emit vendor SPL/SQL/KQL queries or unobservable fields. Output JSON only."
                     ),
+                    "source_profiler": (
+                        "You are the telemetry source profiling stage of a threat-hunting system. "
+                        "Return only the JSON contract requested by the user prompt. Propose "
+                        "candidate source and field-role mappings only from census IDs. Never "
+                        "invent source IDs, fields, values, native queries, evidence or verdicts."
+                    ),
                     "evaluator": (
                         "You are the evidence-evaluation stage of a threat-hunting system. "
                         "Return only the JSON contract requested by the user prompt. Do not "
@@ -590,6 +640,25 @@ def create_llm_caller(
             else:
                 resp = "{}"
         except Exception as err:
+            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            if tracker is not None:
+                model = getattr(getattr(provider, "config", None), "model", getattr(tracker, "model_name", "stub"))
+                attempts = int(getattr(provider, "last_attempt_count", 1) or 1)
+                try:
+                    tracker.record_call(
+                        component=component,
+                        prompt=prompt,
+                        response="",
+                        duration_ms=elapsed_ms,
+                        model=model,
+                        actual_prompt_tokens=None,
+                        actual_completion_tokens=0,
+                        status="FAILED",
+                        physical_attempts=attempts,
+                        error=str(err),
+                    )
+                except Exception as rec_err:
+                    logger.debug(f"Failed to record failed call in tracker: {rec_err}")
             is_timeout = (
                 isinstance(err, (TimeoutError, LLMTimeoutError))
                 or "timed out" in str(err).lower()
@@ -624,6 +693,8 @@ def create_llm_caller(
                     model=model,
                     actual_prompt_tokens=actual_prompt,
                     actual_completion_tokens=actual_completion,
+                    status="SUCCESS",
+                    physical_attempts=int(getattr(provider, "last_attempt_count", 1) or 1),
                 )
             except Exception as rec_err:
                 logger.debug(f"Failed to record call in tracker: {rec_err}")
@@ -750,6 +821,10 @@ class StubSemanticCompiler:
                 "hypothesis_classes": hypothesis_classes,
                 "hypothesis_assumptions": hypothesis_assumptions,
                 "requirement_search_hints": requirement_search_hints,
+                # Test-fixture compatibility marker.  Production LLM output
+                # does not set this and therefore always uses the ClaimGraph
+                # execution path.
+                "legacy_fixture_projection": True,
             },
         })
 

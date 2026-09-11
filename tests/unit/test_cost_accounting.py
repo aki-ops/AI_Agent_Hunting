@@ -26,6 +26,18 @@ class MockLLMProvider(LLMProvider):
         return '{"result": "mock_call_raw_response_content"}'
 
 
+class FailingLLMProvider(LLMProvider):
+    def __init__(self) -> None:
+        self.config = type("Config", (), {"model": "gemini-2.5-flash", "max_tokens": 50})()
+        self.last_attempt_count = 2
+
+    def call_raw(self, prompt: str, system_instruction: str | None = None) -> str:
+        raise RuntimeError("gateway unavailable")
+
+    def generate(self, prompt_context: dict) -> str:
+        raise RuntimeError("gateway unavailable")
+
+
 def test_model_pricing_lookup():
     gemini_price = get_model_pricing("gemini-2.5-flash")
     assert gemini_price["prompt"] == 0.075 / 1_000_000
@@ -70,6 +82,25 @@ def test_cost_budget_ceiling():
         tracker.record_call("comp3", "prompt3", "resp3")
 
 
+def test_llm_preflight_rejects_oversized_prompt_before_provider_call():
+    tracker = LLMUsageTracker(max_calls=3, max_total_tokens=100, model_name="gpt-4o")
+    with pytest.raises(RuntimeError, match="preflight rejected"):
+        tracker.preflight("x" * 401, expected_completion_tokens=10, component="compiler")
+    assert tracker.call_count == 0
+    assert tracker.total_tokens == 0
+
+
+def test_create_llm_caller_preflights_before_call():
+    provider = MockLLMProvider(model="gemini-2.5-flash")
+    provider.config.max_tokens = 50
+    tracker = LLMUsageTracker(max_calls=3, max_total_tokens=100, model_name="gemini-2.5-flash")
+    caller = create_llm_caller(provider, tracker, component="compiler")
+
+    with pytest.raises(RuntimeError, match="preflight rejected"):
+        caller("x" * 401)
+    assert tracker.call_count == 0
+
+
 def test_create_llm_caller_tracked():
     provider = MockLLMProvider(model="gemini-2.5-flash")
     tracker = LLMUsageTracker(max_calls=3, model_name="gemini-2.5-flash")
@@ -81,6 +112,19 @@ def test_create_llm_caller_tracked():
     assert tracker.estimated_cost_usd > 0
     assert tracker.calls[0].component == "evaluator"
     assert tracker.calls[0].model == "gemini-2.5-flash"
+
+
+def test_failed_llm_call_and_physical_attempts_are_accounted():
+    provider = FailingLLMProvider()
+    tracker = LLMUsageTracker(max_calls=3, model_name="gemini-2.5-flash")
+    caller = create_llm_caller(provider, tracker, component="source_profiler")
+
+    assert caller("profile this source") == "{}"
+    assert tracker.call_count == 1
+    assert tracker.is_exhausted is False
+    assert tracker.calls[0].status == "FAILED"
+    assert tracker.calls[0].physical_attempts == 2
+    assert tracker.calls[0].error == "gateway unavailable"
 
 
 def test_splunk_compiler_domain_filter():
@@ -334,5 +378,3 @@ def test_outcome_guard_prevents_false_contradiction():
     )
     assert account_partial.outcome == HuntOutcome.INCONCLUSIVE
     assert account_partial.outcome != HuntOutcome.CONTRADICTED
-
-

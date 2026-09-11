@@ -165,6 +165,7 @@ def test_email_relation_verification():
     acct_node.value = "aturing"
     acct_node.status = NodeStatus.KNOWN
     email_node = graph.get_node(email_edge.target_id)
+    email_edge.citations = [obs_ad.id]
     res_email = verifier.verify_candidate_edge(email_edge, acct_node, email_node, ledger, [obs_ad])
     assert res_email.verified is True
     assert res_email.target_value == "aturing@froth.ly"
@@ -193,6 +194,7 @@ def test_email_relation_verification():
 
     sent_edge = graph.get_edge("edge-claim-message")
     msg_node = graph.get_node(sent_edge.target_id)
+    sent_edge.citations = [obs_smtp.id]
     res_sent = verifier.verify_candidate_edge(sent_edge, email_node, msg_node, ledger, [obs_smtp])
     assert res_sent.verified is True
     assert res_sent.target_value == "<201708250315.msg001@froth.ly>"
@@ -203,6 +205,7 @@ def test_email_relation_verification():
     # 3. Message -> Recipient
     rcvd_edge = graph.get_edge("edge-claim-recipient")
     rcpt_node = graph.get_node(rcvd_edge.target_id)
+    rcvd_edge.citations = [obs_smtp.id]
     res_rcvd = verifier.verify_candidate_edge(rcvd_edge, msg_node, rcpt_node, ledger, [obs_smtp])
     assert res_rcvd.verified is True
     assert res_rcvd.target_value == "val.smith@berkbeer.com"

@@ -1,0 +1,107 @@
+{
+  "nodes": {
+    "node-claim-process-subject": {
+      "id": "node-claim-process-subject",
+      "type": "host",
+      "value": "SRV-01",
+      "status": "KNOWN",
+      "confidence": 1.0,
+      "field_role": null,
+      "source": "claim_graph",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {
+        "claim_id": "claim-process"
+      }
+    },
+    "node-claim-process-object": {
+      "id": "node-claim-process-object",
+      "type": "process",
+      "value": "powershell.exe -NoProfile",
+      "status": "KNOWN",
+      "confidence": 1.0,
+      "field_role": null,
+      "source": "claim_graph",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {
+        "claim_id": "claim-process"
+      }
+    }
+  },
+  "edges": {
+    "edge-claim-process": {
+      "id": "edge-claim-process",
+      "source_id": "node-claim-process-subject",
+      "source_entity_type": "host",
+      "relation_type": "observed_process",
+      "target_id": "node-claim-process-object",
+      "target_entity_type": "process",
+      "required_field_roles": {
+        "source": "endpoint_host",
+        "target": "process_name"
+      },
+      "source_field_bindings": {},
+      "required_native_types": [],
+      "acceptance_predicate": {
+        "claim_id": "claim-process",
+        "claim_type": "attribute",
+        "required_fields": [
+          "image"
+        ],
+        "required_roles": [
+          "endpoint_host",
+          "process_name"
+        ],
+        "min_observations": 1,
+        "value_must_match": null,
+        "completeness_required": true,
+        "fact_kinds": [
+          "process_ancestry"
+        ],
+        "query_complete": true
+      },
+      "time_constraints": {},
+      "acceptable_operations": [],
+      "status": "VERIFIED",
+      "confidence": 1.0,
+      "citations": [
+        "obs-1"
+      ],
+      "origin_query_id": null,
+      "metadata": {
+        "claim_id": "claim-process",
+        "dependencies": [],
+        "evidence_requirements": [
+          "req-process"
+        ],
+        "observation_requirements": [
+          "req-process"
+        ],
+        "verification_mode": "claim_contract",
+        "optional": false,
+        "is_prerequisite": false,
+        "reason": "The request asks for the observed process"
+      }
+    }
+  },
+  "proofs": {
+    "proof-edge-claim-process": {
+      "id": "proof-edge-claim-process",
+      "edge_id": "edge-claim-process",
+      "source_node_id": "node-claim-process-subject",
+      "source_value": "SRV-01",
+      "target_node_id": "node-claim-process-object",
+      "target_value": "powershell.exe -NoProfile",
+      "relation_type": "observed_process",
+      "citations": [
+        "obs-1"
+      ],
+      "field_matches": {
+        "cmdline": "powershell.exe -NoProfile"
+      },
+      "verified_at": "2026-09-11T03:16:05.401426",
+      "verified_by": "ClaimContractVerifier"
+    }
+  }
+}

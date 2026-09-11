@@ -1,0 +1,16 @@
+{
+  "id": "req-process-lookup",
+  "kind": "QUESTION",
+  "content": "Which process was observed on SRV-01?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {
+    "mode": "lookup",
+    "answer_type": "process",
+    "required_fields": [
+      "image"
+    ],
+    "required_roles": [],
+    "question": "Which process was observed on SRV-01?"
+  }
+}

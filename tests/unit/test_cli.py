@@ -10,7 +10,9 @@ from hunting.cli import (
     create_adhoc_alert,
     parse_alert_from_file_or_content,
     run_cli,
+    write_hunt_abort_artifact,
 )
+from hunting.contracts.hunt import HuntRequest, HuntRequestKind
 
 
 def test_cli_defaults_to_api_and_auto_discovers_provider():
@@ -160,6 +162,7 @@ def test_cli_hypothesis_hunt_with_cve(tmp_path):
     out_report = tmp_path / "cve_report.md"
 
     args = parser.parse_args([
+        "--provider", "cdb",
         "--llm", "stub",
         "--cve", "CVE-2024-21887",
         "--host", "WEB-IVANTI-01",
@@ -181,6 +184,7 @@ def test_cli_hypothesis_hunt_with_ttp_and_entity(tmp_path):
     out_report = tmp_path / "ttp_report.md"
 
     args = parser.parse_args([
+        "--provider", "cdb",
         "--llm", "stub",
         "--ttp", "T1059.001",
         "--host", "WORKSTATION-01",
@@ -200,6 +204,7 @@ def test_cli_hypothesis_hunt_with_query(tmp_path):
     out_report = tmp_path / "nl_report.md"
 
     args = parser.parse_args([
+        "--provider", "cdb",
         "--llm", "stub",
         "--query", "Investigate abnormal python executions on web servers",
         "--output", str(out_report),
@@ -212,12 +217,43 @@ def test_cli_hypothesis_hunt_with_query(tmp_path):
     assert "# Hunt Report" in content
 
 
+def test_cli_auto_provider_does_not_silently_create_cdb(monkeypatch, capsys):
+    """An unavailable Splunk source is explicit, never an empty SQLite hunt."""
+    parser = build_parser()
+    args = parser.parse_args(["--hypothesis", "Find the suspicious file"])
+    monkeypatch.setattr("hunting.cli.SplunkLiveAdapter.is_available", lambda **_: False)
+
+    assert run_cli(args) == 2
+    output = capsys.readouterr()
+    assert "No telemetry provider was selected" in output.err
+    assert "CDB" not in output.out
+
+
+def test_cli_abort_artifact_replaces_stale_report(tmp_path):
+    request = HuntRequest(
+        id="req-abort",
+        kind=HuntRequestKind.QUESTION,
+        content="Find the answer",
+    )
+    output = tmp_path / "report.md"
+    output.write_text("old report from another run", encoding="utf-8")
+
+    write_hunt_abort_artifact(request, str(output), "provider timeout")
+
+    content = output.read_text(encoding="utf-8")
+    assert "EXECUTION_FAILED" in content
+    assert "Find the answer" in content
+    assert "provider timeout" in content
+    assert "old report from another run" not in content
+
+
 def test_cli_hypothesis_hunt_confirmation_gate(tmp_path):
     """Test analyst decision gates during hypothesis hunting with --no-auto-confirm."""
     parser = build_parser()
 
     # Decline gate -> returns code 2
     args_decline = parser.parse_args([
+        "--provider", "cdb",
         "--llm", "stub",
         "--cve", "CVE-2024-21887",
         "--host", "WEB-IVANTI-01",
@@ -231,6 +267,7 @@ def test_cli_hypothesis_hunt_confirmation_gate(tmp_path):
     # Accept gate -> returns code 0 and produces report
     out_report = tmp_path / "confirmed_hunt.md"
     args_accept = parser.parse_args([
+        "--provider", "cdb",
         "--llm", "stub",
         "--cve", "CVE-2024-21887",
         "--host", "WEB-IVANTI-01",

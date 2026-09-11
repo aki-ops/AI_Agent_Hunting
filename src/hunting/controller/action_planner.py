@@ -76,34 +76,41 @@ class InvestigationActionPlanner:
             actionable_edges = case_graph.get_unproven_edges(only_known_source=True)
 
             if actionable_edges:
-                edge = actionable_edges[0]
-                src_node = case_graph.get_node(edge.source_id)
-                tgt_node = case_graph.get_node(edge.target_id)
-                if src_node and tgt_node:
+                candidates: list[tuple[Any, Any, Any]] = []
+                for edge in actionable_edges:
+                    src_node = case_graph.get_node(edge.source_id)
+                    tgt_node = case_graph.get_node(edge.target_id)
+                    if not src_node or not tgt_node:
+                        continue
                     candidate = self.binder.create_candidate(edge, src_node, tgt_node)
                     if candidate:
-                        if candidate.priority == 1:
-                            return ActionDecision(
-                                action=InvestigationAction.RESOLVE_ENTITY,
-                                reason=candidate.reason,
-                                target_entity=str(getattr(tgt_node, "type", "")),
-                                metadata={
-                                    "candidate": candidate.to_dict(),
-                                    "edge_id": edge.id,
-                                    "operation_name": candidate.operation_name,
-                                },
-                            )
-                        else:
-                            return ActionDecision(
-                                action=InvestigationAction.TEST,
-                                reason=candidate.reason,
-                                target_entity=str(getattr(tgt_node, "type", "")),
-                                metadata={
-                                    "candidate": candidate.to_dict(),
-                                    "edge_id": edge.id,
-                                    "operation_name": candidate.operation_name,
-                                },
-                            )
+                        candidates.append((candidate, edge, tgt_node))
+                if candidates:
+                    candidate, edge, tgt_node = min(
+                        candidates,
+                        key=lambda item: (
+                            item[0].priority,
+                            item[0].expected_cost is None,
+                            item[0].expected_cost or 0,
+                            -item[0].relevance,
+                            item[1].id,
+                        ),
+                    )
+                    action = (
+                        InvestigationAction.RESOLVE_ENTITY
+                        if candidate.priority == 1
+                        else InvestigationAction.TEST
+                    )
+                    return ActionDecision(
+                        action=action,
+                        reason=candidate.reason,
+                        target_entity=str(getattr(tgt_node, "type", "")),
+                        metadata={
+                            "candidate": candidate.to_dict(),
+                            "edge_id": edge.id,
+                            "operation_name": candidate.operation_name,
+                        },
+                    )
 
             # Check if all edges are proven
             all_unproven = case_graph.get_unproven_edges(only_known_source=False)
@@ -113,21 +120,29 @@ class InvestigationActionPlanner:
                     reason="All mandatory causal relations in case graph verified.",
                 )
 
-            # If unproven edges remain but none have KNOWN source, check for unproven identity prefix
+            # If unproven edges remain but none have KNOWN source, the claim
+            # dependencies are not executable yet.  Do not invent an
+            # identity/endpoint step from the fact that a subject happens to
+            # be a person; the validated ClaimGraph and capability contract
+            # must define that prerequisite explicitly.  The old identity
+            # shortcut is retained only for legacy model-only tests.
             if all_unproven:
-                subj_person = any(
-                    str(getattr(n, "type", "")).lower() in ("person", "user")
-                    for n in case_graph.nodes.values()
-                )
+                if self.binder.capability_graph is None:
+                    subj_person = any(
+                        str(getattr(n, "type", "")).lower() in ("person", "user")
+                        for n in case_graph.nodes.values()
+                    )
+                else:
+                    subj_person = False
                 if subj_person and state is not None and not state.identity_resolved:
                     return ActionDecision(
                         action=InvestigationAction.RESOLVE_ENTITY,
-                        reason="Subject identity prefix unresolved; must prove endpoint before downstream queries.",
+                        reason="Legacy model requires an unresolved subject identity prefix.",
                         target_entity="endpoint",
                     )
                 return ActionDecision(
                     action=InvestigationAction.STOP,
-                    reason="Unproven relations remain but causal source dependencies are unresolved.",
+                    reason="Unproven claim dependencies remain without an executable known-source edge.",
                 )
 
         if model is None:

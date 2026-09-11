@@ -1,0 +1,1152 @@
+{
+  "id": "capability-graph:req-process-lookup",
+  "census_version": "2026.1.0",
+  "providers": [
+    {
+      "provider_id": "cdb",
+      "status": "ONLINE",
+      "indices": [],
+      "sourcetypes": {},
+      "supported_evidence_types": [
+        "authentication_activity",
+        "dns_activity",
+        "file_modification",
+        "network_connection",
+        "persistence_change",
+        "process_ancestry",
+        "scope_records",
+        "web_request"
+      ],
+      "observable_fields": [
+        "id",
+        "timestamp",
+        "event_id",
+        "native_type",
+        "host",
+        "user",
+        "pid",
+        "ppid",
+        "cmdline",
+        "image",
+        "ip",
+        "port",
+        "domain",
+        "file_path",
+        "action",
+        "status",
+        "raw_ref"
+      ],
+      "retention_days": 4000,
+      "details": {
+        "database": ":memory:",
+        "table": "events"
+      },
+      "scopes": [
+        "cdb_security"
+      ],
+      "operations": [
+        "cdb_scope_scan",
+        "search_text",
+        "cdb_process_search",
+        "cdb_auth_search",
+        "cdb_net_search",
+        "cdb_persistence_search",
+        "cdb_file_search",
+        "cdb_dns_search",
+        "cdb_web_requests",
+        "cdb_web_search",
+        "resolve_person_to_account",
+        "resolve_account_to_endpoint",
+        "resolve_endpoint_to_client_ip",
+        "find_web_activity_from_client_ip",
+        "find_dns_activity_from_client_ip",
+        "find_web_activity_from_endpoint",
+        "find_process_from_endpoint",
+        "find_file_change_from_endpoint",
+        "find_file_change_from_process"
+      ],
+      "permissions": [
+        "read_sqlite"
+      ],
+      "completeness_semantics": "complete only on EOF; limit+1 detects pagination",
+      "partitions": {
+        "cdb_security": {
+          "native_partition": {
+            "database": "cdb.sqlite",
+            "table": "events"
+          },
+          "coverage_start": null,
+          "coverage_end": null,
+          "retention_days": null,
+          "known_gaps": []
+        }
+      },
+      "schemas": {
+        "events": {
+          "fields": [
+            "id",
+            "timestamp",
+            "event_id",
+            "native_type",
+            "host",
+            "user",
+            "pid",
+            "ppid",
+            "cmdline",
+            "image",
+            "ip",
+            "port",
+            "domain",
+            "file_path",
+            "action",
+            "status",
+            "raw_ref"
+          ]
+        }
+      },
+      "aliases": {
+        "client_ip": [
+          "ip"
+        ],
+        "endpoint_host": [
+          "host"
+        ],
+        "account_name": [
+          "user"
+        ],
+        "domain_name": [
+          "domain"
+        ],
+        "process_name": [
+          "image"
+        ]
+      },
+      "source_profiles": [
+        {
+          "source_id": "cdb:source:events",
+          "provider_id": "cdb",
+          "partition_id": "cdb_security",
+          "native_type": "events",
+          "event_count": null,
+          "fields": [
+            {
+              "field_id": "cdb:events:field:id",
+              "name": "id",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:timestamp",
+              "name": "timestamp",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:event_id",
+              "name": "event_id",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:native_type",
+              "name": "native_type",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:host",
+              "name": "host",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:user",
+              "name": "user",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:pid",
+              "name": "pid",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:ppid",
+              "name": "ppid",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:cmdline",
+              "name": "cmdline",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:image",
+              "name": "image",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:ip",
+              "name": "ip",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:port",
+              "name": "port",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:domain",
+              "name": "domain",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:file_path",
+              "name": "file_path",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:action",
+              "name": "action",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:status",
+              "name": "status",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            },
+            {
+              "field_id": "cdb:events:field:raw_ref",
+              "name": "raw_ref",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            }
+          ],
+          "time_start": null,
+          "time_end": null,
+          "retention_days": 4000,
+          "permissions": [
+            "read_sqlite"
+          ],
+          "query_primitives": [
+            "search",
+            "table",
+            "head"
+          ],
+          "schema_fingerprint": "schema-c2a7a92d10d67b502cc1"
+        }
+      ]
+    }
+  ],
+  "operations": [
+    {
+      "id": "cdb_scope_scan",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "ANY"
+      ],
+      "output_entity_kinds": [],
+      "output_fields": [
+        "native_type",
+        "timestamp"
+      ],
+      "output_fact_kinds": [
+        "scope_records",
+        "operational_baseline"
+      ],
+      "guaranteed_relations": [],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {},
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "search_text",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "terms": "list[string]",
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "ANY"
+      ],
+      "output_entity_kinds": [],
+      "output_fields": [
+        "raw_ref",
+        "native_type"
+      ],
+      "output_fact_kinds": [
+        "scope_records",
+        "operational_baseline"
+      ],
+      "guaranteed_relations": [],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "raw_ref"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "cdb_process_search",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host",
+        "account",
+        "process"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "account",
+        "process"
+      ],
+      "output_fields": [
+        "host",
+        "user",
+        "pid",
+        "ppid",
+        "cmdline",
+        "image"
+      ],
+      "output_fact_kinds": [
+        "process_ancestry",
+        "server_side_execution"
+      ],
+      "guaranteed_relations": [
+        "executed"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "pid",
+          "ppid",
+          "cmdline",
+          "image"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "cdb_auth_search",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host",
+        "account"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "account"
+      ],
+      "output_fields": [
+        "host",
+        "user",
+        "event_id",
+        "status"
+      ],
+      "output_fact_kinds": [
+        "authentication_activity",
+        "remote_authentication"
+      ],
+      "guaranteed_relations": [
+        "authenticated"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "event_id",
+          "status"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "cdb_net_search",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host",
+        "ip",
+        "process"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "ip"
+      ],
+      "output_fields": [
+        "host",
+        "ip",
+        "port"
+      ],
+      "output_fact_kinds": [
+        "network_connection"
+      ],
+      "guaranteed_relations": [
+        "communicated_with"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "ip",
+          "port"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "cdb_persistence_search",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host",
+        "account"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "file"
+      ],
+      "output_fields": [
+        "host",
+        "action",
+        "file_path"
+      ],
+      "output_fact_kinds": [
+        "persistence_change"
+      ],
+      "guaranteed_relations": [
+        "persisted"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "action",
+          "file_path"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "cdb_file_search",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host",
+        "process",
+        "file"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "process",
+        "file"
+      ],
+      "output_fields": [
+        "host",
+        "image",
+        "file_path",
+        "action"
+      ],
+      "output_fact_kinds": [
+        "file_modification",
+        "file_artifact"
+      ],
+      "guaranteed_relations": [
+        "modified"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "image",
+          "file_path",
+          "action"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "cdb_dns_search",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host",
+        "ip",
+        "domain"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "ip",
+        "domain"
+      ],
+      "output_fields": [
+        "host",
+        "ip",
+        "domain"
+      ],
+      "output_fact_kinds": [
+        "dns_activity"
+      ],
+      "guaranteed_relations": [
+        "resolved"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "ip",
+          "domain"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "cdb_web_requests",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host",
+        "ip",
+        "domain"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "ip",
+        "domain"
+      ],
+      "output_fields": [
+        "host",
+        "ip",
+        "domain",
+        "native_type"
+      ],
+      "output_fact_kinds": [
+        "web_request",
+        "web_request_activity",
+        "web_navigation"
+      ],
+      "guaranteed_relations": [
+        "visited"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "ip",
+          "domain"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "cdb_web_search",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host",
+        "ip",
+        "domain"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "ip",
+        "domain"
+      ],
+      "output_fields": [
+        "host",
+        "ip",
+        "domain",
+        "native_type"
+      ],
+      "output_fact_kinds": [
+        "web_request",
+        "web_request_activity",
+        "web_navigation"
+      ],
+      "guaranteed_relations": [
+        "visited"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "ip",
+          "domain"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "resolve_person_to_account",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "person"
+      ],
+      "output_entity_kinds": [
+        "account"
+      ],
+      "output_fields": [
+        "user"
+      ],
+      "output_fact_kinds": [
+        "identity_binding"
+      ],
+      "guaranteed_relations": [
+        "associated_with"
+      ],
+      "input_roles": [],
+      "output_roles": [
+        "subject_identity",
+        "account_identity"
+      ],
+      "native_field_bindings": {
+        "subject_identity": [
+          "user"
+        ],
+        "account_identity": [
+          "user"
+        ]
+      },
+      "output_value_bindings": {
+        "object": [
+          "user"
+        ]
+      },
+      "query_builder": "cdb.identity.person_to_account.v1",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "resolve_account_to_endpoint",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "account"
+      ],
+      "output_entity_kinds": [
+        "host"
+      ],
+      "output_fields": [
+        "user",
+        "host",
+        "ComputerName",
+        "WorkstationName"
+      ],
+      "output_fact_kinds": [
+        "identity_binding"
+      ],
+      "guaranteed_relations": [
+        "associated_with"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "ComputerName",
+          "host"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "resolve_endpoint_to_client_ip",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "ip"
+      ],
+      "output_fields": [
+        "host",
+        "ip"
+      ],
+      "output_fact_kinds": [
+        "identity_binding"
+      ],
+      "guaranteed_relations": [
+        "associated_with"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "ip"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "find_web_activity_from_client_ip",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "ip"
+      ],
+      "output_entity_kinds": [
+        "ip",
+        "domain"
+      ],
+      "output_fields": [
+        "ip",
+        "domain",
+        "native_type"
+      ],
+      "output_fact_kinds": [
+        "web_request",
+        "web_request_activity",
+        "web_navigation"
+      ],
+      "guaranteed_relations": [
+        "visited"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "ip",
+          "domain"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "find_dns_activity_from_client_ip",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "ip"
+      ],
+      "output_entity_kinds": [
+        "ip",
+        "domain"
+      ],
+      "output_fields": [
+        "ip",
+        "domain"
+      ],
+      "output_fact_kinds": [
+        "dns_activity"
+      ],
+      "guaranteed_relations": [
+        "resolved"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "ip",
+          "domain"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "find_web_activity_from_endpoint",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "domain"
+      ],
+      "output_fields": [
+        "host",
+        "domain",
+        "native_type"
+      ],
+      "output_fact_kinds": [
+        "web_request",
+        "web_request_activity",
+        "web_navigation"
+      ],
+      "guaranteed_relations": [
+        "visited"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "domain"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "find_process_from_endpoint",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "process"
+      ],
+      "output_fields": [
+        "host",
+        "pid",
+        "ppid",
+        "image",
+        "cmdline"
+      ],
+      "output_fact_kinds": [
+        "process_ancestry",
+        "server_side_execution"
+      ],
+      "guaranteed_relations": [
+        "executed"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "pid",
+          "ppid",
+          "image",
+          "cmdline"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "find_file_change_from_endpoint",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "file"
+      ],
+      "output_fields": [
+        "host",
+        "file_path",
+        "action"
+      ],
+      "output_fact_kinds": [
+        "file_modification",
+        "file_artifact"
+      ],
+      "guaranteed_relations": [
+        "modified"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "file_path",
+          "action"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "find_file_change_from_process",
+      "provider_id": "cdb",
+      "scope_ids": [
+        "cdb_security"
+      ],
+      "params_schema": {
+        "window": "interval"
+      },
+      "pagination": "offset",
+      "limit_semantics": "complete only on EOF",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "process"
+      ],
+      "output_entity_kinds": [
+        "host",
+        "process",
+        "file"
+      ],
+      "output_fields": [
+        "host",
+        "image",
+        "file_path",
+        "action"
+      ],
+      "output_fact_kinds": [
+        "file_modification",
+        "file_artifact"
+      ],
+      "guaranteed_relations": [
+        "modified"
+      ],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "image",
+          "file_path",
+          "action"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "limit+1 EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    }
+  ],
+  "audit": [
+    {
+      "provider_id": "cdb",
+      "selected": true,
+      "reason": "provider can observe required fact kinds: process_ancestry (partial role coverage; residuals remain)",
+      "status": "ONLINE",
+      "claim_id": "claim-process"
+    }
+  ]
+}

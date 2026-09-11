@@ -44,6 +44,7 @@ _ALLOWLISTED_OPERATIONS = frozenset({
     "discover_schema",
     "sample_records",
     "resolve_person_to_account",
+    "resolve_person_to_endpoint",
     "resolve_account_to_endpoint",
     "resolve_endpoint_to_client_ip",
     "find_web_activity_from_client_ip",
@@ -126,6 +127,11 @@ _ALLOWLISTED_FIELDS = frozenset({
 
 def validate_operation_id(operation_id: str) -> None:
     """Ensure operation is within allowlist."""
+    # Runtime operations are admitted only as opaque IDs created by the
+    # deterministic capability materializer. Native syntax is still absent
+    # here; the provider adapter must validate the attached source profile.
+    if re.fullmatch(r"runtime:[A-Za-z0-9_.-]+:[A-Za-z0-9_.:-]{1,300}", str(operation_id)):
+        return
     if operation_id not in _ALLOWLISTED_OPERATIONS:
         raise ValueError(f"Disallowed operation '{operation_id}'; not in adapter allowlist")
 

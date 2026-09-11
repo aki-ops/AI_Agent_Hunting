@@ -1,0 +1,100 @@
+{
+  "analysis": {
+    "source_profile": {
+      "status": "NO_LLM_CALLER",
+      "readiness": [
+        {
+          "goal_id": "claim-process",
+          "relation": "observed_process",
+          "status": "CAPABILITY_GAP",
+          "execution_complete": false,
+          "proof_complete": false,
+          "route_exhausted": false,
+          "readiness": "CAPABILITY_GAP",
+          "attempts": [],
+          "proof_gaps": [],
+          "capability_gaps": [
+            "no_typed_reachable_route"
+          ],
+          "terminal_cause": null
+        }
+      ],
+      "profiling_goal_ids": [
+        "claim-process"
+      ],
+      "retrieval": [
+        {
+          "relation": "observed_process",
+          "query_terms": [
+            "asks",
+            "entity",
+            "observed",
+            "process",
+            "request"
+          ],
+          "profile_count": 1,
+          "candidate_count": 1,
+          "candidates": [
+            {
+              "relation": "observed_process",
+              "source_id": "cdb:source:events",
+              "score": 0.0,
+              "matched_terms": [],
+              "matched_field_ids": [],
+              "rank": 1,
+              "low_confidence": true
+            }
+          ],
+          "selected_source_ids": [
+            "cdb:source:events"
+          ],
+          "source_coverage": {
+            "discovered": 1,
+            "scheduled": 1,
+            "complete": true
+          },
+          "field_coverage": {
+            "discovered": 17,
+            "scheduled": 17,
+            "complete": true
+          },
+          "batch_count": 1,
+          "max_profiles_per_batch": 8,
+          "max_fields_per_source_per_batch": 48,
+          "ordering_only": true
+        }
+      ],
+      "census_profile_discovery": {},
+      "proposals": [],
+      "rejected": [],
+      "relation_calls": [],
+      "runtime_capabilities": [],
+      "runtime_operation_ids": []
+    },
+    "compiler_trace": {
+      "prompt_hash": "76fba4e086d58863",
+      "response_length": 1011,
+      "response_text": "{\"id\": \"graph-process-lookup\", \"request_id\": \"req-process-lookup\", \"objective\": \"Find the process observed on SRV-01\", \"answer_contract\": {\"mode\": \"lookup\", \"answer_type\": \"process\", \"required_fields\": [\"image\"], \"question\": \"Which process was observed on SRV-01?\"}, \"claims\": [{\"id\": \"claim-process\", \"claim_type\": \"attribute\", \"subject\": \"host:SRV-01\", \"predicate\": \"observed_process\", \"object_or_value\": null, \"value_type\": \"process\", \"provenance\": \"request\", \"source_request_id\": \"req-process-lookup\", \"dependencies\": [], \"evidence_requirements\": [], \"observation_requirements\": [{\"id\": \"req-process\", \"fact_kind\": \"process_ancestry\", \"required_fields\": [\"image\"], \"field_roles\": [\"endpoint_host\", \"process_name\"], \"completeness_required\": true}], \"acceptance_rule\": {\"min_observations\": 1, \"required_fields\": [\"image\"], \"requires_query_complete\": true, \"value_must_match\": null}, \"refutation_rule\": null, \"optional\": false, \"is_prerequisite\": false, \"reason\": \"The request asks for the observed process\"}]}",
+      "validation_result": "VALID",
+      "output_kind": "claim_graph"
+    }
+  },
+  "assessments": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "claim-process",
+      "relation": "observed_process",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [],
+      "capability_gaps": [
+        "no_typed_reachable_route"
+      ],
+      "terminal_cause": null
+    }
+  ]
+}

@@ -23,7 +23,7 @@ import yaml
 
 from hunting.compiler.compiler import KnowledgeBehaviorCompiler
 from hunting.contracts.entities import Account, Domain, Host, IPAddress
-from hunting.contracts.hunt import HuntRequest, HuntRequestKind
+from hunting.contracts.hunt import HuntRequest, HuntRequestKind, StoppingDecision
 from hunting.contracts.state import Alert
 from hunting.controller.cost import LLMUsageTracker
 from hunting.engine import HypothesisHuntEngine
@@ -339,6 +339,35 @@ def render_hunt_terminal_summary(
     print()
 
 
+def write_hunt_abort_artifact(
+    request: HuntRequest,
+    output_path: str | None,
+    reason: str,
+) -> None:
+    """Replace a stale report with an explicit non-verdict failure artifact.
+
+    A failed run must never leave the previous run's Markdown at the default
+    output path. This file intentionally contains no evidence, answer, or
+    disposition; it only tells the operator that the current execution did
+    not produce a hunt account.
+    """
+    if not output_path:
+        return
+    out_file = Path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    safe_reason = " ".join(str(reason).split())
+    content = (
+        "# Hunt execution aborted\n\n"
+        "**Status:** `EXECUTION_FAILED`\n\n"
+        f"**Request:** {request.content}\n\n"
+        f"**Reason:** {safe_reason}\n\n"
+        "No telemetry evidence, answer, verdict, or cost account was produced "
+        "for this run. The artifact exists to prevent a previous report from "
+        "being mistaken for the current execution.\n"
+    )
+    out_file.write_text(content, encoding="utf-8")
+
+
 def handle_show_observation(hunt_id: str | None, obs_id: str) -> int:
     """Forensic lookup: load observation from isolated artifacts and print full raw event."""
     artifacts_root = Path("artifacts")
@@ -488,7 +517,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Environment & Backend
     env_group = parser.add_argument_group("Environment & Backend")
-    env_group.add_argument("--provider", choices=["auto", "cdb", "splunk"], default="auto", help="Telemetry provider: 'auto' (detect live SIEM/Splunk or fallback to CDB), 'cdb' (local SQLite), or 'splunk' (live enterprise SIEM) [default: auto]")
+    env_group.add_argument("--provider", choices=["auto", "cdb", "splunk"], default="auto", help="Telemetry provider: 'auto' (detect a reachable provider), 'cdb' (explicit local SQLite test backend), or 'splunk' (live enterprise SIEM) [default: auto]")
     env_group.add_argument("--list-indexes", action="store_true", help="List all accessible Splunk indexes with event counts and exit")
     env_group.add_argument("--splunk-url", type=str, default=os.getenv("SPLUNK_URL", "https://localhost:8089"), help="Splunk management REST API endpoint [default: https://localhost:8089]")
     env_group.add_argument("--splunk-user", type=str, default=os.getenv("SPLUNK_USER", "admin"), help="Splunk admin username [default: admin]")
@@ -505,8 +534,8 @@ def build_parser() -> argparse.ArgumentParser:
     loop_group.add_argument("--llm-model", type=str, default=None, help="LLM model name (e.g. gemini-2.5-flash, gpt-4o, 1/grok-4.6) [default: from env or config]")
     loop_group.add_argument("--llm-endpoint", type=str, default=None, help="LLM REST endpoint URL [default: from env or config]")
     loop_group.add_argument("--api-key", type=str, default=None, help="LLM API authorization key [default: from env]")
-    loop_group.add_argument("--auto-confirm", dest="auto_confirm", action="store_true", default=True, help="Automatically sign-off mandatory analyst confirmation")
-    loop_group.add_argument("--no-auto-confirm", dest="auto_confirm", action="store_false", help="Prompt analyst interactively on console for mandatory confirmation")
+    loop_group.add_argument("--auto-confirm", dest="auto_confirm", action="store_true", default=True, help="Automatically sign-off the final report disposition; ambiguous bindings still require analyst selection")
+    loop_group.add_argument("--no-auto-confirm", dest="auto_confirm", action="store_false", help="Prompt analyst for final report disposition; ambiguous bindings always require selection")
 
     # Forensic Audit & Replay Flags
     forensic_group = parser.add_argument_group("Forensic Audit & Replay")
@@ -696,8 +725,17 @@ def run_cli(args: argparse.Namespace) -> int:
                 selected_provider = "splunk"
                 print(f"[+] [ENVIRONMENT AUDIT] Detected live enterprise SIEM: Splunk at {args.splunk_url}")
             else:
-                selected_provider = "cdb"
-                print("[*] [ENVIRONMENT AUDIT] Splunk SIEM not reachable. Using local telemetry backend: CDB (SQLite).")
+                # A reachable provider is part of the epistemic contract.  A
+                # silent in-memory SQLite fallback creates an empty, unrelated
+                # data source and makes the hunt look like it executed while
+                # actually searching data the user never selected.
+                print(
+                    "[-] [ENVIRONMENT AUDIT] Splunk is not reachable. "
+                    "No telemetry provider was selected; use --provider cdb "
+                    "only for an explicit local test run.",
+                    file=sys.stderr,
+                )
+                return 2
         else:
             # Legacy alert mode defaults to cdb for backwards compatibility
             selected_provider = "cdb"
@@ -828,11 +866,15 @@ def run_cli(args: argparse.Namespace) -> int:
             llm_provider = ApiLLMProvider(config)
             llm_tracker = LLMUsageTracker(max_calls=4, model_name=config.model)
             compiler_caller = create_llm_caller(llm_provider, llm_tracker, "compiler")
+            source_profiler_caller = create_llm_caller(llm_provider, llm_tracker, "source_profiler")
             planner_caller = create_llm_caller(llm_provider, llm_tracker, "planner")
             adaptive_caller = create_llm_caller(llm_provider, llm_tracker, "adaptive_planner")
             evaluator_caller = create_llm_caller(llm_provider, llm_tracker, "evaluator")
 
-            compiler = KnowledgeBehaviorCompiler(llm_caller=compiler_caller)
+            compiler = KnowledgeBehaviorCompiler(
+                llm_caller=compiler_caller,
+                require_semantic_goal_graph=True,
+            )
             planner = CanonicalQueryPlanner(llm_generator=planner_caller)
             adaptive_planner = AdaptiveOperationPlanner(llm_generator=adaptive_caller, llm_tracker=llm_tracker)
             evaluator = EvidenceEvaluator(llm_caller=evaluator_caller)
@@ -846,6 +888,7 @@ def run_cli(args: argparse.Namespace) -> int:
             planner = CanonicalQueryPlanner()
             adaptive_planner = AdaptiveOperationPlanner()
             evaluator = EvidenceEvaluator()
+            source_profiler_caller = None
             print("[+] [AI SUB-SYSTEM] Offline deterministic mode (free text requires --llm api)")
         else:
             is_free_text = (
@@ -863,6 +906,7 @@ def run_cli(args: argparse.Namespace) -> int:
             planner = CanonicalQueryPlanner()
             adaptive_planner = AdaptiveOperationPlanner()
             evaluator = EvidenceEvaluator()
+            source_profiler_caller = None
 
         engine = HypothesisHuntEngine(
             compiler=compiler,
@@ -870,6 +914,7 @@ def run_cli(args: argparse.Namespace) -> int:
             adaptive_planner=adaptive_planner,
             evaluator=evaluator,
             llm_tracker=llm_tracker,
+            source_profiler_caller=source_profiler_caller,
             cdb_adapter=adapter if isinstance(adapter, CdbAdapter) else None,
         )
         default_window = "NOW-14d/NOW"
@@ -988,15 +1033,77 @@ def run_cli(args: argparse.Namespace) -> int:
             )
         except (LLMTimeoutError, TimeoutError) as te:
             print(f"\n[-] Error: LLM API request timed out: {te}", file=sys.stderr)
+            write_hunt_abort_artifact(req, args.output, f"LLM API timeout: {te}")
             print("[-] Threat hunt aborted. No report generated to prevent fabricated conclusions.", file=sys.stderr)
             return 1
         except PermissionError as pe:
             print(f"\n[-] Investigation halted: {pe}", file=sys.stderr)
+            write_hunt_abort_artifact(req, args.output, f"Permission error: {pe}")
             return 2
         except Exception as e:
             print(f"\n[-] Threat hunt execution failed: {e}", file=sys.stderr)
+            write_hunt_abort_artifact(req, args.output, f"Execution error: {e}")
             print("[-] Threat hunt aborted. No report generated to prevent fabricated conclusions.", file=sys.stderr)
             return 1
+
+        # Semantic graph execution must pause when an upstream binding is a
+        # candidate rather than a verified entity.  Present the generic
+        # candidate set to the analyst; never infer a choice from ordering or
+        # from an entity's name.  ``--auto-confirm`` confirms report gates but
+        # deliberately does not select an ambiguous entity.
+        semantic_analysis = result.account.semantic_analysis or {}
+        if result.account.stopping_decision == StoppingDecision.STOP_NEEDS_USER_DECISION:
+            graph = result.account.semantic_goal_graph
+            variable_types = {
+                variable.id: variable.entity_type
+                for variable in getattr(graph, "variables", ())
+            }
+            candidate_options: list[tuple[str, str, str]] = []
+            for variable_id, provenance in (semantic_analysis.get("binding_provenance", {}) or {}).items():
+                if variable_id == "subject":
+                    continue
+                for item in provenance or ():
+                    if str(item.get("status", "")).upper() == "CANDIDATE":
+                        candidate_options.append((variable_id, str(item.get("value", "")), variable_types.get(variable_id, "entity")))
+            # Candidate selection is a different gate from final report
+            # sign-off.  It must remain interactive even when
+            # ``--auto-confirm`` is enabled; auto-confirm may authorize a
+            # disposition but can never authorize choosing a host/account by
+            # result ordering.  In a pipe/CI run there is no safe choice, so
+            # retain STOP_NEEDS_USER_DECISION and exit without downstream
+            # queries.
+            can_prompt_for_selection = bool(
+                getattr(sys.stdin, "isatty", lambda: False)()
+            )
+            if candidate_options and can_prompt_for_selection:
+                print("\n[?] [SEMANTIC DECISION GATE] Candidate binding is ambiguous:")
+                for index, (variable_id, value, entity_type) in enumerate(candidate_options, start=1):
+                    print(f"    {index}. {variable_id} ({entity_type}) = {value}")
+                choice = input("[?] Select one candidate number to continue, or press Enter to stop: ").strip()
+                if choice.isdigit() and 1 <= int(choice) <= len(candidate_options):
+                    variable_id, value, _ = candidate_options[int(choice) - 1]
+                    print(f"[*] [SEMANTIC DECISION] User selected {variable_id}={value}; resuming graph execution...")
+                    try:
+                        result = engine.execute_hunt(
+                            req,
+                            adapter=adapter,
+                            time_window=time_win,
+                            step_callback=cli_step_logger,
+                            analyst_confirm_callback=cli_analyst_confirm,
+                            initial_bindings={variable_id: value},
+                        )
+                    except (LLMTimeoutError, TimeoutError) as te:
+                        print(f"\n[-] Error while resuming after analyst selection: LLM API request timed out: {te}", file=sys.stderr)
+                        write_hunt_abort_artifact(req, args.output, f"LLM API timeout while resuming: {te}")
+                        return 1
+                    except PermissionError as pe:
+                        print(f"\n[-] Investigation halted while resuming: {pe}", file=sys.stderr)
+                        write_hunt_abort_artifact(req, args.output, f"Permission error while resuming: {pe}")
+                        return 2
+                    except Exception as e:
+                        print(f"\n[-] Threat hunt resume failed: {e}", file=sys.stderr)
+                        write_hunt_abort_artifact(req, args.output, f"Resume execution error: {e}")
+                        return 1
 
         if args.output:
             out_file = Path(args.output)

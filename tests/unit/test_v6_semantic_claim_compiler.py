@@ -82,6 +82,33 @@ def test_question_kind_compiles_claim_graph_in_one_call() -> None:
     assert [requirement.id for requirement in requirements] == ["req-claim-email"]
 
 
+def test_live_api_compiler_rejects_legacy_claim_graph_output() -> None:
+    request_id = "req-live-boundary"
+    response = _payload(
+        request_id,
+        "What is the encrypted filename?",
+        [_claim(request_id, "claim-file", "has_file", "filename")],
+        answer_type="filename",
+    )
+    compiler = KnowledgeBehaviorCompiler(
+        llm_caller=lambda _: response,
+        require_semantic_goal_graph=True,
+    )
+
+    objective, hypotheses, requirements = compiler.compile(HuntRequest(
+        id=request_id,
+        kind=HuntRequestKind.QUESTION,
+        content="What is the encrypted filename?",
+    ))
+
+    assert objective.semantic_goal_graph is None
+    assert not objective.claim_graph
+    assert requirements == []
+    assert len(hypotheses) == 1
+    assert hypotheses[0].status.value == "INSUFFICIENTLY_SPECIFIED"
+    assert "legacy ClaimGraph output is rejected" in compiler.last_compile_trace["validation_error"]
+
+
 def test_same_keyword_different_objective_produces_different_claims() -> None:
     lookup_id = "req-email-lookup"
     sent_id = "req-email-sent"

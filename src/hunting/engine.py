@@ -12,6 +12,7 @@ Coordinates:
 """
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 from dataclasses import dataclass
@@ -20,16 +21,23 @@ from pathlib import Path
 from typing import Any, Callable
 
 from hunting.capabilities.binder import CapabilityBinder
+from hunting.capabilities.census import ProviderCensusService
 from hunting.capabilities.models import VersionedCapabilityDescriptor
+from hunting.capabilities.probe_executor import BoundedProbeExecutor
+from hunting.capabilities.profile_cache import RuntimeCapabilityCache
 from hunting.capabilities.registry import build_default_capability_registry
+from hunting.capabilities.retriever import CapabilityBatcher
+from hunting.capabilities.runtime_materializer import materialize_runtime_operation
+from hunting.capabilities.source_mapping_validator import SourceMappingValidator
+from hunting.capabilities.source_profiler import SourceProfiler
 from hunting.compiler.compiler import KnowledgeBehaviorCompiler
-from hunting.contracts.capabilities import ProviderCapabilityCatalog
 from hunting.contracts.case_graph import (
     EvidenceSubgraph,
     RelationStatus,
     build_investigation_case_from_intent,
 )
 from hunting.contracts.cells import Cell, CellState, ProviderScope
+from hunting.contracts.claim import ClaimStatus
 from hunting.contracts.entities import Account, AnyEntity, Domain, EntityRef, Host, IPAddress
 from hunting.contracts.evidence_state import (
     AnswerAttributeState,
@@ -45,7 +53,6 @@ from hunting.contracts.expectations import (
 from hunting.contracts.hunt import (
     EvidenceAssessment,
     EvidenceCard,
-    EvidenceRequirementV4,
     FinalHuntAccount,
     HuntRequest,
     HuntState,
@@ -63,8 +70,10 @@ from hunting.contracts.investigation_model import (
     RelationType,
     build_investigation_model_from_intent,
 )
+from hunting.contracts.native_query import NativeQueryCandidate
 from hunting.contracts.observations import EpistemicType, Observation
 from hunting.contracts.queries import QueryResult
+from hunting.contracts.semantic_graph import goal_graph_from_claim_graph
 from hunting.controller.action_planner import InvestigationAction, InvestigationActionPlanner
 from hunting.controller.controller import CanonicalActionController
 from hunting.controller.cost import LLMUsageTracker
@@ -80,6 +89,10 @@ from hunting.m5_adapter.cdb_adapter import CdbAdapter
 from hunting.m5_adapter.controls import license_valid_negative
 from hunting.planner.adaptive import AdaptiveOperationPlanner
 from hunting.planner.planner import CanonicalQueryPlanner
+from hunting.planner.semantic_executor import SemanticPlanExecutor
+from hunting.planner.semantic_goal_planner import SemanticGoalPlanner
+from hunting.planner.semantic_query_compiler import query_plan_from_step
+from hunting.planner.semantic_readiness import assess_semantic_readiness
 from hunting.reporter.builder import build_final_hunt_account
 from hunting.reporter.renderer import render_analyst_report
 from hunting.validator.investigation_validator import InvestigationValidator
@@ -112,16 +125,26 @@ class HypothesisHuntEngine:
         planner: CanonicalQueryPlanner | None = None,
         adaptive_planner: AdaptiveOperationPlanner | None = None,
         cdb_adapter: CdbAdapter | None = None,
+        configured_adapters: list[Any] | tuple[Any, ...] | None = None,
+        census_service: ProviderCensusService | None = None,
         budget_ledger: HuntBudgetLedger | None = None,
         evaluator: EvidenceEvaluator | None = None,
         llm_tracker: LLMUsageTracker | None = None,
+        source_profiler_caller: Callable[[str], str] | None = None,
+        runtime_capability_cache: RuntimeCapabilityCache | None = None,
     ) -> None:
         self.compiler = compiler if compiler is not None else KnowledgeBehaviorCompiler()
         self.registry = registry if registry is not None else build_default_capability_registry()
         self.planner = planner if planner is not None else CanonicalQueryPlanner(self.registry)
         self.cdb_adapter = cdb_adapter if cdb_adapter is not None else CdbAdapter()
+        self.configured_adapters = tuple(configured_adapters or ())
+        self.census_service = census_service if census_service is not None else ProviderCensusService()
         self.budget_ledger = budget_ledger if budget_ledger is not None else HuntBudgetLedger()
         self.llm_tracker = llm_tracker if llm_tracker is not None else LLMUsageTracker()
+        self.budget_ledger.llm_tracker = self.llm_tracker
+        self.budget_ledger.max_llm_calls = self.llm_tracker.max_calls
+        self.source_profiler_caller = source_profiler_caller
+        self.runtime_capability_cache = runtime_capability_cache or RuntimeCapabilityCache()
         self.adaptive_planner = (
             adaptive_planner
             if adaptive_planner is not None
@@ -139,6 +162,285 @@ class HypothesisHuntEngine:
         self.capability_binder = CapabilityBinder()
         self.action_planner = InvestigationActionPlanner(binder=self.capability_binder)
         self.relation_verifier = RelationVerifier()
+        # A human decision resumes the same compiled graph.  Cache only the
+        # validated compiler result for the exact request identity/content so
+        # selecting a candidate cannot trigger a second semantic compilation
+        # or produce a different graph on the retry.
+        self._semantic_compilation_cache: dict[str, tuple[str, Any, Any, Any]] = {}
+
+    def execute_semantic_plan(
+        self,
+        state: HuntState,
+        active_adapter: Any,
+        scope: ProviderScope,
+        ledger: ObservationLedger,
+        *,
+        limit: int = 100,
+        # A partial result is retained with a continuation token, but a
+        # single semantic plan must not consume the whole hunt query budget by
+        # expanding every candidate indefinitely.  Resumption belongs to a
+        # bounded controller action, not an unbounded inner loop.
+        max_pages: int = 4,
+        allow_candidate_inputs: bool = False,
+        initial_bindings: dict[str, str | list[str]] | None = None,
+    ) -> Any:
+        """Execute a fully grounded SemanticGoalGraph plan.
+
+        This is the engine boundary for the new architecture.  It is kept as
+        an explicit entry point while migration is in progress so legacy
+        ClaimGraph execution cannot accidentally run the same query twice.
+        """
+        logical_plan = getattr(state, "semantic_logical_plan", None)
+        goal_graph = getattr(state, "semantic_goal_graph", None)
+        if logical_plan is None or goal_graph is None:
+            raise ValueError("A semantic goal graph and logical plan are required")
+        # A graph may have a runnable prefix and an unresolved downstream
+        # relation.  Execute the prefix so its observations can explain the
+        # boundary (and potentially provide evidence for a later refinement),
+        # but never promote the unresolved relation to proof.  The final
+        # semantic analysis below records the unresolved goals and the caller
+        # chooses an explicit inconclusive/unsupported stop.
+
+        initial_variables = {
+            variable.id: variable.value
+            for variable in goal_graph.variables
+            if variable.value not in (None, "") and variable.value_origin == "request"
+        }
+        initial_variable_sources = {key: "request" for key in initial_variables}
+        known_variable_ids = {variable.id for variable in goal_graph.variables}
+        for variable_id, values in (initial_bindings or {}).items():
+            if variable_id in known_variable_ids:
+                initial_variables[variable_id] = values
+                initial_variable_sources[variable_id] = "user_selection"
+        operations = tuple(getattr(getattr(state, "capability_catalog", None), "operations", ()) or ())
+        execution = SemanticPlanExecutor(active_adapter, operations).execute(
+            logical_plan,
+            scope,
+            state.objective.time_window if state.objective else "",
+            initial_variables,
+            limit=limit,
+            max_pages=max_pages,
+            variable_types={variable.id: variable.entity_type for variable in goal_graph.variables},
+            allow_candidate_inputs=allow_candidate_inputs,
+            initial_variable_sources=initial_variable_sources,
+        )
+
+        observations_by_query: dict[str, list[Observation]] = {}
+        for item in execution.executions:
+            # Binding selections are controller/audit events, not provider
+            # executions. They have no native query and consume no query budget.
+            if item.status == "USER_SELECTED":
+                continue
+            step = next(step for step in logical_plan.steps if step.id == item.step_id)
+            step_for_query = step
+            if getattr(item, "operation_id", "") and item.operation_id != step.operation_id:
+                from dataclasses import replace
+                step_for_query = replace(step, operation_id=item.operation_id)
+            operation = next(
+                (
+                    candidate
+                    for candidate in getattr(state.capability_catalog, "operations", ())
+                    if candidate.id == item.operation_id
+                ),
+                None,
+            )
+            query_plan = query_plan_from_step(
+                logical_plan,
+                step_for_query,
+                scope,
+                state.objective.time_window if state.objective else "",
+                query_id=item.query_id,
+                limit=limit,
+                operation=operation,
+                retrieval_stage=item.stage_id,
+                removed_retrieval_keys=set(item.removed_retrieval_keys),
+            )
+            query_plan.parameters["bound_values"] = {
+                name: list(values) for name, values in item.inputs.items()
+            }
+            if operation is not None:
+                query_plan.parameters["expected_fields"] = list(operation.output_fields)
+            # Keep the provider-page audit attached to the logical query.  A
+            # single logical step can consist of multiple native SPL calls;
+            # the final report must not imply that one 800-row result was an
+            # EOF-complete query.
+            query_plan.parameters["page_trace"] = [
+                dict(page)
+                for page in getattr(execution, "page_trace", [])
+                if page.get("step_id") == item.step_id
+                and page.get("operation_id") == item.operation_id
+            ]
+            query_plan.parameters["continuation"] = dict(
+                getattr(execution, "continuations", {}).get(item.step_id, {})
+            )
+            self.controller.record_query_execution(state, query_plan, item.result)
+
+            for row_index, row in enumerate(item.result.rows or ()):
+                observation_id = f"obs-{item.query_id}-{row_index}"
+                observation = Observation(
+                    id=observation_id,
+                    provider_scope=scope,
+                    cell_id=state.objective.time_window if state.objective else scope.scope_id,
+                    timestamp=str(row.get("_time", row.get("timestamp", ""))) or "1970-01-01T00:00:00Z",
+                    epistemic_type=EpistemicType.OBSERVED,
+                    native_type=str(row.get("sourcetype", row.get("native_type", ""))),
+                    fields=dict(row),
+                    raw_event=dict(row.get("raw_event") or row),
+                    query_id=item.query_id,
+                )
+                ledger.add_observation(observation)
+                self.controller.add_observation(state, observation)
+                observations_by_query.setdefault(item.query_id, []).append(observation)
+
+        state.semantic_route_assessments = list(execution.route_assessments)
+
+        # Intermediate grounding steps are necessary for planning but are not
+        # answer evidence by themselves.  Only observations from steps that
+        # advance a declared semantic goal may become EvidenceCards; this
+        # prevents identity-enrichment/process rows from contaminating a final
+        # email/domain/version answer.
+        # Only complete, correctly-grounded goal steps become proof evidence.
+        # Partial discovery rows remain in the immutable ledger and query
+        # diagnostics, but must not contaminate the answer evidence graph.
+        goal_query_ids = {
+            item.query_id
+            for item in execution.executions
+            if any(
+                step.id == item.step_id and step.advances_goal_ids
+                for step in logical_plan.steps
+            ) and item.result.executed_ok and item.result.complete and bool(item.outputs)
+        }
+        goal_observations = [
+            observation
+            for query_id in goal_query_ids
+            for observation in observations_by_query.get(query_id, [])
+        ]
+        if goal_observations:
+            self.group_builder.ingest_delta(goal_observations)
+            self.controller.set_evidence_cards(state, self.group_builder.build_cards())
+
+        goal_verdicts: list[dict[str, Any]] = []
+        operation_by_id = {
+            operation.id: operation
+            for operation in operations
+        }
+        executed_by_goal = {
+            goal_id: [item for item in execution.executions if goal_id in next(
+                step for step in logical_plan.steps if step.id == item.step_id
+            ).advances_goal_ids]
+            for goal_id in (goal.id for goal in goal_graph.relations)
+        }
+        for goal in goal_graph.relations:
+            executions = executed_by_goal.get(goal.id, [])
+            base_relation_proven = any(
+                item.result.executed_ok and bool(item.result.rows)
+                and item.result.complete and bool(item.outputs)
+                and getattr(operation_by_id.get(item.operation_id), "proof_mode", "retrieval_only")
+                == "relation_observable"
+                for item in executions
+            )
+            target = next(variable for variable in goal_graph.variables if variable.id == goal.object)
+            # Subject restrictions are obligations of the step that grounded
+            # the subject.  They are not silently re-applied to a downstream
+            # relation; doing so caused device/platform clues to distort file
+            # and network queries.  The target restrictions and relation
+            # qualifiers are evaluated against this goal only.
+            required_restrictions = [item.text() for item in target.constraints]
+            required_restrictions.extend(
+                qualifier.qualifier if qualifier.expected_value is None
+                else f"{qualifier.qualifier}={qualifier.value_text()}"
+                for qualifier in goal_graph.qualifiers
+                if qualifier.target_goal_id == goal.id and qualifier.required
+            )
+            proof_keys = {
+                str(key).strip().casefold()
+                for item in executions
+                for key in getattr(operation_by_id.get(item.operation_id), "supported_constraints", ())
+            }
+            unverified_restrictions = [
+                restriction for restriction in required_restrictions
+                if restriction.split("=", 1)[0].split(":", 1)[0].strip().casefold() not in proof_keys
+            ]
+            # A provider may retrieve a candidate with a searchable hint, but
+            # only an explicitly proof-capable operation can satisfy the
+            # corresponding restriction.
+            supported = base_relation_proven and not unverified_restrictions
+            partial = any(item.result.executed_ok and not item.result.complete for item in executions)
+            status = (
+                "SUPPORTED" if supported
+                else "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED" if base_relation_proven and required_restrictions
+                else "PARTIAL" if partial
+                else "INCONCLUSIVE"
+            )
+            goal_verdicts.append({
+                "goal_id": goal.id,
+                "relation": goal.relation,
+                "status": status,
+                "query_ids": [item.query_id for item in executions],
+                "proof_method_id": getattr(logical_plan, "selected_method_ids", {}).get(goal.id),
+                "unverified_restrictions": unverified_restrictions if base_relation_proven else [],
+            })
+        self.controller.set_semantic_analysis(state, {
+            # This is an audit of the structured compiler exchange, not hidden
+            # chain-of-thought.  It lets the report distinguish a valid LLM
+            # graph from a rejected or fallback compilation.
+            "compiler_trace": dict(getattr(state, "compiler_trace", {}) or {}),
+            "goal_verdicts": goal_verdicts,
+            "proof_state": {item["goal_id"]: item["status"] for item in goal_verdicts},
+            "executed_steps": [item.step_id for item in execution.executions],
+            "unresolved_steps": list(execution.unresolved_step_ids),
+            "unresolved_goals": list(getattr(logical_plan, "unresolved_goal_ids", [])),
+            "unresolved_reasons": dict(execution.unresolved_reasons),
+            "candidate_input_warnings": dict(getattr(execution, "candidate_input_warnings", {})),
+            "needs_user_decision": execution.needs_user_decision,
+            "binding_provenance": dict(execution.binding_provenance),
+            "page_trace": [dict(page) for page in getattr(execution, "page_trace", [])],
+            "continuations": {
+                key: dict(value)
+                for key, value in getattr(execution, "continuations", {}).items()
+            },
+            "unverified_restrictions": {
+                item["goal_id"]: item["unverified_restrictions"]
+                for item in goal_verdicts if item["unverified_restrictions"]
+            },
+            "binding_events": [
+                {
+                    "step_id": event.step_id,
+                    "variable_ids": list(event.variable_ids),
+                    "values": {key: list(values) for key, values in event.values.items()},
+                    "source": event.source,
+                }
+                for event in execution.binding_events
+            ],
+            "route_assessments": [
+                assessment.to_dict() for assessment in execution.route_assessments
+            ],
+        })
+        required_verdicts = [item for item, goal in zip(goal_verdicts, goal_graph.relations) if goal.required]
+        if required_verdicts and all(item["status"] == "SUPPORTED" for item in required_verdicts):
+            for hypothesis in state.hypotheses:
+                hypothesis.status = HypothesisStatus.SUPPORTED
+            self.controller.set_stopping_decision(state, StoppingDecision.STOP_RESOLVED)
+        elif execution.needs_user_decision:
+            self.controller.set_stopping_decision(state, StoppingDecision.STOP_NEEDS_USER_DECISION)
+        elif execution.unresolved_step_ids:
+            # A missing typed binding is an explicit execution boundary.  It
+            # must be visible in the account and cannot be mistaken for a
+            # successful negative search or silently dropped plan steps.
+            # A provider result that was executed but did not reach EOF is a
+            # coverage problem, not proof that the relation is false or that
+            # the graph itself is invalid.  The continuation details are
+            # persisted above so a future controller action can resume/refine
+            # the step without trusting partial rows as proof.
+            if getattr(execution, "continuations", {}):
+                self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP)
+            else:
+                self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
+        else:
+            self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
+
+        state.semantic_plan_executed = True
+        return execution
 
     def _run_semantic_discovery(
         self,
@@ -213,8 +515,6 @@ class HypothesisHuntEngine:
             if "search_groups" in inspect.signature(active_adapter.execute_query).parameters:
                 kwargs["search_groups"] = search_groups
             qr = active_adapter.execute_query(**kwargs)
-            if hasattr(active_adapter, "last_query_text"):
-                plan.parameters["query_text"] = active_adapter.last_query_text
             self.controller.record_query_execution(state, plan, qr)
 
             if qr.rows:
@@ -254,8 +554,9 @@ class HypothesisHuntEngine:
             new_observations.append(obs)
 
         state.discovery_anchor_values = candidates
-        self.group_builder.ingest_delta(new_observations)
-        self.controller.set_evidence_cards(state, self.group_builder.build_cards())
+        # Discovery is a control phase.  Its rows are retained in the
+        # append-only ledger for later pivots, but are not evidence for the
+        # user's answer until a targeted goal query verifies them.
 
         # A bounded adaptive pivot handles Splunk's explicit truncation signal.
         # It searches the observed host(s) with the same semantic evidence
@@ -300,8 +601,6 @@ class HypothesisHuntEngine:
             if "search_groups" in inspect.signature(active_adapter.execute_query).parameters:
                 followup_kwargs["search_groups"] = followup_groups
             followup_qr = active_adapter.execute_query(**followup_kwargs)
-            if hasattr(active_adapter, "last_query_text"):
-                followup_plan.parameters["query_text"] = active_adapter.last_query_text
             self.controller.record_query_execution(state, followup_plan, followup_qr)
             followup_observations: list[Observation] = []
             for row in followup_qr.rows:
@@ -321,8 +620,8 @@ class HypothesisHuntEngine:
                 ledger.add_observation(obs)
                 self.controller.add_observation(state, obs)
                 followup_observations.append(obs)
-            self.group_builder.ingest_delta(followup_observations)
-            self.controller.set_evidence_cards(state, self.group_builder.build_cards())
+            # The observed-anchor refinement is still discovery/control data;
+            # do not mint answer evidence from it.
 
         self._update_evidence_state(state, ledger)
 
@@ -492,7 +791,6 @@ class HypothesisHuntEngine:
             return
 
         subj_val = intent.subject.value.lower()
-        known_web_servers = {"jabbah", "we1149srv", "web01", "iis01"}
         candidate_edges: list[GraphEdge] = []
         graph = state.relation_graph
         # v5 relation-first hunts use InvestigationCase.graph and the
@@ -509,9 +807,6 @@ class HypothesisHuntEngine:
                 continue
             u_clean = user.lower().replace(".", " ")
             if subj_val in u_clean or any(part in u_clean.split() for part in subj_val.split() if len(part) > 2):
-                # Guard: A web server host must NEVER be bound as a user endpoint
-                if host.lower() in known_web_servers or "iis" in str(row.get("native_type", "")).lower():
-                    continue
                 state.identity_resolved = True
                 state.identity_mapping["endpoint"] = host
                 state.identity_mapping["user"] = user
@@ -611,7 +906,17 @@ class HypothesisHuntEngine:
 
     def _record_semantic_analysis(self, state: HuntState, analysis: dict[str, Any]) -> None:
         """Persist validated LLM evidence interpretation through the controller."""
-        self.controller.set_semantic_analysis(state, analysis)
+        # The evaluator adds narrative fields, but must not erase the
+        # semantic executor's proof state, binding provenance, page audit, or
+        # continuations.  Losing those fields made a successful identity step
+        # look unresolved in the final report.
+        merged_analysis = {
+            **dict(getattr(state, "semantic_analysis", {}) or {}),
+            **dict(analysis),
+        }
+        if getattr(state, "compiler_trace", None):
+            merged_analysis.setdefault("compiler_trace", dict(state.compiler_trace))
+        self.controller.set_semantic_analysis(state, merged_analysis)
         for item in analysis.get("evaluations", []):
             if not isinstance(item, dict) or not item.get("card_id"):
                 continue
@@ -632,16 +937,61 @@ class HypothesisHuntEngine:
         self,
         request: HuntRequest,
         adapter: Any | None = None,
+        adapters: list[Any] | tuple[Any, ...] | None = None,
         time_window: str = "2026-02-01T00:00:00Z/P1D",
         step_callback: Callable[[str, dict[str, Any]], None] | None = None,
         analyst_confirm_callback: Callable[[str, dict[str, Any]], bool] | None = None,
+        initial_bindings: dict[str, str | list[str]] | None = None,
     ) -> HuntExecutionResult:
         """Execute complete hypothesis-only hunt vertical slice without alert or PoC."""
-        active_adapter = adapter if adapter is not None else self.cdb_adapter
+        explicit_adapter = adapter is not None
+        if adapter is not None and adapters is not None:
+            raise ValueError("Pass either adapter or adapters, not both")
+        if adapters is not None:
+            configured_adapters = list(adapters)
+        elif adapter is not None:
+            configured_adapters = [adapter]
+        elif self.configured_adapters:
+            configured_adapters = list(self.configured_adapters)
+        else:
+            configured_adapters = [self.cdb_adapter]
+        if not configured_adapters:
+            raise ValueError("At least one configured provider adapter is required")
+
         ledger = ObservationLedger()
 
-        # 1. Compile HuntRequest deterministically (0 LLM calls for known CVE/TTP)
-        objective, hypotheses, requirements = self.compiler.compile(request)
+        # 1. Capture provider capabilities before semantic planning. The
+        # census is retained for later relation-scoped retrieval; the semantic
+        # compiler receives only the request and never receives this catalog.
+        preplan_capability_graph = self.census_service.census(
+            configured_adapters,
+            claim_graph=None,
+            provider_hints=request.provider_hints,
+        )
+        # The semantic compiler must not receive the full provider census.
+        # Source/field selection is a later, relation-scoped retrieval stage.
+        # Keeping this boundary explicit prevents schema size from becoming an
+        # accidental LLM prompt multiplier.
+
+        # 2. Compile HuntRequest deterministically (0 LLM calls for known
+        # CVE/TTP); unstructured requests produce one validated graph.  A
+        # candidate-selection retry reuses the exact validated result from
+        # the first pass instead of calling the compiler again.
+        cached_compilation = self._semantic_compilation_cache.get(request.id)
+        if (
+            initial_bindings
+            and cached_compilation is not None
+            and cached_compilation[0] == request.content
+        ):
+            _, objective, hypotheses, requirements = cached_compilation
+        else:
+            objective, hypotheses, requirements = self.compiler.compile(request)
+            self._semantic_compilation_cache[request.id] = (
+                request.content,
+                objective,
+                hypotheses,
+                requirements,
+            )
         if request.time_policy and request.time_policy.start and request.time_policy.end:
             objective.time_window = f"{request.time_policy.start}/{request.time_policy.end}"
         elif time_window and (not objective.time_window or objective.time_window.startswith("NOW")):
@@ -666,6 +1016,461 @@ class HypothesisHuntEngine:
             relation_graph=inv_case.graph if inv_case else (inv_model.graph if inv_model else None),
             case=inv_case,
         )
+        state.compiler_trace = dict(getattr(self.compiler, "last_compile_trace", {}) or {})
+
+        claim_graph = getattr(objective, "claim_graph", None)
+        native_semantic_graph = getattr(objective, "semantic_goal_graph", None) is not None
+        if native_semantic_graph:
+            state.semantic_goal_graph = objective.semantic_goal_graph
+        elif claim_graph is not None:
+            # Transitional boundary: expose the generic goal graph while the
+            # legacy ClaimGraph executor is still active.  No provider fields
+            # or operation-name heuristics are introduced here.
+            state.semantic_goal_graph = goal_graph_from_claim_graph(claim_graph)
+        # Reuse the captured census and apply claim-specific selection without
+        # rediscovering providers or changing the capability snapshot supplied
+        # to the semantic planner.
+        capability_graph = self.census_service.select_claim_graph(
+            preplan_capability_graph,
+            claim_graph=claim_graph,
+            provider_hints=request.provider_hints,
+        )
+        state.capability_graph = capability_graph
+
+        # Source profiling is completed after provider selection below. Keep
+        # the proposals local until a selected adapter has validated them.
+        accepted_source_proposals: list[Any] = []
+        source_profile_audit: dict[str, Any] = {}
+        # The current run's declared capabilities are the primary source for
+        # claim-to-operation binding. Legacy edge mapping remains available
+        # only when no runtime capability graph is attached.
+        self.capability_binder.set_capability_graph(capability_graph)
+
+        selected_provider_ids = set(capability_graph.selected_providers())
+        selected_adapters = [
+            candidate
+            for candidate, catalog in zip(configured_adapters, capability_graph.providers)
+            if catalog.provider_id in selected_provider_ids
+        ]
+        active_adapter = selected_adapters[0] if selected_adapters else configured_adapters[0]
+        active_index = configured_adapters.index(active_adapter)
+        active_catalog = capability_graph.providers[active_index]
+        active_provider_id = active_catalog.provider_id
+        if active_catalog is not None:
+            state.capability_catalog = active_catalog
+            graph = getattr(state, "semantic_goal_graph", None)
+            variables = {
+                item.id: item.entity_type
+                for item in graph.variables
+            } if graph is not None else {}
+            active_profiles = {
+                profile.source_id: profile
+                for profile in getattr(active_catalog, "source_profiles", [])
+            }
+            profile_requirements = [
+                {
+                    "goal_id": relation.id,
+                    "relation": relation.relation,
+                    "subject_type": variables.get(relation.subject, "entity"),
+                    "object_type": variables.get(relation.object, "entity"),
+                    "description": relation.description,
+                    "constraint_terms": [
+                        qualifier.qualifier
+                        for qualifier in graph.qualifiers
+                        if qualifier.target_goal_id == relation.id
+                    ] + [
+                        str(qualifier.expected_value)
+                        for qualifier in graph.qualifiers
+                        if qualifier.target_goal_id == relation.id
+                        and qualifier.expected_value not in (None, "")
+                    ] if graph is not None else [],
+                }
+                for relation in (graph.relations if graph is not None else ())
+            ]
+            requirements_by_relation = {
+                item["relation"]: item for item in profile_requirements
+            }
+            # The adapter's typed descriptor is already a validated capability
+            # contract.  It is the deterministic baseline for planning; the
+            # LLM source profiler is an augmentation path for relations that
+            # the descriptor cannot cover.  Requiring the profiler before
+            # using these contracts made a normal hunt spend its entire LLM
+            # budget describing sources, then execute zero queries.
+            canonical_descriptor_operations = [
+                operation
+                for operation in active_catalog.operations
+                if not getattr(operation, "legacy_alias", False)
+                and operation.query_builder != "runtime.source_profile.v1"
+                and operation.guaranteed_relations
+            ]
+            static_semantic_plan = None
+            static_assessments = []
+            proof_ready_goal_ids: set[str] = set()
+            profiling_goal_ids: set[str] = set()
+            if graph is not None:
+                if canonical_descriptor_operations:
+                    static_semantic_plan = SemanticGoalPlanner(
+                        canonical_descriptor_operations,
+                        active_provider_id,
+                    ).compose(
+                        graph,
+                        plan_id=f"logical-{graph.id}-descriptor",
+                    )
+                else:
+                    from hunting.contracts.semantic_graph import LogicalPlan
+                    static_semantic_plan = LogicalPlan(
+                        id=f"logical-{graph.id}-descriptor",
+                        goal_graph_id=graph.id,
+                        provider_id=active_provider_id,
+                        unresolved_goal_ids=[goal.id for goal in graph.relations],
+                    )
+                static_assessments = assess_semantic_readiness(
+                    graph,
+                    static_semantic_plan,
+                    canonical_descriptor_operations,
+                    prior_assessments=tuple(getattr(state, "semantic_route_assessments", ()) or ()),
+                )
+                proof_ready_goal_ids = {
+                    assessment.goal_id
+                    for assessment in static_assessments
+                    if assessment.readiness.value == "PROOF_CAPABLE"
+                }
+                required_goal_ids = {goal.id for goal in graph.relations if goal.required}
+                profiling_goal_ids = {
+                    assessment.goal_id
+                    for assessment in static_assessments
+                    if assessment.goal_id in required_goal_ids
+                    and assessment.readiness.value in {"CAPABILITY_GAP", "RETRIEVAL_CAPABLE"}
+                }
+                state.semantic_route_assessments = static_assessments
+            static_plan_ready = bool(
+                graph is not None
+                and all(
+                    not goal.required or goal.id in proof_ready_goal_ids
+                    for goal in graph.relations
+                )
+            )
+            profiling_requirements = [
+                requirement for requirement in profile_requirements
+                if requirement["goal_id"] in profiling_goal_ids
+            ]
+            cache_keys: dict[tuple[str, str], str] = {}
+            cached_capabilities: dict[tuple[str, str], tuple[Any, ...]] = {}
+            cached_proposals: list[Any] = []
+            uncached = False
+            cache_hit_count = 0
+            for profile in active_profiles.values():
+                for requirement in profiling_requirements:
+                    signature = json.dumps(requirement, sort_keys=True, ensure_ascii=True)
+                    cache_key = self.runtime_capability_cache.key(
+                        active_provider_id,
+                        profile.partition_id,
+                        profile.schema_fingerprint,
+                        signature,
+                    )
+                    cache_keys[(profile.source_id, requirement["relation"])] = cache_key
+                    cached = self.runtime_capability_cache.get(cache_key)
+                    if cached:
+                        cached_capabilities[(profile.source_id, requirement["relation"])] = cached
+                        cache_hit_count += 1
+                        from hunting.contracts.source_profile import SourceCapabilityProposal
+                        cached_proposals.extend(
+                            SourceCapabilityProposal(
+                                source_id=capability.source_id,
+                                relation=capability.relation,
+                                input_roles=capability.input_roles,
+                                output_roles=capability.output_roles,
+                                proof_mode=capability.proof_mode,
+                                supported_constraints=capability.supported_constraints,
+                                searchable_constraints=capability.searchable_constraints,
+                                temporal_roles=capability.temporal_roles,
+                                action_roles=capability.action_roles,
+                                state_roles=capability.state_roles,
+                                artifact_identity_roles=capability.artifact_identity_roles,
+                                correlation_roles=capability.correlation_roles,
+                                relaxable_constraint_keys=capability.relaxable_constraint_keys,
+                            )
+                            for capability in cached
+                            if capability.status == "VALIDATED"
+                        )
+                    else:
+                        uncached = True
+            # Retrieve a compact source set per relation before invoking the
+            # profiler. The full census remains available for validation, but
+            # never enters the compiler or a single all-goals profiler prompt.
+            retrieval = CapabilityBatcher().batch(
+                active_profiles.values(),
+                profiling_requirements,
+            )
+            source_profile_audit = {
+                "status": "STATIC_TYPED_CAPABILITIES" if static_plan_ready else "RETRIEVAL_COMPLETE",
+                "readiness": [assessment.to_dict() for assessment in static_assessments],
+                "profiling_goal_ids": sorted(profiling_goal_ids),
+                "retrieval": list(retrieval.audit),
+                "census_profile_discovery": dict(
+                    getattr(active_catalog, "details", {}).get("profile_discovery", {})
+                    if active_catalog is not None else {}
+                ),
+                "proposals": [],
+                "rejected": [],
+                "relation_calls": [],
+            }
+
+            # The profiler is invoked once per unresolved relation. Its output
+            # is still untrusted until the selected adapter executes a bounded
+            # source-side probe.
+            accepted_source_proposals = cached_proposals
+            if (
+                self.source_profiler_caller is not None
+                and not self.llm_tracker.is_exhausted
+                and active_profiles
+                and profiling_requirements
+                and uncached
+            ):
+                profiler = SourceProfiler(self.source_profiler_caller)
+                for requirement in profiling_requirements:
+                    relation = requirement["relation"]
+                    batches = retrieval.batches_by_relation.get(relation, ())
+                    if not batches:
+                        source_profile_audit["relation_calls"].append({
+                            "relation": relation,
+                            "status": "NO_PROFILE_BATCHES",
+                        })
+                        continue
+                    for batch_index, compact_profiles in enumerate(batches, start=1):
+                        if self.llm_tracker.is_exhausted:
+                            source_profile_audit["relation_calls"].append({
+                                "relation": relation,
+                                "batch_index": batch_index,
+                                "batch_count": len(batches),
+                                "status": "LLM_BUDGET_EXHAUSTED_BEFORE_BATCH",
+                            })
+                            continue
+                        try:
+                            proposals, audit = profiler.propose(
+                                compact_profiles,
+                                [requirement],
+                                validation_profiles=tuple(active_profiles.values()),
+                            )
+                            accepted_source_proposals.extend(proposals)
+                            source_profile_audit["relation_calls"].append({
+                                "relation": relation,
+                                "batch_index": batch_index,
+                                "batch_count": len(batches),
+                                "profile_count": len(compact_profiles),
+                                **audit,
+                            })
+                            source_profile_audit["proposals"].extend(
+                                proposal.to_dict() for proposal in proposals
+                            )
+                            source_profile_audit["rejected"].extend(audit.get("rejected", []))
+                        except Exception as error:
+                            error_text = str(error)
+                            budget_error = "budget" in error_text.lower()
+                            source_profile_audit["relation_calls"].append({
+                                "relation": relation,
+                                "batch_index": batch_index,
+                                "batch_count": len(batches),
+                                "status": (
+                                    "LLM_BUDGET_EXHAUSTED_BEFORE_BATCH"
+                                    if budget_error else "PROFILING_FAILED"
+                                ),
+                                "error": error_text,
+                            })
+                if source_profile_audit["relation_calls"]:
+                    partial = any(
+                        item.get("status") == "LLM_BUDGET_EXHAUSTED_BEFORE_BATCH"
+                        for item in source_profile_audit["relation_calls"]
+                    )
+                    source_profile_audit["status"] = (
+                        "PARTIAL_RELATION_SCOPED_PROFILING"
+                        if partial else "RELATION_SCOPED_PROFILING"
+                    )
+            elif cache_hit_count and not uncached:
+                source_profile_audit = {
+                    "status": "CACHE_HIT",
+                    "proposals": [proposal.to_dict() for proposal in cached_proposals],
+                    "rejected": [],
+                    "cache_hits": cache_hit_count,
+                    "retrieval": list(retrieval.audit),
+                }
+            elif self.source_profiler_caller is None:
+                source_profile_audit["status"] = "NO_LLM_CALLER"
+            elif self.llm_tracker.is_exhausted:
+                source_profile_audit["status"] = "LLM_BUDGET_EXHAUSTED_BEFORE_PROFILING"
+            elif static_plan_ready:
+                source_profile_audit["status"] = "STATIC_TYPED_CAPABILITIES"
+
+            validator = SourceMappingValidator()
+            probe_executor = BoundedProbeExecutor()
+            materialized: list[dict[str, Any]] = []
+            runtime_operations = []
+            for proposal in accepted_source_proposals:
+                profile = active_profiles.get(proposal.source_id)
+                requirement = requirements_by_relation.get(proposal.relation)
+                if profile is None or requirement is None:
+                    materialized.append({
+                        "source_id": proposal.source_id,
+                        "relation": proposal.relation,
+                        "status": "REJECTED",
+                        "reasons": ["proposal is not for the selected provider or graph"],
+                    })
+                    continue
+                cached_for_proposal = cached_capabilities.get((proposal.source_id, proposal.relation))
+                if cached_for_proposal:
+                    for cached_capability in cached_for_proposal:
+                        operation = materialize_runtime_operation(
+                            proposal,
+                            profile,
+                            requirement,
+                            cached_capability,
+                        )
+                        if operation is not None:
+                            runtime_operations.append(operation)
+                            state.runtime_capabilities.append(cached_capability.to_dict())
+                    materialized.append({
+                        "source_id": proposal.source_id,
+                        "relation": proposal.relation,
+                        "status": "CACHE_HIT",
+                        "probe_query_id": getattr(cached_for_proposal[0], "probe_query_id", None),
+                        "probe_succeeded": True,
+                        "probe_reasons": [],
+                    })
+                    continue
+                valid, reasons, probe = validator.validate(proposal, [profile])
+                if not valid or probe is None:
+                    materialized.append({
+                        "source_id": proposal.source_id,
+                        "relation": proposal.relation,
+                        "status": "REJECTED",
+                        "reasons": list(reasons),
+                    })
+                    continue
+                probe_id = f"probe-{objective.request_id}-{len(materialized) + 1}"
+                probe_run = probe_executor.run(
+                    active_adapter,
+                    profile,
+                    probe,
+                    query_id=probe_id,
+                    time_window=objective.time_window,
+                )
+                runtime_capability = validator.materialize(
+                    proposal,
+                    profile,
+                    probe_query_id=probe_id,
+                    probe_succeeded=probe_run.succeeded,
+                    diagnostics=probe_run.reasons,
+                )
+                audit_item = {
+                    "source_id": proposal.source_id,
+                    "relation": proposal.relation,
+                    "status": runtime_capability.status,
+                    "probe_query_id": probe_id,
+                    "probe_succeeded": probe_run.succeeded,
+                    "probe_reasons": list(probe_run.reasons),
+                }
+                materialized.append(audit_item)
+                if not probe_run.succeeded:
+                    continue
+                operation = materialize_runtime_operation(
+                    proposal,
+                    profile,
+                    requirement,
+                    runtime_capability,
+                )
+                if operation is not None:
+                    runtime_operations.append(operation)
+                    state.runtime_capabilities.append(runtime_capability.to_dict())
+                    cache_key = cache_keys.get((proposal.source_id, proposal.relation))
+                    if cache_key:
+                        self.runtime_capability_cache.put(cache_key, (runtime_capability,))
+
+            if runtime_operations:
+                existing_ids = {operation.id for operation in active_catalog.operations}
+                active_catalog.operations.extend(
+                    operation for operation in runtime_operations
+                    if operation.id not in existing_ids
+                )
+                operations_by_id = {
+                    operation.id: operation
+                    for operation in [*capability_graph.operations, *runtime_operations]
+                }
+                capability_graph.operations = list(operations_by_id.values())
+            if source_profile_audit:
+                source_profile_audit["runtime_capabilities"] = materialized
+                source_profile_audit["runtime_operation_ids"] = [
+                    operation.id for operation in runtime_operations
+                ]
+                state.source_profile_audit = source_profile_audit
+                state.semantic_analysis.setdefault("source_profile", source_profile_audit)
+            if state.semantic_goal_graph is not None:
+                # Runtime capabilities supplement, rather than replace, the
+                # provider's canonical typed contracts.  Legacy cdb_* aliases
+                # remain excluded; they cannot silently route a semantic goal
+                # by event-family or sourcetype name.
+                planner_operations = [
+                    operation
+                    for operation in active_catalog.operations
+                    if (
+                        not getattr(operation, "legacy_alias", False)
+                        and (
+                            operation.query_builder != "runtime.source_profile.v1"
+                            or operation.id in {item.id for item in runtime_operations}
+                        )
+                    )
+                ]
+                state.semantic_logical_plan = SemanticGoalPlanner(
+                    planner_operations,
+                    active_provider_id,
+                ).compose(
+                    state.semantic_goal_graph,
+                    plan_id=f"logical-{state.semantic_goal_graph.id}",
+                )
+                # New semantic plans are executable directly only when the
+                # compiler has emitted the new contract without a legacy
+                # ClaimGraph.  Legacy claims remain on their existing
+                # verifier path until their proof model is migrated.
+        # Bind only against the operations of the adapter that will execute
+        # the plan.  CapabilityGraph may contain several providers; selecting
+        # an operation from provider B and executing it on adapter A would be
+        # an invisible but serious provenance error.
+        self.capability_binder.set_capability_graph(
+            capability_graph,
+            provider_id=active_provider_id,
+        )
+
+        # Explicit test doubles/custom adapters may not publish a capability
+        # descriptor yet. Keep the strict census gate for auto/configured
+        # provider lists, but preserve direct-adapter compatibility so unit
+        # tests can exercise execution and evidence logic independently of a
+        # provider catalog. This path is never used for provider auto-selection.
+        legacy_explicit_adapter = bool(
+            explicit_adapter
+            and not selected_adapters
+            and active_catalog is not None
+            and active_catalog.status == "ONLINE"
+            and active_catalog.details.get("descriptor_status") == "LEGACY_UNTYPED"
+        )
+        use_claim_graph = bool(
+            claim_graph is not None
+            and not legacy_explicit_adapter
+            and not bool(getattr(claim_graph, "metadata", {}).get("legacy_fixture_projection"))
+        )
+        if claim_graph is not None and not selected_adapters and not legacy_explicit_adapter:
+            online_providers = [
+                provider
+                for provider in capability_graph.providers
+                if provider.status == "ONLINE"
+            ]
+            self.controller.set_stopping_decision(
+                state,
+                StoppingDecision.STOP_UNSUPPORTED_CAPABILITY
+                if online_providers
+                else StoppingDecision.STOP_UNREACHABLE,
+            )
+        elif active_catalog is not None and active_catalog.status != "ONLINE":
+            self.controller.set_stopping_decision(state, StoppingDecision.STOP_UNREACHABLE)
+
         if getattr(objective, "semantic_intent", None):
             state.hunt_spec = HuntSpec.from_semantic(
                 objective.semantic_intent,
@@ -680,14 +1485,9 @@ class HypothesisHuntEngine:
             if not val_res.valid:
                 self.controller.set_stopping_decision(state, StoppingDecision.STOP_INSUFFICIENT)
 
-        # 2. Discover Provider Capabilities & Fast Guards
-        if hasattr(active_adapter, "discover_full_capabilities"):
-            cat = active_adapter.discover_full_capabilities()
-            if isinstance(cat, ProviderCapabilityCatalog):
-                state.capability_catalog = cat
-                if cat.status == "UNREACHABLE":
-                    self.controller.set_stopping_decision(state, StoppingDecision.STOP_UNREACHABLE)
-
+        # 2. Apply fast guards after the Provider Census. Capability discovery
+        # has already run exactly once for every configured adapter, and its
+        # reachable, unreachable and irrelevant outcomes remain in the graph.
         if any(h.status == HypothesisStatus.INSUFFICIENTLY_SPECIFIED for h in state.hypotheses):
             self.controller.set_stopping_decision(state, StoppingDecision.STOP_INSUFFICIENT)
 
@@ -731,19 +1531,61 @@ class HypothesisHuntEngine:
         )
         self.controller.add_cell(state, wc_cell)
 
-        # Discovery runs before identity or causal graph pivots.  During this
-        # migration it is enabled for the live Splunk adapter; CDB will use
-        # the same primitive once its schema profiler is enabled.
-        self._run_semantic_discovery(
-            state=state,
-            active_adapter=active_adapter,
-            scope=scope,
-            ledger=ledger,
-            step_callback=step_callback,
-        )
+        if (
+            native_semantic_graph
+            and state.semantic_logical_plan is not None
+            and state.semantic_logical_plan.steps
+            and not state.stopping_decision
+        ):
+            # Execute every runnable prefix of the graph.  An unresolved
+            # downstream goal is not a reason to discard a valid upstream
+            # identity query; the semantic executor records the boundary and
+            # the final verdict remains inconclusive where required.
+            self.execute_semantic_plan(
+                state,
+                active_adapter,
+                scope,
+                ledger,
+                initial_bindings=initial_bindings,
+            )
+
+        if (
+            native_semantic_graph
+            and state.semantic_logical_plan is not None
+            and state.semantic_logical_plan.unresolved_goal_ids
+            and not state.semantic_logical_plan.steps
+            and not state.stopping_decision
+        ):
+            # An unresolved semantic goal is not permission to scan the whole
+            # provider.  Stop with an explicit capability boundary instead of
+            # promoting unrelated scope rows to evidence.
+            self.controller.set_stopping_decision(
+                state,
+                StoppingDecision.STOP_UNSUPPORTED_CAPABILITY,
+            )
+
+        # A validated ClaimGraph already contains the semantic observation
+        # contract.  It must go directly through capability binding and claim
+        # verification; the older adaptive discovery loop would re-interpret
+        # the request from answer-type heuristics and could add unrelated
+        # queries.  Discovery remains the compatibility path for requests
+        # compiled without a ClaimGraph.
+        if not state.stopping_decision and not use_claim_graph and not native_semantic_graph:
+            self._run_semantic_discovery(
+                state=state,
+                active_adapter=active_adapter,
+                scope=scope,
+                ledger=ledger,
+                step_callback=step_callback,
+            )
 
         descriptor = getattr(active_adapter, "get_versioned_descriptor", lambda: None)()
-        if state.hunt_spec is not None and descriptor is not None:
+        if (
+            not state.stopping_decision
+            and not use_claim_graph
+            and state.hunt_spec is not None
+            and descriptor is not None
+        ):
             schema_fields: set[str] = set()
             descriptor_operations = {
                 str(getattr(operation, "id", ""))
@@ -775,8 +1617,6 @@ class HypothesisHuntEngine:
                 except (TypeError, ValueError):
                     schema_result = None
                 if schema_result is not None:
-                    if hasattr(active_adapter, "last_query_text"):
-                        schema_plan.parameters["query_text"] = active_adapter.last_query_text
                     self.controller.record_query_execution(state, schema_plan, schema_result)
                     for row in schema_result.rows or []:
                         field_name = row.get("field") or row.get("field_name")
@@ -902,7 +1742,6 @@ class HypothesisHuntEngine:
                             refinement_terms.append(file_name)
 
                     if refinement_terms:
-                        import inspect
                         sig = inspect.signature(active_adapter.execute_query)
                         if "search_terms" in sig.parameters:
                             exec_kwargs["search_terms"] = refinement_terms
@@ -920,8 +1759,6 @@ class HypothesisHuntEngine:
                     except (TypeError, ValueError):
                         adaptive_result = None
                     if adaptive_result is not None:
-                        if hasattr(active_adapter, "last_query_text"):
-                            adaptive_plan.parameters["query_text"] = active_adapter.last_query_text
                         self.controller.record_query_execution(state, adaptive_plan, adaptive_result)
                         adaptive_observations: list[Observation] = []
                         for row in adaptive_result.rows or []:
@@ -1031,9 +1868,12 @@ class HypothesisHuntEngine:
         discovered_entities: set[str] = set()
 
         # 4. Action Loop:
-        # Discovery-first semantic hunts must not be intercepted by the legacy
-        # relation-first graph planner.  The graph planner remains available as
-        # a compatibility path for structured cases that already contain edges.
+        # A validated ClaimGraph is the primary execution plan.  Discovery may
+        # have produced initial observations already, but it must not bypass
+        # claim-edge execution: each unresolved edge still needs its declared
+        # capability binding and deterministic verification.  The older
+        # relation/model gate remains only for requests compiled without a
+        # ClaimGraph.
         subj_is_person = bool(
             state.objective
             and getattr(state.objective, "semantic_intent", None)
@@ -1049,8 +1889,23 @@ class HypothesisHuntEngine:
             )
         )
 
-        if (not state.discovery_completed and (subj_is_person or has_identity_relations)
-                and state.case and getattr(state.case, "graph", None) and state.case.graph.edges):
+        claim_graph_active = bool(
+            use_claim_graph
+            and state.case
+            and getattr(state.case, "graph", None)
+            and state.case.graph.edges
+        )
+        legacy_graph_active = bool(
+            not use_claim_graph
+            and not native_semantic_graph
+            and not state.discovery_completed
+            and (subj_is_person or has_identity_relations)
+            and state.case
+            and getattr(state.case, "graph", None)
+            and state.case.graph.edges
+        )
+
+        if claim_graph_active or legacy_graph_active:
             while not state.stopping_decision:
                 self.budget_ledger.record_turn()
                 self.controller.advance_turn(state)
@@ -1110,8 +1965,6 @@ class HypothesisHuntEngine:
                         limit=100,
                         query_id=plan_id,
                     )
-                    if hasattr(active_adapter, "last_query_text") and isinstance(active_adapter.last_query_text, str):
-                        query_plan.parameters["query_text"] = active_adapter.last_query_text
                     self.controller.record_query_execution(state, query_plan, qr)
 
                     # Update instance Cell coverage corresponding to source entity
@@ -1148,56 +2001,29 @@ class HypothesisHuntEngine:
                         if not c.is_wildcard and c.entity == src_ent and c.time_bucket == objective.time_window:
                             self.controller.transition_cell_state(state, c, cell_state)
 
-                    # Update requirement status for v5 branch: mark only requirements
-                    # that are semantically served by this operation as EXECUTED.  A
-                    # broad keyword match is unsafe here: a requirement saying
-                    # "competitor CEO" must not be confirmed by a recipient-email
-                    # query alone.
-                    turn_reqs: list[EvidenceRequirementV4] = []
-                    rel_type_str = str(edge.relation_type.value if hasattr(edge.relation_type, "value") else edge.relation_type).lower()
-                    role_terms = ("role", "ceo", "executive", "leadership", "directory", "title")
-                    for req in state.requirements:
-                        r_desc = req.description.lower()
-                        r_et = str(req.evidence_type).lower()
-                        if req.id == edge.id or (hasattr(edge, "metadata") and edge.metadata.get("requirement_id") == req.id):
-                            turn_reqs.append(req)
-                        elif op_name == "resolve_person_to_account":
-                            if r_et in ("identity", "account_resolution") or (
-                                any(k in r_desc for k in ("account username", "user account", "map person to account"))
-                                and not any(k in r_desc for k in ("authentication", "sign-in", "logon"))
-                            ):
-                                turn_reqs.append(req)
-                        elif op_name in ("resolve_account_to_email", "find_outbound_message_metadata", "resolve_recipient_identity"):
-                            # Recipient/email evidence cannot satisfy an executive-role
-                            # or directory requirement merely because its prose mentions
-                            # a competitor or CEO.
-                            if (
-                                r_et in ("email_outbound", "outbound_message_metadata", "message", "communication", "email")
-                            ) and not any(k in r_desc for k in role_terms):
-                                turn_reqs.append(req)
-                        elif op_name == "resolve_role_identity":
-                            if r_et in ("role_identity", "scope_records", "directory") or any(k in r_desc for k in role_terms):
-                                turn_reqs.append(req)
-                        elif "requested" in edge.id or "requested" in rel_type_str:
-                            if r_et in ("web_request", "dns_activity", "dns_query") or any(k in r_desc for k in ("web", "proxy", "egress", "domain", "uri", "browser", "visit", "competitor")):
-                                turn_reqs.append(req)
-                        elif "assigned" in edge.id or "assigned" in rel_type_str:
-                            if r_et in ("dns_activity", "dns_query", "network_connection", "scope_records") or any(k in r_desc for k in ("dns", "ip", "dhcp", "network")):
-                                turn_reqs.append(req)
-                        elif "logon" in edge.id or "logged_on" in rel_type_str:
-                            if r_et in ("authentication_activity", "identity") or any(k in r_desc for k in ("logon", "endpoint", "workstation", "login")):
-                                turn_reqs.append(req)
-                        elif "owns" in edge.id or "owns" in rel_type_str:
-                            if r_et in ("authentication_activity", "identity") or any(k in r_desc for k in ("account", "user", "person", "identity")):
-                                turn_reqs.append(req)
-                        elif any(k in edge.id or k in rel_type_str for k in ("message", "email", "recipient", "role")):
-                            if r_et in ("outbound_message_metadata", "email", "message", "communication") or any(k in r_desc for k in ("email", "mail", "message", "recipient", "sender", "outbound", "ceo")):
-                                turn_reqs.append(req)
+                    # Map execution results back to requirements using the
+                    # validated ClaimGraph contract.  Operation names and
+                    # natural-language keywords are intentionally not used:
+                    # they are provider/scenario details and can silently
+                    # attribute evidence to the wrong claim.
+                    turn_req_ids = set()
+                    if hasattr(edge, "metadata"):
+                        turn_req_ids.update(
+                            str(value).strip()
+                            for value in edge.metadata.get("evidence_requirements", [])
+                            if str(value).strip()
+                        )
+                        requirement_id = str(edge.metadata.get("requirement_id", "")).strip()
+                        if requirement_id:
+                            turn_req_ids.add(requirement_id)
+                    turn_req_ids.add(edge.id)
+                    turn_reqs = [req for req in state.requirements if req.id in turn_req_ids]
 
                     # No positional fallback is allowed here.  An edge that
                     # has no explicit requirement mapping must not confirm an
-                    # arbitrary first requirement merely because its query
-                    # returned rows.
+                    # arbitrary requirement merely because its query returned
+                    # rows.  The edge itself remains the authoritative proof
+                    # target in that case.
 
                     for req in turn_reqs:
                         if req.status in (RequirementStatus.DEFINED, RequirementStatus.PLANNED):
@@ -1223,10 +2049,36 @@ class HypothesisHuntEngine:
                         self.controller.add_observation(state, obs)
                         new_obs_list.append(obs)
 
+                    # Assign explicit citations from real attempt observations
+                    edge.citations = [obs.id for obs in new_obs_list]
+
+                    # Query completeness is part of the claim acceptance rule;
+                    # a row count alone cannot establish it.
+                    edge.acceptance_predicate["query_complete"] = bool(
+                        getattr(qr, "complete", False)
+                    )
+                    executed_op = None
+                    if hasattr(active_adapter, "get_operation"):
+                        try:
+                            executed_op = active_adapter.get_operation(op_name)
+                        except Exception:
+                            executed_op = None
+                    elif hasattr(active_adapter, "operations") and isinstance(active_adapter.operations, dict):
+                        executed_op = active_adapter.operations.get(op_name)
+
                     v_res = self.relation_verifier.verify_candidate_edge(
-                        edge, src_node, tgt_node, ledger, new_obs_list
+                        edge, src_node, tgt_node, ledger, new_obs_list,
+                        query_results=state.query_results,
+                        operation=executed_op,
                     )
                     if v_res.verified:
+                        if claim_graph is not None:
+                            claim_id = str(edge.metadata.get("claim_id", "")).strip()
+                            claim = claim_graph.get_claim(claim_id) if claim_id else None
+                            if claim is not None:
+                                claim.status = ClaimStatus.SUPPORTED
+                                for observation_id in v_res.cited_observation_ids:
+                                    claim.cite(observation_id)
                         self.relation_verifier.apply_verification_to_graph(v_res, edge, tgt_node, state.case.graph)
                         tgt_type_str = tgt_node.type if isinstance(tgt_node.type, str) else tgt_node.type.value
                         if tgt_type_str in ("account", "user"):
@@ -1278,6 +2130,15 @@ class HypothesisHuntEngine:
                                 "entity": f"{src_node.value} -> {tgt_node.value}",
                             })
                     else:
+                        if claim_graph is not None:
+                            claim_id = str(edge.metadata.get("claim_id", "")).strip()
+                            claim = claim_graph.get_claim(claim_id) if claim_id else None
+                            if claim is not None:
+                                claim.status = (
+                                    ClaimStatus.UNKNOWN
+                                    if getattr(qr, "complete", False)
+                                    else ClaimStatus.INCONCLUSIVE
+                                )
                         if step_callback:
                             step_callback("EVIDENCE_REFUTED", {
                                 "turn": state.turn,
@@ -1303,29 +2164,29 @@ class HypothesisHuntEngine:
                             and str(edge.metadata.get("evidence_type", "")).lower()
                             in ("web_request", "web_activity", "web_request_activity")
                         ):
-                            # A complete query with no matching artifact is a
-                            # bounded negative observation for this edge.  It
-                            # must not terminate the hunt before independent
-                            # process/file requirements are tested.
-                            if getattr(qr, "complete", False):
-                                edge.status = RelationStatus.REFUTED
-                                edge.metadata["verification_diagnostic"] = v_res.diagnostic or "No matching artifact evidence found."
-                                for req in turn_reqs:
-                                    if req.status in (
-                                        RequirementStatus.DEFINED,
-                                        RequirementStatus.PLANNED,
-                                        RequirementStatus.EXECUTED,
-                                    ):
-                                        self.controller.update_requirement_status(state, req, RequirementStatus.NO_EVIDENCE_FOUND)
-                                continue
+                            # Query completion proves only that this bounded
+                            # provider attempt ended. Rows that fail deterministic
+                            # verification are a proof gap, and a complete-empty
+                            # result is not a semantic refutation without explicit
+                            # negative authority plus exhausted alternatives.
+                            edge.metadata["verification_diagnostic"] = (
+                                v_res.diagnostic or "Relation proof is missing."
+                            )
                             for req in turn_reqs:
                                 if req.status in (
                                     RequirementStatus.DEFINED,
                                     RequirementStatus.PLANNED,
                                     RequirementStatus.EXECUTED,
                                 ):
-                                    self.controller.update_requirement_status(state, req, RequirementStatus.INCONCLUSIVE)
-                            self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
+                                    self.controller.update_requirement_status(
+                                        state,
+                                        req,
+                                        RequirementStatus.INCONCLUSIVE,
+                                    )
+                            self.controller.set_stopping_decision(
+                                state,
+                                StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN,
+                            )
                             break
                         elif tgt_type_str in ("account", "user", "endpoint", "host"):
                             self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED)
@@ -1370,7 +2231,7 @@ class HypothesisHuntEngine:
                     for exp in state.expectations
                 )
             ]
-            has_ambiguous = len(ambiguous_cards) > 0 and not self.budget_ledger.is_llm_exhausted and self.evaluator.llm_caller is not None
+            has_ambiguous = len(ambiguous_cards) > 0 and not self.llm_tracker.is_exhausted and self.evaluator.llm_caller is not None
 
             action = self.controller.select_action(
                 state,
@@ -1455,18 +2316,38 @@ class HypothesisHuntEngine:
                     "query_id": plan.id,
                 }
                 if nqp and hasattr(active_adapter, "execute_query"):
-                    import inspect
                     sig = inspect.signature(active_adapter.execute_query)
                     if "native_query" in sig.parameters:
                         exec_kwargs["native_query"] = nqp.native_query
+                    # LLM-produced native syntax is quarantined at the
+                    # adapter boundary. Deterministic native compiler output
+                    # remains a normal provider operation.
+                    if (
+                        custom_q
+                        and "native_query_candidate" in sig.parameters
+                        and scope.provider_id == "splunk"
+                    ):
+                        index_name = str(
+                            getattr(active_adapter, "index", "")
+                            or getattr(scope, "native_partition", {}).get("index", "")
+                        ).strip()
+                        expected_fields = tuple(
+                            str(field)
+                            for field in getattr(state.capability_catalog, "observable_fields", ())
+                        )
+                        exec_kwargs["native_query_candidate"] = NativeQueryCandidate(
+                            provider=scope.provider_id,
+                            query_text=nqp.native_query,
+                            source_ids=(index_name,) if index_name else (),
+                            time_window=exp.time_window,
+                            expected_fields=expected_fields,
+                            max_rows=nqp.limit,
+                            reason="LLM fallback; no QueryIntent expression available",
+                        )
 
                 qr: QueryResult = active_adapter.execute_query(**exec_kwargs)
                 if lqp:
                     qr.logical_plan_id = lqp.id
-                if nqp:
-                    qr.native_query = nqp.native_query
-                if hasattr(active_adapter, "last_query_text") and isinstance(active_adapter.last_query_text, str):
-                    plan.parameters["query_text"] = active_adapter.last_query_text
                 self.controller.record_query_execution(state, plan, qr)
                 self.controller.update_requirement_status(state, req, RequirementStatus.EXECUTED)
 
@@ -1525,7 +2406,7 @@ class HypothesisHuntEngine:
 
                     self._evaluate_identity_linkage(state, qr.rows, ledger=ledger, query_id=plan.id)
 
-                    # Incremental delta grouping
+                    # Incremental delta grouping for this targeted expansion.
                     delta_cards = self.group_builder.ingest_delta(new_observations)
                     self.controller.set_evidence_cards(state, self.group_builder.build_cards())
                     # Only cards minted from this query may be associated with
@@ -1845,7 +2726,6 @@ class HypothesisHuntEngine:
                     "query_id": sweep_plan.id,
                 }
                 if sweep_nqp and hasattr(active_adapter, "execute_query"):
-                    import inspect
                     sig = inspect.signature(active_adapter.execute_query)
                     if "native_query" in sig.parameters:
                         exec_kwargs["native_query"] = sweep_nqp.native_query
@@ -1861,10 +2741,6 @@ class HypothesisHuntEngine:
                     )
                 if sweep_lqp:
                     qr.logical_plan_id = sweep_lqp.id
-                if sweep_nqp:
-                    qr.native_query = sweep_nqp.native_query
-                if hasattr(active_adapter, "last_query_text") and isinstance(active_adapter.last_query_text, str):
-                    sweep_plan.parameters["query_text"] = active_adapter.last_query_text
                 self.controller.record_query_execution(state, sweep_plan, qr)
                 if primary_req:
                     self.controller.update_requirement_status(state, primary_req, RequirementStatus.EXECUTED)
@@ -1937,17 +2813,10 @@ class HypothesisHuntEngine:
                             if resolved_h:
                                 host_counts[resolved_h] = host_counts.get(resolved_h, 0) + 100
 
-                    delta_cards = self.group_builder.ingest_delta(new_observations)
-                    self.controller.set_evidence_cards(state, self.group_builder.build_cards())
-                    for c in delta_cards:
-                        if sweep_plan.id not in c.query_ids:
-                            c.query_ids.append(sweep_plan.id)
-                        if primary_req and primary_req.id not in c.requirements:
-                            c.requirements.append(primary_req.id)
-                        if hasattr(ledger, "store"):
-                            ledger.store.link_card(c.id, c.representative_observation_ids)
-                        advisory = self.evaluator.evaluate_evidence_advisory(c, state.hypotheses, state.expectations)
-                        self.controller.add_evidence_assessment(state, advisory)
+                    # Wildcard sweep rows are discovery/control telemetry.
+                    # They remain in the ledger for pivots, but cannot become
+                    # evidence for the primary requirement without a targeted
+                    # query and a verifier-backed relation.
 
                     # Extract pivot candidates from sweep results
                     for row in qr.rows:
@@ -2008,12 +2877,6 @@ class HypothesisHuntEngine:
 
                     # Promote discovered entities to instance cells and concrete Expectations
                     for h_name in discovered_entities:
-                        # Guard: If subject is a person and identity is unresolved, do NOT promote web server hosts as user endpoint
-                        if state.objective and getattr(state.objective, "semantic_intent", None):
-                            s_intent = state.objective.semantic_intent
-                            if s_intent and getattr(s_intent.subject, "type", "") == "person" and not state.identity_resolved:
-                                if h_name.lower() in {"jabbah", "we1149srv", "web01", "iis01"}:
-                                    continue
                         ent = Host(name=h_name)
                         if not any(not c.is_wildcard and c.entity == ent for c in state.cells):
                             self.controller.add_cell(
@@ -2155,7 +3018,7 @@ class HypothesisHuntEngine:
             state.evidence_cards
             and self.evaluator.llm_caller is not None
             and self.evaluator.llm_calls_made == 0
-            and not self.budget_ledger.is_llm_exhausted
+            and not self.llm_tracker.is_exhausted
         ):
             ident_req = bool(objective.semantic_intent and getattr(objective.semantic_intent.subject, "type", "") == "person")
             q_complete = all(getattr(qr, "complete", True) for qr in state.query_results) if state.query_results else True
@@ -2210,7 +3073,17 @@ class HypothesisHuntEngine:
                     response="compiler_unstructured_response",
                 )
         state.llm_usage = self.llm_tracker.to_dict()
+        self.budget_ledger.llm_calls = self.llm_tracker.call_count
         self._update_evidence_state(state, ledger)
+
+        # Preserve compilation observability even when planning stops before
+        # the semantic executor (for example, invalid graph/capability or
+        # provider failure).  Otherwise the report falsely looks as if the
+        # LLM was never called.
+        if getattr(state, "compiler_trace", None):
+            final_analysis = dict(getattr(state, "semantic_analysis", {}) or {})
+            final_analysis.setdefault("compiler_trace", dict(state.compiler_trace))
+            self.controller.set_semantic_analysis(state, final_analysis)
 
         account = build_final_hunt_account(state, ledger=ledger)
         # The CLI report is intentionally concise. Full observations, raw
@@ -2253,11 +3126,30 @@ def persist_hunt_artifacts(
     with open(artifact_dir / "request.json", "w", encoding="utf-8") as f:
         json.dump(req_dict, f, indent=2, ensure_ascii=False)
 
-    # 1b. Persist the provider-neutral planning boundary used before any
-    # provider operation or evidence graph pivot.
+    # 1b. Persist the semantic and capability planning boundaries used before
+    # any provider operation or evidence graph pivot.
+    claim_graph = getattr(state.objective, "claim_graph", None) if state.objective else None
+    if claim_graph is not None:
+        with open(artifact_dir / "claim_graph.json", "w", encoding="utf-8") as f:
+            json.dump(claim_graph.to_dict(), f, indent=2, ensure_ascii=False)
+    if getattr(state, "capability_graph", None) is not None:
+        with open(artifact_dir / "capability_graph.json", "w", encoding="utf-8") as f:
+            json.dump(state.capability_graph.to_dict(), f, indent=2, ensure_ascii=False)
+    if getattr(state, "source_profile_audit", None):
+        with open(artifact_dir / "source_profile_audit.json", "w", encoding="utf-8") as f:
+            json.dump(state.source_profile_audit, f, indent=2, ensure_ascii=False, default=str)
     if getattr(state, "hunt_spec", None) is not None:
         with open(artifact_dir / "hunt_spec.json", "w", encoding="utf-8") as f:
             json.dump(state.hunt_spec.to_dict(), f, indent=2, ensure_ascii=False)
+    if getattr(state, "semantic_goal_graph", None) is not None:
+        with open(artifact_dir / "semantic_goal_graph.json", "w", encoding="utf-8") as f:
+            json.dump(state.semantic_goal_graph.to_dict(), f, indent=2, ensure_ascii=False, default=str)
+    if getattr(state, "compiler_trace", None):
+        with open(artifact_dir / "compiler_trace.json", "w", encoding="utf-8") as f:
+            json.dump(state.compiler_trace, f, indent=2, ensure_ascii=False, default=str)
+    if getattr(state, "semantic_logical_plan", None) is not None:
+        with open(artifact_dir / "proof_plan.json", "w", encoding="utf-8") as f:
+            json.dump(state.semantic_logical_plan.to_dict(), f, indent=2, ensure_ascii=False, default=str)
     with open(artifact_dir / "adaptive_decision.json", "w", encoding="utf-8") as f:
         json.dump(getattr(state, "adaptive_decision", {}), f, indent=2, ensure_ascii=False)
 
@@ -2303,7 +3195,6 @@ def persist_hunt_artifacts(
                 "operation_id": getattr(q, "operation_id", None),
                 "parameters": getattr(q, "parameters", {}),
                 "native_query": getattr(q, "native_query", None),
-                "query_text": getattr(q, "query_text", ""),
             })
     with open(artifact_dir / "queries.json", "w", encoding="utf-8") as f:
         json.dump(queries_data, f, indent=2, ensure_ascii=False, default=str)
@@ -2364,6 +3255,10 @@ def persist_hunt_artifacts(
             for assessment in account.evidence_assessments
         ],
     }
+    analysis_data["semantic_route_assessments"] = [
+        route.to_dict() if hasattr(route, "to_dict") else route
+        for route in account.semantic_route_assessments
+    ]
     with open(artifact_dir / "semantic_evidence_analysis.json", "w", encoding="utf-8") as f:
         json.dump(analysis_data, f, indent=2, ensure_ascii=False, default=str)
 
@@ -2381,6 +3276,15 @@ def persist_hunt_artifacts(
         "total_observations": len(ledger.observations),
         "total_cards": len(state.evidence_cards),
         "total_queries": len(state.queries),
+        "semantic_graph_id": getattr(getattr(state, "semantic_goal_graph", None), "id", None),
+        "proof_plan_id": getattr(getattr(state, "semantic_logical_plan", None), "id", None),
+        "semantic_analysis": getattr(state, "semantic_analysis", {}),
+        "source_profile_audit": getattr(state, "source_profile_audit", {}),
+        "runtime_capabilities": getattr(state, "runtime_capabilities", []),
+        "semantic_route_assessments": [
+            route.to_dict() if hasattr(route, "to_dict") else route
+            for route in account.semantic_route_assessments
+        ],
     }
     with open(artifact_dir / "audit_summary.json", "w", encoding="utf-8") as f:
         json.dump(audit_data, f, indent=2, ensure_ascii=False, default=str)

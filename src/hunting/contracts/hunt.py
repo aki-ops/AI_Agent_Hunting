@@ -96,6 +96,7 @@ class HuntObjective:
     # It is intentionally structured so reporting does not guess from keywords.
     answer_spec: dict[str, Any] = field(default_factory=dict)
     semantic_intent: SemanticHuntIntent | None = None
+    semantic_goal_graph: Any | None = None
     claim_graph: Any | None = None
     investigation_model: InvestigationModel | None = None
     case: Any | None = None
@@ -357,6 +358,7 @@ class StoppingDecision(str, Enum):
     STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED = "STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED"
     STOP_INCONCLUSIVE_RELATION_UNPROVEN = "STOP_INCONCLUSIVE_RELATION_UNPROVEN"
     STOP_INCONCLUSIVE_COVERAGE_GAP = "STOP_INCONCLUSIVE_COVERAGE_GAP"
+    STOP_NEEDS_USER_DECISION = "STOP_NEEDS_USER_DECISION"
     STOP_EXHAUSTED_BY_BUDGET = "STOP_EXHAUSTED_BY_BUDGET"
     STOP_BUDGET_EXHAUSTED = "STOP_EXHAUSTED_BY_BUDGET"
     STOP_BOUNDED = "STOP_BOUNDED"
@@ -384,9 +386,17 @@ class HuntState:
     logical_query_plans: list[LogicalQueryPlan] = field(default_factory=list)
     native_query_plans: list[NativeQueryPlan] = field(default_factory=list)
     capability_catalog: Any | None = None
+    capability_graph: Any | None = None
     evidence_assessments: list[EvidenceAssessment] = field(default_factory=list)
     semantic_analysis: dict[str, Any] = field(default_factory=dict)
+    compiler_trace: dict[str, Any] = field(default_factory=dict)
+    source_profile_audit: dict[str, Any] = field(default_factory=dict)
+    runtime_capabilities: list[dict[str, Any]] = field(default_factory=list)
     semantic_intent: SemanticHuntIntent | None = None
+    semantic_goal_graph: Any | None = None
+    semantic_logical_plan: Any | None = None
+    semantic_plan_executed: bool = False
+    semantic_route_assessments: list[Any] = field(default_factory=list)
     hunt_spec: HuntSpec | None = None
     evidence_state: Any | None = None
     discovery_completed: bool = False
@@ -426,6 +436,11 @@ class FinalHuntAccount:
     answer: dict[str, Any] = field(default_factory=dict)
     llm_usage: dict[str, Any] = field(default_factory=dict)
     semantic_analysis: dict[str, Any] = field(default_factory=dict)
+    source_profile_audit: dict[str, Any] = field(default_factory=dict)
+    runtime_capabilities: list[dict[str, Any]] = field(default_factory=list)
+    semantic_goal_graph: Any | None = None
+    semantic_logical_plan: Any | None = None
+    semantic_route_assessments: list[Any] = field(default_factory=list)
     semantic_intent: SemanticHuntIntent | None = None
     evidence_assessments: list[EvidenceAssessment] = field(default_factory=list)
     investigation_model: InvestigationModel | None = None
@@ -452,6 +467,7 @@ class FinalHuntAccount:
             StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED,
             StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN,
             StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP,
+            StoppingDecision.STOP_NEEDS_USER_DECISION,
         ):
             return HuntOutcome.INCONCLUSIVE
 

@@ -1,4 +1,18 @@
 {
-  "analysis": {},
-  "assessments": []
+  "analysis": {
+    "source_profile": {
+      "status": "NO_LLM_CALLER",
+      "readiness": [],
+      "profiling_goal_ids": [],
+      "retrieval": [],
+      "census_profile_discovery": {},
+      "proposals": [],
+      "rejected": [],
+      "relation_calls": [],
+      "runtime_capabilities": [],
+      "runtime_operation_ids": []
+    }
+  },
+  "assessments": [],
+  "semantic_route_assessments": []
 }

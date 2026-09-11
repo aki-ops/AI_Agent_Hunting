@@ -87,7 +87,11 @@ def test_binder_compiles_splunk_queries():
         relation_type=RelationType.LOGGED_ON_TO, target_id="n3", target_entity_type=NodeType.ENDPOINT
     )
     candidate = binder.create_candidate(e_logon, n_person, n_endpoint)
+    assert candidate.operation_name == "resolve_person_to_endpoint"
     spl = binder.compile_operation_query(candidate, provider_id="splunk", index="botsv2")
     assert 'index="botsv2"' in spl
-    assert 'sourcetype="WinEventLog:Security"' in spl
+    assert '"Amber Turing"' in spl
+    assert 'sourcetype="' not in spl
+    assert "EventCode=" not in spl
+    assert "_host_candidate" in spl
     assert 'Amber' in spl
