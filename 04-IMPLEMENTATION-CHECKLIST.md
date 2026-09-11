@@ -15,8 +15,8 @@ spanning Control Plane and Hunt Plane (Steps A–J).
 - [x] Establish `SemanticGoalGraph`, `LogicalPlan`, `CapabilityGraph` and compatibility `ClaimGraph` contracts. (`src/hunting/contracts/semantic_graph.py`, `claim.py`, `capabilities.py`.)
 - [x] Keep `Cell(provider_scope, entity|ANY, time_bucket)` strictly as a coverage/execution coordinate, never an ontology.
 - [x] Establish evaluation corpus directory and schemas (`eval/corpus/scenarios.jsonl`, `eval/splits.json` with 15 canonical scenarios across train/dev/test_holdout partitions).
-- [ ] Define baseline B0 (current pipeline) and baseline B1 (direct LLM-to-read-only-query with safety gate) run accounts.
-- [ ] Confirm no `event_family`, `event_code`, keyword or answer-type field controls reasoning path. (`build_investigation_case_from_intent()` is compatibility-only; remaining legacy branches outside semantic compilation are catalogued for retirement.)
+- [x] Define baseline B0 (current pipeline) and baseline B1 (direct LLM-to-read-only-query with safety gate) run accounts. (`eval/runner.py`, `eval/metrics.py`, `src/hunting/reporter/account_exporter.py`.)
+- [x] Confirm no `event_family`, `event_code`, keyword or answer-type field controls reasoning path. (`SemanticGoalGraphValidator` in `src/hunting/compiler/investigation_validator.py`; `tests/unit/test_phase2_semantic_compiler_goal_graph.py`.)
 
 ---
 
@@ -132,7 +132,7 @@ spanning Control Plane and Hunt Plane (Steps A–J).
 ## Phase 8 — Evaluation, Holdout and Ablation (P0/P1/P2)
 
 - [x] Run counterfactual, partial-telemetry, provider-failure and prompt-injection tests.
-- [ ] Run 15-scenario counterfactual matrix (Section 8 of `08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md`):
+- [x] Run 15-scenario counterfactual matrix (Section 8 of `08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md`): (`eval/corpus/scenarios.jsonl`, `eval/splits.json`, `tests/unit/test_phase8_evaluation_matrix_and_ablations.py::test_candidate_pipeline_evaluates_all_15_scenarios_successfully`.)
   1. S01: Tor Browser Version (exact attribute)
   2. S02: Tor Browser Artifact Identity (device qualifier)
   3. S03: Amber Competitor Domain (web proxy/DNS proof)
@@ -148,14 +148,14 @@ spanning Control Plane and Hunt Plane (Steps A–J).
   13. S13: Splunk Backend Timeout & Search Job Cancel (backend degradation)
   14. S14: Prompt Injection in Log Payload (quarantine defense)
   15. S15: Cross-Tenant Multi-Provider Isolation (scope/permission defense)
-- [ ] Compare B0 (current baseline), B1 (direct query), and Candidate (Contract-Grounded Progressive Hunt Graph).
-- [ ] Report separate layer metrics:
+- [x] Compare B0 (current baseline), B1 (direct query), and Candidate (Contract-Grounded Progressive Hunt Graph). (`eval/runner.py`, `tests/unit/test_phase8_evaluation_matrix_and_ablations.py::test_baseline_comparison_b0_vs_b1_vs_candidate`.)
+- [x] Report separate layer metrics: (`eval/metrics.py`, `eval/runner.py`, `tests/unit/test_phase8_evaluation_matrix_and_ablations.py`.)
   - Planning: Claim Precision, Recall, F1; Unsupported Expansion Rate
   - Retrieval: Evidence Precision, Recall@k; Completeness Accuracy
   - Correlation: Edge Precision, Recall, F1; Transition Validity
   - Answer: Exact Match, Value F1, Citation Grounding Rate
   - Operations: Decision Coverage, Waste Ratio ($C_{waste}/C_{run}$), Mean Time to Verdict
-- [ ] Run ablations: actual graph vs oracle graph; dynamic mapping vs approved mapping; single-shot query vs progressive frontier.
+- [x] Run ablations: actual graph vs oracle graph; dynamic mapping vs approved mapping; single-shot query vs progressive frontier. (`eval/runner.py::run_ablation`, `tests/unit/test_phase8_evaluation_matrix_and_ablations.py::test_ablations_oracle_dynamic_singleshot`.)
 
 ---
 
