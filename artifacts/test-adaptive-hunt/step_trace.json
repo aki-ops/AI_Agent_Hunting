@@ -1,0 +1,61 @@
+{
+  "request_id": "test-adaptive-hunt",
+  "step_count": 4,
+  "steps": [
+    {
+      "step_name": "STEP_A_FREEZE_REQUEST",
+      "step_index": 1,
+      "timestamp_iso": "2026-09-11T09:49:54Z",
+      "duration_ms": 0.0,
+      "status": "SUCCESS",
+      "inputs_summary": {
+        "request_id": "test-adaptive-hunt",
+        "content": "What version of Tor was installed on wrk-amber?"
+      },
+      "outputs_summary": {},
+      "diagnostics": []
+    },
+    {
+      "step_name": "STEP_B_COMPILE_GOAL_GRAPH",
+      "step_index": 2,
+      "timestamp_iso": "2026-09-11T09:49:54Z",
+      "duration_ms": 0.0,
+      "status": "SUCCESS",
+      "inputs_summary": {
+        "request_id": "test-adaptive-hunt"
+      },
+      "outputs_summary": {
+        "has_semantic_goal_graph": false
+      },
+      "diagnostics": []
+    },
+    {
+      "step_name": "STEP_C_RESOLVE_FRONTIER",
+      "step_index": 3,
+      "timestamp_iso": "2026-09-11T09:49:54Z",
+      "duration_ms": 0.0,
+      "status": "SUCCESS",
+      "inputs_summary": {
+        "profiling_requirements": 0
+      },
+      "outputs_summary": {
+        "coverage_manifests": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step_name": "STEP_J_REPORT_AND_ACCOUNT",
+      "step_index": 4,
+      "timestamp_iso": "2026-09-11T09:49:54Z",
+      "duration_ms": 0.0,
+      "status": "SUCCESS",
+      "inputs_summary": {
+        "request_id": "test-adaptive-hunt"
+      },
+      "outputs_summary": {
+        "report_length": 4176
+      },
+      "diagnostics": []
+    }
+  ]
+}

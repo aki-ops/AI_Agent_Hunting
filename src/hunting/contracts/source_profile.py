@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 
@@ -19,8 +20,17 @@ def _required(value: str, name: str) -> str:
     return text
 
 
+class FieldRoleStatus(str, Enum):
+    """Lifecycle status of a telemetry field's semantic role assignment."""
+    UNASSIGNED = "UNASSIGNED"
+    PROPOSED = "PROPOSED"
+    VALIDATED = "VALIDATED"
+    CERTIFIED = "CERTIFIED"
+
+
 @dataclass(frozen=True)
 class TelemetryFieldProfile:
+
     """Bounded metadata for one native field; values are never raw evidence."""
 
     field_id: str

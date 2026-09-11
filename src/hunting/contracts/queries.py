@@ -293,3 +293,24 @@ class ControlResult:
     field_present: dict[str, bool] | None = None
     predicate_observable: bool | None = None
     diagnostic: Diagnostic | None = None
+
+
+@dataclass(frozen=True)
+class QueryAttempt:
+    """A first-class attempt to execute a query against a provider adapter.
+
+    Every invocation of an adapter produces a QueryAttempt, whether it yields
+    rows, is complete-empty (0 rows), times out, or fails.
+    """
+    query_id: str
+    goal_id: str
+    step_id: str
+    operation_id: str
+    input_bindings: dict[str, Any] = field(default_factory=dict)
+    result: QueryResult | None = None
+    status: str = "EXECUTED"  # "EXECUTED" | "COMPLETE_EMPTY" | "PARTIAL" | "FAILED" | "TIMEOUT" | "BLOCKED" | "AMBIGUOUS"
+    evidence_eligible: bool = False
+    proof_eligible: bool = False
+    stage_id: str = "narrow"
+    removed_retrieval_keys: tuple[str, ...] = ()
+

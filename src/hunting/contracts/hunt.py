@@ -447,6 +447,7 @@ class HuntState:
     llm_raw_proposal: dict[str, Any] | None = None
     validated_graph: Any | None = None
     validation_diagnostics: list[str] = field(default_factory=list)
+    step_trace: Any | None = None
 
 
 @dataclass
@@ -489,6 +490,8 @@ class FinalHuntAccount:
     validated_graph: Any | None = None
     validation_diagnostics: list[str] = field(default_factory=list)
     stopping_taxonomy_state: StoppingTaxonomyState | None = None
+    step_trace: Any | None = None
+
 
     @property
     def taxonomy_state(self) -> StoppingTaxonomyState:

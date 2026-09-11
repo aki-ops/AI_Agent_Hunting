@@ -10,6 +10,7 @@ from hunting.contracts.entities import Account, Domain, File, Host, IPAddress, P
 from hunting.contracts.queries import (
     Diagnostic,
     ProviderOperation,
+    QueryAttempt,
     QueryOutcome,
     QueryResult,
     RetrievalStage,
@@ -49,12 +50,15 @@ class StepExecution:
     blocked_reason: str | None = None
     stage_id: str = "narrow"
     removed_retrieval_keys: tuple[str, ...] = ()
+    goal_id: str = ""
 
 
 @dataclass
 class SemanticExecutionResult:
     executions: list[StepExecution] = field(default_factory=list)
+    query_attempts: list[QueryAttempt] = field(default_factory=list)
     binding_events: list[BindingEvent] = field(default_factory=list)
+
     variables: dict[str, list[str]] = field(default_factory=dict)
     route_assessments: list[SemanticRouteAssessment] = field(default_factory=list)
     attempts: list[SemanticAttempt] = field(default_factory=list)
@@ -152,6 +156,7 @@ class SemanticPlanExecutor:
             for key, values in variables.items()
         }
         executions: list[StepExecution] = []
+        query_attempts: list[QueryAttempt] = []
         binding_events: list[BindingEvent] = []
         semantic_attempts: list[SemanticAttempt] = []
         route_assessments: dict[str, SemanticRouteAssessment] = {}
@@ -448,9 +453,10 @@ class SemanticPlanExecutor:
                             cursor=None if all(item.complete for item in candidate_results) else first.cursor,
                             row_count=sum(item.row_count for item in candidate_results),
                         )
+                        advances_goal = step.advances_goal_ids[0] if step.advances_goal_ids else step.id
                         semantic_attempts.append(SemanticAttempt(
                             attempt_id=f"attempt-{len(semantic_attempts) + 1}",
-                            goal_id=step.advances_goal_ids[0] if step.advances_goal_ids else step.id,
+                            goal_id=advances_goal,
                             operation_id=operation.id,
                             source_id=operation.runtime_source_id or scope.scope_id,
                             schema_fingerprint=operation.schema_fingerprint,
@@ -469,17 +475,53 @@ class SemanticPlanExecutor:
                             alternatives_considered=tuple(step.alternative_operation_ids),
                             negative_evidence_capable=operation.negative_evidence_capable,
                         ))
+
+                        is_empty = not bool(result.rows)
+                        attempt_status = (
+                            "EXECUTED" if result.executed_ok and result.complete and not is_empty
+                            else "COMPLETE_EMPTY" if result.executed_ok and result.complete and is_empty
+                            else "PARTIAL" if result.executed_ok and not result.complete
+                            else "FAILED"
+                        )
+                        query_attempts.append(QueryAttempt(
+                            query_id=result.query_id,
+                            goal_id=advances_goal,
+                            step_id=step.id,
+                            operation_id=operation.id,
+                            input_bindings=dict(bound_values),
+                            result=result,
+                            status=attempt_status,
+                            evidence_eligible=bool(result.executed_ok and not is_empty),
+                            proof_eligible=bool(
+                                result.executed_ok and result.complete and not is_empty
+                                and operation.proof_mode == "relation_observable"
+                            ),
+                            stage_id=stage.stage_id,
+                            removed_retrieval_keys=tuple(sorted(removed_keys)),
+                        ))
+
                         if not result.executed_ok or not result.complete or result.rows:
                             break
                     else:
+                        # Complete-empty advances only after all declared stages.
+                        # Record the executed attempt so audit, queries.json, and reports include it.
+                        executions.append(StepExecution(
+                            step_id=step.id,
+                            query_id=result.query_id,
+                            result=result,
+                            operation_id=operation_id,
+                            outputs={},
+                            inputs=bound_values,
+                            status="COMPLETE_EMPTY",
+                            stage_id=stage.stage_id,
+                            removed_retrieval_keys=tuple(sorted(removed_keys)),
+                            goal_id=advances_goal,
+                        ))
                         continue
                     # A partial result requires continuation. A candidate or a
                     # verified result must be evaluated before another route.
                     if not result.complete or result.rows:
                         pass
-                    elif result.executed_ok:
-                        # Complete-empty advances only after all declared stages.
-                        continue
                     outputs: dict[str, list[str]] = {}
                     outputs_verified = True
                     ambiguous_output = False
@@ -526,6 +568,7 @@ class SemanticPlanExecutor:
                                 blocked_reason=unresolved_reasons[step.id],
                                 stage_id=stage.stage_id,
                                 removed_retrieval_keys=tuple(sorted(removed_keys)),
+                                goal_id=advances_goal,
                             )
                             executions.append(attempted)
                             # Do not run another OR method for the same
@@ -572,6 +615,7 @@ class SemanticPlanExecutor:
                             status=status,
                             stage_id=stage.stage_id,
                             removed_retrieval_keys=tuple(sorted(removed_keys)),
+                            goal_id=advances_goal,
                         )
                         executions.append(attempted)
                         # A complete attempt that produces declared, typed
@@ -683,6 +727,7 @@ class SemanticPlanExecutor:
 
         return SemanticExecutionResult(
             executions=executions,
+            query_attempts=query_attempts,
             binding_events=binding_events,
             variables=variables,
             route_assessments=list(route_assessments.values()),
@@ -698,4 +743,4 @@ class SemanticPlanExecutor:
         )
 
 
-__all__ = ["BindingEvent", "StepExecution", "SemanticExecutionResult", "SemanticPlanExecutor"]
+__all__ = ["BindingEvent", "QueryAttempt", "SemanticExecutionResult", "SemanticPlanExecutor", "StepExecution"]

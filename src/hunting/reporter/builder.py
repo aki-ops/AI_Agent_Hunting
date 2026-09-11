@@ -1066,7 +1066,9 @@ def build_final_hunt_account(
         validated_graph=validated_graph,
         validation_diagnostics=validation_diagnostics,
         stopping_taxonomy_state=stopping_dec.to_taxonomy_state() if hasattr(stopping_dec, "to_taxonomy_state") else None,
+        step_trace=getattr(state, "step_trace", None),
     )
+
 
 
 __all__ = ["build_final_hunt_account"]

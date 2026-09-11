@@ -74,6 +74,7 @@ from hunting.contracts.native_query import NativeQueryCandidate
 from hunting.contracts.observations import EpistemicType, Observation
 from hunting.contracts.queries import QueryResult
 from hunting.contracts.semantic_graph import goal_graph_from_claim_graph
+from hunting.contracts.step_trace import HuntStepName, StepTrace
 from hunting.controller.action_planner import InvestigationAction, InvestigationActionPlanner
 from hunting.controller.controller import CanonicalActionController
 from hunting.controller.cost import LLMUsageTracker
@@ -959,6 +960,11 @@ class HypothesisHuntEngine:
             raise ValueError("At least one configured provider adapter is required")
 
         ledger = ObservationLedger()
+        step_trace = StepTrace(request_id=request.id)
+        step_trace.record_step(
+            HuntStepName.STEP_A_FREEZE_REQUEST,
+            inputs_summary={"request_id": request.id, "content": request.content},
+        )
 
         # 1. Capture provider capabilities before semantic planning. The
         # census is retained for later relation-scoped retrieval; the semantic
@@ -1015,6 +1021,7 @@ class HypothesisHuntEngine:
             # inject an IP/web chain into artifact-only investigations.
             relation_graph=inv_case.graph if inv_case else (inv_model.graph if inv_model else None),
             case=inv_case,
+            step_trace=step_trace,
         )
         state.compiler_trace = dict(getattr(self.compiler, "last_compile_trace", {}) or {})
 
@@ -1027,6 +1034,12 @@ class HypothesisHuntEngine:
             # legacy ClaimGraph executor is still active.  No provider fields
             # or operation-name heuristics are introduced here.
             state.semantic_goal_graph = goal_graph_from_claim_graph(claim_graph)
+        step_trace.record_step(
+            HuntStepName.STEP_B_COMPILE_GOAL_GRAPH,
+            inputs_summary={"request_id": request.id},
+            outputs_summary={"has_semantic_goal_graph": getattr(state, "semantic_goal_graph", None) is not None},
+        )
+
         # Reuse the captured census and apply claim-specific selection without
         # rediscovering providers or changing the capability snapshot supplied
         # to the semantic planner.
@@ -1195,6 +1208,31 @@ class HypothesisHuntEngine:
                         )
                     else:
                         uncached = True
+
+            from hunting.capabilities.catalog_index import CatalogIndex
+            from hunting.capabilities.frontier import ProgressiveFrontier
+            from hunting.capabilities.source_card_store import SourceCard, SourceCardStore
+
+            card_store = SourceCardStore()
+            for profile in active_profiles.values():
+                card = SourceCard.from_telemetry_source_profile(
+                    profile,
+                    provider_id=getattr(active_catalog, "provider_id", "splunk") if active_catalog else "splunk",
+                    scope=getattr(profile, "partition_id", "") or "default",
+                )
+                card_store.register_card(card)
+            catalog_index = CatalogIndex(card_store)
+            frontier = ProgressiveFrontier(card_store, catalog_index)
+
+            coverage_manifests = {}
+            for req in profiling_requirements:
+                rel = req["relation"]
+                _, cov_manifest = frontier.expand(
+                    relation=rel,
+                    required_roles=tuple(req.get("roles", ())),
+                )
+                coverage_manifests[rel] = cov_manifest.to_dict()
+
             # Retrieve a compact source set per relation before invoking the
             # profiler. The full census remains available for validation, but
             # never enters the compiler or a single all-goals profiler prompt.
@@ -1207,6 +1245,7 @@ class HypothesisHuntEngine:
                 "readiness": [assessment.to_dict() for assessment in static_assessments],
                 "profiling_goal_ids": sorted(profiling_goal_ids),
                 "retrieval": list(retrieval.audit),
+                "coverage_manifests": coverage_manifests,
                 "census_profile_discovery": dict(
                     getattr(active_catalog, "details", {}).get("profile_discovery", {})
                     if active_catalog is not None else {}
@@ -1215,6 +1254,13 @@ class HypothesisHuntEngine:
                 "rejected": [],
                 "relation_calls": [],
             }
+            if getattr(state, "step_trace", None):
+                state.step_trace.record_step(
+                    HuntStepName.STEP_C_RESOLVE_FRONTIER,
+                    inputs_summary={"profiling_requirements": len(profiling_requirements)},
+                    outputs_summary={"coverage_manifests": len(coverage_manifests)},
+                )
+
 
             # The profiler is invoked once per unresolved relation. Its output
             # is still untrusted until the selected adapter executes a bounded
@@ -3090,6 +3136,13 @@ class HypothesisHuntEngine:
         # references and diagnostics remain available in persisted artifacts.
         report = render_analyst_report(account)
 
+        if getattr(state, "step_trace", None) is not None:
+            state.step_trace.record_step(
+                HuntStepName.STEP_J_REPORT_AND_ACCOUNT,
+                inputs_summary={"request_id": request.id},
+                outputs_summary={"report_length": len(report)},
+            )
+
         # Persist isolated hunt artifacts into artifacts/<hunt_id>/
         hunt_id = account.request_id or f"hunt-{int(datetime.now(timezone.utc).timestamp())}"
         persist_hunt_artifacts(Path("artifacts") / hunt_id, request, state, ledger, account, report)
@@ -3101,6 +3154,7 @@ class HypothesisHuntEngine:
             ledger=ledger,
             budget=self.budget_ledger,
         )
+
 
 
 def persist_hunt_artifacts(
@@ -3150,8 +3204,12 @@ def persist_hunt_artifacts(
     if getattr(state, "semantic_logical_plan", None) is not None:
         with open(artifact_dir / "proof_plan.json", "w", encoding="utf-8") as f:
             json.dump(state.semantic_logical_plan.to_dict(), f, indent=2, ensure_ascii=False, default=str)
+    if getattr(state, "step_trace", None) is not None:
+        with open(artifact_dir / "step_trace.json", "w", encoding="utf-8") as f:
+            json.dump(state.step_trace.to_dict(), f, indent=2, ensure_ascii=False, default=str)
     with open(artifact_dir / "adaptive_decision.json", "w", encoding="utf-8") as f:
         json.dump(getattr(state, "adaptive_decision", {}), f, indent=2, ensure_ascii=False)
+
 
     # 2. hypotheses.json
     hyps_data = [

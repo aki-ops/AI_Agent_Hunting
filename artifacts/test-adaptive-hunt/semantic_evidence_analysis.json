@@ -5,6 +5,7 @@
       "readiness": [],
       "profiling_goal_ids": [],
       "retrieval": [],
+      "coverage_manifests": {},
       "census_profile_discovery": {},
       "proposals": [],
       "rejected": [],

@@ -62,6 +62,43 @@
       "ordering_only": true
     }
   ],
+  "coverage_manifests": {
+    "observed_process": {
+      "total_sources": 1,
+      "considered_source_ids": [
+        "cdb:source:events"
+      ],
+      "examined_source_ids": [
+        "cdb:source:events"
+      ],
+      "rejected_source_ids": {},
+      "unexamined_source_ids": [],
+      "stage_audit": [
+        {
+          "stage": "F0_CERTIFIED",
+          "discovered_sources": [],
+          "count": 0
+        },
+        {
+          "stage": "F1_METADATA",
+          "discovered_sources": [
+            "cdb:source:events"
+          ],
+          "count": 1
+        },
+        {
+          "stage": "F2_ADJACENT",
+          "discovered_sources": [],
+          "count": 0
+        },
+        {
+          "stage": "F3_BOUNDED_PROFILING",
+          "discovered_sources": [],
+          "count": 0
+        }
+      ]
+    }
+  },
   "census_profile_discovery": {},
   "proposals": [],
   "rejected": [],

@@ -64,6 +64,43 @@
           "ordering_only": true
         }
       ],
+      "coverage_manifests": {
+        "observed_process": {
+          "total_sources": 1,
+          "considered_source_ids": [
+            "cdb:source:events"
+          ],
+          "examined_source_ids": [
+            "cdb:source:events"
+          ],
+          "rejected_source_ids": {},
+          "unexamined_source_ids": [],
+          "stage_audit": [
+            {
+              "stage": "F0_CERTIFIED",
+              "discovered_sources": [],
+              "count": 0
+            },
+            {
+              "stage": "F1_METADATA",
+              "discovered_sources": [
+                "cdb:source:events"
+              ],
+              "count": 1
+            },
+            {
+              "stage": "F2_ADJACENT",
+              "discovered_sources": [],
+              "count": 0
+            },
+            {
+              "stage": "F3_BOUNDED_PROFILING",
+              "discovered_sources": [],
+              "count": 0
+            }
+          ]
+        }
+      },
       "census_profile_discovery": {},
       "proposals": [],
       "rejected": [],
@@ -72,7 +109,7 @@
       "runtime_operation_ids": []
     },
     "compiler_trace": {
-      "prompt_hash": "76fba4e086d58863",
+      "prompt_hash": "d5c6c76b75aa2514",
       "response_length": 1011,
       "response_text": "{\"id\": \"graph-process-lookup\", \"request_id\": \"req-process-lookup\", \"objective\": \"Find the process observed on SRV-01\", \"answer_contract\": {\"mode\": \"lookup\", \"answer_type\": \"process\", \"required_fields\": [\"image\"], \"question\": \"Which process was observed on SRV-01?\"}, \"claims\": [{\"id\": \"claim-process\", \"claim_type\": \"attribute\", \"subject\": \"host:SRV-01\", \"predicate\": \"observed_process\", \"object_or_value\": null, \"value_type\": \"process\", \"provenance\": \"request\", \"source_request_id\": \"req-process-lookup\", \"dependencies\": [], \"evidence_requirements\": [], \"observation_requirements\": [{\"id\": \"req-process\", \"fact_kind\": \"process_ancestry\", \"required_fields\": [\"image\"], \"field_roles\": [\"endpoint_host\", \"process_name\"], \"completeness_required\": true}], \"acceptance_rule\": {\"min_observations\": 1, \"required_fields\": [\"image\"], \"requires_query_complete\": true, \"value_must_match\": null}, \"refutation_rule\": null, \"optional\": false, \"is_prerequisite\": false, \"reason\": \"The request asks for the observed process\"}]}",
       "validation_result": "VALID",

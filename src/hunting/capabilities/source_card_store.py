@@ -148,32 +148,42 @@ class SourceCard:
         field_roles: dict[str, str] = {}
         for f in profile.fields:
             roles: list[str] = []
-            if f.suggested_role:
-                roles.append(f.suggested_role)
-                field_roles[f.name] = f.suggested_role
+            suggested_role = getattr(f, "suggested_role", None)
+            if suggested_role:
+                roles.append(suggested_role)
+                field_roles[f.name] = suggested_role
+            field_type = getattr(f, "primitive_type", None) or getattr(f, "field_type", "string")
+            coverage = getattr(f, "coverage", None)
+            null_fraction = getattr(f, "null_fraction", None)
+            if null_fraction is None and coverage is not None:
+                null_fraction = max(0.0, 1.0 - float(coverage))
+            cardinality = getattr(f, "cardinality", 0) or 0
+            sample_values = tuple(getattr(f, "sample_values", ())[:5])
             field_sketches.append(
                 FieldSketch(
                     name=f.name,
-                    field_type=f.field_type or "string",
-                    cardinality=f.cardinality or 0,
-                    sample_values=tuple(f.sample_values[:5]),
-                    null_fraction=f.null_fraction or 0.0,
+                    field_type=field_type,
+                    cardinality=cardinality,
+                    sample_values=sample_values,
+                    null_fraction=null_fraction or 0.0,
                     field_roles=tuple(roles),
                 )
             )
 
+        parser_ver = getattr(profile, "parser_version", "v1") or "v1"
         return cls(
             source_id=profile.source_id,
             provider_id=provider_id,
             scope=scope,
             event_count=profile.event_count or 0,
             fields=tuple(field_sketches),
-            parser_version=profile.parser_version or "v1",
+            parser_version=parser_ver,
             provenance="census",
             schema_fingerprint=profile.schema_fingerprint or "",
             field_roles=field_roles,
             adjacent_source_ids=tuple(adjacent_source_ids),
         )
+
 
 
 class SourceCardStore:

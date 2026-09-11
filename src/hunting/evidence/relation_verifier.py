@@ -149,8 +149,8 @@ def verify_relation_proof_contract(
                 violations=[f"Observation {oid} is not backed by ledger" for oid in unbacked],
             )
 
-    # Invariant 1: DNS lookup does not prove person visited domain
-    if proof_contract.relation in ("person_visited_domain", "visited_domain", "user_accessed_web", "domain_visit"):
+    # Invariant 1: DNS lookup does not prove person visited domain or entity association
+    if proof_contract.relation in ("person_visited_domain", "visited_domain", "user_accessed_web", "domain_visit", "associated_with"):
         is_dns_only = all(
             "dns" in str(getattr(obs, "native_type", "")).lower()
             or "dns" in str(getattr(obs, "fields", {}).get("sourcetype", "")).lower()
@@ -161,13 +161,13 @@ def verify_relation_proof_contract(
             return VerificationResult(
                 verified=False,
                 diagnostic="dns_lookup_cannot_prove_web_visit",
-                violations=["DNS lookup demonstrates host domain resolution only; does not prove person visited domain."],
+                violations=["DNS lookup demonstrates host domain resolution only; does not prove person visited domain or entity association."],
             )
 
-    # Invariant 2: Generic file creation does not prove ransomware encryption
+    # Invariant 2: Generic file creation or process execution does not prove ransomware encryption
     if proof_contract.relation in ("ransomware_encrypted_file", "encrypted_file", "file_encrypted"):
         is_generic_creation = all(
-            str(obs.fields.get("EventCode", "")) in ("11", "")
+            str(obs.fields.get("EventCode", "")) in ("11", "1", "")
             and not any(k in obs.fields for k in ("ransom_note", "encryption_key", "cipher", "original_file_path", "state_transition", "ransom_extension"))
             and not str(obs.fields.get("action", "")).lower().startswith("encrypt")
             for obs in observations
@@ -178,6 +178,35 @@ def verify_relation_proof_contract(
                 diagnostic="file_creation_does_not_prove_ransomware_encryption",
                 violations=["Generic file creation does not prove ransomware encryption without state transition and cryptographic proof."],
             )
+
+    # Invariant 3: Domain traffic or resolution event does not prove domain ownership
+    if proof_contract.relation in ("owns_domain", "domain_ownership", "registered_domain"):
+        is_traffic_only = any(
+            any(k in obs.fields for k in ("url", "uri", "http_method", "site", "dest_port", "query"))
+            and not any(k in obs.fields for k in ("registrar", "whois", "registrant", "zone_admin"))
+            for obs in observations
+        )
+        if is_traffic_only:
+            return VerificationResult(
+                verified=False,
+                diagnostic="domain_event_does_not_prove_ownership",
+                violations=["Domain traffic or resolution event does not prove domain ownership."],
+            )
+
+    # Invariant 4: Email address transaction does not prove person is CEO or holds title
+    if proof_contract.relation in ("holds_title", "is_role", "organization_title", "is_ceo"):
+        is_mail_transaction = any(
+            any(k in obs.fields for k in ("sender", "recipient", "subject", "message_id"))
+            and not any(k in obs.fields for k in ("hr_title", "job_role", "employment_title", "directory_role"))
+            for obs in observations
+        )
+        if is_mail_transaction:
+            return VerificationResult(
+                verified=False,
+                diagnostic="email_does_not_prove_title",
+                violations=["Email transaction or message presence does not prove executive title or role."],
+            )
+
 
     # Extract all fields across observations
     combined_fields: dict[str, str] = {}

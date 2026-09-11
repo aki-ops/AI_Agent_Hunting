@@ -27,13 +27,27 @@
       "relation": "observed_process",
       "object": "object_1",
       "required": true,
-      "description": "The request asks for the observed process"
+      "description": "The request asks for the observed process",
+      "atomic_obligation": "",
+      "provenance_span": "",
+      "dependencies": [],
+      "dependency_operator": "AND",
+      "gate_condition": null
     }
   ],
   "qualifiers": [],
   "answers": [],
+  "answer_contracts": [],
+  "dependencies": {},
+  "dependency_kinds": {
+    "claim-process": "AND"
+  },
+  "provenance_spans": {},
   "assumptions": [],
   "uncertainties": [
     "Bridge generated from legacy ClaimGraph; semantic compiler migration pending"
-  ]
+  ],
+  "forbidden_inferences": [],
+  "clarification_triggers": [],
+  "validation_diagnostics": []
 }

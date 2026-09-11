@@ -62,10 +62,22 @@ class LLMCallRecord:
 class LLMUsageTracker:
     """Strict per-hunt LLM cost accounting ledger."""
 
-    def __init__(self, max_calls: int = 3, max_total_tokens: int = 12000, model_name: str = "stub") -> None:
+    def __init__(
+        self,
+        max_calls: int = 5,
+        max_total_tokens: int = 15000,
+        model_name: str = "stub",
+        component_limits: dict[str, int] | None = None,
+    ) -> None:
         self.max_calls = max_calls
         self.max_total_tokens = max_total_tokens
         self.model_name = model_name
+        self.component_limits = component_limits or {
+            "compiler": 2,  # 1 call + 1 repair
+            "source_profiler": 3,
+            "planner": 1,
+            "evaluator": 1,
+        }
         self.calls: list[LLMCallRecord] = []
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
@@ -85,6 +97,15 @@ class LLMUsageTracker:
     @property
     def is_exhausted(self) -> bool:
         return self.call_count >= self.max_calls or self.total_tokens >= self.max_total_tokens
+
+    def is_component_exhausted(self, component: str) -> bool:
+        if self.is_exhausted:
+            return True
+        limit = self.component_limits.get(component)
+        if limit is not None:
+            count = sum(1 for c in self.calls if c.component == component)
+            return count >= limit
+        return False
 
     @staticmethod
     def estimate_tokens(text: str) -> int:
@@ -113,11 +134,17 @@ class LLMUsageTracker:
         deterministic and auditable: no request is sent when the conservative
         prompt plus reserved completion budget cannot fit the hunt budget.
         """
+        if self.is_component_exhausted(component):
+            raise RuntimeError(
+                f"LLM budget exhausted for component '{component}': "
+                f"maximum calls already used or global budget exhausted"
+            )
         if self.call_count >= self.max_calls:
             raise RuntimeError(
                 f"LLM budget exhausted for component '{component}': "
                 f"maximum {self.max_calls} calls already used"
             )
+
         prompt_tokens = self.estimate_tokens(prompt)
         reserved_completion = max(0, int(expected_completion_tokens))
         projected = prompt_tokens + reserved_completion
