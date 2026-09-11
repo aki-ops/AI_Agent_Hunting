@@ -176,7 +176,7 @@ def verify_answer(
         elif not query_complete and not candidate.get("value"):
             status = "INCONCLUSIVE"
             reason = "COVERAGE_INCOMPLETE"
-        elif effective_binding:
+        elif effective_binding or candidate.get("value"):
             answer_value = str(candidate.get("value", "")).strip().lower()
             if answer_value:
                 bound = False

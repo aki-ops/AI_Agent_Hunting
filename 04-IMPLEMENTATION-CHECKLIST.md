@@ -100,12 +100,12 @@ spanning Control Plane and Hunt Plane (Steps A–J).
 - [x] Execution completion, relation proof and route exhaustion are separate per-goal states; complete-empty is never route exhaustion by itself.
 - [x] Proof-aware readiness triggers profiling for static retrieval/proof/qualifier gaps and skips it only for a validated proof-capable route.
 - [x] Progressive retrieval removes only declared retrieval predicates while retaining identity, scope, time, projection, row/page and proof bounds.
-- [ ] Implement deterministic relation verifier evaluating ledger-backed cited observations against approved `ProofContract`.
-- [ ] Implement answer verifier checking exact cited values, value types, required qualifiers, and mandatory gates.
-- [ ] Implement the 9-state stopping taxonomy:
-  `ANSWER_PROVED`, `BOUNDED_NOT_FOUND`, `NEEDS_DISAMBIGUATION`, `COVERAGE_EXHAUSTED`, `BUDGET_EXHAUSTED`, `BACKEND_DEGRADED`, `SAFETY_QUARANTINE`, `VALIDATION_FAILED`, `ABORTED_BY_USER`.
-- [ ] Two-iteration no-progress detection triggers replan at most once; halts if stalled.
-- [ ] Gate verification: DNS lookup does not prove person visited; file creation does not prove ransomware encryption; correct answer value with false evidence citation fails verification.
+- [x] Implement deterministic relation verifier evaluating ledger-backed cited observations against approved `ProofContract`. (`tests/unit/test_phase6_evidence_verification_and_stopping.py::test_proof_contract_verification_succeeds_with_valid_ledger_backed_observations`.)
+- [x] Implement answer verifier checking exact cited values, value types, required qualifiers, and mandatory gates. (`tests/unit/test_phase6_evidence_verification_and_stopping.py::test_gate_correct_answer_value_with_false_evidence_citation_fails_verification`.)
+- [x] Implement the 9-state stopping taxonomy:
+  `ANSWER_PROVED`, `BOUNDED_NOT_FOUND`, `NEEDS_DISAMBIGUATION`, `COVERAGE_EXHAUSTED`, `BUDGET_EXHAUSTED`, `BACKEND_DEGRADED`, `SAFETY_QUARANTINE`, `VALIDATION_FAILED`, `ABORTED_BY_USER`. (`tests/unit/test_phase6_evidence_verification_and_stopping.py::test_stopping_taxonomy_nine_states_and_decision_mapping`.)
+- [x] Two-iteration no-progress detection triggers replan at most once; halts if stalled. (`src/hunting/engine.py:1630` and `src/hunting/planner/adaptive.py`.)
+- [x] Gate verification: DNS lookup does not prove person visited; file creation does not prove ransomware encryption; correct answer value with false evidence citation fails verification. (`tests/unit/test_phase6_evidence_verification_and_stopping.py`.)
 
 ---
 

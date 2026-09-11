@@ -1065,6 +1065,7 @@ def build_final_hunt_account(
         llm_raw_proposal=llm_raw_proposal,
         validated_graph=validated_graph,
         validation_diagnostics=validation_diagnostics,
+        stopping_taxonomy_state=stopping_dec.to_taxonomy_state() if hasattr(stopping_dec, "to_taxonomy_state") else None,
     )
 
 

@@ -23,6 +23,7 @@ from hunting.contracts.case_graph import (
     RelationType,
 )
 from hunting.contracts.observations import EpistemicType, Observation
+from hunting.contracts.proof_contract import ProofContract
 from hunting.contracts.queries import ProviderOperation, QueryResult
 from hunting.m1_ledger.ledger import ObservationLedger
 
@@ -106,6 +107,145 @@ class VerificationResult:
     @property
     def field_matches(self) -> dict[str, str]:
         return self.proof.field_matches if self.proof else {}
+
+
+def verify_relation_proof_contract(
+    proof_contract: ProofContract,
+    observations: list[Observation],
+    ledger: ObservationLedger | None = None,
+    expected_bindings: dict[str, str] | None = None,
+) -> VerificationResult:
+    """Evaluate ledger-backed cited observations against an approved ProofContract.
+
+    Enforces strict non-negotiable invariants:
+    - Only APPROVED proof contracts can grant proof authority.
+    - All cited observations must be backed by the ledger.
+    - Invariant 1: DNS lookup does not prove person visited domain.
+    - Invariant 2: Generic file creation does not prove ransomware encryption.
+    - All required entity, value, action, state, and artifact identity roles must be satisfied.
+    - Expected bindings must match observed roles with zero contradiction.
+    """
+    if not observations:
+        return VerificationResult(
+            verified=False,
+            diagnostic="no_observations_cited",
+            violations=["No observations provided to verify proof contract."],
+        )
+
+    if not proof_contract.is_approved:
+        return VerificationResult(
+            verified=False,
+            diagnostic=f"contract_{proof_contract.contract_id}_is_{proof_contract.status.value}",
+            violations=[f"ProofContract {proof_contract.contract_id} is {proof_contract.status.value}, not APPROVED."],
+        )
+
+    if ledger is not None:
+        ledger_ids = {obs.id for obs in ledger.observations}
+        unbacked = [obs.id for obs in observations if obs.id not in ledger_ids]
+        if unbacked:
+            return VerificationResult(
+                verified=False,
+                diagnostic="unbacked_observations",
+                violations=[f"Observation {oid} is not backed by ledger" for oid in unbacked],
+            )
+
+    # Invariant 1: DNS lookup does not prove person visited domain
+    if proof_contract.relation in ("person_visited_domain", "visited_domain", "user_accessed_web", "domain_visit"):
+        is_dns_only = all(
+            "dns" in str(getattr(obs, "native_type", "")).lower()
+            or "dns" in str(getattr(obs, "fields", {}).get("sourcetype", "")).lower()
+            or ("query" in obs.fields and "http_method" not in obs.fields and "uri" not in obs.fields and "site" not in obs.fields and "process" not in obs.fields)
+            for obs in observations
+        )
+        if is_dns_only:
+            return VerificationResult(
+                verified=False,
+                diagnostic="dns_lookup_cannot_prove_web_visit",
+                violations=["DNS lookup demonstrates host domain resolution only; does not prove person visited domain."],
+            )
+
+    # Invariant 2: Generic file creation does not prove ransomware encryption
+    if proof_contract.relation in ("ransomware_encrypted_file", "encrypted_file", "file_encrypted"):
+        is_generic_creation = all(
+            str(obs.fields.get("EventCode", "")) in ("11", "")
+            and not any(k in obs.fields for k in ("ransom_note", "encryption_key", "cipher", "original_file_path", "state_transition", "ransom_extension"))
+            and not str(obs.fields.get("action", "")).lower().startswith("encrypt")
+            for obs in observations
+        )
+        if is_generic_creation:
+            return VerificationResult(
+                verified=False,
+                diagnostic="file_creation_does_not_prove_ransomware_encryption",
+                violations=["Generic file creation does not prove ransomware encryption without state transition and cryptographic proof."],
+            )
+
+    # Extract all fields across observations
+    combined_fields: dict[str, str] = {}
+    for obs in observations:
+        raw_ev = getattr(obs, "raw_event", {}) or obs.fields.get("raw_event", {})
+        if isinstance(raw_ev, dict):
+            for k, v in raw_ev.items():
+                if v not in (None, "", [], {}):
+                    combined_fields[str(k).casefold()] = str(v[0] if isinstance(v, list) else v).strip()
+        for k, v in obs.fields.items():
+            if v not in (None, "", [], {}):
+                combined_fields[str(k).casefold()] = str(v[0] if isinstance(v, list) else v).strip()
+
+    field_matches: dict[str, str] = {}
+    violations: list[str] = []
+
+    all_required_roles = [
+        *proof_contract.required_entity_roles,
+        *proof_contract.required_value_roles,
+        *proof_contract.required_action_roles,
+        *proof_contract.required_state_roles,
+        *proof_contract.artifact_identity_roles,
+    ]
+
+    for role in all_required_roles:
+        aliases = RelationVerifier._contract_role_aliases(role)
+        matched_field = next((alias for alias in aliases if alias in combined_fields), None)
+        if not matched_field:
+            violations.append(f"Missing required role: {role}")
+        else:
+            field_matches[role] = combined_fields[matched_field]
+
+    if expected_bindings:
+        for key, exp_val in expected_bindings.items():
+            k_clean = str(key).strip().casefold()
+            aliases = RelationVerifier._contract_role_aliases(k_clean)
+            obs_val = next((combined_fields[alias] for alias in aliases if alias in combined_fields), None)
+            if obs_val is None:
+                violations.append(f"Expected binding {key}={exp_val} not found in observation fields")
+            elif exp_val.strip().casefold() not in obs_val.strip().casefold() and obs_val.strip().casefold() not in exp_val.strip().casefold():
+                violations.append(f"Binding contradiction: {key} expected '{exp_val}', but observed '{obs_val}'")
+
+    if violations:
+        return VerificationResult(
+            verified=False,
+            diagnostic="proof_contract_requirements_not_satisfied",
+            violations=violations,
+        )
+
+    citations = [obs.id for obs in observations]
+    source_val = field_matches.get("host") or field_matches.get("user") or (observations[0].id if observations else "")
+    target_val = field_matches.get("ip") or field_matches.get("domain") or field_matches.get("file_path") or ""
+    proof = RelationProof(
+        id=f"proof-{proof_contract.contract_id}-{citations[0] if citations else '0'}",
+        edge_id=f"edge-{proof_contract.relation}",
+        source_node_id="src-node",
+        source_value=str(source_val),
+        target_node_id="tgt-node",
+        target_value=str(target_val),
+        relation_type=proof_contract.relation,
+        citations=citations,
+        field_matches=field_matches,
+    )
+    return VerificationResult(
+        verified=True,
+        proof=proof,
+        target_value=str(target_val),
+    )
 
 
 class RelationVerifier:
@@ -671,6 +811,21 @@ class RelationVerifier:
             proof=proof,
             target_value=target_val,
             diagnostic=f"State transition verified with {len(citations)} observation(s) across {delta_s}s.",
+        )
+
+    def verify_proof_contract(
+        self,
+        proof_contract: ProofContract,
+        observations: list[Observation],
+        ledger: ObservationLedger | None = None,
+        expected_bindings: dict[str, str] | None = None,
+    ) -> VerificationResult:
+        """Evaluate ledger-backed cited observations against an approved ProofContract."""
+        return verify_relation_proof_contract(
+            proof_contract=proof_contract,
+            observations=observations,
+            ledger=ledger,
+            expected_bindings=expected_bindings,
         )
 
     def verify_candidate_edge(

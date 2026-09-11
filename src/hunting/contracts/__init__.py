@@ -99,6 +99,7 @@ from hunting.contracts.hunt import (
     SemanticEvidenceRequirement,
     SemanticHuntIntent,
     StoppingDecision,
+    StoppingTaxonomyState,
     SubjectEntity,
     TimePolicy,
 )
@@ -203,6 +204,7 @@ __all__ = [
     "EvidenceAssessment",
     "HuntOutcome",
     "StoppingDecision",
+    "StoppingTaxonomyState",
     "HuntState",
     "FinalHuntAccount",
     # Operational Contracts

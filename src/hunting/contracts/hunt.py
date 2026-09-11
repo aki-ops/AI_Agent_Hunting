@@ -354,6 +354,19 @@ class HuntOutcome(str, Enum):
     UNSUPPORTED = "UNSUPPORTED"
 
 
+class StoppingTaxonomyState(str, Enum):
+    """Canonical 9-state terminal stopping taxonomy."""
+    ANSWER_PROVED = "ANSWER_PROVED"
+    BOUNDED_NOT_FOUND = "BOUNDED_NOT_FOUND"
+    NEEDS_DISAMBIGUATION = "NEEDS_DISAMBIGUATION"
+    COVERAGE_EXHAUSTED = "COVERAGE_EXHAUSTED"
+    BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"
+    BACKEND_DEGRADED = "BACKEND_DEGRADED"
+    SAFETY_QUARANTINE = "SAFETY_QUARANTINE"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    ABORTED_BY_USER = "ABORTED_BY_USER"
+
+
 class StoppingDecision(str, Enum):
     """Deterministic terminal stopping decisions."""
     STOP_RESOLVED = "STOP_RESOLVED"
@@ -369,6 +382,21 @@ class StoppingDecision(str, Enum):
     STOP_UNSUPPORTED = "STOP_UNSUPPORTED"
     STOP_UNSUPPORTED_CAPABILITY = "STOP_UNSUPPORTED_CAPABILITY"
     STOP_UNREACHABLE = "STOP_UNREACHABLE"
+
+    def to_taxonomy_state(self) -> StoppingTaxonomyState:
+        if self == StoppingDecision.STOP_RESOLVED:
+            return StoppingTaxonomyState.ANSWER_PROVED
+        if self in (StoppingDecision.STOP_REFUTED, StoppingDecision.STOP_BOUNDED):
+            return StoppingTaxonomyState.BOUNDED_NOT_FOUND
+        if self in (StoppingDecision.STOP_NEEDS_USER_DECISION, StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED):
+            return StoppingTaxonomyState.NEEDS_DISAMBIGUATION
+        if self in (StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP, StoppingDecision.STOP_UNSUPPORTED, StoppingDecision.STOP_UNSUPPORTED_CAPABILITY, StoppingDecision.STOP_INSUFFICIENT):
+            return StoppingTaxonomyState.COVERAGE_EXHAUSTED
+        if self in (StoppingDecision.STOP_EXHAUSTED_BY_BUDGET, StoppingDecision.STOP_BUDGET_EXHAUSTED):
+            return StoppingTaxonomyState.BUDGET_EXHAUSTED
+        if self == StoppingDecision.STOP_UNREACHABLE:
+            return StoppingTaxonomyState.BACKEND_DEGRADED
+        return StoppingTaxonomyState.COVERAGE_EXHAUSTED
 
 
 @dataclass
@@ -460,6 +488,22 @@ class FinalHuntAccount:
     llm_raw_proposal: dict[str, Any] | None = None
     validated_graph: Any | None = None
     validation_diagnostics: list[str] = field(default_factory=list)
+    stopping_taxonomy_state: StoppingTaxonomyState | None = None
+
+    @property
+    def taxonomy_state(self) -> StoppingTaxonomyState:
+        if self.stopping_taxonomy_state is not None:
+            if isinstance(self.stopping_taxonomy_state, StoppingTaxonomyState):
+                return self.stopping_taxonomy_state
+            return StoppingTaxonomyState(str(self.stopping_taxonomy_state))
+        if self.stopping_decision:
+            if hasattr(self.stopping_decision, "to_taxonomy_state"):
+                return self.stopping_decision.to_taxonomy_state()
+            try:
+                return StoppingDecision(self.stopping_decision).to_taxonomy_state()
+            except Exception:
+                pass
+        return StoppingTaxonomyState.COVERAGE_EXHAUSTED
 
     @property
     def outcome(self) -> HuntOutcome:
@@ -538,6 +582,7 @@ __all__ = [
     "EvidenceCard",
     "HuntOutcome",
     "StoppingDecision",
+    "StoppingTaxonomyState",
     "HuntState",
     "FinalHuntAccount",
     "SubjectEntity",
