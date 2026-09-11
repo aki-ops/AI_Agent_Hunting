@@ -537,6 +537,14 @@ def build_parser() -> argparse.ArgumentParser:
     loop_group.add_argument("--auto-confirm", dest="auto_confirm", action="store_true", default=True, help="Automatically sign-off the final report disposition; ambiguous bindings still require analyst selection")
     loop_group.add_argument("--no-auto-confirm", dest="auto_confirm", action="store_false", help="Prompt analyst for final report disposition; ambiguous bindings always require selection")
 
+    # PoC-driven Auto-Hunt (v6)
+    poc_group = parser.add_argument_group("PoC-driven Auto-Hunt (v6)")
+    poc_group.add_argument("--poc", type=str, default=None, help="Run a built-in PoC by id (e.g. poc-phishing-powershell-enc). Use --list-pocs to see available ids.")
+    poc_group.add_argument("--list-pocs", action="store_true", help="List all built-in PoCs and exit.")
+    poc_group.add_argument("--poc-chain", type=str, default=None, help="Run a chain of PoCs by comma-separated ids (e.g. poc-phishing-powershell-enc,poc-c2-beacon).")
+    poc_group.add_argument("--poc-allow-escalation", action="store_true", help="Allow the PoC agent to call the LLM only when local adapter returns empty (uses --llm).")
+    poc_group.add_argument("--poc-report", type=str, default=None, help="Path to write the PoC case-file Markdown report.")
+
     # Forensic Audit & Replay Flags
     forensic_group = parser.add_argument_group("Forensic Audit & Replay")
     forensic_group.add_argument("--hunt-id", type=str, default=None, help="Target hunt ID for artifact inspection or query replay")
@@ -568,6 +576,13 @@ def run_cli(args: argparse.Namespace) -> int:
             sys.stderr.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
+
+    # 0. PoC list command — exits before any adapter setup.
+    if getattr(args, "list_pocs", False):
+        from hunting.poc import list_pocs
+        for poc in list_pocs():
+            print(f"[+] {poc.poc_id}\t{poc.kind.value}\t{poc.name}")
+        return 0
 
     # Check if hypothesis threat hunting mode is triggered
     is_hypothesis_hunt = bool(
@@ -792,6 +807,75 @@ def run_cli(args: argparse.Namespace) -> int:
         else:
             adapter = CdbAdapter(str(db_path))
         print(f"[*] Telemetry backend: Local CDB ({db_path if db_path.exists() else ':memory:'})")
+
+    # PoC-driven Auto-Hunt dispatch (v6).
+    poc_id = getattr(args, "poc", None)
+    poc_chain = getattr(args, "poc_chain", None)
+    if poc_id or poc_chain:
+        from hunting.poc import PocAgent, get_poc, render_poc_report
+
+        llm_caller = None
+        llm_tracker = None
+        if getattr(args, "poc_allow_escalation", False) and args.llm == "api":
+            try:
+                from hunting.m2_abduction.provider import (
+                    ApiLLMConfig,
+                    ApiLLMProvider,
+                    create_llm_caller,
+                )
+                config = ApiLLMConfig.from_env()
+                if args.llm_endpoint or args.llm_model or args.api_key:
+                    config = ApiLLMConfig(
+                        endpoint=args.llm_endpoint or config.endpoint,
+                        model=args.llm_model or config.model,
+                        timeout_seconds=config.timeout_seconds,
+                        max_tokens=config.max_tokens,
+                        api_key=args.api_key or config.api_key,
+                    )
+                provider = ApiLLMProvider(config)
+                llm_tracker = LLMUsageTracker(model_name=config.model)
+                caller = create_llm_caller(provider, llm_tracker, "poc_escalation")
+
+                def _question_only(question: str, max_tokens: int) -> str:
+                    return provider.call_raw(question)
+
+                llm_caller = _question_only
+                print(f"[+] [POC ESCALATION] Active ApiLLMProvider: model='{config.model}'")
+            except Exception as e:
+                print(f"[-] [POC ESCALATION] Disabled (init failed: {e})", file=sys.stderr)
+
+        agent = PocAgent(
+            adapter=adapter,
+            llm_caller=llm_caller,
+            llm_tracker=llm_tracker,
+            ledger_dir=Path("artifacts") / "poc_hunts",
+        )
+        ids = [poc_id] if poc_id else [x.strip() for x in poc_chain.split(",") if x.strip()]
+        for pid in ids:
+            try:
+                get_poc(pid)
+            except KeyError:
+                print(f"[-] Unknown PoC id: {pid}", file=sys.stderr)
+                print(f"    Run 'python main.py --list-pocs' to see available PoCs.", file=sys.stderr)
+                return 1
+
+        chain_results = agent.run_chain(ids, time_window=args.time_window or "NOW-14d/NOW")
+        for r in chain_results:
+            poc_render = get_poc(r.poc_id).render()
+            print("\n" + "=" * 72)
+            print(f"PoC {r.poc_id} — verdict {r.verdict} — {r.total_observations} obs, "
+                  f"{len(r.matched_step_ids)} matched step(s), "
+                  f"{r.llm_calls} LLM call(s), {r.runtime_seconds:.4f}s")
+            print(f"  Rationale: {r.rationale}")
+            if r.ledger_path:
+                print(f"  Ledger:    {r.ledger_path}")
+            report_path = Path(args.poc_report) if args.poc_report else (
+                Path("artifacts") / "poc_hunts" / f"{r.request_id}.md"
+            )
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(render_poc_report(r, poc_render), encoding="utf-8")
+            print(f"  Report:    {report_path}")
+        return 0
 
     if is_hypothesis_hunt:
         entities = []
