@@ -56,7 +56,7 @@
 
 | Edge ID | Relation Path | Citations | Verified At |
 |---|---|---|---|
-| `edge-claim-process` | `SRV-01` **-[observed_process]->** `powershell.exe -NoProfile` | `obs-1` | `2026-09-11T09:49:54.656396` |
+| `edge-claim-process` | `SRV-01` **-[observed_process]->** `powershell.exe -NoProfile` | `obs-1` | `2026-09-11T10:38:23.860423` |
 
 **Unresolved Mandatory Unknowns:** None (all remaining causal relations are concluded).
 
@@ -91,7 +91,7 @@
 - **Input binding:** `None`
 - **Expected output fields:** `host`, `timestamp`
 - **Result:** 1 rows returned; complete=True
-- **Observed fields:** `image`, `action`, `ppid`, `cmdline`, `file_path`, `id`, `host`, `domain`, `ip`, `raw_ref`, `port`, `user`, `status`, `timestamp`, `pid`, `native_type`, `event_id`
+- **Observed fields:** `user`, `action`, `status`, `raw_ref`, `image`, `ip`, `cmdline`, `port`, `native_type`, `timestamp`, `pid`, `file_path`, `event_id`, `id`, `domain`, `ppid`, `host`
 - **Execution:** executed_ok=`True`, diagnostic=`none`
 - **Hypothesis Impact:** Targets `claim-process`
 Provider: `cdb`; completeness: `complete`

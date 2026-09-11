@@ -34,6 +34,17 @@ class ProofContractStatus(str, Enum):
     RETIRED = "RETIRED"
 
 
+ROLE_INCOMPATIBLE_FIELDS: dict[str, set[str]] = {
+    "person": {"query", "search", "url", "uri", "dest_ip", "src_ip", "ip", "port", "dest_port", "src_port", "bytes", "status", "eventcode", "count", "proto"},
+    "user": {"query", "search", "url", "uri", "dest_ip", "src_ip", "ip", "port", "dest_port", "src_port", "bytes", "status", "eventcode", "count", "proto"},
+    "account": {"query", "search", "url", "uri", "dest_ip", "src_ip", "ip", "port", "dest_port", "src_port", "bytes", "status", "eventcode", "count", "proto"},
+    "endpoint": {"query", "search", "url", "uri", "email", "subject", "body", "mail", "password", "hash", "md5", "sha256"},
+    "host": {"query", "search", "url", "uri", "email", "subject", "body", "mail", "password", "hash", "md5", "sha256"},
+    "domain": {"user", "username", "account", "src_user", "dest_user", "process", "pid", "file_path", "filename", "hash"},
+    "process_name": {"user", "username", "account", "dest_ip", "src_ip", "domain", "url", "uri", "email"},
+}
+
+
 @dataclass(frozen=True)
 class ProofContract:
     """Specification of conditions under which telemetry proves a semantic relation."""
@@ -90,10 +101,10 @@ class ProofContract:
         if str(relation).strip().casefold() != self.relation:
             return False, (f"relation_mismatch:{relation}_vs_{self.relation}",)
 
-        provided_roles = {
-            str(k).strip().casefold()
-            for k in list(input_roles.keys()) + list(output_roles.keys())
-        }
+        input_role_keys = {str(k).strip().casefold() for k in input_roles.keys()}
+        output_role_keys = {str(k).strip().casefold() for k in output_roles.keys()}
+        provided_roles = input_role_keys | output_role_keys
+
         missing_entities = [r for r in self.required_entity_roles if r not in provided_roles]
         if missing_entities:
             return False, (f"missing_entity_roles:{','.join(missing_entities)}",)
@@ -101,6 +112,24 @@ class ProofContract:
         missing_values = [r for r in self.required_value_roles if r not in provided_roles]
         if missing_values:
             return False, (f"missing_value_roles:{','.join(missing_values)}",)
+
+        # Enforce directional separation: input roles must cover entity or value, output roles the other
+        req_entities = set(self.required_entity_roles)
+        req_values = set(self.required_value_roles)
+        valid_direction = (
+            (req_entities.issubset(input_role_keys) and req_values.issubset(output_role_keys))
+            or (req_values.issubset(input_role_keys) and req_entities.issubset(output_role_keys))
+        )
+        if not valid_direction:
+            return False, ("roles_do_not_satisfy_contract_direction",)
+
+        # Native field semantic validation
+        for role, field_name in list(input_roles.items()) + list(output_roles.items()):
+            r_norm = str(role).strip().casefold()
+            f_norm = str(field_name).strip().casefold()
+            incompat = ROLE_INCOMPATIBLE_FIELDS.get(r_norm, set())
+            if f_norm in incompat:
+                return False, (f"native_field_semantically_incompatible:{role}->{field_name}",)
 
         if self.required_action_roles:
             act = {str(k).strip().casefold() for k in (action_roles or {}).keys()}

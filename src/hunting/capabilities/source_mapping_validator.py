@@ -90,14 +90,32 @@ class SourceMappingValidator:
             f"{proposal.source_id}:{proposal.relation}"
         )
 
+        # Resolve field IDs to native names using profile fields
+        field_id_to_native = {f.field_id: f.name for f in profile.fields}
+        resolved_input_roles = {
+            r: field_id_to_native.get(fid, fid) for r, fid in proposal.input_roles.items()
+        }
+        resolved_output_roles = {
+            r: field_id_to_native.get(fid, fid) for r, fid in proposal.output_roles.items()
+        }
+        resolved_action_roles = {
+            r: field_id_to_native.get(fid, fid) for r, fid in proposal.action_roles.items()
+        }
+        resolved_state_roles = {
+            r: field_id_to_native.get(fid, fid) for r, fid in proposal.state_roles.items()
+        }
+        resolved_artifact_roles = {
+            r: field_id_to_native.get(fid, fid) for r, fid in proposal.artifact_identity_roles.items()
+        }
+
         # Gated by human-approved ProofContractRegistry:
         contract, rejection_reasons = self.registry.find_matching_contract(
             relation=proposal.relation,
-            input_roles=proposal.input_roles,
-            output_roles=proposal.output_roles,
-            action_roles=proposal.action_roles,
-            state_roles=proposal.state_roles,
-            artifact_identity_roles=proposal.artifact_identity_roles,
+            input_roles=resolved_input_roles,
+            output_roles=resolved_output_roles,
+            action_roles=resolved_action_roles,
+            state_roles=resolved_state_roles,
+            artifact_identity_roles=resolved_artifact_roles,
         )
 
         diag_list = list(diagnostics)
@@ -109,6 +127,8 @@ class SourceMappingValidator:
             effective_proof_mode = "retrieval_only"
             effective_contract_id = None
             effective_capability_level = "RETRIEVAL_CAPABLE"
+            if proposal.probe_kind == "cooccurrence":
+                diag_list.append("cooccurrence_probe_cannot_grant_proof")
             if proposal.proof_mode in {"relation_observable", "proof_capable"}:
                 if not probe_succeeded:
                     diag_list.append("probe_pending_or_unsuccessful")

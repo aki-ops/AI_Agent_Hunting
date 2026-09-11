@@ -71,9 +71,24 @@ class SourceProfiler:
             ensure_ascii=False,
             sort_keys=True,
         ))
-        payload = json.loads(raw) if isinstance(raw, str) else raw
+        try:
+            payload = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception as exc:
+            return [], {
+                "status": "MALFORMED_OUTPUT",
+                "repair_status": "REPAIR_NOT_ATTEMPTED",
+                "error": f"JSONDecodeError: {exc}",
+                "proposals": [],
+                "rejected": [],
+            }
         if not isinstance(payload, dict) or not isinstance(payload.get("proposals"), list):
-            raise ValueError("source profiler output must contain proposals[]")
+            return [], {
+                "status": "MALFORMED_OUTPUT",
+                "repair_status": "REPAIR_NOT_ATTEMPTED",
+                "error": "source profiler output must contain proposals[]",
+                "proposals": [],
+                "rejected": [],
+            }
 
         accepted: list[SourceCapabilityProposal] = []
         rejected: list[dict[str, Any]] = []

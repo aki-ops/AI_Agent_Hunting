@@ -213,6 +213,14 @@ class HypothesisHuntEngine:
             if variable_id in known_variable_ids:
                 initial_variables[variable_id] = values
                 initial_variable_sources[variable_id] = "user_selection"
+
+        if getattr(state, "step_trace", None) is not None:
+            state.step_trace.record_step(
+                HuntStepName.STEP_D_BIND_CANDIDATES,
+                inputs_summary={"initial_variables": list(initial_variables.keys())},
+                outputs_summary={"bound_variable_count": len(initial_variables)},
+            )
+
         operations = tuple(getattr(getattr(state, "capability_catalog", None), "operations", ()) or ())
         execution = SemanticPlanExecutor(active_adapter, operations).execute(
             logical_plan,
@@ -225,6 +233,21 @@ class HypothesisHuntEngine:
             allow_candidate_inputs=allow_candidate_inputs,
             initial_variable_sources=initial_variable_sources,
         )
+
+        if getattr(state, "step_trace", None) is not None:
+            state.step_trace.record_step(
+                HuntStepName.STEP_E_COMPILE_QUERY_INTENT,
+                inputs_summary={"plan_steps": len(logical_plan.steps)},
+                outputs_summary={"planned_attempts": len(execution.query_attempts)},
+            )
+            state.step_trace.record_step(
+                HuntStepName.STEP_F_EXECUTE_NATIVE_QUERY,
+                inputs_summary={"executions": len(execution.executions)},
+                outputs_summary={
+                    "total_rows": sum(len(item.result.rows or []) for item in execution.executions if item.result),
+                    "statuses": [item.status for item in execution.executions],
+                },
+            )
 
         observations_by_query: dict[str, list[Observation]] = {}
         for item in execution.executions:
@@ -319,6 +342,13 @@ class HypothesisHuntEngine:
         if goal_observations:
             self.group_builder.ingest_delta(goal_observations)
             self.controller.set_evidence_cards(state, self.group_builder.build_cards())
+
+        if getattr(state, "step_trace", None) is not None:
+            state.step_trace.record_step(
+                HuntStepName.STEP_G_RECORD_OBSERVATIONS,
+                inputs_summary={"total_observations": len(ledger.observations) if ledger is not None else 0},
+                outputs_summary={"evidence_cards": len(state.evidence_cards)},
+            )
 
         goal_verdicts: list[dict[str, Any]] = []
         operation_by_id = {
@@ -417,6 +447,17 @@ class HypothesisHuntEngine:
                 assessment.to_dict() for assessment in execution.route_assessments
             ],
         })
+
+        if getattr(state, "step_trace", None) is not None:
+            state.step_trace.record_step(
+                HuntStepName.STEP_H_VERIFY_PROOF,
+                inputs_summary={"goal_count": len(goal_graph.relations)},
+                outputs_summary={
+                    "verdicts": [v.get("status") for v in goal_verdicts],
+                    "verified_goals": sum(1 for v in goal_verdicts if v.get("status") in ("SUPPORTED", "VERIFIED")),
+                },
+            )
+
         required_verdicts = [item for item, goal in zip(goal_verdicts, goal_graph.relations) if goal.required]
         if required_verdicts and all(item["status"] == "SUPPORTED" for item in required_verdicts):
             for hypothesis in state.hypotheses:
@@ -439,6 +480,16 @@ class HypothesisHuntEngine:
                 self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
         else:
             self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
+
+        if getattr(state, "step_trace", None) is not None:
+            state.step_trace.record_step(
+                HuntStepName.STEP_I_CHECK_STOPPING,
+                inputs_summary={"stopping_decision": str(getattr(state, "stopping_decision", "none"))},
+                outputs_summary={
+                    "route_exhausted": list(execution.route_exhausted),
+                    "unresolved_steps": len(execution.unresolved_step_ids),
+                },
+            )
 
         state.semantic_plan_executed = True
         return execution
@@ -1086,6 +1137,13 @@ class HypothesisHuntEngine:
                     "relation": relation.relation,
                     "subject_type": variables.get(relation.subject, "entity"),
                     "object_type": variables.get(relation.object, "entity"),
+                    "roles": tuple(
+                        r for r in (
+                            variables.get(relation.subject, ""),
+                            variables.get(relation.object, ""),
+                        )
+                        if r and r != "entity"
+                    ),
                     "description": relation.description,
                     "constraint_terms": [
                         qualifier.qualifier
@@ -1225,19 +1283,25 @@ class HypothesisHuntEngine:
             frontier = ProgressiveFrontier(card_store, catalog_index)
 
             coverage_manifests = {}
+            all_frontier_source_ids = set()
             for req in profiling_requirements:
                 rel = req["relation"]
-                _, cov_manifest = frontier.expand(
+                selected_cards, cov_manifest = frontier.expand(
                     relation=rel,
                     required_roles=tuple(req.get("roles", ())),
                 )
+                all_frontier_source_ids.update(c.source_id for c in selected_cards)
                 coverage_manifests[rel] = cov_manifest.to_dict()
 
-            # Retrieve a compact source set per relation before invoking the
-            # profiler. The full census remains available for validation, but
-            # never enters the compiler or a single all-goals profiler prompt.
+            # The Progressive Frontier is the authority deciding which candidate sources
+            # are admitted into profiling.
+            admitted_profiles = [
+                p for p in active_profiles.values()
+                if p.source_id in all_frontier_source_ids
+            ] or list(active_profiles.values())
+
             retrieval = CapabilityBatcher().batch(
-                active_profiles.values(),
+                admitted_profiles,
                 profiling_requirements,
             )
             source_profile_audit = {
@@ -1289,7 +1353,9 @@ class HypothesisHuntEngine:
                                 "relation": relation,
                                 "batch_index": batch_index,
                                 "batch_count": len(batches),
-                                "status": "LLM_BUDGET_EXHAUSTED_BEFORE_BATCH",
+                                "status": "RELATION_DEFERRED_BY_BUDGET",
+                                "repair_status": "NOT_ATTEMPTED",
+                                "error": "LLM token/call budget exhausted before batch profiling",
                             })
                             continue
                         try:
@@ -1313,24 +1379,39 @@ class HypothesisHuntEngine:
                         except Exception as error:
                             error_text = str(error)
                             budget_error = "budget" in error_text.lower()
+                            malformed = "proposals[]" in error_text.lower() or "json" in error_text.lower()
+                            status_val = (
+                                "RELATION_DEFERRED_BY_BUDGET"
+                                if budget_error
+                                else "MALFORMED_OUTPUT"
+                                if malformed
+                                else "PROFILING_FAILED"
+                            )
                             source_profile_audit["relation_calls"].append({
                                 "relation": relation,
                                 "batch_index": batch_index,
                                 "batch_count": len(batches),
-                                "status": (
-                                    "LLM_BUDGET_EXHAUSTED_BEFORE_BATCH"
-                                    if budget_error else "PROFILING_FAILED"
-                                ),
+                                "status": status_val,
+                                "repair_status": "REPAIR_NOT_ATTEMPTED" if malformed else "NOT_ATTEMPTED",
                                 "error": error_text,
                             })
                 if source_profile_audit["relation_calls"]:
-                    partial = any(
-                        item.get("status") == "LLM_BUDGET_EXHAUSTED_BEFORE_BATCH"
+                    deferred = any(
+                        item.get("status") == "RELATION_DEFERRED_BY_BUDGET"
+                        for item in source_profile_audit["relation_calls"]
+                    )
+                    malformed = any(
+                        item.get("status") == "MALFORMED_OUTPUT"
                         for item in source_profile_audit["relation_calls"]
                     )
                     source_profile_audit["status"] = (
-                        "PARTIAL_RELATION_SCOPED_PROFILING"
-                        if partial else "RELATION_SCOPED_PROFILING"
+                        "RELATION_DEFERRED_BY_BUDGET"
+                        if deferred and not accepted_source_proposals
+                        else "MALFORMED_OUTPUT"
+                        if malformed and not accepted_source_proposals
+                        else "PARTIAL_RELATION_SCOPED_PROFILING"
+                        if deferred or malformed
+                        else "RELATION_SCOPED_PROFILING"
                     )
             elif cache_hit_count and not uncached:
                 source_profile_audit = {
@@ -3137,6 +3218,12 @@ class HypothesisHuntEngine:
         report = render_analyst_report(account)
 
         if getattr(state, "step_trace", None) is not None:
+            if not any(s.step_name == HuntStepName.STEP_I_CHECK_STOPPING.value for s in state.step_trace.steps):
+                state.step_trace.record_step(
+                    HuntStepName.STEP_I_CHECK_STOPPING,
+                    inputs_summary={"stopping_decision": str(getattr(state, "stopping_decision", "none"))},
+                    outputs_summary={"status": "EVALUATED_BEFORE_FINAL_REPORT"},
+                )
             state.step_trace.record_step(
                 HuntStepName.STEP_J_REPORT_AND_ACCOUNT,
                 inputs_summary={"request_id": request.id},

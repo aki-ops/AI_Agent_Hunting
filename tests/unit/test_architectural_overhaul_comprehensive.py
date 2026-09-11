@@ -12,7 +12,11 @@ from __future__ import annotations
 
 import pytest
 
-from hunting.capabilities.source_card_store import SourceCard
+from hunting.capabilities.catalog_index import CatalogIndex
+from hunting.capabilities.frontier import ProgressiveFrontier
+from hunting.capabilities.source_card_store import SourceCard, SourceCardStore
+from hunting.capabilities.source_mapping_validator import SourceMappingValidator
+from hunting.capabilities.source_profiler import SourceProfiler
 from hunting.contracts.bindings import (
     BindingDirectness,
     CandidateBinding,
@@ -29,7 +33,12 @@ from hunting.contracts.queries import (
     QueryResult,
 )
 from hunting.contracts.semantic_graph import LogicalPlan, PlanStep
-from hunting.contracts.source_profile import TelemetryFieldProfile, TelemetrySourceProfile
+from hunting.contracts.semantic_route import SemanticRouteStatus
+from hunting.contracts.source_profile import (
+    SourceCapabilityProposal,
+    TelemetryFieldProfile,
+    TelemetrySourceProfile,
+)
 from hunting.contracts.step_trace import HuntStepName, StepTrace
 from hunting.controller.cost import LLMUsageTracker
 from hunting.evidence.relation_verifier import verify_relation_proof_contract
@@ -372,3 +381,175 @@ def test_partitioned_llm_budget_enforces_component_limits():
     assert tracker.is_component_exhausted("compiler") is True
     with pytest.raises(RuntimeError, match="budget exhausted for component 'compiler'"):
         tracker.preflight("Third compile attempt", component="compiler")
+
+
+def test_fake_mapping_cooccurrence_strictly_clamped_to_retrieval():
+    """P0 invariant: Cooccurrence probe and semantic field mismatches NEVER elevate to PROOF_CAPABLE."""
+    profile = TelemetrySourceProfile(
+        source_id="src-fake-1",
+        provider_id="splunk",
+        partition_id="default",
+        native_type="wineventlog",
+        fields=(
+            TelemetryFieldProfile(field_id="query", name="query", primitive_type="string"),
+            TelemetryFieldProfile(field_id="host", name="host", primitive_type="string"),
+        ),
+        event_count=100,
+        schema_fingerprint="fp1",
+    )
+
+    validator = SourceMappingValidator()
+
+    # Fake mapping: query -> person, host -> endpoint
+    proposal = SourceCapabilityProposal(
+        source_id="src-fake-1",
+        relation="associated_with",
+        input_roles={"person": "query"},
+        output_roles={"endpoint": "host"},
+        proof_mode="relation_observable",
+        probe_kind="cooccurrence",
+    )
+
+    # Invariant 1: ProofContract itself rejects query -> person as semantically incompatible
+    contract = validator.registry.get("proof-person-endpoint-v1")
+    assert contract is not None
+    ok, reasons = contract.validate_capability_conformance(
+        relation="associated_with",
+        input_roles={"person": "query"},
+        output_roles={"endpoint": "host"},
+    )
+    assert ok is False
+    assert any("native_field_semantically_incompatible" in r for r in reasons)
+
+    # Invariant 2: Materialization of cooccurrence probe strictly clamps to RETRIEVAL_CAPABLE
+    cap = validator.materialize(
+        proposal,
+        profile,
+        probe_query_id="probe-q1",
+        probe_succeeded=True,
+    )
+    assert cap.capability_level == "RETRIEVAL_CAPABLE"
+    assert cap.proof_mode == "retrieval_only"
+    assert cap.proof_contract_id is None
+    assert "cooccurrence_probe_cannot_grant_proof" in cap.diagnostics
+
+
+def test_progressive_frontier_unexamined_has_no_overlap_with_rejected():
+    """P1 invariant: Rejected sources from scoring are never simultaneously reported as unexamined."""
+    card_store = SourceCardStore()
+
+    # High-relevance card
+    card_good = SourceCard(
+        source_id="source-good",
+        provider_id="splunk",
+        scope="default",
+        field_roles={"person": "user", "endpoint": "dest_host"},
+    )
+    card_store.register_card(card_good)
+
+    # Low-relevance card with no relevant roles
+    card_low = SourceCard(
+        source_id="source-low",
+        provider_id="splunk",
+        scope="default",
+        field_roles={"metric_count": "count"},
+    )
+    card_store.register_card(card_low)
+
+    catalog_index = CatalogIndex(card_store)
+    frontier = ProgressiveFrontier(card_store, catalog_index, max_batch_cards=1)
+
+    selected_cards, manifest = frontier.expand(
+        relation="associated_with",
+        required_roles=("person", "endpoint"),
+    )
+
+    # Selected must contain good source
+    assert any(c.source_id == "source-good" for c in selected_cards)
+
+    # Invariant: unexamined_source_ids and rejected_source_ids must NEVER overlap
+    overlap = set(manifest.unexamined_source_ids) & set(manifest.rejected_source_ids.keys())
+    assert overlap == set(), f"Found overlapping sources between unexamined and rejected: {overlap}"
+
+
+def test_route_assessment_uses_goal_id_as_primary_key():
+    """P1 invariant: Route assessments index strictly by goal_id and executed empty query has empty capability_gaps."""
+    empty_result = QueryResult(
+        query_id="q-empty-1",
+        outcome=QueryOutcome.ROWS,
+        executed_ok=True,
+        complete=True,
+        rows=[],
+        row_count=0,
+    )
+    adapter = MockAdapter(empty_result)
+    op = ProviderOperation(
+        id="op-1",
+        provider_id="splunk",
+        scope_ids=("scope-default",),
+        guaranteed_relations=("associated_with",),
+        input_entity_kinds=("person",),
+        output_binding_entity_kinds={"endpoint": "host"},
+        output_value_bindings={"endpoint": ("host",)},
+        proof_mode="retrieval_only",
+        runtime_source_id="src-test",
+    )
+    plan = LogicalPlan(
+        id="plan-1",
+        goal_graph_id="gg-1",
+        provider_id="splunk",
+        steps=[
+            PlanStep(
+                id="step-1",
+                operation_id="op-1",
+                relation="associated_with",
+                input_bindings={"person": "person_1"},
+                output_bindings={"endpoint": "host_1"},
+                advances_goal_ids=("goal-1",),
+            ),
+        ],
+    )
+    scope = ProviderScope("splunk", {"index": "default"}, scope_id="scope-default")
+    executor = SemanticPlanExecutor(adapter, [op])
+
+    result = executor.execute(
+        plan,
+        scope,
+        time_window="2026-02-01T00:00:00Z/P1D",
+        initial_variables={"person_1": "Alice"},
+    )
+
+    # Invariant: Route assessment is keyed by goal-1, not step-1
+    assessments_by_goal = {a.goal_id: a for a in result.route_assessments}
+    assert "goal-1" in assessments_by_goal
+    assert "step-1" not in assessments_by_goal
+
+    goal_assessment = assessments_by_goal["goal-1"]
+    assert goal_assessment.status == SemanticRouteStatus.ATTEMPTED_EMPTY
+    assert "no_provider_attempt" not in goal_assessment.capability_gaps
+
+
+def test_source_profiler_malformed_output_audit_status():
+    """P1 invariant: Malformed LLM output is safely handled and recorded as MALFORMED_OUTPUT."""
+    # LLM returning malformed string lacking proposals[]
+    def bad_llm(prompt: str) -> str:
+        return '{"result": "missing_proposals_field"}'
+
+    profiler = SourceProfiler(bad_llm)
+
+    profile = TelemetrySourceProfile(
+        source_id="src-1",
+        provider_id="splunk",
+        partition_id="default",
+        native_type="wineventlog",
+        fields=(),
+        event_count=10,
+        schema_fingerprint="fp1",
+    )
+    req = {"relation": "associated_with", "subject_type": "person", "object_type": "endpoint"}
+
+    proposals, audit = profiler.propose([profile], [req])
+    assert proposals == []
+    assert audit["status"] == "MALFORMED_OUTPUT"
+    assert audit["repair_status"] == "REPAIR_NOT_ATTEMPTED"
+

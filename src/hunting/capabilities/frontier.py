@@ -142,10 +142,15 @@ class ProgressiveFrontier:
 
         f1_cards: list[SourceCard] = []
         for cand in scored:
-            considered.add(cand.source_id)
             if cand.source_id in examined:
                 continue
 
+            # Candidate is considered in F1 if it has matched terms/roles or is above threshold
+            is_relevant_candidate = bool(cand.matched_terms or cand.matched_roles or cand.above_threshold)
+            if not is_relevant_candidate:
+                continue
+
+            considered.add(cand.source_id)
             if cand.above_threshold:
                 # Candidate has matching fields/roles above threshold
                 f1_cards.append(cand.card)
@@ -179,6 +184,7 @@ class ProgressiveFrontier:
                         considered.add(adj_id)
                         examined.add(adj_id)
                         f2_cards.append(adj_card)
+                        rejected.pop(adj_id, None)
 
         stage_audit.append({
             "stage": FrontierStage.F2_ADJACENT.value,
@@ -194,12 +200,15 @@ class ProgressiveFrontier:
         if not selected_cards:
             remaining_candidates = [
                 cand for cand in scored
-                if cand.source_id not in examined and cand.source_id not in rejected
+                if cand.source_id not in examined
             ]
-            for cand in remaining_candidates[: self.max_batch_cards]:
+            remaining_candidates.sort(key=lambda c: c.total_score, reverse=True)
+            needed = self.max_batch_cards
+            for cand in remaining_candidates[:needed]:
                 f3_cards.append(cand.card)
                 examined.add(cand.source_id)
                 considered.add(cand.source_id)
+                rejected.pop(cand.source_id, None)
 
         stage_audit.append({
             "stage": FrontierStage.F3_BOUNDED_PROFILING.value,
@@ -220,6 +229,7 @@ class ProgressiveFrontier:
                         f4_cards.append(card)
                         examined.add(sid)
                         considered.add(sid)
+                        rejected.pop(sid, None)
 
             stage_audit.append({
                 "stage": FrontierStage.F4_APPROVED_EXHAUSTIVE.value,
@@ -228,8 +238,8 @@ class ProgressiveFrontier:
             })
             selected_cards.extend(f4_cards)
 
-        # Unexamined sources: Explicit coverage gaps
-        unexamined = sorted(all_source_ids - examined)
+        # Unexamined sources: Explicit coverage gaps (never considered or evaluated)
+        unexamined = sorted(all_source_ids - considered)
 
         manifest = CoverageManifest(
             total_sources=len(all_source_ids),

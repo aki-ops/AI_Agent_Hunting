@@ -182,7 +182,7 @@ class SemanticGoalPlanner:
                             operation_id=operation.id,
                             input_bindings={"subject": previous_variable},
                             output_bindings={"object": intermediate},
-                            advances_goal_ids=(),
+                            advances_goal_ids=(goal.id,),
                             depends_on=tuple(
                                 dependency for variable_id, dependency in step_for_variable.items()
                                 if variable_id == previous_variable

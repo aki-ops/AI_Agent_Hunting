@@ -650,7 +650,11 @@ class SemanticPlanExecutor:
         for attempt in semantic_attempts:
             attempts_by_goal.setdefault(attempt.goal_id, []).append(attempt)
         for step in plan.steps:
-            goal_ids = step.advances_goal_ids or (step.id,)
+            goal_ids = (
+                step.advances_goal_ids
+                or (tuple(plan.unresolved_goal_ids[:1]) if plan.unresolved_goal_ids else ())
+                or (step.id,)
+            )
             for goal_id in goal_ids:
                 attempts = attempts_by_goal.get(goal_id, [])
                 proof_complete = any(
@@ -723,6 +727,21 @@ class SemanticPlanExecutor:
                     attempts=list(attempts),
                     proof_gaps=[] if proof_complete else ["relation_or_constraint_proof_missing"],
                     capability_gaps=[] if attempts else ["no_provider_attempt"],
+                )
+
+        for unresolved_goal_id in plan.unresolved_goal_ids:
+            if unresolved_goal_id not in route_assessments:
+                route_assessments[unresolved_goal_id] = SemanticRouteAssessment(
+                    goal_id=unresolved_goal_id,
+                    relation="unresolved",
+                    status=SemanticRouteStatus.CAPABILITY_GAP,
+                    execution_complete=False,
+                    proof_complete=False,
+                    route_exhausted=False,
+                    readiness=CapabilityReadiness.CAPABILITY_GAP,
+                    attempts=[],
+                    proof_gaps=["relation_or_constraint_proof_missing"],
+                    capability_gaps=["no_provider_attempt"],
                 )
 
         return SemanticExecutionResult(

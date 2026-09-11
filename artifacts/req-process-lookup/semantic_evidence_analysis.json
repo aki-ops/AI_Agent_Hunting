@@ -83,10 +83,8 @@
             },
             {
               "stage": "F1_METADATA",
-              "discovered_sources": [
-                "cdb:source:events"
-              ],
-              "count": 1
+              "discovered_sources": [],
+              "count": 0
             },
             {
               "stage": "F2_ADJACENT",
@@ -95,8 +93,10 @@
             },
             {
               "stage": "F3_BOUNDED_PROFILING",
-              "discovered_sources": [],
-              "count": 0
+              "discovered_sources": [
+                "cdb:source:events"
+              ],
+              "count": 1
             }
           ]
         }
