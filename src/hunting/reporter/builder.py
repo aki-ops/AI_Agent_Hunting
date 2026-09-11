@@ -240,6 +240,15 @@ def build_final_hunt_account(
         if getattr(obj, "semantic_goal_graph", None) is None:
             obj.semantic_goal_graph = semantic_goal_graph
 
+    llm_raw_proposal = getattr(state, "llm_raw_proposal", None) or getattr(obj, "llm_raw_proposal", None)
+    validated_graph = getattr(state, "validated_graph", None) or getattr(obj, "validated_graph", None) or semantic_goal_graph
+    validation_diagnostics = list(getattr(state, "validation_diagnostics", None) or getattr(obj, "validation_diagnostics", None) or [])
+    if semantic_goal_graph is not None:
+        if not validation_diagnostics:
+            validation_diagnostics = list(getattr(semantic_goal_graph, "validation_diagnostics", []))
+        if llm_raw_proposal is None:
+            llm_raw_proposal = getattr(semantic_goal_graph, "raw_llm_proposal", None)
+
     # Reconcile cell coverage if cells are present in state
     if state.cells:
         wc_known = 0
@@ -1053,6 +1062,9 @@ def build_final_hunt_account(
         answer_status=ans_status,
         claim_verdicts=claim_verdicts,
         limitations=limitations,
+        llm_raw_proposal=llm_raw_proposal,
+        validated_graph=validated_graph,
+        validation_diagnostics=validation_diagnostics,
     )
 
 

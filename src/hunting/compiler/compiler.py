@@ -54,6 +54,10 @@ from hunting.contracts.semantic_intent import (
     SemanticHuntIntent,
     SubjectEntity,
 )
+from hunting.validator.investigation_validator import (
+    DEVICE_QUALIFIER_TERMS,
+    SemanticGoalGraphValidator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +291,16 @@ def parse_and_validate_semantic_goal_graph(
         if isinstance(item, dict) else item
         for item in data.get("answers", [])
     ]
+    normalized["answer_contracts"] = [
+        {
+            **item,
+            "slot_name": str(item.get("slot_name") or item.get("variable_id") or "answer"),
+            "value_type": str(item.get("value_type") or item.get("answer_type") or "value"),
+            "target_variable_id": str(item.get("target_variable_id") or item.get("variable_id") or "target"),
+        }
+        if isinstance(item, dict) else item
+        for item in data.get("answer_contracts", [])
+    ]
     graph = SemanticGoalGraph.from_dict(normalized, request_id=request_id)
     if not graph.variables or not graph.relations:
         raise ValueError("SemanticGoalGraph must contain variables and relations")
@@ -295,7 +309,9 @@ def parse_and_validate_semantic_goal_graph(
 
 def _validate_semantic_graph_shape(data: dict[str, Any]) -> None:
     """Reject schema drift before it can silently change the hunt meaning."""
-    for name in ("variables", "relations", "qualifiers", "answers"):
+    for name in ("variables", "relations", "qualifiers", "answers", "answer_contracts"):
+        if name == "answer_contracts" and name not in data:
+            continue
         value = data.get(name, [])
         if not isinstance(value, list):
             raise ValueError(f"SemanticGoalGraph.{name} must be an array")
@@ -380,13 +396,18 @@ def _mark_request_grounded_values(
             continue
         candidate = variable.value.casefold()
         restriction_values = {str(item.value).casefold() for item in variable.constraints if item.value is not None}
+        if variable.entity_type.casefold() in {"host", "endpoint", "computer"}:
+            is_device_qualifier = candidate in DEVICE_QUALIFIER_TERMS or any(
+                term in candidate for term in ("macbook", "laptop", "desktop", "workstation", "phone", "tablet")
+            )
+            if is_device_qualifier:
+                # MacBook is a device qualifier, never a hostname seed
+                rewritten.append(replace(variable, value=None, value_origin="llm_proposal"))
+                continue
+
         if variable.entity_type.casefold() == "person":
             is_explicit_literal = candidate in request_folded and candidate not in restriction_values
         else:
-            # A model-proposed host/domain/IP is not a seed merely because its
-            # text appears in the question.  Descriptions such as "MacBook"
-            # must remain unbound until a provider returns an entity, unless
-            # the caller explicitly supplied the entity in HuntRequest.
             is_explicit_literal = candidate in explicit_entities.get(variable.entity_type.casefold(), set())
         if is_explicit_literal and variable.entity_type in {"person", "account", "host", "domain", "ip", "email_address"}:
             rewritten.append(replace(variable, value_origin="request"))
@@ -1075,16 +1096,21 @@ class KnowledgeBehaviorCompiler:
             "The compiler is provider-neutral. Do not infer or select telemetry sources, fields, "
             "operations, indexes, sourcetypes, or native query syntax. Those are resolved after "
             "this graph has been validated by a separate capability-retrieval stage.\n\n"
+            "In addition, emit AnswerContract structures defining the acceptance condition, expected value type, \n"
+            "and citation requirement for each answer slot.\n"
+            "Represent relations with atomic obligations and exact request provenance spans. Use AND/OR/GATE dependency operators.\n"
+            "Device labels such as 'MacBook' are qualifiers, never hostnames. Named entities such as 'Mallory' must be preserved verbatim.\n\n"
             "Return only JSON matching this shape:\n"
             "{\n"
             f'  "id": "goal-graph-{request.id}",\n'
             f'  "request_id": "{request.id}",\n'
             '  "objective": "objective preserved from the request",\n'
             '  "variables": [{"id": "subject", "entity_type": "person", "value": "only if explicitly named", "value_origin": "request", "verification_status": "UNVERIFIED", "constraints": []}, {"id": "target", "entity_type": "value", "value": null, "value_origin": "llm_proposal", "verification_status": "UNVERIFIED", "constraints": [{"key": "restriction_name", "operator": "equals", "value": "restriction value", "retrieval_terms": ["optional literal alias"]}]}],\n'
-            '  "relations": [{"id": "goal-1", "subject": "subject", "relation": "canonical_relation", "object": "target", "required": true, "description": "what must be established"}],\n'
+            '  "relations": [{"id": "goal-1", "subject": "subject", "relation": "canonical_relation", "object": "target", "required": true, "description": "what must be established", "atomic_obligation": "obligation", "provenance_span": "span from request", "dependencies": [], "dependency_operator": "AND", "gate_condition": null}],\n'
             '  "qualifiers": [{"id": "qualifier-1", "target_goal_id": "goal-1", "qualifier": "restriction_name", "expected_value": "restriction value", "required": true}],\n'
             '  "answers": [{"variable_id": "target", "answer_type": "value", "required": true}],\n'
-            '  "assumptions": [], "uncertainties": []\n'
+            '  "answer_contracts": [{"slot_name": "target", "value_type": "value", "target_variable_id": "target", "required_qualifiers": ["qualifier-1"], "min_citations": 1, "acceptance_rule": "observed value"}],\n'
+            '  "assumptions": [], "uncertainties": [], "forbidden_inferences": [], "clarification_triggers": []\n'
             "}"
         )
 
@@ -1117,7 +1143,15 @@ class KnowledgeBehaviorCompiler:
                     raw_data = None
             if isinstance(raw_data, dict) and "variables" in raw_data and "relations" in raw_data:
                 goal_graph = parse_and_validate_semantic_goal_graph(raw_data, request.id)
+                validator = SemanticGoalGraphValidator()
+                val_result = validator.validate_goal_graph(goal_graph, request.content, request.entities)
+                if not val_result.valid:
+                    raise ValueError(f"Semantic graph validation failure: {'; '.join(val_result.rejections)}")
+                goal_graph = val_result.validated_graph
+                goal_graph.raw_llm_proposal = raw_data
+                goal_graph.validation_diagnostics = list(val_result.diagnostics)
                 goal_graph = _mark_request_grounded_values(goal_graph, request.content, request.entities)
+
                 hypothesis = Hypothesis(
                     id=f"hypo-{request.id}",
                     statement=goal_graph.objective,
@@ -1140,6 +1174,9 @@ class KnowledgeBehaviorCompiler:
                     kind=request.kind,
                     statement=request.content,
                     semantic_goal_graph=goal_graph,
+                    llm_raw_proposal=raw_data,
+                    validated_graph=goal_graph,
+                    validation_diagnostics=list(val_result.diagnostics),
                 )
                 logger.info("[LLM_OBSERVABILITY] phase=compiler prompt_hash=%s selected_operation=semantic_goal_graph validation_result=VALID", prompt_hash)
                 self.last_compile_trace["validation_result"] = "VALID"

@@ -42,9 +42,9 @@ spanning Control Plane and Hunt Plane (Steps A–J).
 - [x] No `is_email`, `is_tor`, `is_cve` or equivalent branch creates graph edges in the free-text compiler path. (`SemanticGoalGraph` is generated dynamically; compatibility case graph is projection-only.)
 - [x] Claim-plan provenance and objective-preservation tests pass. (`source_request_id`, dependency, missing-acceptance and same-keyword/different-objective tests.)
 - [x] Counterfactual requests demonstrate that claims follow the request, not keywords. (no `EmailClaim`/`TorClaim`; same keyword yields different claim sets.)
-- [ ] Refactor C1 prompt to emit `GoalGraph` and `AnswerContract` with atomic obligations, exact provenance spans, AND/OR/GATE dependencies, typed variables, explicit qualifiers, non-binding assumptions, and clarification triggers.
-- [ ] Deterministic validator rejects invented proper nouns, prevents entity mutation (Mallory cannot become Alice), keeps `MacBook` as device qualifier (not host), and verifies every downstream goal reduces an answer slot.
-- [ ] Persist `llm_raw_proposal`, `validated_graph`, and `validation_diagnostics` into machine run account.
+- [x] Refactor C1 prompt to emit `GoalGraph` and `AnswerContract` with atomic obligations, exact provenance spans, AND/OR/GATE dependencies, typed variables, explicit qualifiers, non-binding assumptions, and clarification triggers. (`tests/unit/test_phase2_semantic_compiler_goal_graph.py::test_answer_contract_and_goal_graph_contracts`.)
+- [x] Deterministic validator rejects invented proper nouns, prevents entity mutation (Mallory cannot become Alice), keeps `MacBook` as device qualifier (not host), and verifies every downstream goal reduces an answer slot. (`tests/unit/test_phase2_semantic_compiler_goal_graph.py`.)
+- [x] Persist `llm_raw_proposal`, `validated_graph`, and `validation_diagnostics` into machine run account. (`tests/unit/test_phase2_semantic_compiler_goal_graph.py::test_compiler_end_to_end_emits_goal_graph_and_persists_to_account`.)
 
 ---
 

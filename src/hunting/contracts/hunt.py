@@ -102,6 +102,9 @@ class HuntObjective:
     case: Any | None = None
     case_graph: Any | None = None
     hunt_spec: HuntSpec | None = None
+    llm_raw_proposal: dict[str, Any] | None = None
+    validated_graph: Any | None = None
+    validation_diagnostics: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.request_id.strip():
@@ -413,6 +416,9 @@ class HuntState:
     stopping_decision: StoppingDecision | None = None
     turn: int = 0
     query_count: int = 0
+    llm_raw_proposal: dict[str, Any] | None = None
+    validated_graph: Any | None = None
+    validation_diagnostics: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -451,6 +457,9 @@ class FinalHuntAccount:
     answer_status: AnswerStatus | str = AnswerStatus.UNANSWERED
     claim_verdicts: list[ClaimVerdict] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
+    llm_raw_proposal: dict[str, Any] | None = None
+    validated_graph: Any | None = None
+    validation_diagnostics: list[str] = field(default_factory=list)
 
     @property
     def outcome(self) -> HuntOutcome:

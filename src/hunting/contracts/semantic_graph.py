@@ -134,6 +134,58 @@ class SemanticVariable:
 
 
 @dataclass(frozen=True)
+class AnswerContract:
+    """Expected output shape, acceptance condition, and citation requirements for an answer slot."""
+    slot_name: str
+    value_type: str
+    target_variable_id: str
+    required_qualifiers: tuple[str, ...] = ()
+    min_citations: int = 1
+    acceptable_aliases: tuple[str, ...] = ()
+    acceptance_rule: str = ""
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "slot_name", _clean(self.slot_name, "AnswerContract.slot_name"))
+        object.__setattr__(self, "value_type", _clean(self.value_type, "AnswerContract.value_type").lower())
+        object.__setattr__(self, "target_variable_id", _clean(self.target_variable_id, "AnswerContract.target_variable_id"))
+        if isinstance(self.required_qualifiers, (list, set)):
+            object.__setattr__(self, "required_qualifiers", tuple(str(x) for x in self.required_qualifiers))
+        if isinstance(self.acceptable_aliases, (list, set)):
+            object.__setattr__(self, "acceptable_aliases", tuple(str(x) for x in self.acceptable_aliases))
+        if self.min_citations < 1:
+            object.__setattr__(self, "min_citations", 1)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "slot_name": self.slot_name,
+            "value_type": self.value_type,
+            "target_variable_id": self.target_variable_id,
+            "required_qualifiers": list(self.required_qualifiers),
+            "min_citations": self.min_citations,
+            "acceptable_aliases": list(self.acceptable_aliases),
+            "acceptance_rule": self.acceptance_rule,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AnswerContract":
+        slot_name = str(data.get("slot_name") or data.get("variable_id") or "answer").strip()
+        value_type = str(data.get("value_type") or data.get("answer_type") or "value").strip()
+        target_variable_id = str(data.get("target_variable_id") or data.get("variable_id") or slot_name).strip()
+        return cls(
+            slot_name=slot_name,
+            value_type=value_type,
+            target_variable_id=target_variable_id,
+            required_qualifiers=tuple(str(x) for x in data.get("required_qualifiers", ())),
+            min_citations=int(data.get("min_citations", 1)),
+            acceptable_aliases=tuple(str(x) for x in data.get("acceptable_aliases", ())),
+            acceptance_rule=str(data.get("acceptance_rule", "")).strip(),
+            description=str(data.get("description", "")).strip(),
+        )
+
+
+@dataclass(frozen=True)
 class SemanticRelationGoal:
     """A relation that must be established or refuted."""
     id: str
@@ -142,14 +194,37 @@ class SemanticRelationGoal:
     object: str
     required: bool = True
     description: str = ""
+    atomic_obligation: str = ""
+    provenance_span: str = ""
+    dependencies: tuple[str, ...] = ()
+    dependency_operator: str = "AND"
+    gate_condition: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("id", "subject", "relation", "object"):
             object.__setattr__(self, name, _clean(getattr(self, name), f"SemanticRelationGoal.{name}"))
         object.__setattr__(self, "relation", self.relation.lower())
+        if isinstance(self.dependencies, (list, set)):
+            object.__setattr__(self, "dependencies", tuple(str(x) for x in self.dependencies))
+        op = str(self.dependency_operator or "AND").upper()
+        if op not in {"AND", "OR", "GATE"}:
+            op = "AND"
+        object.__setattr__(self, "dependency_operator", op)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "subject": self.subject, "relation": self.relation, "object": self.object, "required": self.required, "description": self.description}
+        return {
+            "id": self.id,
+            "subject": self.subject,
+            "relation": self.relation,
+            "object": self.object,
+            "required": self.required,
+            "description": self.description,
+            "atomic_obligation": self.atomic_obligation,
+            "provenance_span": self.provenance_span,
+            "dependencies": list(self.dependencies),
+            "dependency_operator": self.dependency_operator,
+            "gate_condition": self.gate_condition,
+        }
 
 
 @dataclass(frozen=True)
@@ -236,8 +311,16 @@ class SemanticGoalGraph:
     relations: list[SemanticRelationGoal] = field(default_factory=list)
     qualifiers: list[SemanticQualifierGoal] = field(default_factory=list)
     answers: list[SemanticAnswerGoal] = field(default_factory=list)
+    answer_contracts: list[AnswerContract] = field(default_factory=list)
+    dependencies: dict[str, list[str]] = field(default_factory=dict)
+    dependency_kinds: dict[str, str] = field(default_factory=dict)
+    provenance_spans: dict[str, str] = field(default_factory=dict)
     assumptions: list[str] = field(default_factory=list)
     uncertainties: list[str] = field(default_factory=list)
+    forbidden_inferences: list[str] = field(default_factory=list)
+    clarification_triggers: list[str] = field(default_factory=list)
+    raw_llm_proposal: dict[str, Any] | None = None
+    validation_diagnostics: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.id = _clean(self.id, "SemanticGoalGraph.id")
@@ -252,15 +335,65 @@ class SemanticGoalGraph:
         for relation in self.relations:
             if relation.subject not in variable_ids or relation.object not in variable_ids:
                 raise ValueError(f"Relation goal '{relation.id}' references an unknown variable")
+            if relation.dependencies and relation.id not in self.dependencies:
+                self.dependencies[relation.id] = list(relation.dependencies)
+            if relation.dependency_operator and relation.id not in self.dependency_kinds:
+                self.dependency_kinds[relation.id] = relation.dependency_operator
+            if relation.provenance_span and relation.id not in self.provenance_spans:
+                self.provenance_spans[relation.id] = relation.provenance_span
         for qualifier in self.qualifiers:
             if qualifier.target_goal_id not in goal_ids:
                 raise ValueError(f"Qualifier '{qualifier.id}' references an unknown relation goal")
         for answer in self.answers:
             if answer.variable_id not in variable_ids:
                 raise ValueError(f"Answer references an unknown variable '{answer.variable_id}'")
+        for ac in self.answer_contracts:
+            if ac.target_variable_id not in variable_ids:
+                raise ValueError(f"AnswerContract references an unknown variable '{ac.target_variable_id}'")
+        # Bidirectional reconciliation between answers and answer_contracts
+        if not self.answer_contracts and self.answers:
+            self.answer_contracts = [
+                AnswerContract(
+                    slot_name=a.variable_id,
+                    value_type=a.answer_type,
+                    target_variable_id=a.variable_id,
+                )
+                for a in self.answers
+            ]
+        elif not self.answers and self.answer_contracts:
+            self.answers = [
+                SemanticAnswerGoal(
+                    variable_id=ac.target_variable_id,
+                    answer_type=ac.value_type,
+                )
+                for ac in self.answer_contracts
+            ]
+        for goal_id, deps in self.dependencies.items():
+            if goal_id not in goal_ids:
+                raise ValueError(f"Dependency key '{goal_id}' is not a known relation goal")
+            for dep in deps:
+                if dep not in goal_ids:
+                    raise ValueError(f"Goal '{goal_id}' depends on unknown relation goal '{dep}'")
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "request_id": self.request_id, "objective": self.objective, "variables": [v.to_dict() for v in self.variables], "relations": [r.to_dict() for r in self.relations], "qualifiers": [q.to_dict() for q in self.qualifiers], "answers": [a.to_dict() for a in self.answers], "assumptions": list(self.assumptions), "uncertainties": list(self.uncertainties)}
+        return {
+            "id": self.id,
+            "request_id": self.request_id,
+            "objective": self.objective,
+            "variables": [v.to_dict() for v in self.variables],
+            "relations": [r.to_dict() for r in self.relations],
+            "qualifiers": [q.to_dict() for q in self.qualifiers],
+            "answers": [a.to_dict() for a in self.answers],
+            "answer_contracts": [ac.to_dict() for ac in self.answer_contracts],
+            "dependencies": dict(self.dependencies),
+            "dependency_kinds": dict(self.dependency_kinds),
+            "provenance_spans": dict(self.provenance_spans),
+            "assumptions": list(self.assumptions),
+            "uncertainties": list(self.uncertainties),
+            "forbidden_inferences": list(self.forbidden_inferences),
+            "clarification_triggers": list(self.clarification_triggers),
+            "validation_diagnostics": list(self.validation_diagnostics),
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> "SemanticGoalGraph":
@@ -284,6 +417,11 @@ class SemanticGoalGraph:
                 object=str(item.get("object", "")),
                 required=bool(item.get("required", True)),
                 description=str(item.get("description", "")),
+                atomic_obligation=str(item.get("atomic_obligation", "")),
+                provenance_span=str(item.get("provenance_span", "")),
+                dependencies=tuple(item.get("dependencies", ())),
+                dependency_operator=str(item.get("dependency_operator", "AND")),
+                gate_condition=item.get("gate_condition"),
             )
             for item in data.get("relations", []) if isinstance(item, dict)
         ]
@@ -306,6 +444,18 @@ class SemanticGoalGraph:
             )
             for item in data.get("answers", []) if isinstance(item, dict)
         ]
+        answer_contracts = [
+            AnswerContract.from_dict(item)
+            for item in data.get("answer_contracts", [])
+            if isinstance(item, dict)
+        ]
+        raw_deps = data.get("dependencies", {})
+        dependencies = {str(k): list(v) for k, v in raw_deps.items()} if isinstance(raw_deps, dict) else {}
+        raw_dep_kinds = data.get("dependency_kinds", {})
+        dependency_kinds = {str(k): str(v) for k, v in raw_dep_kinds.items()} if isinstance(raw_dep_kinds, dict) else {}
+        raw_spans = data.get("provenance_spans", {})
+        provenance_spans = {str(k): str(v) for k, v in raw_spans.items()} if isinstance(raw_spans, dict) else {}
+
         return cls(
             id=str(data.get("id", "")),
             request_id=graph_request_id,
@@ -314,8 +464,16 @@ class SemanticGoalGraph:
             relations=relations,
             qualifiers=qualifiers,
             answers=answers,
+            answer_contracts=answer_contracts,
+            dependencies=dependencies,
+            dependency_kinds=dependency_kinds,
+            provenance_spans=provenance_spans,
             assumptions=[str(value) for value in data.get("assumptions", [])],
             uncertainties=[str(value) for value in data.get("uncertainties", [])],
+            forbidden_inferences=[str(value) for value in data.get("forbidden_inferences", [])],
+            clarification_triggers=[str(value) for value in data.get("clarification_triggers", [])],
+            raw_llm_proposal=data.get("raw_llm_proposal"),
+            validation_diagnostics=[str(value) for value in data.get("validation_diagnostics", [])],
         )
 
 
@@ -450,4 +608,4 @@ def goal_graph_from_claim_graph(claim_graph: Any) -> SemanticGoalGraph:
     )
 
 
-__all__ = ["SemanticConstraint", "SemanticVariable", "SemanticRelationGoal", "SemanticQualifierGoal", "SemanticAnswerGoal", "ProofMethod", "SemanticGoalGraph", "PlanStep", "LogicalPlan", "goal_graph_from_claim_graph"]
+__all__ = ["AnswerContract", "SemanticConstraint", "SemanticVariable", "SemanticRelationGoal", "SemanticQualifierGoal", "SemanticAnswerGoal", "ProofMethod", "SemanticGoalGraph", "PlanStep", "LogicalPlan", "goal_graph_from_claim_graph"]
