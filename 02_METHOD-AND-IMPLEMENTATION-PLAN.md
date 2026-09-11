@@ -1,421 +1,244 @@
-# 02 — METHOD AND IMPLEMENTATION PLAN (v7)
+# 02 — METHOD AND IMPLEMENTATION PLAN (v8 / Evidence-Based Implementation Plan)
 
-`01_FINAL-ARCHITECTURE.md` defines the architecture. This document is the
-implementation plan for its dynamic telemetry-discovery and hybrid query
-synthesis revision. `03` records the research basis; `04` is the evidence-gated
-checklist. No item is complete merely because a query returned plausible rows.
+`01_FINAL-ARCHITECTURE.md` defines the architecture. `08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md`
+is the master evidence-based rearchitecture and execution blueprint. This document defines
+the operational execution method, component boundaries, LLM call contracts, and phased migration.
+`03` records the research basis; `04` is the evidence-gated implementation checklist.
 
 ## 1. Decision and boundary
 
-The agent must work with unfamiliar provider schemas without hard-coding that
-SMTP means mail, Sysmon means process/file, or a person maps to an account or
-host in one fixed order. It therefore uses a **dynamic capability path**:
+The agent operates across unfamiliar provider telemetry without hardcoding scenario logic,
+keywords, or entity names. It enforces a **Contract-Grounded Progressive Hunt Graph**:
 
 ```text
-request
-  -> provider census
-  -> SemanticGoalGraph
-  -> LLM source-capability proposals
-  -> deterministic validation + bounded probes
-  -> validated RuntimeCapabilityGraph
-  -> goal/claim binding and action selection
-  -> QueryIntent compiler OR quarantined raw-native-query path
-  -> QueryResult -> EvidenceGraph -> verification -> report
+Yêu cầu tự nhiên
+  -> LLM biên dịch GoalGraph + AnswerContract (C1)
+  -> Kiểm tra graph và provenance (deterministic validation)
+  -> Chọn goal đang sẵn sàng (AND / OR / GATE planner)
+  -> Tìm capability theo progressive frontier (F0 -> F4)
+  -> Bind entity/value hoặc hỏi người dùng nếu còn mơ hồ (CandidateSet / Discriminator)
+  -> QueryIntent (EXPLORE | DISCRIMINATE | PROVE)
+       -> Compiler xác định (preferred)
+       -> Quarantined SPL candidate (C3 trong sandbox)
+  -> Kiểm tra an toàn (Native SPL Gate: AST, read-only, bounds, cancel SID)
+  -> Observation -> FieldFact -> Candidate Evidence
+  -> ProofContract xác minh quan hệ và answer slot (STRUCTURALLY_VALID / RETRIEVAL_CAPABLE / PROOF_CAPABLE)
+  -> Tiếp tục / mở rộng / hỏi / dừng theo 9 trạng thái kiểm tra được
+  -> Báo cáo 6 phần + Machine Run Account JSON
 ```
 
-The LLM is creative only in proposing a graph, source mappings and query
-intent. It is not authoritative over source existence, field meaning, query
-cost, returned facts, identity bindings or the final verdict.
+Three non-negotiable principles govern every execution:
+1. **LLM is a semantic planner, not a semantic oracle.** It proposes; only deterministic validators and approved `ProofContract` instances establish proof.
+2. **No full-schema prompt, no fixed Top-K cutoff.** Progressive frontier (`F0` to `F4`) incrementally explores sources. Unexamined sources are explicit coverage gaps.
+3. **Never auto-bind ambiguous candidates without proof.** Ambiguous bindings trigger a `DISCRIMINATOR` query or halt for human clarification / `NEEDS_DISAMBIGUATION`.
 
-There are two legal native-query paths:
+## 2. Runtime method (Steps A–J)
 
-1. **Normal path — QueryIntent.** LLM or planner emits a provider-neutral,
-   typed intent. The adapter binds validated source/field roles and compiles
-   SPL/KQL/SQL/API syntax.
-2. **Novel path — quarantined native-query candidate.** If the intent language
-   cannot express a necessary operation, the LLM may propose native syntax. It
-   is parsed into an AST, policy-validated, cost-gated and dry-run before any
-   live execution. A rejected query never reaches the provider.
+### Step A — Freeze request and budget
 
-Raw native syntax is therefore permitted as a bounded fallback, not as the
-primary control plane and not as an unrestricted tool call.
+Construct an immutable `HuntRunContext`:
+- `request_id`, request text hash, user-supplied entities and seed facts;
+- time policy and permitted provider scopes;
+- hard ceilings: max 5 LLM calls, max 15,000 tokens, provider scan/runtime/query caps;
+- prompt, model, and registry versions.
 
-## 2. Runtime method
+Input text and telemetry rows are untrusted data: prompt injection must never alter scope,
+provider selection, budget, or verdict.
 
-### Step 0 — Freeze request and budget
+### Step B — LLM Semantic Compilation (Call C1)
 
-Persist the exact `HuntRequest`, user-provided entities, time policy, provider
-hints, model version and budgets. Request text and telemetry text are untrusted
-data, not instructions that can alter scope, provider selection, budget or
-verdict.
+C1 receives only the request, small vocabulary/JSON schema, and time policy.
+**It does not receive the provider catalog and does not emit SPL.**
+It compiles a schema-strict `GoalGraph` and `AnswerContract`:
+- `answer_slots`: required variable, expected type, acceptance condition;
+- `goals`: atomic obligations with request text span provenance;
+- `dependencies`: AND / OR / GATE relationships;
+- `variables`: typed entities/values;
+- `qualifiers`: time, action, state, mechanism restrictions;
+- `assumptions`: explicit, non-binding;
+- `forbidden_inferences` and `clarification_triggers`.
 
-Output: immutable request and run ledger.
+### Step C — Deterministic Graph Validation
 
-### Step 1 — Provider-neutral telemetry census
+The validator checks:
+- provenance spans exist for all proposed goals;
+- no invented proper nouns or entity mutations (e.g. changing Mallory to Alice, MacBook to hostname);
+- acyclic dependencies and valid GATE semantics;
+- no acceptance rules demanding specific field names invented by the LLM.
 
-Every reachable provider returns a `TelemetryCensus`, without semantic guesses:
+### Step D — AND / OR / GATE Planning
 
-- permitted index/table/stream identifiers and time range;
-- source/sourcetype/native type identifiers and event counts;
-- field names, inferred primitive types, null/coverage rates and aliases;
-- bounded, privacy-filtered representative values or field sketches;
-- permissions, retention, pagination and query-cost limits;
-- provider-native query primitives.
+A deterministic planner (not a prompt) maintains:
+- `AND`: all predecessor goals must be verified;
+- `OR`: any verified branch satisfies the parent obligation;
+- `GATE`: downstream execution is blocked until required input bindings are proven;
+- `DISCRIMINATOR`: automated low-cost queries specifically targeting candidate ambiguity.
 
-The census has a stable `schema_fingerprint`. It is retained in the local
-capability catalog and is never serialized wholesale into the semantic
-compiler prompt. The complete profiles remain available to deterministic
-validation; later retrieval creates a bounded relation-specific view for the
-source profiler.
+### Step E — Capability Discovery via Progressive Frontier (F0–F4)
 
-Output: audited `TelemetryCensus` and initial `CapabilityGraph` containing
-only bootstrap operations such as census and bounded probe execution.
+Rather than fixed Top-K or full-catalog prompting, search expands iteratively:
+- **`F0` Certified frontier:** Operations with approved `ProofContract` matching relation and roles.
+- **`F1` Metadata frontier:** Retrieve `SourceCard` candidates via lexical + embedding score without hard cutoffs.
+- **`F2` Adjacent expansion:** Open related sources sharing partition, field alias, or join keys upon gaps.
+- **`F3` Bounded semantic profiling:** Bounded LLM batching for a single goal; mappings default strictly to `retrieval_only`.
+- **`F4` Approved exhaustive:** Run only under explicit escalation or offline audit.
 
-### Step 2 — Semantic goal graph
+Unexamined sources are recorded in the coverage manifest (`unexamined_source_ids`).
 
-The semantic compiler receives the request only. It proposes a schema-strict
-`SemanticGoalGraph`: typed variables, requested answer
-variables, relations, qualifiers, dependencies, OR alternatives, assumptions
-and acceptance conditions.
+### Step F — Controlled Entity Binding
 
-It cannot emit a provider query, native field name, event ID, evidence claim or
-final verdict. A deterministic validator preserves the original objective,
-rejects unsupported expansion and checks graph acyclicity/provenance.
+Variables maintain a `CandidateSet` of `CandidateBinding` records (supporting facts, directness, contradictions, confidence class).
+- If exactly 1 candidate is proven by contract without contradiction: bind.
+- If multiple candidates exist: dispatch a `DISCRIMINATOR` query.
+- If ambiguity persists: halt for user clarification or output structured `NEEDS_DISAMBIGUATION`. Never pick by heuristic, string matching, or first row.
 
-Output: accepted graph with unresolved semantic requirements, for example
-`person --associated_with--> endpoint --has_file_event--> file`.
+### Step G — QueryIntent before Native SPL
 
-### Step 2.5 — Relation-scoped capability retrieval
+Query synthesis operates in two tiers:
+1. **Normal tier (Typed `QueryIntent`):** Declares `mode` (`EXPLORE` | `DISCRIMINATE` | `PROVE`), bound inputs, projected roles, predicates, and budget. Compiled deterministically by the adapter.
+2. **Quarantined Native Candidate (C3 fallback):** When intent cannot express needed syntax, isolated C3 proposes SPL. It must pass the `NativeQueryGate`:
+   - AST validation against read-only command allowlist;
+   - only census-known sources and fields;
+   - explicit time bounds, scan/result caps;
+   - cancellation SID tracking and backend job telemetry (`scanCount`, `runDuration`).
 
-For each unresolved graph relation, a deterministic batcher orders native
-source profiles by metadata and field overlap with that relation's typed
-requirements, but does not discard low-scoring sources. Every discovered source
-and field is scheduled into one or more context-sized batches. The score only
-controls processing order; it is not a semantic assertion, a Top-K cutoff or a
-fixed `event_family` mapping.
+### Step H — Evidence Pipeline
 
-The batcher records the terms, scores, processing order, source/field coverage,
-batch count and any unprofiled native sources. It passes only one compact batch
-to each LLM call. The complete census remains the authoritative deterministic
-validation set, so prompt truncation cannot authorize a field that the provider
-did not expose. If the census itself is incomplete, the relation remains
-coverage-limited rather than being marked unsupported.
-
-Output: relation-specific exhaustive batches and an auditable coverage trace.
-
-### Step 3 — Semantic source-capability profiling
-
-For graph requirements that no already validated capability satisfies, call the
-new `source_profiler` once per `(provider, scope, schema_fingerprint,
-requirement_signature)` cache key. It receives only the compact candidates
-for that relation and may propose candidates in this form:
-
-```json
-{
-  "source_id": "census-defined ID",
-  "relation": "associated_with",
-  "input_roles": {"person": "field-id"},
-  "output_roles": {"endpoint": "field-id"},
-  "proof_mode": "retrieval_only | relation_observable",
-  "probe": {"kind": "cooccurrence", "projection_roles": ["person", "endpoint"]},
-  "rationale_refs": ["field-id", "sample-id"],
-  "confidence": 0.0
-}
+Raw rows are transformed strictly via:
+```text
+native row
+  -> immutable Observation (append-only ledger)
+  -> deterministic FieldFact
+  -> CandidateRelation
+  -> ProofContract evaluation
+  -> EvidenceItem / AnswerCandidate
 ```
 
-`source_id`, field IDs, roles, relation kinds and probe kinds are enums or
-references to census records. The profiler may not invent a source, field,
-entity value, index selector or native query. Source names are weak hints; the
-field profile and probe are the evidence for capability.
+### Step I — ProofContract Evaluation
 
-Output: `SourceCapabilityProposal[]`, all still untrusted candidates.
+Authority rests solely in human-reviewed, test-verified contracts:
+- `STRUCTURALLY_VALID`: Schema fields exist.
+- `RETRIEVAL_CAPABLE`: Rows retrieved, but relation semantics unproven.
+- `PROOF_CAPABLE`: Conforms to approved contract; cited observations satisfy all required roles, temporal order, and state transitions.
 
-### Step 4 — Deterministic proposal validation and probes
+Cooccurrence defaults to `RETRIEVAL_CAPABLE`. LLM proposals cannot upgrade to `PROOF_CAPABLE`.
 
-Validate each proposal against the census:
+### Step J — Controller and Stopping Taxonomy
 
-- source/field IDs exist and are permitted;
-- role/type combinations are compatible;
-- requested relation/proof mode is allowed;
-- source selector, time scope and fan-out comply with policy;
-- no user or telemetry text has been treated as a command.
+Halt only via 9 verifiable execution states:
+`STOP_ANSWERED`, `STOP_REFUTED`, `STOP_NOT_FOUND_BOUNDED`, `STOP_NEEDS_CLARIFICATION`,
+`STOP_UNSUPPORTED`, `STOP_UNREACHABLE`, `STOP_INCONCLUSIVE`, `STOP_BUDGET`, `STOP_ERROR`.
 
-The adapter compiles each accepted `ProbeSpec` itself. A probe has a small
-time window, bounded row count, narrow projection and a hard timeout. It tests
-whether the declared source can actually expose the proposed roles/relation.
+## 3. LLM Call Architecture and Budgets (C1–C6)
 
-Successful probe = **observable capability**, not proof of the user claim.
-Rejected, empty, incomplete or ambiguous probes retain diagnostics and never
-become an operation silently.
+Context is strictly isolated per call; no call receives the entire schema catalog or raw ledger.
 
-Output: `RuntimeCapability` records with status `VALIDATED`, `CANDIDATE`,
-`REJECTED`, `UNSUPPORTED` or `UNREACHABLE`, plus query/citation artifacts.
+| Call | Trigger | Allowed Context | Output | Default Budget Ceilings |
+|---|---|---|---|---:|
+| **C1: `semantic_compile`** | Every free-text request | Request text, small vocabulary/schema, time policy | `GoalGraph` + `AnswerContract` | 2,500 in / 1,200 out |
+| **C2: `capability_profile`** | Cache miss & F0/F1 insufficient | Single goal + compact `SourceCard` batch | `retrieval_only` candidate mappings | 2 × (1,800 in / 700 out) |
+| **C3: `native_query_proposal`** | Intent compiler unsupported | Single goal + selected source + verified bindings | Sandboxed candidate SPL | 1,800 in / 700 out |
+| **C4: `evidence_interpret`** | Ambiguous evidence semantics | Grouped delta cards (no raw ledger) | Candidate interpretation & gaps | 2,500 in / 800 out |
+| **C5: `replan`** | Deadlock with material new delta | Unresolved goal graph + compact delta | Revised goals (no verdict) | 2,000 in / 900 out |
+| **C6: `narrative`** | Optional human report polish | Verified account facts only | Narrative prose (no new facts) | 1,500 in / 600 out |
 
-### Step 5 — Dynamic capability materialization and graph binding
+**Execution Ceilings:** Hard limit of max 5 calls and 15,000 total tokens per hunt run (excluding C6).
 
-Materialize a validated proposal into a provider-neutral `ProviderOperation`
-with source selector, input/output roles, relation/fact contract, proof mode,
-query limits and provenance. Cache it by schema fingerprint and invalidate it
-when the provider schema, permission state or index scope changes.
+### Cost Accounting
 
-The planner binds graph edges only to validated runtime capabilities. A static
-provider descriptor can provide generic census/probe primitives, but cannot be
-an authoritative semantic route merely because it mentions SMTP, Sysmon,
-Windows Security, email, host or file.
-
-Bindings remain `CANDIDATE` until observations satisfy the edge's acceptance
-rule. Equivalent anchor routes form an OR group; dependent regions form AND
-dependencies. Multiple bindings are retained, then disambiguated by a bounded
-query or an explicit user choice—never by selecting the first host/account.
-
-### Step 6 — Query intent synthesis and compilation
-
-For each selected operation the planner emits a `QueryIntent`, not query text:
+Cost accounting reports total real-world expenditure, not just estimated LLM USD:
 
 ```text
-QueryIntent {
-  goal_id, operation_id, source_selector,
-  relation_to_test, request-grounded/provider-observed bindings,
-  predicates expressed as field roles and typed operators,
-  time_scope, projection roles, aggregation/correlation operator,
-  expected_output_shape, expected_cost_bound
-}
+C_run = C_llm + C_splunk + C_cache/control + C_analyst
+
+C_llm = Σ(input_uncached * rate_in + input_cached * rate_cached + output * rate_out)
+Splunk work = Σ(scanCount, runDuration, queue_time, resultCount, cancelled_state)
+Human work = clarification_time + review_minutes
 ```
 
-The adapter resolves role IDs to fields from the validated runtime capability
-and compiles parameterized SPL/KQL/SQL/API syntax. Values may only originate
-from the frozen request, validated configuration or cited provider observation.
-For example, a display name cannot mutate into an account name; a device label
-cannot mutate into a hostname.
+## 4. Phased Implementation Roadmap (Phases 0–8)
 
-Discovery intent is allowed when an anchor is unknown, but it must use narrow
-projection, aggregation/deduplication and bounded cardinality—not a raw
-`index=* | head` dump.
+### Phase 0 — Baseline & Scope Freeze
+- Freeze 20–30 representative requests (`eval/corpus/*.jsonl`, `eval/splits.json`).
+- Establish B0 (current execution) and B1 (direct LLM-to-query) baselines.
+- Isolate BOTS v2 as integration fixture; do not hardcode entities or answers.
 
-### Step 7 — Quarantined raw native-query fallback
+### Phase 1 — Lock Semantic Authority
+- Create `contracts/proof_contract.py` and `registry/proof_contract_registry.py`.
+- Enforce three capability levels: `STRUCTURALLY_VALID`, `RETRIEVAL_CAPABLE`, `PROOF_CAPABLE`.
+- LLM mappings default strictly to `retrieval_only`.
+- Materialize proof capability only via `APPROVED` registry contracts and conformance tests.
 
-Use this only when the adapter declares that the accepted `QueryIntent` cannot
-express a required operation. The LLM receives the intent, validated source
-profile, permitted field IDs, query budget and target output schema. It may
-return one `NativeQueryCandidate` with reason and expected result shape.
+### Phase 2 — Semantic Compiler and Real Graph
+- Upgrade C1 compiler to output `GoalGraph` and `AnswerContract` with request text provenance spans.
+- Enforce AND / OR / GATE dependency graph.
+- Validator preserves request entities (Mallory cannot mutate into Alice; MacBook cannot become hostname).
 
-Before dispatch, the native-query gate must:
+### Phase 3 — Source Catalog and Progressive Frontier (F0–F4)
+- Create `SourceCardStore`, `frontier.py`, and `catalog_index.py`.
+- Replace per-hunt exhaustive prompt batching with progressive frontier expansion:
+  `F0` (Certified) -> `F1` (Metadata) -> `F2` (Adjacent) -> `F3` (Bounded profiling) -> `F4` (Approved exhaustive).
+- Record unexamined sources as explicit coverage gaps (`unexamined_source_ids`).
 
-1. parse query text into a provider AST (not regex-only validation);
-2. permit only read-only AST operators and provider-specific safe functions;
-3. require a census-known index/table/source and an explicit time bound;
-4. require narrow projection plus result, subsearch and scan-cost limits;
-5. reject mutation, external side effects, opaque script execution, forbidden
-   commands and unbounded fan-out;
-6. ensure all identifiers are census-known and all value bindings are trusted;
-7. estimate cost and run a bounded dry-run/parse check; and
-8. validate that returned fields match the declared output shape.
+### Phase 4 — Controlled Binding & Mixed-Initiative Control
+- Create `contracts/bindings.py` with `CandidateSet` and `CandidateBinding`.
+- Implement automated `DISCRIMINATOR` queries for candidate ambiguity.
+- Halt for human clarification or output structured `NEEDS_DISAMBIGUATION`. Never auto-bind by heuristic.
 
-One structured repair attempt may receive only validator diagnostics. Further
-failure becomes `UNSUPPORTED_QUERY_EXPRESSION` or `STOP_BUDGET_EXHAUSTED`, not
-an unbounded retry loop.
+### Phase 5 — Typed Query & Native-Query Quarantine
+- Implement `QueryIntent` modes: `EXPLORE`, `DISCRIMINATE`, `PROVE`.
+- Deterministic compiler handles approved mappings; quarantined C3 fallback runs in AST sandbox.
+- Capture Splunk backend execution telemetry (`scanCount`, `runDuration`, cancellation SID).
 
-### Step 8 — Evidence, verification and bounded replanning
+### Phase 6 — Evidence, Verification & Stopping Taxonomy
+- Evidence pipeline preserves native field roles, timestamps, and causal transitions.
+- Evaluates proof solely against `ProofContract`.
+- Enforce 9-state stopping taxonomy (`STOP_ANSWERED` through `STOP_ERROR`).
 
-Adapters return complete `QueryResult` envelopes. The ledger stores raw rows
-append-only; deterministic extractors create facts, evidence cards and
-candidate edges. The verifier checks cited observations, role identity,
-temporal qualifiers, acceptance rules and query completeness before promoting
-an edge or final answer.
+### Phase 7 — Report, Tracing & Cost
+- Build unified `StepTrace` from C1 through stop.
+- Generate 6-part Markdown `report.md` and machine `run_account.json`.
 
-Replanning is permitted only after a material delta: a rejected/missing
-capability, ambiguity, new evidence changing a dependency, a complete-empty
-retrieval attempt, or a coverage gap. It receives structured attempt/gap
-diagnostics and evidence cards, never the full raw ledger. The controller owns
-all state, retry, query, scan, token and runtime budgets.
+### Phase 8 — Evaluation & Ablation
+- Execute benchmark across B0, B1, and candidate architecture.
+- Run ablation studies (graph oracle, mapping oracle, frontier vs. exhaustive).
+- Report layer metrics: goal F1, candidate recall, binding precision, citation grounding, false support rate, wrong auto-binding rate.
 
-For every required relation, the controller maintains separate execution,
-proof and route-exhaustion state. A complete provider request with zero rows is
-`ATTEMPTED_EMPTY`, not a completed semantic route. The next action is selected
-from this bounded order when valid: continue pagination, advance the declared
-retrieval policy, execute a declared alternative, discover/probe a missing
-capability, or stop. A no-progress signature prevents replaying an identical
-operation/source/binding/time/predicate stage.
+## 5. End-to-End Required Test Matrix
 
-The declared retrieval policy may relax only retrieval-only predicates. It must
-retain provider scope, verified identity binding, time interval, projection,
-row/page limits and every proof obligation. Rows obtained by a relaxed stage
-remain candidates until deterministic verification satisfies the original
-relation and qualifiers.
+| Category | Scenario | Mandatory Expectation |
+|---|---|---|
+| Factual single-hop | Single attribute lookup | 1 goal, narrow query, cited answer |
+| Multi-hop | person -> account/host -> artifact | GATE enforced; no artifact query before verified host binding |
+| OR path | person->host OR person->account->host | One verified path opens gate; alternative not forced |
+| Ambiguity | Multiple candidate hosts | `DISCRIMINATOR` or user clarification; no auto-selection |
+| Missing source | Required relation lacks source | `UNSUPPORTED`/coverage gap, never routes to irrelevant source |
+| Permission/retention | Source unreachable | `UNREACHABLE`, never `NOT_FOUND` |
+| Partial result | Result limit or timeout | No negative license; reports partial coverage |
+| Unknown native event | Schema outside vocabulary | Native observation preserved; exploratory candidate |
+| Misleading schema | Source named "email" lacking roles | Proposal rejected; name never implies proof |
+| Role swap | Inverted client/server or sender/rcpt | Contract rejects or detects contradiction |
+| Prompt injection in logs | Row contains instructions | Zero change to graph, budget, or tool policy |
+| LLM compiler failure | Empty/invalid JSON | Max 1 repair, then graceful stop; no fake graph |
+| LLM query failure | Malformed or unsafe SPL | AST gate blocks execution; zero dispatch |
+| Provider failure | Splunk disconnects mid-run | Job cancelled; error reported with clean checkpoint |
+| No progress | Repeated identical queries | Bounded recovery exhausts; halts with no-progress signature |
 
-Capability profiling is triggered by proof-aware readiness, not merely by the
-absence of a composable static plan. A static operation is ready only when its
-typed route, grounded inputs, source provenance, retrieval contract and
-proof/qualifier observability cover the outstanding relation. Static
-retrieval-only reachability therefore cannot suppress profiling after a proof
-or complete-empty route gap.
+## 6. Definition of Done and Priorities
 
-### Step 9 — Final account
+### P0 (Mandatory before further optimization):
+- LLM cannot materialize proof-capable capability.
+- GoalGraph carries AnswerContract, provenance spans, and AND/OR/GATE semantics.
+- Ambiguous candidate bindings never auto-bind.
+- Progressive frontier replaces full-catalog prompting; coverage retains unexamined sources.
+- Stop rules strictly enforce proof obligations.
+- Report displays graph, actions, queries, evidence, and cost.
 
-The report must show:
+### P1 (Required for evaluable prototype):
+- Native SPL quarantine with AST parser, scanCount, and cancellation telemetry.
+- SourceCard cache invalidation on schema/permission/contract changes.
+- Evaluation corpus, baseline B0/B1 comparison, and layer metrics.
+- Live Splunk replay with failure/partial/ambiguity cases.
 
-1. the question and accepted SemanticGoalGraph;
-2. each required edge and its dependency/alternative group;
-3. profiler source proposals, validation/probe decisions and cache status;
-4. each chosen QueryIntent, generated native query, compact result sample and
-   its relation to the graph edge;
-5. verified evidence, unresolved gaps and why a stop was selected; and
-6. LLM calls/tokens/latency/cost and provider query/scan cost.
-
-## 3. Detailed code plan
-
-### Phase A — Contracts and migration boundary
-
-Create `TelemetryCensus`, `TelemetrySourceProfile`, `SourceCapabilityProposal`,
-`ProbeSpec`, `RuntimeCapability`, `QueryIntent`, `NativeQueryCandidate` and
-`NativeQueryValidationResult`. Extend `ProviderOperation` with runtime
-provenance, role bindings, proof mode, schema fingerprint and expiry.
-
-Expected locations:
-
-- `src/hunting/contracts/capabilities.py`
-- `src/hunting/contracts/source_profile.py` (new)
-- `src/hunting/contracts/query_intent.py` (new)
-- `src/hunting/contracts/native_query.py` (new)
-
-Acceptance: invalid IDs, raw fields in semantic graph output, unsupported role
-combinations and missing output contracts are rejected by unit tests.
-
-### Phase B — Census and safe provider profiling
-
-Add `build_telemetry_census()` and `execute_probe()` to the adapter contract.
-Splunk gathers metadata and bounded field sketches; CDB implements the same
-contract through table/schema inspection. Do not attach a semantic label from a
-sourcetype name in either adapter.
-
-Expected locations:
-
-- `src/hunting/capabilities/census.py`
-- `src/hunting/m5_adapter/splunk_adapter.py`
-- `src/hunting/m5_adapter/cdb_adapter.py`
-
-Acceptance: a renamed or unfamiliar source with suitable fields survives
-census; a source named SMTP without sender/receiver fields is not labelled mail.
-
-### Phase C — Source profiler and cache
-
-Add `source_profiler` to the LLM caller registry, schema-strict response parser
-and cache. Limit it to one call plus at most one repair per cache key. Feed only
-relation-scoped profile batches and graph requirements; use the complete
-census only for deterministic validation. The retrieval score distribution,
-batch count, source/field coverage and any census gaps must be persisted in the audit.
-
-Expected locations:
-
-- `src/hunting/m2_abduction/provider.py` or the current LLM factory
-- `src/hunting/capabilities/source_profiler.py` (new)
-- `src/hunting/capabilities/profile_cache.py` (new)
-
-Acceptance: source/field hallucinations, prompt injection and oversized raw
-sample input are rejected; cache hit makes zero profiler calls; a profile
-limit can never be reported as complete discovery.
-
-### Phase D — Proposal validation, probes and materialization
-
-Implement a deterministic validator, generic probe compiler and capability
-materializer. Refactor static source-role dictionaries so they are optional
-bootstrap hints with provenance, never default semantic truth.
-
-Expected locations:
-
-- `src/hunting/capabilities/source_mapping_validator.py` (new)
-- `src/hunting/capabilities/probe_executor.py` (new)
-- `src/hunting/capabilities/runtime_materializer.py` (new)
-- `src/hunting/capabilities/inventory.py`
-- `src/hunting/m5_adapter/splunk_adapter.py`
-
-Acceptance: planner can use a runtime-discovered operation; a failed probe
-cannot create one; a successful schema-only probe cannot prove an incident fact.
-
-### Phase E — Goal planner and QueryIntent compiler
-
-Change the semantic executor to select `VALIDATED` runtime capabilities by
-graph edge. Implement role-to-field binding and parameterized native compiler.
-Ensure OR anchor routes, ambiguity and fan-out obey existing evidence policy.
-
-Expected locations:
-
-- `src/hunting/planner/semantic_executor.py`
-- `src/hunting/capabilities/binder.py`
-- `src/hunting/engine.py`
-- provider adapters' query compilers
-
-Acceptance: a person/endpoint/file graph can choose a schema-discovered route;
-it never chooses the first candidate and never constructs a broad query without
-a declared discovery reason.
-
-### Phase F — AST-gated native-query fallback
-
-Implement provider-specific parser/adapters behind a common native-query gate.
-For Splunk, use a real SPL parser if available; otherwise implement a limited
-grammar for the supported SPL subset and reject syntax outside it. Do not claim
-arbitrary full-SPL safety without a full parser.
-
-Expected locations:
-
-- `src/hunting/query_safety/native_query_gate.py` (new)
-- `src/hunting/query_safety/spl_ast.py` (new or parser integration)
-- `src/hunting/query_safety/policy.py` (new)
-- `src/hunting/m5_adapter/splunk_adapter.py`
-
-Acceptance: mutation/side-effect commands, unknown fields/indexes, missing time
-scope, unbounded subsearches and query-text injection are blocked before live
-dispatch; valid unusual read-only SPL passes dry-run and shape validation.
-
-### Phase G — Evidence/report observability
-
-Store source-profile IDs, proposal IDs, probe query IDs, intent IDs, native
-candidate gate decisions and cache metadata in the ledger. Render them in the
-analyst report without dumping raw observations.
-
-Expected locations:
-
-- `src/hunting/reporter/builder.py`
-- `src/hunting/reporter/renderer.py`
-- `src/hunting/engine.py`
-
-Acceptance: an analyst can reconstruct why a source and query were selected,
-what returned, and why the answer is supported/inconclusive.
-
-### Phase H — Evaluation and rollout
-
-Run in `source_profiling=off|audit|auto|force` modes. Start in `audit`: static
-and dynamic candidate plans are compared but only the existing safe path runs.
-Promote only after replay results meet predeclared thresholds.
-
-Measure source-role mapping precision/recall, capability-probe precision,
-planner/edge/evidence/answer F1, hallucinated-source/field rate, unsupported
-expansion rate, queries, scan volume, LLM calls/tokens/cost and latency.
-
-## 4. Required test matrix
-
-| Test | Required result |
-|---|---|
-| Unfamiliar process source | Fields/samples permit a validated process capability without the word Sysmon. |
-| Renamed mail source | Source can be proposed/validated from sender-recipient fields, not source name. |
-| Misleading source name | SMTP-named source lacking message roles is rejected. |
-| Missing telemetry | Graph returns unsupported/coverage gap, never fabricated query or NOT_FOUND. |
-| Multiple person-to-host candidates | All candidates retained; disambiguation or user decision occurs. |
-| Novel correlation | Intent compiler is tried first; raw candidate is AST-gated only when necessary. |
-| Raw SPL injection/mutation | Rejected before dispatch. |
-| Schema change | Cache invalidates and profiles again. |
-| Repeated run, unchanged schema | Cache hit; no profiler call. |
-| Partial query | Cannot prove absence or a negative verdict. |
-| State transition | The edge carries the validated operation proof contract. Verification requires ledger-backed citations in one provider/scope, compatible typed entity values, parseable ordered timestamps within the declared bound, declared `action_roles` plus `state_roles`, and a stable value from `artifact_identity_roles` or `correlation_roles`. A suffix or source label is never a transition or causality fact. |
-| Semantic negative | Requires every declared bounded route exhausted, every attempt complete-empty, and an explicit provider negative/completeness license. Without all three the terminal result is `INCONCLUSIVE`. |
-
-## 5. Definition of done
-
-This revision is complete only when a labelled run can: discover an unfamiliar
-source from a bounded census; obtain a validated runtime capability through a
-probe; build a graph-bound `QueryIntent`; compile or safely quarantine a novel
-native query; preserve evidence and completeness; explain the source/query
-choice; and report mapping, evidence and answer metrics separately from cost.
-
-It is not complete when the result merely looks plausible on BotSv2, when a
-source label is hard-coded, or when raw native query text can bypass the gate.
+### P2 (Post-measurement enhancements):
+- Secondary providers, graph databases, online contract promotion, or multi-agent reflection.

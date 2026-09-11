@@ -1,360 +1,285 @@
-# Reference Architecture for Evidence-Grounded Threat Hunting
+# 06 — Reference Architecture for Evidence-Grounded Threat Hunting (v8)
 
 ## Decision
 
-The system shall be an **evidence-seeking investigation agent**, not a fixed
-playbook engine and not an unconstrained LLM agent. Its universal unit of
-reasoning is a graph of claims whose truth must be established from telemetry.
+The system shall be a **Contract-Grounded Progressive Hunt Graph** agent, not a
+fixed playbook engine, not a relation-first keyword template, and not an
+unconstrained LLM agent. Its universal unit of reasoning is an obligation graph
+of testable goals, candidate bindings, and human-approved proof contracts whose
+truth must be established from verified telemetry.
 
-The universal architecture is:
-
-```text
-Request
-  -> Provider Census
-  -> Semantic Claim-Plan Proposal
-  -> Plan Validation
-  -> Relation-scoped Capability Retrieval
-  -> LLM Source-Capability Proposal
-  -> Deterministic Validation and Bounded Capability Probes
-  -> Runtime Capability Binding and Action Selection
-  -> QueryIntent Compilation or Quarantined Native-Query Validation
-  -> Safe Native Query Execution
-  -> Observation / Fact / Evidence Graph Update
-  -> Claim Verification and Bounded Replanning
-  -> Grounded Answer, Coverage and Cost Report
-```
-
-The pipeline is universal because every request follows the same contracts.
-It is not template-driven because neither the request words nor an answer type
-can select a prewritten path such as “email -> message -> recipient”, “Tor ->
-process”, or “CVE -> web logs”. The plan is constructed from the request,
-live capabilities, and evidence acquired during the current run.
-
-This is a thesis engineering composition. Its individual principles are
-supported by research and standards; the exact contracts, policies and
-thresholds must be empirically evaluated, not presented as externally proven.
-
----
-
-## Scope and non-goals
-
-The agent accepts a natural-language question, hypothesis, CTI/TTP/IOC/CVE,
-or scheduled hunt. It may return a factual answer, supported/refuted hypothesis
-assessment, or an explicit inconclusive result with coverage gaps.
-
-It is not an autonomous incident-response system, a malware exploit generator,
-or an omniscient detector. It cannot prove absence from incomplete telemetry.
-It must distinguish a factual lookup, causal reconstruction, threat hypothesis,
-and population discovery through their declared claims—not by a keyword router.
-
-The distinction matters: threat hunting practice is diverse rather than a
-single mandated workflow.^1 Provenance systems demonstrate the value of causal
-graphs for attack reconstruction, but they do not prescribe an attack graph for
-every security question.^2 ^3
-
----
-
-## Universal data model
-
-### 1. Request
-
-**Input:** user content, optional entities, time policy and provider hints.  
-**Output:** immutable `HuntRequest`.
-
-The request is treated as an objective, not as evidence. User text and all
-retrieved log text are untrusted instructions; neither can mutate scope,
-provider policy, budget or final verdict.
-
-### 2. Semantic goal graph
-
-**Input:** `HuntRequest`, compact provider census.  
-**Output:** `SemanticGoalGraph` proposed by the LLM, then schema-validated.
-
-`ClaimGraph` remains only as a compatibility input and is projected into the
-semantic graph before capability binding. The executable plan is a
-`LogicalPlan` containing typed AND dependencies and declared OR alternatives.
-
-A claim is a testable statement, not a scenario label:
+The target architecture spans two operational planes:
 
 ```text
-Claim {
-  subject: typed entity or variable,
-  predicate: attribute | relation | behaviour | absence-with-controls,
-  object/value type: typed entity, value or event condition,
-  provenance: user_request | CTI_source | verified_observation,
-  acceptance_rule: required facts/relations and completeness conditions,
-  refutation_rule: optional explicit contradiction,
-  dependencies: other claim IDs,
-  expansion_policy: allowed only on ambiguity, missing anchor, or coverage gap
-}
+================================================================================
+CONTROL PLANE (Bootstrap / Catalog / Knowledge Management)
+--------------------------------------------------------------------------------
+ProviderManifest + SourceCard Catalog + SemanticVocabulary
+  + ProofContractRegistry + QueryCompilerRegistry + CapabilityIndex
+  + EvaluationCorpus
+================================================================================
+HUNT PLANE (Execution Lifecycle: Steps A–J)
+--------------------------------------------------------------------------------
+[Step A] Freeze Request & Budget (HuntRunContext: ceilings, hashes, seeds)
+    │
+[Step B] Semantic Compilation C1 (GoalGraph + AnswerContract; NO catalog/SPL)
+    │
+[Step C] Deterministic Validation (rejection of hallucinated entities/sources)
+    │
+[Step D] AND/OR/GATE Graph Planning (HTN-inspired reduction & discriminators)
+    │
+[Step E] Progressive Frontier F0–F4 (Certified -> Metadata -> Adjacent -> Profiling -> Exhaustive)
+    │
+[Step F] Controlled Binding (CandidateSet; auto-bind ONLY on unique proof; else DISCRIMINATE / ask)
+    │
+[Step G] Typed QueryIntent (EXPLORE / DISCRIMINATE / PROVE)
+            ├── Deterministic Compiler (preferred)
+            └── Quarantined Native SPL Gate (AST check, manifest-bound, SID cancel on timeout)
+    │
+[Step H] Evidence Pipeline (Row -> Observation -> FieldFact -> CandidateRelation)
+    │
+[Step I] ProofContract Evaluation (structural / retrieval_only / proof_capable)
+    │
+[Step J] 9-State Stopping Taxonomy & 6-Part Report + Machine Run Account JSON
+================================================================================
 ```
 
-Examples are deliberately written in one grammar:
+This is a thesis engineering composition. Its individual components inherit from
+peer-reviewed literature; the end-to-end integration, data contracts, progressive
+frontier, and verifier policies constitute the local scientific contribution and
+must be empirically evaluated via ablation and replay.
 
-```text
-attribute(person: Amber, personal_email, value: ?)
-attribute(artifact: Tor Browser, version, value: ?)
-relation(person: Amber, visited, domain: ?)
-behaviour(scope: organisation, matches, CVE-X observable condition)
-```
+### Three Non-Negotiable Architectural Invariants
 
-There is no `is_email`, `is_tor`, `is_cve`, `request_mode`, event-family or
-scenario-template branch. Labels may be retained solely for reporting and
-experimental stratification, never for action selection.
-
-**Scientific basis:** ThreatRaptor demonstrates a structured intermediate
-behaviour graph from unstructured CTI before query synthesis; AIQL demonstrates
-typed investigation query semantics.^4 ^5 Neither source proves this exact
-claim schema or that free-text LLM compilation is reliable; those are local
-design hypotheses.
-
-### 3. Capability graph
-
-**Input:** live provider census and versioned adapter descriptors.  
-**Output:** `CapabilityGraph`.
-
-Each provider operation declares:
-
-```text
-Operation {
-  operation_id, provider, native partitions,
-  required input entity/value kinds,
-  output fact kinds and fields,
-  supported semantic constraint keys and their proof mode,
-  searchable semantic constraint keys (retrieval-only, never proof),
-  time/retention limits, permission requirements,
-  pagination and completeness semantics,
-  upper-bound cost/scan behaviour,
-  supported semantic constraints
-}
-```
-
-The provider census always runs first and produces a signed/audited snapshot:
-reachable providers, permitted partitions, schemas, fields, retention,
-timestamps, completeness support, operation catalogue and exclusions. A
-fallback provider is usable only when it can satisfy at least one outstanding
-claim. Otherwise the outcome is `UNSUPPORTED_CAPABILITY` or `UNREACHABLE`, not
-a misleading search over unrelated records.
-
-**Scientific basis:** AIQL separates logical investigation operations from
-execution optimisation; OCSF provides a vendor-neutral extensible schema model;
-Microsoft's hunting assistant describes schema/table-aware assistance.^5 ^6 ^7
-The precise census protocol and fallback policy are thesis implementation
-choices.
-
-### 4. Evidence graph
-
-**Input:** immutable native observations returned by an adapter.  
-**Output:** `EvidenceGraph` containing observation citations, normalized facts,
-candidate relations and verified claim status.
-
-Every observation retains provider ID, native type, raw fields, query ID,
-timestamp, cursor/completeness and integrity metadata. Normalized facts are
-additive aliases—not replacements for native fields. Unknown source types and
-fields remain stored and queryable.
-
-Only a claim verifier may promote a candidate to `SUPPORTED`, `REFUTED`, or
-`PARTIAL`. It checks cited observation IDs, subject/value field roles, temporal
-constraints, query completeness and the claim's acceptance rule. A declared
-schema column is not a fact value. A row returned by a query against the wrong
-source is not evidence for the claim.
-
-**Scientific basis:** SLEUTH and HOLMES support provenance/dependency evidence
-for multistage reconstruction; OmegaLog argues for preserving/reconciling
-multiple contexts; OCSF supports semantic normalization with extensibility.^2
-^3 ^8 ^6 The repository's exact fact roles and verifier are local engineering.
+1. **LLM is a semantic planner, not a semantic oracle.** The LLM may propose
+   goals, candidate sources, field mappings, queries, and explanations. Only
+   deterministic validators, adapters, and human-approved `ProofContract`
+   evaluators may promote a claim or answer to verified status.
+2. **No full-schema prompt, no fixed Top-K cutoff.** The catalog of sources and
+   fields remains outside the hot LLM prompt. The agent expands a progressive
+   frontier (F0–F4) per unresolved goal. Unexamined sources are explicitly
+   recorded as coverage gaps; shortlists never license negative claims.
+3. **Never auto-bind ambiguous candidates without proof.** If multiple entities
+   (hosts, accounts, IPs, artifacts) match, the agent must execute a
+   `DISCRIMINATOR` query or halt for human clarification (`NEEDS_DISAMBIGUATION`).
+   It never selects candidates by substring heuristic or arbitrary ranking.
 
 ---
 
-## Reference execution loop
+## Scope and Non-Goals
 
-| Step | Input → output | Who decides | Invariant | Foundation / status |
-|---|---|---|---|---|
-| A. Provider census | configured environment → capability graph | Adapter, deterministic | No content query before source/schema state is recorded. | Supported by schema-aware hunting practice; exact method is local.^7 |
-| B. Claim-plan proposal | request only → claims/dependencies/acceptance rules | LLM | No provider catalog, raw SPL/KQL/SQL or asserted evidence; every claim records provenance. | Structured intermediate representation is supported; exact prompt/schema is local.^4 ^5 |
-| C. Plan validation | proposed graph → accepted/rejected/reduced graph | Deterministic policy | Each non-prerequisite claim must trace to request, CTI, or verified evidence. | Defence-in-depth is supported; rules are local.^9 |
-| D. Relation-scoped batching | complete census + unresolved relation → exhaustive compact batches and coverage audit | Deterministic | Every discovered source/field is scheduled; score only orders batches; profile gaps remain visible. | Retrieval/schema-linking work supports staged context selection; exhaustive batching is the local recall-preserving choice.^15 ^16 ^18 ^19 |
-| E. Source-capability profiling | unresolved graph relation + bounded census slice → source/field-role/probe candidates | LLM | Source/field IDs must come from census; output is candidate only, never evidence. | LLM schema matching can bootstrap candidates; validation/probe design is local.^15 ^16 |
-| F. Proposal validation and probe | proposal + census → validated/rejected runtime capability | Deterministic adapter/policy | A source name alone proves nothing; probe result establishes observability, not incident evidence. | OCSF/schema-matching principles support semantic mapping; probe protocol is local.^6 ^15 |
-| G. Capability binding | outstanding graph relation + validated capabilities → candidate operations | Deterministic binder | Candidate operation must accept known typed inputs and output the requested fact type; proof-capable restrictions are preferred, while searchable-only restrictions remain explicit residuals. | Supported by typed query/capability principles.^5 ^6 |
-| H. Action selection | candidates + cost/coverage/evidence state → one bounded action | Deterministic scorer; LLM may rank ties only | Never route on a scenario label; no query without a claim it can reduce. | Adaptive evidence collection is supported; scoring function is local.^10 |
-| I. Native execution | QueryIntent + validated bindings → `QueryResult` envelope | Adapter, deterministic | Parameterized/allowlisted query, pagination, explicit `complete`; row count is not EOF. | Query safety/completeness policy is local, necessary for valid negative claims. |
-| J. Quarantined native fallback | intent not expressible + bounded source profile → accepted/rejected AST-gated native query | LLM candidate; deterministic gate | Read-only AST, census-known identifiers, trusted values, time/result/scan bounds and dry-run are required before dispatch. | Safe tool-use supports verified execution; exact grammar/policy is local.^9 |
-| K. Evidence update | raw rows → facts/cards/candidate edges | Deterministic extractor | Native rows append-only; card is a view, never a replacement. | Supported by provenance/semantic fusion principles.^2 ^8 |
-| L. Claim verification | evidence graph + relation/restriction contract → claim status | Deterministic verifier | A row proves only its declared relation; unsupported restrictions remain inconclusive. No conclusion without citations and completeness/observability controls. | Evidence-grounding principle; exact logic is local.^9 |
-| M. Bounded replan | unresolved claims + delta cards → revised claims or next action | LLM only at a decision boundary | New claim needs provenance; repeated non-progress is blocked. | Plan–retrieve–generate supports iterative evidence-conditioned planning; gating is local.^11 |
-| N. Stop and report | claim states + coverage + budgets → final account | Deterministic controller; LLM explains only verified evidence | `NO_EVIDENCE_FOUND` is never rendered as benign when coverage is inadequate. | Hypothesis/evidential hunting supports explicit uncertainty; stop taxonomy is local.^10 ^12 |
+The agent accepts a natural-language question, threat hypothesis, CTI/TTP/IOC/CVE,
+or structured hunt request. It outputs a verified factual answer, a supported or
+refuted hypothesis assessment, or an explicit inconclusive verdict detailing
+unexamined coverage gaps.
 
-### Selection rule
-
-At each loop, the controller considers only operations bound to an unresolved
-claim. It prefers an action with the greatest expected reduction of unresolved
-claim uncertainty per bounded cost, subject to input availability,
-completeness and provider health.
-
-```text
-score(action) = expected_claim_reduction
-                * completeness_confidence
-                * source_relevance
-                / bounded_cost
-```
-
-This is a transparent engineering heuristic, not a scientifically validated
-optimal formula. It is included so that future experiments can compare it with
-LLM ranking and ablations, rather than hiding policy inside a prompt.
+It is **not** an autonomous incident-response remediation tool, an exploit
+payload generator, or an omniscient detector. It cannot assert absence from
+incomplete telemetry. It distinguishes factual lookup, causal reconstruction,
+hypothesis verification, and population discovery through declared goal
+contracts—never through keyword routing.
 
 ---
 
-## LLM boundary and dependence
+## Two Operational Planes
 
-The architecture deliberately makes LLM intelligence valuable but not
-authoritative.
+### 1. Control Plane (Offline / Governance)
 
-| Responsibility | LLM allowed? | Deterministic control |
-|---|---:|---|
-| Interpret unfamiliar natural language and propose claims | Yes | Schema, provenance and objective validator |
-| See source capabilities and suggest a semantic operation | Yes, only among filtered candidates | Capability binder accepts/rejects |
-| Generate normal native provider query syntax | Indirectly, through a typed `QueryIntent` | Adapter owns binding, compilation and query safety |
-| Propose a novel native provider query | Yes, only as a quarantined fallback candidate | AST parser, policy, census IDs, trusted values, cost gate and dry-run must accept it before execution |
-| Admit telemetry into the ledger | No | Adapter/envelope checks |
-| Determine whether a fact is observed | No | Fact extractor + claim verifier |
-| Promote/refute a claim | No | Acceptance/refutation rule + citations |
-| Explain a verified result and uncertainty | Yes | Citation check; explanation cannot introduce a value |
-| Stop for coverage/budget/safety | No | Controller |
+The Control Plane manages durable, reusable assets independently of individual
+hunt runs:
 
-This is the strongest practical compromise currently available: free-form
-language requires a semantic model, while tool use and factual adjudication
-need deterministic boundaries. Recent work on safe LLM tool use similarly
-separates non-deterministic intent/planning from verified execution.^9 The
-ExCyTIn benchmark confirms that end-to-end cyber investigation remains a hard
-task for current models, so model narrative alone is not a valid verdict.^13
+- **`ProviderManifest`**: Declares configured providers, partition scopes (index,
+  sourcetype), retention, credentials, health check endpoints, query limits, and
+  cancellation semantics.
+- **`SourceCard` Catalog**: Compact descriptors per source/sourcetype containing
+  exact field names/types, sample sketches, time spans, cardinality estimates,
+  schema versions, and data provenance. Excludes unverified semantic assumptions.
+- **`SemanticVocabulary`**: Standardized entity, value, and relation types (aligned
+  with OCSF, MITRE ATT&CK, and Sigma taxonomy), with explicit support for
+  `native_unknown`.
+- **`ProofContractRegistry`**: Authoritative registry of versioned, peer-reviewed,
+  and tested proof contracts defining the exact conditions under which telemetry
+  proves a semantic relation.
+- **`QueryCompilerRegistry`**: Parameterized native query compilation pipelines
+  mapping typed `QueryIntent` to native backend queries (e.g., Splunk SPL).
+- **`CapabilityIndex`**: Lexical (BM25) and dense embedding index over `SourceCard`
+  catalog to prioritize retrieval candidates without granting proof authority.
+- **`EvaluationCorpus`**: Curated ground truth cases, gold answer contracts,
+  forbidden inferences, and split definitions.
 
-The implementation must record model/version, prompt version, tokens, latency,
-retries and parse failures. A model upgrade is a new experimental condition,
-not an invisible quality improvement.
+### 2. Hunt Plane (Online Lifecycle: Steps A–J)
+
+#### Step A — Freeze Request and Budget
+Constructs an immutable `HuntRunContext` containing: `request_id`, content hash,
+explicit user-provided entities, temporal constraints, permitted providers, LLM
+call/token limits, provider scan/runtime limits, and model/registry versions.
+Provider selection is based on health and capability manifest, never on arbitrary
+local fallbacks (e.g., falling back to CDB/SQLite when Splunk is configured).
+
+#### Step B — LLM Semantic Compilation (Call C1)
+Compiles the request into a `GoalGraph` and `AnswerContract`. Context is isolated:
+receives **only** the request text, compact vocabulary schemas, and time policy.
+**Zero provider schema, zero source catalog, and zero SPL** are provided.
+- Emits atomic goals with exact character spans tracing back to request text.
+- Formulates AND/OR/GATE dependencies and typed variables.
+- Flags explicit non-binding assumptions and clarification triggers.
+- Prevents narrative expansion (e.g., ransomware does not automatically invoke
+  SMTP, DNS, or PowerShell without direct request relevance).
+
+#### Step C — Deterministic Graph Validation
+Validates C1 output against deterministic policy:
+- Rejects entity drift (e.g., user specifies Mallory $\rightarrow$ cannot mutate to Alice).
+- Enforces qualifier distinction (e.g., `MacBook` is a device qualifier, not a hostname).
+- Validates goal dependencies, prevents cyclic graphs, and rejects invented sources.
+- Novel relations are tagged `NOVEL_RELATION` and restricted to exploration paths.
+
+#### Step D — AND/OR/GATE Graph Planning
+Constructs an executable logical plan using explicit dependency types:
+- `AND`: All predecessor goals must succeed.
+- `OR`: Any alternative proving the required output binding satisfies the gate.
+- `GATE`: Blocks downstream goals until required prerequisite bindings are proved.
+- `OPTIONAL`: Gathers supporting confidence without blocking answer derivation.
+- `DISCRIMINATOR`: Queries specifically synthesized to reduce candidate ambiguity.
+
+#### Step E — Progressive Frontier Capability Discovery
+Replaces exhaustive per-hunt catalog dumping with a 5-stage progressive expansion:
+- **F0 (Certified)**: Operations backed by registry-approved `ProofContract`.
+- **F1 (Metadata Retrieval)**: `SourceCard` candidates retrieved via lexical/embedding match (threshold-gated, no arbitrary Top-K truncation).
+- **F2 (Adjacent Expansion)**: Broadens search to sources sharing partitions, join keys, or field aliases if F0/F1 indicate missing fields.
+- **F3 (Bounded LLM Profiling)**: Compact LLM prompt (Call C2) evaluating a small batch of `SourceCard` items for an unresolved goal; proposals default strictly to `RETRIEVAL_CAPABLE`.
+- **F4 (Approved Exhaustive)**: Offline audit or user-approved escalation only.
+Tracks `unexamined_source_ids` in coverage manifest; shortlist never proves absence.
+
+#### Step F — Controlled Entity Binding
+Entities are tracked via `CandidateSet` containing `CandidateBinding` records:
+- Auto-binding is permitted **if and only if** exactly one candidate satisfies an
+  approved proof contract with zero contradictions.
+- If multiple candidates exist:
+  1. Planner synthesizes a cheap `DISCRIMINATOR` query.
+  2. If ambiguity persists, requests user clarification or halts with `NEEDS_DISAMBIGUATION`.
+  3. Prohibits substring matching (e.g., host containing `air`), first-row selection, or arbitrary LLM choice.
+
+#### Step G — Typed QueryIntent & Quarantined Native SPL Gate
+Queries are formulated first as typed `QueryIntent` specifying intent mode:
+- `EXPLORE`: Bounded sampling to discover schema or existence (no proof license).
+- `DISCRIMINATE`: Narrow query designed to separate conflicting candidate entities.
+- `PROVE`: Strict role projection targeting exact proof contract requirements.
+
+Execution paths:
+1. **Deterministic Compiler**: Preferred path using registered templates.
+2. **Quarantined SPL Fallback (Call C3)**: Used only when compiler cannot express
+   the operation. Evaluated by strict AST gate:
+   - Read-only AST command allowlist.
+   - Identifier check against active `ProviderManifest`.
+   - Escaped literals from trusted bindings only.
+   - Explicit `earliest`/`latest` time bounds.
+   - Execution management: `dispatch.max_time`, scan/result caps, client-side timeout triggers backend SID cancellation.
+
+#### Step H — Evidence Pipeline
+Strict transformation stages:
+$$\text{Native Row} \rightarrow \text{Observation} \rightarrow \text{FieldFact} \rightarrow \text{CandidateRelation} \rightarrow \text{ProofContract Evaluation} \rightarrow \text{EvidenceItem}$$
+- Raw rows and observations are append-only and immutable.
+- LLM reads compact evidence cards (Call C4) to synthesize explanations; cannot
+  invent values, flip subject/object roles, or promote co-occurrence to proof.
+
+#### Step I — ProofContract Evaluation
+Differentiates 3 capability levels:
+1. `STRUCTURALLY_VALID`: Fields match primitive types and shapes.
+2. `RETRIEVAL_CAPABLE`: Operation can filter or narrow candidates (default for dynamic mappings).
+3. `PROOF_CAPABLE`: Operation satisfies approved proof contract; authorized to assert facts.
+
+#### Step J — 9-State Stopping Taxonomy & Reporting
+Halts deterministically under one of 9 mutually exclusive states:
+1. `ANSWER_PROVED`: Answer slots verified with complete evidence citations.
+2. `BOUNDED_NOT_FOUND`: Legitimate absence confirmed over complete, observable scope.
+3. `NEEDS_DISAMBIGUATION`: Multiple candidate entities remain unresolved; requires user input.
+4. `COVERAGE_EXHAUSTED`: All reachable frontiers evaluated without satisfying proof contract.
+5. `BUDGET_EXHAUSTED`: Call, token, query, scan volume, or wall-time ceilings reached.
+6. `BACKEND_DEGRADED`: Provider unreachable, queries timeout, or connection lost.
+7. `SAFETY_QUARANTINE`: AST gate violation, injection attempt, or unauthorized scope access.
+8. `VALIDATION_FAILED`: Graph, binding, or contract validation failure.
+9. `ABORTED_BY_USER`: Explicit cancellation by analyst.
+
+Emits a **6-Part Human Report** (`report.md`) and a **Machine Run Account** (`run_account.json`).
 
 ---
 
-## Required report contract
+## LLM Call Ceilings and Context Isolation
 
-The analyst report contains only:
-
-1. Request and answer contract.
-2. Claim plan: each required claim, provenance and reason it was necessary.
-3. Evidence: cited observations/facts, explanation and explicit gaps.
-4. Queries: logical purpose, provider operation, native query, completeness and
-   result cardinality and compact returned sample fields (raw payload omitted).
-5. Final answer/claim states, coverage and limitations.
-6. Cost: LLM calls/tokens/latency/USD estimate and query/runtime cost.
-
-Raw observations remain accessible through IDs and stored artifacts, but do not
-overwhelm the main report.
+| Call ID | Phase / Purpose | Allowed Input Context | Output Contract | Call Ceiling |
+|---|---|---|---|---:|
+| **C1** | Semantic Goal Compilation | Request text, vocabulary JSON schemas, time policy | `GoalGraph` + `AnswerContract` JSON | 1 call (+ 1 repair) |
+| **C2** | Progressive Source Profiling | Target goal obligation, compact `SourceCard` batch | Candidate role proposals (`RETRIEVAL_CAPABLE`) | $\le 3$ calls/goal |
+| **C3** | Quarantined SPL Synthesis | Single goal, selected `SourceCard`, trusted bindings | Raw candidate SPL (sent to AST gate) | $\le 2$ calls/goal |
+| **C4** | Evidence Card Synthesis | Formatted `FieldFact` cards, target goal | Summary explanation, candidate observations | $\le 5$ calls/run |
+| **C5** | Bounded Replanning | Unresolved goal delta, new evidence cards, coverage | Revised goal graph or stop signal | $\le 2$ calls/run |
+| **C6** | Grounded Final Narrative | Verified evidence cards, answer values, audit manifest | Human-readable Markdown report | 1 call |
 
 ---
 
-## Evaluation and acceptance gate
+## Financial and Operational Cost Accounting
 
-No architecture claim is accepted solely because one scenario returns a
-plausible answer. The following metrics are mandatory.
+Total investigation cost is formally tracked and bounded:
 
-| Layer | Ground truth | Metric |
-|---|---|---|
-| Claim planning | Annotated required/forbidden claims; allow multiple valid plans | obligation precision, recall and F1; unsupported-expansion rate |
-| Retrieval | Relevant observation IDs/rows | evidence precision, recall@k, query completeness accuracy |
-| Correlation | Annotated evidence graph | node/edge precision, recall and F1 |
-| Final factual answer | Canonical answer values and acceptable aliases | exact match, value precision/recall/F1, citation-grounding rate |
-| Hunt detection | Campaign/TTP labels and scope ground truth | TP/FP/FN precision, recall, F1; time-to-evidence |
-| Cost/liveness | Per-run telemetry | tokens, LLM calls, latency, retries, queries, scan volume, budget-stop rate |
+$$C_{run} = C_{llm} + C_{splunk} + C_{control} + C_{analyst}$$
 
-F1 is invalid where no ground truth exists. In live production telemetry, the
-system can report verified facts and coverage, but cannot truthfully claim a
-global false-negative rate. Use labelled question-answer cases for factual
-lookup, labelled evidence graphs for multihop investigation (the ExCyTIn design
-is a useful model), and labelled campaign/provenance datasets for hunting.^13
-DARPA Transparent Computing is appropriate for provenance/campaign replay;
-provider-specific scenario data is needed for Splunk/EDR/IDS adapters.^14
+Where:
+- $C_{llm} = \sum (\text{input\_tokens} \times r_{in} + \text{output\_tokens} \times r_{out})$
+- $C_{splunk} = \sum (\text{scanCount} \times r_{scan} + \text{runDuration} \times r_{compute})$
+- $C_{control} = \text{local embedding / index lookup compute costs}$
+- $C_{analyst} = \text{analyst interaction minutes} \times r_{human}$
 
-Minimum acceptance tests:
-
-- Counterfactual requests with overlapping words must yield only the claims
-  actually required, with no keyword/template route.
-- Every final answer value must point to an observation/fact ID and a complete
-  enough query.
-- Provider failure/fallback cannot substitute unrelated source records.
-- Missing value fields cannot be inferred from schema metadata.
-- Partial telemetry cannot support a negative conclusion.
-- Claim, evidence-edge and answer F1 are reported separately by dataset and
-  request family, together with cost.
+Cost waste ratio is tracked for optimization:
+$$\text{Waste Ratio} = \frac{C_{\text{unproductive\_queries}} + C_{\text{rejected\_spl}} + C_{\text{discarded\_calls}}}{C_{run}}$$
 
 ---
 
-## Migration decision for this repository
+## Evaluation Gate: 15-Scenario Counterfactual Matrix
 
-The remaining compatibility code and especially any `is_email`/keyword-derived
-graph construction must not control the semantic path. The remaining work is:
+No architectural claim is accepted without verification across the full 15-scenario
+matrix (Section 8 of `08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md`):
 
-1. Add real provider-side implementations for declared semantic constraint
-   keys; each key must explicitly declare whether it is retrieval-only or
-   proof-capable, and the runtime must preserve that distinction.
-2. Add alternate graph paths such as `person -> account -> host` OR
-   `person -> host`, with ambiguity/fan-out decisions and provenance.
-3. Finish claim verification and query-envelope migration for legacy paths.
-4. Add labelled evaluation corpora and report plan, evidence, edge and answer
-   F1 separately from cost and coverage.
-5. Run live Splunk replays with a healthy LLM endpoint before production claims.
+1. **S01**: Tor Browser Version (exact attribute lookup)
+2. **S02**: Tor Browser Artifact Identity (device qualifier isolation)
+3. **S03**: Amber Competitor Domain (web proxy / DNS proof)
+4. **S04**: Amber External Email Exfiltration (mail proof)
+5. **S05**: Amber Workstation Identity (person $\rightarrow$ endpoint)
+6. **S06**: Amber Account Logon (person $\rightarrow$ account $\rightarrow$ host)
+7. **S07**: Frothly Campaign Q317 File Encryption (ransomware transition proof)
+8. **S08**: Mallory Air13 Hostname Disambiguation (multi-candidate host)
+9. **S09**: PowerPoint File Download without Encryption (counterfactual benign file)
+10. **S10**: Deceptive Sourcetype with Incompatible Fields (adversarial schema)
+11. **S11**: Correct Sourcetype with Deceptive Name (unusual naming)
+12. **S12**: Missing Telemetry Absence Query (explicit absence bounded stop)
+13. **S13**: Splunk Backend Timeout & Search Job Cancel (backend degradation)
+14. **S14**: Prompt Injection in Log Payload (quarantine defense)
+15. **S15**: Cross-Tenant Multi-Provider Isolation (scope/permission defense)
 
-The architecture documents are now synchronized with the semantic runtime;
-the remaining relation-first text below is historical compatibility guidance
-and must not be treated as the active execution path.
-6. Once tests pass, reconcile `01`–`04` against this document and retire
-   relation-first compatibility prose.
-
-No live provider expansion should precede these invariants. A provider is an
-adapter implementation; it must not force a new architecture.
+Layer-separated evaluation metrics:
+- **Planning**: Claim Precision, Recall, F1; Unsupported Expansion Rate.
+- **Retrieval**: Evidence Precision, Recall@k; Query Completeness Accuracy.
+- **Correlation**: Edge Precision, Recall, F1; Transition Validity.
+- **Answer**: Exact Match, Value F1, Citation Grounding Rate.
+- **Operations**: Decision Coverage, Waste Ratio, Mean Time to Verdict.
 
 ---
 
-## Sources
+## Literature Grounding & Sources
 
-1. Maxam, A. et al. “An Interview Study on Third-Party Cyber Threat Hunting
-   Processes in the U.S. Department of Homeland Security.” *USENIX Security*,
-   2024. [Paper](https://www.usenix.org/system/files/sec24fall-prepub-71-maxam.pdf).
-2. Hossain, M. et al. “SLEUTH: Real-time Attack Scenario Reconstruction from
-   COTS Audit Data.” *USENIX Security*, 2017.
-   [Paper](https://www.usenix.org/system/files/conference/usenixsecurity17/sec17-hossain.pdf).
-3. Milajerdi, S. M. et al. “HOLMES: Real-time APT Detection through Correlation
-   of Suspicious Information Flows.” *IEEE S&P*, 2019.
-   [Record](https://ieeexplore.ieee.org/document/8835390/).
-4. Gao, P. et al. “Enabling Efficient Cyber Threat Hunting with Cyber Threat
-   Intelligence.” *IEEE ICDE*, 2021.
-   [DOI](https://doi.org/10.1109/ICDE51399.2021.00024),
-   [implementation](https://github.com/peng-gao-lab/threatraptor).
-5. Gao, P. et al. “AIQL: Enabling Efficient Attack Investigation through
-   Dataset-Aware Querying.” *USENIX ATC*, 2018.
-   [Paper](https://www.usenix.org/system/files/conference/atc18/atc18-gao.pdf).
-6. Open Cybersecurity Schema Framework. [OCSF documentation](https://ocsf.io/).
-7. Microsoft. “Threat Hunting Assistant in Microsoft Defender.”
-   [Documentation](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-security-copilot).
-8. Hassan, W. U. et al. “OmegaLog: High-Fidelity Attack Investigation via
-   Transparent Multi-layer Log Analysis.” *NDSS*, 2020.
-   [Record](https://experts.illinois.edu/en/publications/omegalog-high-fidelity-attack-investigation-via-transparent-multi/).
-9. Chen, X. et al. “Towards Verifiably Safe Tool Use for LLM Agents.”
-   *ICSE*, 2026. [DOI](https://doi.org/10.1145/3786582.3786839).
-10. Marín, G. et al. “ATHAFI: An Adaptive Threat Hunting Framework for
-   Information Security.” 2020. **Preprint.**
-   [arXiv](https://arxiv.org/abs/2003.03663).
-11. Lyu, D. et al. “Retrieve-Plan-Generation: An Iterative Planning and
-   Answering Framework for Knowledge-Intensive LLM Generation.” *EMNLP*,
-   2024. [Paper](https://aclanthology.org/2024.emnlp-main.270/).
-12. Schlette, D. et al. “Evidential Cyber Threat Hunting.” 2021.
-   **Preprint.** [arXiv](https://arxiv.org/abs/2104.10319).
-13. Wu, Y. et al. “ExCyTIn-Bench: Evaluating LLM Agents on Cyber Threat
-   Investigation.” Microsoft Research / ICML 2026.
-   [Publication](https://www.microsoft.com/en-us/research/publication/excytin-bench-evaluating-llm-agents-on-cyber-threat-investigation/).
-14. DARPA I2O. “Transparent Computing Dataset.”
-   [Repository](https://github.com/darpa-i2o/Transparent-Computing/blob/master/README.md).
-15. Parciak, M. et al. “Schema Matching with Large Language Models: an
-    Experimental Study.” *VLDBW TaDA*, 2024.
-    [Paper](https://arxiv.org/abs/2407.11852).
-16. Sheetrit, E. et al. “ReMatch: Retrieval Enhanced Schema Matching with
-    LLMs.” 2024. [Paper](https://arxiv.org/abs/2403.01567).
+1. **Wu, Y. et al.** “ExCyTIn-Bench: Evaluating LLM Agents on Cyber Threat Investigation.” *Microsoft Research / ICML*, 2026.
+2. **Cyber Defense Benchmark.** “Evaluating LLMs on Direct Telemetry Hunting.” *Technical Report*, 2026.
+3. **AutoLink.** “Iterative Schema Linking via Progressive Exploration.” *AAAI*, 2026.
+4. **MDB-Link.** “Global Column Index and Shortlist Selection for Text-to-SQL.” *Preprint*, 2026.
+5. **PMLR.** “Toward Autonomous SOC Operations with Constrained Query Generation.” *PMLR*, 2026.
+6. **Kestrel Threat Hunting Language.** *OASIS Open Repository*, 2023.
+7. **Gao, P. et al.** “AIQL: Enabling Efficient Attack Investigation through Dataset-Aware Querying.” *USENIX ATC*, 2018.
+8. **Open Cybersecurity Schema Framework (OCSF).** *Linux Foundation*, 2024.
+9. **Sigma / pySigma Specification.** *SigmaHQ*, 2024.
+10. **Hossain, M. et al.** “SLEUTH: Real-time Attack Scenario Reconstruction from COTS Audit Data.” *USENIX Security*, 2017.
+11. **Selective Classification.** “Risk-Coverage Tradeoffs in Abstaining Classifiers.” *JMLR*, 2010.
+12. **Chen, X. et al.** “Towards Verifiably Safe Tool Use for LLM Agents.” *ICSE-NIER*, 2026.
+13. **Splunk Enterprise REST API & Search Job Reference.** *Splunk Documentation*, 2026.
+14. **DARPA I2O.** “Transparent Computing Dataset.” *DARPA*, 2019.
+15. **Erol, K. et al.** “UMCP: A Sound and Complete Procedure for Hierarchical Task Network Planning.” *AIPS*, 1994.
+16. **Maxam, A. et al.** “An Interview Study on Third-Party Cyber Threat Hunting Processes.” *USENIX Security*, 2024.
+

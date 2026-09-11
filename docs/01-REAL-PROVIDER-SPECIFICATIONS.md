@@ -1,16 +1,19 @@
-# Real-Provider Specifications (v7)
+# Real-Provider Specifications (v8)
 
-This document defines the provider boundary. Providers expose capabilities and
-typed logical operations; they do not define the semantic investigation path.
+This document defines the provider boundary in the Control Plane and Hunt Plane.
+Providers expose manifests, capabilities, and typed logical operations; they do
+not define the semantic investigation path.
 
 ## 1. Common provider contract
 
 ```text
-ProviderScope
-  -> capability/catalog discovery
-  -> logical operations and field roles
-  -> QueryResult(executed_ok, complete, rows, diagnostics)
+ProviderManifest
+  -> SourceCard Catalog & Progressive Frontier F0–F4
+  -> Logical operations and field roles
+  -> QueryIntent (EXPLORE / DISCRIMINATE / PROVE)
+  -> QueryResult(executed_ok, complete, rows, diagnostics, sid_telemetry)
 ```
+
 
 `ProviderScope` identifies native partitions (index, sourcetype, sensor,
 tenant) and temporal bounds. `Cell = (ProviderScope, entity | ANY,
