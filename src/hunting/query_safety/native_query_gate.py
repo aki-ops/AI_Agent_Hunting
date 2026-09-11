@@ -5,6 +5,7 @@ That is safer than accepting a query after a regex-only inspection.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Iterable
 
@@ -20,8 +21,17 @@ _ALLOWED_PIPE_COMMANDS = frozenset({
     "eval", "rename", "search", "format", "fillnull",
 })
 _IDENTIFIER = re.compile(r"\b[A-Za-z_][A-Za-z0-9_.:-]*\b")
-_FIELD_ASSIGNMENT = re.compile(r"\b([A-Za-z_][A-Za-z0-9_.:-]*)\s*(?:=|!=|>=|<=|>|<)" )
+_FIELD_ASSIGNMENT = re.compile(r"\b([A-Za-z_][A-Za-z0-9_.:-]*)\s*(?:=|!=|>=|<=|>|<)")
 _INDEX = re.compile(r"\bindex\s*=\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s|]+))", re.IGNORECASE)
+_WILDCARD_INDEX = re.compile(r"\bindex\s*=\s*(?:\"([^\"]*\*+[^\"]*)\"|'([^']*\*+[^']*)'|([^\s|]*\*+[^\s|]*))", re.IGNORECASE)
+
+
+def compute_query_signature(query: str, time_window: str = "") -> str:
+    """Compute deterministic semantic signature of a query for loop prevention."""
+    norm_query = " ".join(query.strip().casefold().split())
+    norm_window = time_window.strip().casefold()
+    combined = f"{norm_query}::{norm_window}"
+    return hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
 
 def _split_pipeline(text: str) -> list[str]:
@@ -55,6 +65,7 @@ class NativeQueryGate:
         known_sources: Iterable[str],
         known_fields: Iterable[str],
         max_scan_cost: int = 1000,
+        executed_query_signatures: Iterable[str] = (),
     ) -> NativeQueryValidationResult:
         query = candidate.query_text.strip()
         reasons: list[str] = []
@@ -70,6 +81,19 @@ class NativeQueryGate:
             except ValueError:
                 reasons.append("invalid_time_window")
 
+        # Duplicate query signature loop detection
+        query_sig = compute_query_signature(candidate.query_text, candidate.time_window)
+        if query_sig in set(executed_query_signatures):
+            reasons.append("duplicate_query_signature_blocked")
+
+        # Wildcard index check
+        if _WILDCARD_INDEX.search(query):
+            reasons.append("broad_wildcard_query_rejected")
+
+        # Wildcard search clause check
+        if re.search(r"\bsearch\s+\*(\s|$|\|)", query, re.IGNORECASE):
+            reasons.append("broad_wildcard_query_rejected")
+
         sources = {str(value).casefold() for value in known_sources}
         fields = {str(value).casefold() for value in known_fields}
         indexes = [next(value for value in match.groups() if value is not None) for match in _INDEX.finditer(query)]
@@ -81,6 +105,16 @@ class NativeQueryGate:
         stages = _split_pipeline(query)
         if not stages or not stages[0].casefold().startswith("search"):
             reasons.append("query_must_start_with_search")
+
+        # Primary search stage unconstrained check
+        if stages and stages[0].casefold().startswith("search"):
+            first_stage = stages[0]
+            stripped_stage = re.sub(r"^\s*search\b", "", first_stage, flags=re.IGNORECASE)
+            stripped_stage = _INDEX.sub("", stripped_stage).strip()
+            has_explicit_field = bool(_FIELD_ASSIGNMENT.search(stripped_stage))
+            if not has_explicit_field and (not stripped_stage or stripped_stage == "*"):
+                reasons.append("broad_wildcard_query_rejected")
+
         commands: list[str] = []
         for stage in stages[1:]:
             command = stage.split(None, 1)[0].casefold() if stage else ""
@@ -121,8 +155,14 @@ class NativeQueryGate:
             normalized_query=query if accepted else "",
             estimated_cost=estimated_cost,
             reasons=tuple(dict.fromkeys(reasons)),
-            ast={"kind": "limited_spl_pipeline", "stages": len(stages), "commands": commands},
+            ast={
+                "kind": "limited_spl_pipeline",
+                "stages": len(stages),
+                "commands": commands,
+                "query_signature": query_sig,
+            },
+            query_signature=query_sig,
         )
 
 
-__all__ = ["NativeQueryGate"]
+__all__ = ["NativeQueryGate", "compute_query_signature"]

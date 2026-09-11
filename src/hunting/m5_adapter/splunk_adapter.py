@@ -1638,6 +1638,7 @@ class SplunkLiveAdapter:
                         for field in profile.fields
                     ],
                 ],
+                executed_query_signatures=parameters.get("executed_query_signatures", ()),
             )
             if not gate_result.accepted:
                 return QueryResult(
@@ -1695,6 +1696,9 @@ class SplunkLiveAdapter:
                 )
         self.last_query_text = spl
 
+        query_sid = str(parameters.get("sid") or f"hunt_{query_id}_{int(time.time() * 1000)}")
+        dispatch_max_time = str(parameters.get("dispatch_max_time") or getattr(self, "dispatch_max_time", 60))
+
         try:
             resp = requests.post(
                 f"{self.splunk_url}/services/search/jobs",
@@ -1705,6 +1709,8 @@ class SplunkLiveAdapter:
                     "output_mode": "json",
                     "exec_mode": "oneshot",
                     "count": 0,
+                    "id": query_sid,
+                    "dispatch.max_time": dispatch_max_time,
                 },
                 auth=self.auth,
                 verify=self.verify_ssl,
@@ -1723,9 +1729,26 @@ class SplunkLiveAdapter:
                     provider=self.provider_id,
                     index=self.index,
                     execution_time_ms=elapsed,
+                    sid=query_sid,
                 )
             resp.encoding = "utf-8"
             raw_results = resp.json().get("results", [])
+        except requests.exceptions.Timeout:
+            elapsed = round((time.perf_counter() - start_time) * 1000, 2)
+            self.cancel_search_job(query_sid)
+            return QueryResult(
+                query_id=query_id,
+                outcome=QueryOutcome.UNKNOWN,
+                executed_ok=False,
+                complete=False,
+                diagnostic=Diagnostic.QUERY_FAILED,
+                truncation_reason=f"client_timeout_cancelled_sid:{query_sid}",
+                native_query=spl,
+                provider=self.provider_id,
+                index=self.index,
+                execution_time_ms=elapsed,
+                sid=query_sid,
+            )
         except Exception as err:
             elapsed = round((time.perf_counter() - start_time) * 1000, 2)
             return QueryResult(
@@ -1739,6 +1762,7 @@ class SplunkLiveAdapter:
                 provider=self.provider_id,
                 index=self.index,
                 execution_time_ms=elapsed,
+                sid=query_sid,
             )
 
         # Normalize rows into standard dictionary structure
@@ -1969,6 +1993,23 @@ class SplunkLiveAdapter:
         native_types = list({str(r["native_type"]) for r in return_rows if r.get("native_type")})
         elapsed = round((time.perf_counter() - start_time) * 1000, 2)
 
+        scan_count: int | None = None
+        resp_headers = getattr(resp, "headers", None)
+        if resp_headers and "X-Splunk-ScanCount" in resp_headers:
+            try:
+                scan_count = int(resp_headers["X-Splunk-ScanCount"])
+            except ValueError:
+                pass
+        elif hasattr(resp, "json"):
+            try:
+                json_data = resp.json()
+                if isinstance(json_data, dict) and "scan_count" in json_data:
+                    scan_count = int(json_data["scan_count"])
+            except Exception:
+                pass
+        if scan_count is None:
+            scan_count = len(raw_results)
+
         return QueryResult(
             query_id=query_id,
             outcome=outcome,
@@ -1984,7 +2025,26 @@ class SplunkLiveAdapter:
             sourcetype=native_types[0] if native_types else None,
             execution_time_ms=elapsed,
             row_count=len(return_rows),
+            sid=query_sid,
+            scan_count=scan_count,
         )
+
+    def cancel_search_job(self, sid: str) -> bool:
+        """Cancel a running search job in Splunk by SID."""
+        if not sid or not str(sid).strip():
+            return False
+        try:
+            resp = requests.post(
+                f"{self.splunk_url}/services/search/jobs/{sid}/control",
+                data={"action": "cancel"},
+                auth=self.auth,
+                verify=self.verify_ssl,
+                timeout=5,
+            )
+            return resp.status_code in (200, 204)
+        except Exception as err:
+            logger.warning("Failed to cancel search job %s: %s", sid, err)
+            return False
 
     # -----------------------------------------------------------------------
     # Negative Evidence Controls (never mint observations)

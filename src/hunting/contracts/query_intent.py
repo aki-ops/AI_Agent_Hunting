@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 
@@ -66,6 +67,13 @@ class QueryPredicateSpec:
         }
 
 
+class QueryIntentMode(str, Enum):
+    """Execution mode declaring epistemic authority of a query intent."""
+    EXPLORE = "EXPLORE"          # Bounded discovery, small sample, no negative/proof license
+    DISCRIMINATE = "DISCRIMINATE"  # Narrow candidate differentiation
+    PROVE = "PROVE"              # Strict role projection, proof-capable
+
+
 @dataclass(frozen=True)
 class QueryIntentSpec:
     """A typed request for telemetry, independent of SPL/KQL/SQL syntax."""
@@ -84,6 +92,7 @@ class QueryIntentSpec:
     expected_cost: int | None = None
     binding_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
     retrieval_stage: str = "narrow"
+    mode: str = QueryIntentMode.PROVE.value
 
     def __post_init__(self) -> None:
         for name in ("goal_id", "operation_id", "source_id", "relation"):
@@ -93,6 +102,10 @@ class QueryIntentSpec:
             raise ValueError("max_rows must be between 1 and 10000")
         if not str(self.retrieval_stage).strip():
             raise ValueError("retrieval_stage must not be empty")
+        mode_val = str(self.mode or QueryIntentMode.PROVE.value).upper()
+        if mode_val not in {"EXPLORE", "DISCRIMINATE", "PROVE"}:
+            mode_val = QueryIntentMode.PROVE.value
+        object.__setattr__(self, "mode", mode_val)
         object.__setattr__(self, "bindings", dict(self.bindings))
         object.__setattr__(self, "predicates", tuple(QueryPredicateSpec.from_raw(p) for p in self.predicates))
         object.__setattr__(self, "binding_metadata", {
@@ -105,6 +118,7 @@ class QueryIntentSpec:
             "operation_id": self.operation_id,
             "source_id": self.source_id,
             "relation": self.relation,
+            "mode": self.mode,
             "bindings": dict(self.bindings),
             "binding_metadata": {key: dict(value) for key, value in self.binding_metadata.items()},
             "predicates": [predicate.to_dict() for predicate in self.predicates],
@@ -118,4 +132,4 @@ class QueryIntentSpec:
         }
 
 
-__all__ = ["QueryIntentSpec", "QueryPredicateSpec"]
+__all__ = ["QueryIntentSpec", "QueryPredicateSpec", "QueryIntentMode"]

@@ -80,14 +80,14 @@ spanning Control Plane and Hunt Plane (Steps A–J).
 
 - [x] Planner emits graph-bound `QueryIntent` with validated role IDs, trusted bindings, narrow projection, explicit scope and expected output shape. (`QueryIntentSpec` and runtime operation compiler tests.)
 - [x] Adapter compiles `QueryIntent` to parameterized native syntax without scenario/source-name routes. (Runtime Splunk/CDB operation execution tests.)
-- [ ] Implement query intent modes: `EXPLORE` (bounded discovery, no proof license), `DISCRIMINATE` (narrow candidate differentiation), `PROVE` (strict role projection, proof-capable).
-- [ ] Implement Quarantined SPL Gate (`query_safety/native_query_gate.py`):
+- [x] Implement query intent modes: `EXPLORE` (bounded discovery, no proof license), `DISCRIMINATE` (narrow candidate differentiation), `PROVE` (strict role projection, proof-capable). (`tests/unit/test_phase5_typed_query_and_quarantine.py::test_query_intent_modes_and_epistemic_authority`.)
+- [x] Implement Quarantined SPL Gate (`query_safety/native_query_gate.py`):
   - Read-only AST parser allowlist (no write/output/delete/script/network commands).
   - Identifier check against active `ProviderManifest`.
   - Escaped literals from trusted bindings only.
-  - Mandatory earliest/latest bounds.
-- [ ] Adapter execution enforcement: `dispatch.max_time`, scan/result limits, client-side timeout cancels backend SID, performance telemetry capture (`scanCount`, `runDuration`, `resultCount`).
-- [ ] Gate verification: Broad `index=* | head` rejected; unknown fields/sources rejected; backend SID cancellation verified on timeout; query with identical semantic signature blocked from looping.
+  - Mandatory earliest/latest bounds. (`tests/unit/test_phase5_typed_query_and_quarantine.py::test_gate_rejects_unknown_fields_and_sources`.)
+- [x] Adapter execution enforcement: `dispatch.max_time`, scan/result limits, client-side timeout cancels backend SID, performance telemetry capture (`scanCount`, `runDuration`, `resultCount`). (`tests/unit/test_phase5_typed_query_and_quarantine.py::test_adapter_telemetry_capture`.)
+- [x] Gate verification: Broad `index=* | head` rejected; unknown fields/sources rejected; backend SID cancellation verified on timeout; query with identical semantic signature blocked from looping. (`tests/unit/test_phase5_typed_query_and_quarantine.py`.)
 
 ---
 

@@ -42,6 +42,7 @@ class NativeQueryValidationResult:
     estimated_cost: int | None = None
     reasons: tuple[str, ...] = ()
     ast: dict[str, Any] = field(default_factory=dict)
+    query_signature: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +51,7 @@ class NativeQueryValidationResult:
             "estimated_cost": self.estimated_cost,
             "reasons": list(self.reasons),
             "ast": dict(self.ast),
+            "query_signature": self.query_signature,
         }
 
 

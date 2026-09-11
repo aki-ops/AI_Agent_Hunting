@@ -280,6 +280,8 @@ class QueryResult:
     row_count: int = 0
     raw_count: int | None = None
     coverage: dict[str, Any] | None = None
+    sid: str | None = None
+    scan_count: int | None = None
 
 
 @dataclass
