@@ -69,10 +69,10 @@ spanning Control Plane and Hunt Plane (Steps A–J).
 - [x] Downstream steps require complete upstream results and preserve runtime binding provenance; candidate bindings may be used for bounded exploratory retrieval but never for proof.
 - [x] Complete-but-restricted outputs remain `CANDIDATE` until the operation proves every restriction; downstream retrieval keeps the warning and verdict gate. (`test_executor_uses_candidate_binding_for_retrieval_but_keeps_warning`.)
 - [x] Ambiguous output bindings do not fan out automatically; rows remain auditable and the controller requests narrowing. (`test_executor_does_not_fan_out_ambiguous_output_bindings`.)
-- [ ] Implement `contracts/bindings.py` defining `CandidateBinding` and `CandidateSet` (values, supporting facts, contract ID, directness, contradictions, confidence class).
-- [ ] Auto-bind only when exactly one candidate satisfies proof contract with zero contradictions.
-- [ ] Implement `human_loop/clarification.py`: synthesize `DISCRIMINATOR` query when multiple candidates exist; if ambiguity persists, trigger interactive clarification or non-interactive `NEEDS_DISAMBIGUATION` halt with checkpoint.
-- [ ] Gate verification: 1 valid host auto-binds; 2 matching hosts trigger discriminator or clarification; host containing `air` does not win by substring heuristic.
+- [x] Implement `contracts/bindings.py` defining `CandidateBinding` and `CandidateSet` (values, supporting facts, contract ID, directness, contradictions, confidence class). (`tests/unit/test_phase4_controlled_binding_clarification.py::test_candidate_binding_serialization_and_proof_validity`.)
+- [x] Auto-bind only when exactly one candidate satisfies proof contract with zero contradictions. (`tests/unit/test_phase4_controlled_binding_clarification.py::test_gate_single_proof_supported_host_autobinds`.)
+- [x] Implement `human_loop/clarification.py`: synthesize `DISCRIMINATOR` query when multiple candidates exist; if ambiguity persists, trigger interactive clarification or non-interactive `NEEDS_DISAMBIGUATION` halt with checkpoint. (`tests/unit/test_phase4_controlled_binding_clarification.py`.)
+- [x] Gate verification: 1 valid host auto-binds; 2 matching hosts trigger discriminator or clarification; host containing `air` does not win by substring heuristic. (`tests/unit/test_phase4_controlled_binding_clarification.py::test_gate_host_containing_air_does_not_win_by_heuristic`.)
 
 ---
 

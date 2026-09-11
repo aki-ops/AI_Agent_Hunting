@@ -1,5 +1,11 @@
 """Canonical and operational hunting contracts."""
 from hunting.contracts.abduction import AbductionRuntime
+from hunting.contracts.bindings import (
+    BindingDirectness,
+    CandidateBinding,
+    CandidateSet,
+    ConfidenceClass,
+)
 from hunting.contracts.capabilities import (
     CapabilityDescriptor,
     CapabilityGraph,
@@ -306,4 +312,8 @@ __all__ = [
     "LogicalPlan",
     "ProofMethod",
     "goal_graph_from_claim_graph",
+    "CandidateBinding",
+    "CandidateSet",
+    "ConfidenceClass",
+    "BindingDirectness",
 ]
