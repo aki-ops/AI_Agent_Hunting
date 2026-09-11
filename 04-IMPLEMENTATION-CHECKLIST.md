@@ -52,12 +52,12 @@ spanning Control Plane and Hunt Plane (Steps A–J).
 
 - [x] `TelemetryCensus` records source IDs, field coverage/types, bounded safe field sketches, query primitives and `schema_fingerprint` without assigning semantic labels from source names. (`TelemetrySourceProfile`; dynamic profile and schema-fingerprint tests.)
 - [x] Provider profile limits are explicit coverage gaps; an unprofiled native source cannot be reported as complete discovery. (Splunk profile-discovery audit.)
-- [ ] Implement `capabilities/source_card_store.py` providing incremental, compact `SourceCard` structures (fields, sketches, time span, cardinality, parser version, provenance).
-- [ ] Implement `capabilities/frontier.py` executing the 5-stage progressive expansion (F0 Certified -> F1 Metadata -> F2 Adjacent -> F3 Bounded LLM Profiling -> F4 Approved Exhaustive).
-- [ ] Implement `capabilities/catalog_index.py` for lexical + embedding retrieval of SourceCards (ordering only, threshold logged, no hard Top-K truncation).
+- [x] Implement `capabilities/source_card_store.py` providing incremental, compact `SourceCard` structures (fields, sketches, time span, cardinality, parser version, provenance). (`tests/unit/test_phase3_source_catalog_frontier.py::test_source_card_and_store_serialization`.)
+- [x] Implement `capabilities/frontier.py` executing the 5-stage progressive expansion (F0 Certified -> F1 Metadata -> F2 Adjacent -> F3 Bounded LLM Profiling -> F4 Approved Exhaustive). (`tests/unit/test_phase3_source_catalog_frontier.py::test_progressive_frontier_stages_and_coverage_manifest`.)
+- [x] Implement `capabilities/catalog_index.py` for lexical + embedding retrieval of SourceCards (ordering only, threshold logged, no hard Top-K truncation). (`tests/unit/test_phase3_source_catalog_frontier.py`.)
 - [x] Relation-scoped batching schedules discovered sources and fields per unresolved relation; scores affect ordering only and never discard candidates. (`CapabilityBatcher` tests.)
-- [ ] Track `unexamined_source_ids` in coverage manifest; shortlist never proves absence.
-- [ ] Gate verification: Misleading source name with correct fields is selected; deceptive source name with wrong fields is rejected; 25 sources / 617 fields never appear in a single prompt.
+- [x] Track `unexamined_source_ids` in coverage manifest; shortlist never proves absence. (`tests/unit/test_phase3_source_catalog_frontier.py::test_progressive_frontier_stages_and_coverage_manifest`.)
+- [x] Gate verification: Misleading source name with correct fields is selected; deceptive source name with wrong fields is rejected; 25 sources / 617 fields never appear in a single prompt. (`tests/unit/test_phase3_source_catalog_frontier.py`.)
 
 ---
 
