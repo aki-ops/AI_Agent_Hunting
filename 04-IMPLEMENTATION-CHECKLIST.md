@@ -115,17 +115,17 @@ spanning Control Plane and Hunt Plane (Steps A–J).
 - [x] Analyst report shows execution trace, compact returned sample fields and readable evidence values; raw payload remains omitted.
 - [x] Incomplete/unobservable telemetry never renders `BENIGN` or definitive absence.
 - [x] LLM prompt budget is preflighted before network dispatch; oversized prompts are rejected without consuming a call. (`test_create_llm_caller_preflights_before_call`.)
-- [ ] Implement unified `StepTrace` recording every step from Freeze Request (Step A) through Stop (Step J).
-- [ ] Implement 6-part human report structure matching `01` / `08`:
+- [x] Implement unified `StepTrace` recording every step from Freeze Request (Step A) through Stop (Step J). (`tests/unit/test_phase7_reporting_and_cost_accounting.py::test_step_trace_records_steps_a_through_j`.)
+- [x] Implement 6-part human report structure matching `01` / `08`:
   1. Executive Verdict & Answer Contract
   2. Investigation Plan & Obligation Graph
   3. Evidence Ledger & Proof Chain
   4. Executed Queries & Execution Telemetry
   5. Coverage & Uncertainty Manifest
-  6. Resource & Financial Cost Accounting
-- [ ] Implement machine `run_account.json` capturing complete telemetry, LLM token metrics, query performance metrics, and deterministic ledger.
-- [ ] Implement cost formula: $C_{run} = C_{llm} + C_{splunk} + C_{control} + C_{analyst}$.
-- [ ] Aborted runs emit failure artifact specifically tied to the active request ID.
+  6. Resource & Financial Cost Accounting (`tests/unit/test_phase7_reporting_and_cost_accounting.py::test_render_six_part_report`.)
+- [x] Implement machine `run_account.json` capturing complete telemetry, LLM token metrics, query performance metrics, and deterministic ledger. (`tests/unit/test_phase7_reporting_and_cost_accounting.py::test_emit_machine_run_account`.)
+- [x] Implement cost formula: $C_{run} = C_{llm} + C_{splunk} + C_{control} + C_{analyst}$. (`tests/unit/test_phase7_reporting_and_cost_accounting.py::test_financial_cost_accounting_formula`.)
+- [x] Aborted runs emit failure artifact specifically tied to the active request ID. (`tests/unit/test_phase7_reporting_and_cost_accounting.py::test_emit_aborted_run_account_tied_to_request_id`.)
 
 ---
 
