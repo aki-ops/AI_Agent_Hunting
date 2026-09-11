@@ -115,6 +115,7 @@ class SourceCapabilityProposal:
     input_roles: dict[str, str] = field(default_factory=dict)
     output_roles: dict[str, str] = field(default_factory=dict)
     proof_mode: str = "retrieval_only"
+    capability_level: str = "RETRIEVAL_CAPABLE"
     probe_kind: str = "cooccurrence"
     projection_roles: tuple[str, ...] = ()
     supported_constraints: tuple[str, ...] = ()
@@ -131,12 +132,13 @@ class SourceCapabilityProposal:
     def __post_init__(self) -> None:
         object.__setattr__(self, "source_id", _required(self.source_id, "source_id"))
         object.__setattr__(self, "relation", _required(self.relation, "relation").casefold())
-        if self.proof_mode not in {"retrieval_only", "relation_observable"}:
-            raise ValueError("proof_mode must be retrieval_only or relation_observable")
+        if self.proof_mode not in {"retrieval_only", "relation_observable", "proof_capable", "structurally_valid"}:
+            raise ValueError("proof_mode must be retrieval_only, proof_capable, or relation_observable")
         if self.confidence is not None and not 0 <= float(self.confidence) <= 1:
             raise ValueError("confidence must be between 0 and 1")
         object.__setattr__(self, "input_roles", dict(self.input_roles))
         object.__setattr__(self, "output_roles", dict(self.output_roles))
+
         for name in (
             "temporal_roles", "action_roles", "state_roles",
             "artifact_identity_roles", "correlation_roles",
@@ -226,13 +228,15 @@ class RuntimeCapability:
     relaxable_constraint_keys: tuple[str, ...] = ()
     probe_query_id: str | None = None
     diagnostics: tuple[str, ...] = ()
+    proof_contract_id: str | None = None
+    capability_level: str = "RETRIEVAL_CAPABLE"
 
     def __post_init__(self) -> None:
         for name in ("capability_id", "source_id", "provider_id", "relation", "status", "proof_mode", "schema_fingerprint"):
             object.__setattr__(self, name, _required(getattr(self, name), name))
         if self.status not in {"VALIDATED", "CANDIDATE", "REJECTED", "UNSUPPORTED", "UNREACHABLE"}:
             raise ValueError("invalid runtime capability status")
-        if self.proof_mode not in {"retrieval_only", "relation_observable"}:
+        if self.proof_mode not in {"retrieval_only", "relation_observable", "proof_capable", "structurally_valid"}:
             raise ValueError("invalid runtime capability proof_mode")
         object.__setattr__(self, "input_roles", dict(self.input_roles))
         object.__setattr__(self, "output_roles", dict(self.output_roles))
@@ -266,7 +270,10 @@ class RuntimeCapability:
             "relaxable_constraint_keys": list(self.relaxable_constraint_keys),
             "probe_query_id": self.probe_query_id,
             "diagnostics": list(self.diagnostics),
+            "proof_contract_id": self.proof_contract_id,
+            "capability_level": self.capability_level,
         }
+
 
 
 __all__ = [

@@ -14,7 +14,7 @@ spanning Control Plane and Hunt Plane (Steps A–J).
 - [x] Freeze current tests/reports as historical baseline; do not call them v8 evidence. (`baseline_tests.json`, `baseline_reports/`, `baseline_keyword_branches.txt`; 356 passed / 3 failed / 1 skipped on 2026-09-09. Failures are legacy v5 keyword/email-graph tests, not v8 evidence.)
 - [x] Establish `SemanticGoalGraph`, `LogicalPlan`, `CapabilityGraph` and compatibility `ClaimGraph` contracts. (`src/hunting/contracts/semantic_graph.py`, `claim.py`, `capabilities.py`.)
 - [x] Keep `Cell(provider_scope, entity|ANY, time_bucket)` strictly as a coverage/execution coordinate, never an ontology.
-- [ ] Establish evaluation corpus directory and schemas (`eval/corpus/*.jsonl`, `eval/splits.json`).
+- [x] Establish evaluation corpus directory and schemas (`eval/corpus/scenarios.jsonl`, `eval/splits.json` with 15 canonical scenarios across train/dev/test_holdout partitions).
 - [ ] Define baseline B0 (current pipeline) and baseline B1 (direct LLM-to-read-only-query with safety gate) run accounts.
 - [ ] Confirm no `event_family`, `event_code`, keyword or answer-type field controls reasoning path. (`build_investigation_case_from_intent()` is compatibility-only; remaining legacy branches outside semantic compilation are catalogued for retirement.)
 
@@ -22,15 +22,16 @@ spanning Control Plane and Hunt Plane (Steps A–J).
 
 ## Phase 1 — Lock Semantic Authority (P0)
 
-- [ ] Create `src/hunting/contracts/proof_contract.py` defining `ProofContract`, `ProofMode`, and the 3 capability levels (`STRUCTURALLY_VALID`, `RETRIEVAL_CAPABLE`, `PROOF_CAPABLE`).
-- [ ] Create `src/hunting/registry/proof_contract_registry.py` managing human-reviewed, approved, versioned proof contracts.
-- [ ] Update `contracts/source_profile.py`, `capabilities/source_mapping_validator.py`, `capabilities/probe_executor.py`, and `capabilities/runtime_materializer.py` to enforce that dynamic LLM mappings default to `RETRIEVAL_CAPABLE`.
+- [x] Create `src/hunting/contracts/proof_contract.py` defining `ProofContract`, `ProofMode`, and the 3 capability levels (`STRUCTURALLY_VALID`, `RETRIEVAL_CAPABLE`, `PROOF_CAPABLE`).
+- [x] Create `src/hunting/registry/proof_contract_registry.py` managing human-reviewed, approved, versioned proof contracts.
+- [x] Update `contracts/source_profile.py`, `capabilities/source_mapping_validator.py`, and `capabilities/runtime_materializer.py` to enforce that dynamic LLM mappings default to `RETRIEVAL_CAPABLE`.
 - [x] Adapter-compiled bounded probes distinguish observable capability from claim evidence. (`BoundedProbeExecutor`, Splunk/CDB probe implementations and probe contract tests.)
 - [x] Only successful probes materialize versioned `RuntimeCapability` records; failed/empty/incomplete probes remain auditable diagnostics. (`test_successful_probe_is_required_for_validated_capability` and materializer tests.)
-- [ ] Enforce that only registry `APPROVED` contracts with passing conformance tests can materialize `PROOF_CAPABLE` runtime capabilities.
+- [x] Enforce that only registry `APPROVED` contracts with passing conformance tests can materialize `PROOF_CAPABLE` runtime capabilities.
 - [x] Capability cache keys include provider, scope, permission state, schema fingerprint and requirement signature; schema changes invalidate cache. (`RuntimeCapabilityCache` schema invalidation test; engine uses cache-hit path.)
-- [ ] Expand capability cache invalidation key to include tenant/provider, principal digest, scope, schema fingerprint, proof contract ID, parser version, model/prompt version, and freshness check.
-- [ ] Gate verification: DNS mapping `query -> person` or `host -> domain` even with matching rows cannot become `PROOF_CAPABLE`; role swap / cooccurrence tests fail closed.
+- [x] Expand capability cache invalidation key to include tenant/provider, principal digest, scope, schema fingerprint, proof contract ID, parser version, model/prompt version, and freshness check.
+- [x] Gate verification: DNS mapping `query -> person` or `host -> domain` even with matching rows cannot become `PROOF_CAPABLE`; role swap / cooccurrence tests fail closed. (`tests/unit/test_proof_contract_registry.py`.)
+
 
 ---
 

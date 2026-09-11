@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0",
+  "description": "Evaluation dataset partitions for Contract-Grounded Progressive Hunt Graph",
+  "splits": {
+    "train": [
+      "S01_tor_version",
+      "S03_amber_competitor_domain",
+      "S05_amber_workstation",
+      "S07_frothly_file_encryption",
+      "S10_deceptive_sourcetype"
+    ],
+    "dev": [
+      "S02_tor_artifact_identity",
+      "S06_amber_account_logon",
+      "S08_mallory_air13_disambiguation",
+      "S11_correct_sourcetype_deceptive_name",
+      "S12_missing_telemetry_absence"
+    ],
+    "test_holdout": [
+      "S04_amber_email_exfiltration",
+      "S09_powerpoint_benign_download",
+      "S13_splunk_timeout_cancel",
+      "S14_prompt_injection_quarantine",
+      "S15_cross_tenant_isolation"
+    ]
+  }
+}

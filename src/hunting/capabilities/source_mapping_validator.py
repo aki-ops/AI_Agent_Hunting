@@ -7,10 +7,17 @@ from hunting.contracts.source_profile import (
     SourceCapabilityProposal,
     TelemetrySourceProfile,
 )
+from hunting.registry.proof_contract_registry import (
+    ProofContractRegistry,
+    get_default_proof_contract_registry,
+)
 
 
 class SourceMappingValidator:
     """Validate references and policy; never infer semantics from names."""
+
+    def __init__(self, registry: ProofContractRegistry | None = None) -> None:
+        self.registry = registry or get_default_proof_contract_registry()
 
     def validate(
         self,
@@ -42,7 +49,7 @@ class SourceMappingValidator:
             return False, ("proposal_has_no_field_bindings",), None
         if proposal.probe_kind not in {"cooccurrence", "schema", "value_presence", "temporal"}:
             return False, ("unsupported_probe_kind",), None
-        if proposal.proof_mode == "relation_observable" and not proposal.output_roles:
+        if proposal.proof_mode in {"relation_observable", "proof_capable"} and not proposal.output_roles:
             return False, ("relation_probe_requires_output_role",), None
         if set(proposal.relaxable_constraint_keys) - set(proposal.searchable_constraints):
             return False, ("relaxable_constraint_not_searchable",), None
@@ -82,6 +89,32 @@ class SourceMappingValidator:
             f"runtime:{profile.provider_id}:{profile.schema_fingerprint}:"
             f"{proposal.source_id}:{proposal.relation}"
         )
+
+        # Gated by human-approved ProofContractRegistry:
+        contract, rejection_reasons = self.registry.find_matching_contract(
+            relation=proposal.relation,
+            input_roles=proposal.input_roles,
+            output_roles=proposal.output_roles,
+            action_roles=proposal.action_roles,
+            state_roles=proposal.state_roles,
+            artifact_identity_roles=proposal.artifact_identity_roles,
+        )
+
+        diag_list = list(diagnostics)
+        if contract is not None and probe_succeeded:
+            effective_proof_mode = "relation_observable"
+            effective_contract_id = contract.contract_id
+            effective_capability_level = "PROOF_CAPABLE"
+        else:
+            effective_proof_mode = "retrieval_only"
+            effective_contract_id = None
+            effective_capability_level = "RETRIEVAL_CAPABLE"
+            if proposal.proof_mode in {"relation_observable", "proof_capable"}:
+                if not probe_succeeded:
+                    diag_list.append("probe_pending_or_unsuccessful")
+                else:
+                    diag_list.extend(rejection_reasons or ["no_approved_proof_contract_satisfied"])
+
         return RuntimeCapability(
             capability_id=capability_id,
             source_id=proposal.source_id,
@@ -90,7 +123,7 @@ class SourceMappingValidator:
             input_roles=proposal.input_roles,
             output_roles=proposal.output_roles,
             status=status,
-            proof_mode=proposal.proof_mode,
+            proof_mode=effective_proof_mode,
             schema_fingerprint=profile.schema_fingerprint,
             supported_constraints=proposal.supported_constraints,
             searchable_constraints=proposal.searchable_constraints,
@@ -101,8 +134,11 @@ class SourceMappingValidator:
             correlation_roles=proposal.correlation_roles,
             relaxable_constraint_keys=proposal.relaxable_constraint_keys,
             probe_query_id=probe_query_id,
-            diagnostics=diagnostics,
+            diagnostics=tuple(diag_list),
+            proof_contract_id=effective_contract_id,
+            capability_level=effective_capability_level,
         )
 
 
 __all__ = ["SourceMappingValidator"]
+
