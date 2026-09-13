@@ -448,6 +448,7 @@ class HuntState:
     validated_graph: Any | None = None
     validation_diagnostics: list[str] = field(default_factory=list)
     step_trace: Any | None = None
+    search_envelope: Any | None = None
 
 
 @dataclass

@@ -71,15 +71,25 @@ from hunting.contracts.investigation_model import (
     build_investigation_model_from_intent,
 )
 from hunting.contracts.native_query import NativeQueryCandidate
+from hunting.contracts.observation_class import (
+    ActionSignature,
+)
 from hunting.contracts.observations import EpistemicType, Observation
 from hunting.contracts.queries import QueryResult
+from hunting.contracts.search_envelope import (
+    BudgetEnvelope,
+    HardConstraints,
+    SearchEnvelope,
+)
 from hunting.contracts.semantic_graph import goal_graph_from_claim_graph
 from hunting.contracts.step_trace import HuntStepName, StepTrace
 from hunting.controller.action_planner import InvestigationAction, InvestigationActionPlanner
 from hunting.controller.controller import CanonicalActionController
 from hunting.controller.cost import LLMUsageTracker
+from hunting.controller.loop_guard import LoopGuard
 from hunting.controller.models import HuntAction, HuntBudgetLedger
 from hunting.controller.reasoning import HypothesisReasoningEngine
+from hunting.controller.recovery_controller import RecoveryController
 from hunting.evidence.adjudicator import InvestigationAdjudicator
 from hunting.evidence.evaluator import EvidenceEvaluator
 from hunting.evidence.grouping import EvidenceGroupBuilder
@@ -163,6 +173,8 @@ class HypothesisHuntEngine:
         self.capability_binder = CapabilityBinder()
         self.action_planner = InvestigationActionPlanner(binder=self.capability_binder)
         self.relation_verifier = RelationVerifier()
+        self.loop_guard = LoopGuard()
+        self.recovery_controller = RecoveryController()
         # A human decision resumes the same compiled graph.  Cache only the
         # validated compiler result for the exact request identity/content so
         # selecting a candidate cannot trigger a second semantic compilation
@@ -1075,6 +1087,30 @@ class HypothesisHuntEngine:
             step_trace=step_trace,
         )
         state.compiler_trace = dict(getattr(self.compiler, "last_compile_trace", {}) or {})
+
+        # Initialize immutable hard constraints and SearchEnvelope E_0
+        pinned_ents: set[str] = set()
+        if initial_bindings:
+            for k, v in initial_bindings.items():
+                if isinstance(v, str):
+                    pinned_ents.add(v)
+                elif isinstance(v, (list, tuple)):
+                    pinned_ents.update(str(x) for x in v)
+
+        hard_constraints = HardConstraints(
+            pinned_entities=frozenset(pinned_ents),
+            time_window_start=str(objective.time_window).split("/")[0] if "/" in str(objective.time_window) else None,
+            time_window_end=str(objective.time_window).split("/")[1] if "/" in str(objective.time_window) else None,
+            proof_obligations=tuple(r.id for r in requirements),
+        )
+        state.search_envelope = SearchEnvelope(
+            hard_constraints=hard_constraints,
+            budgets=BudgetEnvelope(
+                max_queries=20,
+                max_llm_calls=self.llm_tracker.max_calls,
+                max_llm_tokens=self.llm_tracker.max_total_tokens,
+            ),
+        )
 
         claim_graph = getattr(objective, "claim_graph", None)
         native_semantic_graph = getattr(objective, "semantic_goal_graph", None) is not None
@@ -2085,6 +2121,9 @@ class HypothesisHuntEngine:
                         parameters={"window": objective.time_window, "limit": 100},
                     )
 
+                    if state.search_envelope:
+                        state.search_envelope.budgets.consume(queries=1)
+
                     qr = active_adapter.execute_query(
                         operation_id=op_name,
                         entity=src_node.value,
@@ -2093,6 +2132,28 @@ class HypothesisHuntEngine:
                         query_id=plan_id,
                     )
                     self.controller.record_query_execution(state, query_plan, qr)
+
+                    # Enforce LoopGuard & ActionSignature deduplication
+                    action_sig = ActionSignature.from_params(
+                        goal_id=edge.id,
+                        op_id=op_name,
+                        scope=getattr(scope, "scope_id", ""),
+                        source_id=getattr(scope, "provider_id", ""),
+                        stage="TEST",
+                        bindings={str(src_node.type): str(src_node.value)},
+                        time_window=str(objective.time_window),
+                    )
+                    has_progress = self.loop_guard.record_action(
+                        signature=action_sig,
+                        turn_index=state.turn,
+                        rows_count=len(qr.rows) if qr and hasattr(qr, "rows") else 0,
+                        result_payload=[dict(r) for r in qr.rows[:5]] if qr and hasattr(qr, "rows") else None,
+                    )
+                    if not has_progress and self.loop_guard.is_stalled(action_sig):
+                        self.controller.set_stopping_decision(
+                            state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN
+                        )
+                        break
 
                     # Update instance Cell coverage corresponding to source entity
                     if getattr(qr, "executed_ok", True):
@@ -2472,11 +2533,31 @@ class HypothesisHuntEngine:
                             reason="LLM fallback; no QueryIntent expression available",
                         )
 
+                if state.search_envelope:
+                    state.search_envelope.budgets.consume(queries=1)
+
                 qr: QueryResult = active_adapter.execute_query(**exec_kwargs)
                 if lqp:
                     qr.logical_plan_id = lqp.id
                 self.controller.record_query_execution(state, plan, qr)
                 self.controller.update_requirement_status(state, req, RequirementStatus.EXECUTED)
+
+                # Enforce LoopGuard
+                action_sig = ActionSignature.from_params(
+                    goal_id=req.id if req else exp.id,
+                    op_id=plan.operation_id,
+                    scope=getattr(scope, "scope_id", ""),
+                    source_id=getattr(scope, "provider_id", ""),
+                    stage="TEST",
+                    bindings={str(getattr(exp.entity_ref, "kind", "entity")): ent_label},
+                    time_window=str(exp.time_window),
+                )
+                has_progress = self.loop_guard.record_action(
+                    signature=action_sig,
+                    turn_index=state.turn,
+                    rows_count=len(qr.rows) if qr and hasattr(qr, "rows") else 0,
+                    result_payload=[dict(r) for r in qr.rows[:5]] if qr and hasattr(qr, "rows") else None,
+                )
 
                 # Update cell coverage
                 matching_cell = wc_cell

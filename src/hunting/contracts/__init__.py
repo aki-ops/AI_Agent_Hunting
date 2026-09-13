@@ -115,6 +115,15 @@ from hunting.contracts.native_query import (
     NativeQueryCandidate,
     NativeQueryValidationResult,
 )
+from hunting.contracts.observation_class import (
+    ActionSignature,
+    CoverageStatus,
+    ExecutionStatus,
+    ObservationClass,
+    ProofStatus,
+    RouteStatus,
+    TriStatus,
+)
 from hunting.contracts.observations import (
     EpistemicType,
     Observation,
@@ -133,6 +142,12 @@ from hunting.contracts.queries import (
     RetrievalStage,
 )
 from hunting.contracts.query_intent import QueryIntentSpec, QueryPredicateSpec
+from hunting.contracts.search_envelope import (
+    BudgetEnvelope,
+    ExpandableRetrievalHints,
+    HardConstraints,
+    SearchEnvelope,
+)
 from hunting.contracts.semantic_graph import (
     LogicalPlan,
     PlanStep,
@@ -318,4 +333,16 @@ __all__ = [
     "CandidateSet",
     "ConfidenceClass",
     "BindingDirectness",
+    # SearchEnvelope and ObservationClass Contracts
+    "SearchEnvelope",
+    "HardConstraints",
+    "ExpandableRetrievalHints",
+    "BudgetEnvelope",
+    "ObservationClass",
+    "ExecutionStatus",
+    "CoverageStatus",
+    "ProofStatus",
+    "RouteStatus",
+    "TriStatus",
+    "ActionSignature",
 ]

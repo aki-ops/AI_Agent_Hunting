@@ -592,10 +592,12 @@ def create_llm_caller(
         if tracker is not None and tracker.is_exhausted:
             raise RuntimeError(f"LLM budget exhausted for component '{component}' - maximum {tracker.max_calls} calls exceeded")
         if tracker is not None and hasattr(tracker, "preflight"):
-            # Reserve the provider's configured completion ceiling before any
-            # network request.  This prevents a large schema/catalog prompt
-            # from consuming the budget and only failing after the response.
+            from hunting.controller.cost import COMPONENT_TOKEN_CEILINGS
+
             configured_completion = int(getattr(getattr(provider, "config", None), "max_tokens", 4000) or 4000)
+            ceilings = COMPONENT_TOKEN_CEILINGS.get(component)
+            if ceilings and "max_output" in ceilings:
+                configured_completion = min(configured_completion, ceilings["max_output"])
             tracker.preflight(
                 prompt,
                 expected_completion_tokens=configured_completion,

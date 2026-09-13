@@ -59,6 +59,16 @@ class LLMCallRecord:
     error: str = ""
 
 
+COMPONENT_TOKEN_CEILINGS: dict[str, dict[str, int]] = {
+    "compiler": {"max_input": 2500, "max_output": 1200},
+    "source_profiler": {"max_input": 1800, "max_output": 700},
+    "planner": {"max_input": 1800, "max_output": 700},
+    "evaluator": {"max_input": 2500, "max_output": 800},
+    "replan": {"max_input": 2000, "max_output": 900},
+    "narrative": {"max_input": 1500, "max_output": 600},
+}
+
+
 class LLMUsageTracker:
     """Strict per-hunt LLM cost accounting ledger."""
 
@@ -77,6 +87,8 @@ class LLMUsageTracker:
             "source_profiler": 3,
             "planner": 1,
             "evaluator": 1,
+            "replan": 1,
+            "narrative": 0,
         }
         self.calls: list[LLMCallRecord] = []
         self.total_prompt_tokens = 0
@@ -147,6 +159,19 @@ class LLMUsageTracker:
 
         prompt_tokens = self.estimate_tokens(prompt)
         reserved_completion = max(0, int(expected_completion_tokens))
+        ceilings = COMPONENT_TOKEN_CEILINGS.get(component)
+        if ceilings:
+            if prompt_tokens > ceilings["max_input"]:
+                raise RuntimeError(
+                    f"LLM budget preflight rejected component '{component}': "
+                    f"estimated prompt {prompt_tokens} exceeds ceiling {ceilings['max_input']}"
+                )
+            if reserved_completion > ceilings["max_output"]:
+                raise RuntimeError(
+                    f"LLM budget preflight rejected component '{component}': "
+                    f"reserved completion {reserved_completion} exceeds ceiling {ceilings['max_output']}"
+                )
+
         projected = prompt_tokens + reserved_completion
         if projected > self.remaining_tokens:
             raise RuntimeError(
@@ -251,5 +276,28 @@ class LLMUsageTracker:
             ],
         }
 
+    @staticmethod
+    def validate_response(response_text: str, finish_reason: str | None = None) -> tuple[bool, str]:
+        """Validate response integrity and reject truncated or malformed outputs."""
+        if finish_reason and str(finish_reason).upper() in ("MAX_TOKENS", "LENGTH", "TRUNCATED"):
+            return False, "Response truncated by provider token ceiling"
 
-__all__ = ["LLMUsageTracker", "LLMCallRecord", "MODEL_PRICING", "get_model_pricing"]
+        stripped = (response_text or "").strip()
+        if not stripped:
+            return False, "Empty response received"
+
+        if (stripped.startswith("{") and not stripped.endswith("}")) or (
+            stripped.startswith("[") and not stripped.endswith("]")
+        ):
+            return False, "Truncated unclosed JSON structure"
+
+        return True, "Valid"
+
+
+__all__ = [
+    "LLMUsageTracker",
+    "LLMCallRecord",
+    "MODEL_PRICING",
+    "COMPONENT_TOKEN_CEILINGS",
+    "get_model_pricing",
+]
