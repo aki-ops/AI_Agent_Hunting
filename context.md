@@ -28,4 +28,7 @@ Read the canonical documentation in this order:
 7. Verification requires an approved `ProofContract` (`STRUCTURALLY_VALID`, `RETRIEVAL_CAPABLE`, `PROOF_CAPABLE`). Co-occurrence defaults to `retrieval_only`.
 8. Execution terminates deterministically under the 9-state stopping taxonomy and outputs a 6-part human report and a machine `run_account.json`.
 9. All runs track comprehensive financial and operational cost: $C_{run} = C_{llm} + C_{splunk} + C_{control} + C_{analyst}$.
+10. Query scope is bounded by `SearchEnvelope`. `HardConstraints` are strictly immutable; `ExpandableRetrievalHints` expand only via versioned derivations ($E_0 \to E_1 \to E_2$) with `max_candidate_fanout` (default 5) clamping.
+11. Execution loop is a **Bounded Deterministic Controller Loop** owned by the Controller via the Deterministic Triad (`classify`, `choose_next_action`, `evaluate_stop`). Action cycling without `material_delta` is blocked by `LoopGuard`.
+12. Outcomes are triaged across an 8-rung `ObservationClass` ladder. Four orthogonal status axes strictly decouple execution, coverage, proof, and route states: $\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$.
 

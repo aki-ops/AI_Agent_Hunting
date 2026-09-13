@@ -22,6 +22,11 @@ Read `context.md` first, then follow canonical documents in priority order:
 ## Core Architectural Invariants
 
 - The reasoning unit is the **Contract-Grounded Progressive Hunt Graph** spanning Control Plane and Hunt Plane (Steps A–J).
+- **SearchEnvelope Invariance**: Scope is strictly bounded by `SearchEnvelope`. `HardConstraints` (pinned entities, verified bindings, outer time window, allowed providers, proof obligations) are strictly immutable. Only `ExpandableRetrievalHints` can expand via versioned derivations ($E_0 \to E_1 \to E_2$) bounded by `max_expansion_level` and `max_candidate_fanout` (default 5).
+- **Bounded Deterministic Controller Loop**: Open-ended while-loops are forbidden. The Controller owns the deterministic agenda queue. LLMs are called only at declared state transitions ($C_1 - C_6$) with strict per-component token ceilings and preflight reservation checks. Truncated outputs are rejected.
+- **The Deterministic Triad**: Investigation state transitions are governed exclusively by `classify(...) -> ObservationClass`, `choose_next_action(...) -> ControllerNextAction`, and `evaluate_stop(...) -> StoppingDecision`. LLMs never decide when to stop or whether proof is complete.
+- **ObservationClass Ladder & Orthogonal Axes**: 8-rung classification ladder (`QUERY_INVALID` to `VERIFIED`). Four status axes (`ExecutionStatus`, `CoverageStatus`, `ProofStatus`, `RouteStatus`) are decoupled: $\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$.
+- **LoopGuard & Monotonicity**: Every executed action is fingerprinted via `ActionSignature`. Executing an action without `material_delta` increments stall count; exceeding `max_consecutive_stalls` marks the route `NO_PROGRESS` / `EXHAUSTED` to prevent infinite cycling.
 - `Cell` is strictly `(ProviderScope, entity | ANY, time_bucket)` for execution coverage, never an ontology or thinking graph.
 - Strict field role isolation: `client_ip` ≠ `server_ip`, `endpoint_host` ≠ `server_host`, `account_name` ≠ `person`.
 - Never bind web servers (`jabbah`, `we1149srv`, IIS) as client workstations.

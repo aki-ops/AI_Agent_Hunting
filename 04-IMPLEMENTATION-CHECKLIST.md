@@ -105,6 +105,10 @@ spanning Control Plane and Hunt Plane (Steps A–J).
 - [x] Implement the 9-state stopping taxonomy:
   `ANSWER_PROVED`, `BOUNDED_NOT_FOUND`, `NEEDS_DISAMBIGUATION`, `COVERAGE_EXHAUSTED`, `BUDGET_EXHAUSTED`, `BACKEND_DEGRADED`, `SAFETY_QUARANTINE`, `VALIDATION_FAILED`, `ABORTED_BY_USER`. (`tests/unit/test_phase6_evidence_verification_and_stopping.py::test_stopping_taxonomy_nine_states_and_decision_mapping`.)
 - [x] Two-iteration no-progress detection triggers replan at most once; halts if stalled. (`src/hunting/engine.py:1630` and `src/hunting/planner/adaptive.py`.)
+- [x] Implement `SearchEnvelope` with immutable `HardConstraints` and versioned derivation ($E_0 \to E_1 \to E_2$). (`src/hunting/contracts/search_envelope.py`, `tests/unit/test_recovery_and_envelope_loop.py`.)
+- [x] Implement 8-rung `ObservationClass` precedence ladder and 4 orthogonal status axes (`ExecutionStatus`, `CoverageStatus`, `ProofStatus`, `RouteStatus`) with decoupled `TriStatus` invariant ($\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$). (`src/hunting/contracts/observation_class.py`, `tests/unit/test_recovery_and_envelope_loop.py`.)
+- [x] Implement Bounded Deterministic Controller Loop via `RecoveryController` (Deterministic Triad) and `LoopGuard` with `ActionSignature` tracking, `material_delta` check, and automatic stall transitions to `NO_PROGRESS` / `EXHAUSTED`. (`src/hunting/controller/loop_guard.py`, `recovery_controller.py`, `tests/unit/test_recovery_and_envelope_loop.py`.)
+- [x] Implement component token ceilings ($C_1 - C_6$), preflight token reservations, and truncated response validation. (`src/hunting/controller/cost.py`, `tests/unit/test_recovery_and_envelope_loop.py`.)
 - [x] Gate verification: DNS lookup does not prove person visited; file creation does not prove ransomware encryption; correct answer value with false evidence citation fails verification. (`tests/unit/test_phase6_evidence_verification_and_stopping.py`.)
 
 ---

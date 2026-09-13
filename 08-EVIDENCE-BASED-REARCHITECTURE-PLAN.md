@@ -49,6 +49,45 @@ Ba quyết định không thương lượng:
    giảm mơ hồ trong budget, agent phải hỏi người dùng hoặc dừng
    `NEEDS_DISAMBIGUATION`.
 
+### 1.1 Ba câu hỏi kiến trúc sống còn và Lời giải dứt khoát
+
+1. **Query đầu không xác định được vấn đề thì sao?**
+   - Query đầu là một *phép thử có biên giới* (`bounded experiment`) để tạo *Information Delta*, không cần tìm ra đáp án ngay.
+   - Kết quả được phân loại qua bậc thang **ObservationClass Ladder 8 nấc**:
+     `QUERY_INVALID` -> `QUERY_FAILURE` -> `PARTIAL` -> `EMPTY` -> `CONTRADICTORY` -> `AMBIGUOUS` -> `PROOF_GAP` -> `VERIFIED`.
+   - Cơ chế triage tự động: `EMPTY` nới retrieval hints; `PARTIAL` phân trang cursor; `CONTRADICTORY` cách ly facts; `AMBIGUOUS` chạy discriminator. Không có suy đoán cảm tính.
+
+2. **Làm sao chắc chắn phạm vi không bị mở rộng tùy tiện?**
+   - Quản lý phạm vi bằng **`SearchEnvelope`**:
+     - `HardConstraints` (Bất biến, cấm nới): pinned entities, verified bindings, cửa sổ thời gian [T_start, T_end], allowed providers, proof obligations.
+     - `ExpandableRetrievalHints` (Chỉ nới nếu đã khai báo): lexical variants, field aliases, alternative routes, trần mở rộng $\le 3$.
+     - `BudgetEnvelope`: giới hạn vector định lượng (queries $\le 20$, calls $\le 5$, tokens $\le 15.000$).
+   - Phái sinh phiên bản $E_0 \to E_1 \to E_2$: chỉ thu hẹp hoặc giữ nguyên hard constraints, cấm mở rộng thời gian/provider ngoài dự kiến.
+   - Chặn phân nhánh ứng viên: `max_candidate_fanout` (mặc định 5). Vượt trần lập tức chuyển sang `NEEDS_DISAMBIGUATION`.
+
+3. **Query nào thành công và "Acceptable Result" cấp hệ thống là gì?**
+   - 5 tầng thành công hình thức: Level 0 (Execution) -> Level 1 (Observation) -> Level 2 (Candidate) -> Level 3 (Verified Relation) -> Level 4 (Accepted Answer) -> Level 5 (Accepted Negative Result).
+   - 4 trục trạng thái trực giao: `ExecutionStatus`, `CoverageStatus`, `ProofStatus`, `RouteStatus`.
+   - Invariant bất biến:
+     $$\mathbf{execution\_complete \not\iff proof\_complete \not\iff route\_exhausted}$$
+     $$\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$$
+     Query chạy chưa xong (`PARTIAL`) dù 0 row tuyệt đối không được coi là không tìm thấy. Kết luận vắng mặt đòi hỏi 100% route cạn kiệt, độ phủ `COMPLETE`, và có `license_valid_negative`.
+
+### 1.2 Vòng lặp điều khiển tất định (Bounded Agenda Loop) & LoopGuard
+
+- Xóa bỏ hoàn toàn anti-pattern `while not satisfied: ask LLM -> query -> loop`.
+- **Deterministic Agenda Loop**: Controller sở hữu hàng đợi agenda; LLM chỉ được gọi tại 6 trạm khai báo ($C_1 - C_6$) với trần token nghiêm ngặt.
+- **Bộ ba tất định (The Deterministic Triad)**:
+  - `classify(attempt, proof_contract, ledger, envelope) -> ObservationClass`
+  - `choose_next_action(classification, envelope, loop_guard, ...) -> ControllerNextAction`
+  - `evaluate_stop(obligations, verified_obligations, coverage, ...) -> StoppingDecision`
+- **LoopGuard & ActionSignature**:
+  $$\text{ActionSignature} = \langle \text{goal\_id}, \text{op\_id}, \text{scope}, \text{source\_id}, \text{stage}, \text{binding\_hash}, \text{time\_window}, \text{hints\_hash}, \text{cursor}, \text{mode} \rangle$$
+  Kiểm tra `material_delta` trên từng lượt chạy. Nếu lặp lại không có tiến triển mới quá 2 lần, tự động chuyển route sang `NO_PROGRESS` / `EXHAUSTED` để triệt tiêu vòng lặp vô hạn.
+- **Kinh tế Token & Preflight Checks**:
+  - Tính toán $\text{Required} = \text{Input} + \text{Output} + \text{Reserve}$ trước khi gọi mạng; từ chối gọi nếu vượt ngân sách.
+  - Từ chối mọi response bị cắt ngắn (`MAX_TOKENS`) hoặc JSON dở dang.
+
 ## 2. Vì sao đây là hướng thực tế nhất
 
 ### 2.1 Bằng chứng nghiên cứu và giới hạn chuyển giao

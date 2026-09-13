@@ -23,9 +23,22 @@ types are preserved.
 A provider operation must expose three separate contracts: execution
 completeness, semantic proof capability, and retrieval-route policy. A complete
 empty result means only that the bounded request reached the provider's declared
-completion point. It is not a valid negative unless the operation declares the
-required negative/completeness semantics and the controller has exhausted every
-permitted route.
+completion point. Under the decoupled **TriStatus** invariant:
+$$\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$$
+Truncated, interrupted, or timeout queries (`completed=False`, `hit_limit=True`)
+are classified strictly as `PARTIAL`, never `EMPTY`, preventing false-negative
+abductions. Full negative conclusions require exhaustive frontier evaluation
+under declared negative/completeness semantics.
+
+Provider observation results are classified along the deterministic 8-rung ladder:
+1. `INFRA_FAILURE`: Network/API/driver transport error.
+2. `AUTH_REJECT`: Authorization, scope or token rejection.
+3. `MALFORMED_RESPONSE`: Payload parse or validation failure.
+4. `TIMEOUT_TRUNCATED`: Query cutoff or timeout (classified as `PARTIAL`).
+5. `EMPTY_VALID`: Zero records within scanned scope.
+6. `CANDIDATE_PARTIAL`: Rows retrieved, partial bindings established.
+7. `PROOF_OBSERVED`: Full semantic relation and answer slots proven.
+8. `SCHEMA_DISCOVERY`: Telemetry discovery, field profiling and capability publication.
 
 Retrieval policy is declarative and bounded. It may identify predicate classes
 that are safe to relax for candidate discovery, but every stage retains the

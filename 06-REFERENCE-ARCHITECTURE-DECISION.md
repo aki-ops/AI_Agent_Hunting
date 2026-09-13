@@ -20,7 +20,7 @@ ProviderManifest + SourceCard Catalog + SemanticVocabulary
 ================================================================================
 HUNT PLANE (Execution Lifecycle: Steps A–J)
 --------------------------------------------------------------------------------
-[Step A] Freeze Request & Budget (HuntRunContext: ceilings, hashes, seeds)
+[Step A] Freeze Request & Budget (HuntRunContext, SearchEnvelope E_0: HardConstraints & Budgets)
     │
 [Step B] Semantic Compilation C1 (GoalGraph + AnswerContract; NO catalog/SPL)
     │
@@ -40,7 +40,7 @@ HUNT PLANE (Execution Lifecycle: Steps A–J)
     │
 [Step I] ProofContract Evaluation (structural / retrieval_only / proof_capable)
     │
-[Step J] 9-State Stopping Taxonomy & 6-Part Report + Machine Run Account JSON
+[Step J] Bounded Controller Loop (Triad: classify/choose/stop; LoopGuard; TriStatus Invariant; 9-State Taxonomy)
 ================================================================================
 ```
 

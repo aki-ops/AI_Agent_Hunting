@@ -93,7 +93,7 @@ Manages reusable, long-lived artifacts across hunts:
 
 ## 4. Universal data contracts
 
-### 4.1 Request & Run Context
+### 4.1 Request, SearchEnvelope & BudgetEnvelope
 
 ```python
 HuntRequest = {
@@ -109,6 +109,23 @@ HuntRequest = {
 
 The request is an objective, not evidence. An explicit entity is an unverified
 seed until a provider observation establishes the required relation.
+
+The investigation boundary is strictly governed by `SearchEnvelope`:
+- **`HardConstraints` (Immutable Invariants - Non-relaxable)**:
+  - `pinned_entities`: Explicit seed entities from request or initial bindings.
+  - `verified_bindings`: Monotonically added verified bindings `(role -> value)`. Overriding existing verified bindings raises `ValueError`.
+  - `time_window_start` / `time_window_end`: Outer bounding time range. Expanding earlier or later than initial window raises `ValueError`.
+  - `allowed_providers`: Frozenset of authorized provider scopes. Expanding to new providers raises `ValueError`.
+  - `proof_obligations`: Mandatory obligation IDs required by the request.
+- **`ExpandableRetrievalHints` (Bounded Relaxations)**:
+  - `lexical_variants`, `field_aliases`, `source_priority_order`, `optional_predicates`, `alternative_routes`.
+  - `current_expansion_level`: Integer level capped strictly at `max_expansion_level` (default $\le 3$).
+- **`BudgetEnvelope` (Quantitative Vector Budget)**:
+  - Tracks consumption against hard ceilings: `max_queries` (20), `max_llm_calls` (5), `max_llm_tokens` (15,000), `max_frontier_expansions` (3), `max_replans` (1), `max_discriminators` (2), `max_wall_clock_seconds` (120s).
+- **Versioned Envelope Derivation ($E_0 \to E_1 \to E_2$)**:
+  - `derive_next(new_hints, reason, new_hard_constraints)` produces child envelopes with parent pointer (`parent_envelope_id`), change logs (`changed_constraints`), and derivation reason.
+  - Hard constraints can only be narrowed, never widened.
+  - Candidate fanout cap: `validate_candidate_fanout(count)` clamps fanout at `max_candidate_fanout` (default 5). If candidate count exceeds this bound, the agent must trigger `NEEDS_DISAMBIGUATION` instead of launching unbounded fanout queries.
 
 ### 4.2 GoalGraph and AnswerContract
 
@@ -254,8 +271,55 @@ field roles, candidate and verified relations, claim status
 (`UNPROVEN`, `SUPPORTED`, `REFUTED`, `PARTIAL`, `UNKNOWN`) and coverage/diagnostic
 records.
 
-Only deterministic verification may promote a claim. LLM prose cannot create an
-observation, value, relation or final verdict.
+### 4.5 ObservationClass Ladder & Deterministic Recovery State Machine
+
+Every query attempt result is triaged through an 8-rung deterministic precedence ladder:
+
+1. **`QUERY_INVALID`**: AST, safety policy, or RBAC violations -> Deterministic syntax repair or safe fallback.
+2. **`QUERY_FAILURE`**: Provider/adapter crash or syntax rejection -> Switch to alternative provider route.
+3. **`PARTIAL`**: Truncated result, timeout, limit hit, or provider partition -> Cursor pagination or time-window subdivision.
+4. **`EMPTY`**: Completed execution with 0 matching rows:
+   - If `retrieval_hints.can_expand()` -> `RELAX_HINT` in versioned child envelope $E_{i+1}$.
+   - Else if unexhausted alternative routes exist -> `SWITCH_ROUTE`.
+   - Else if explicit negative evidence license granted -> `STOP_BOUNDED_NOT_FOUND`.
+   - Else -> Mark route `EXHAUSTED`.
+5. **`CONTRADICTORY`**: Returned observations conflict with immutable hard constraints or verified facts -> Quarantine conflicting facts, schedule 1 deterministic verification probe; never average confidence.
+6. **`AMBIGUOUS`**: Multiple viable candidate bindings without deterministic tie-breaker:
+   - If candidate count $> \text{max\_candidate\_fanout}$ -> `NEEDS_DISAMBIGUATION`.
+   - Else -> `DISCRIMINATE` query targeting candidate differences.
+7. **`PROOF_GAP`**: Candidates or rows exist, but ProofContract semantics (event type, field mapping, temporal binding) are incomplete -> `SEEK_PROOF` transition query.
+8. **`VERIFIED`**: Approved ProofContract satisfied by native event semantics and directional bindings -> `EMIT_VERIFIED` binding.
+
+### 4.6 Orthogonal Status Axes & Decoupled TriStatus
+
+A semantic investigation maintains four independent, orthogonal axes:
+- **`ExecutionStatus`**: `NOT_STARTED` | `EXECUTED` | `FAILED` | `CANCELLED`
+- **`CoverageStatus`**: `UNKNOWN` | `PARTIAL` | `COMPLETE` | `UNREACHABLE`
+- **`ProofStatus`**: `NOT_ASSESSED` | `RETRIEVAL_ONLY` | `PROOF_GAP` | `VERIFIED` | `REFUTED`
+- **`RouteStatus`**: `UNPLANNED` | `ACTIVE` | `EXHAUSTED` | `NO_PROGRESS`
+
+**Decoupled TriStatus Invariants:**
+$$\mathbf{execution\_complete \not\iff proof\_complete \not\iff route\_exhausted}$$
+$$\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$$
+
+Incomplete or truncated execution (`PARTIAL`), even with zero rows returned, can **never** license a negative conclusion (`BOUNDED_NOT_FOUND`). Bounded absence requires:
+$$\text{is\_bounded\_not\_found} \iff \text{execution\_complete} \land \text{route\_exhausted} \land \neg\text{proof\_complete} \land \text{negative\_license\_granted} \land (\text{coverage} == \text{COMPLETE})$$
+
+### 4.7 Bounded Deterministic Controller Loop & LoopGuard
+
+Open-ended loops (`while LLM not satisfied`) are strictly forbidden. The loop is a **Bounded Deterministic Agenda Loop** owned 100% by the Controller.
+
+**The Deterministic Triad:**
+1. `classify(attempt, proof_contract, ledger, envelope) -> ObservationClass`
+2. `choose_next_action(classification, envelope, loop_guard, ...) -> ControllerNextAction`
+3. `evaluate_stop(obligations, verified_obligations, coverage, ...) -> StoppingDecision`
+
+**LoopGuard & ActionSignature Deduplication:**
+Every execution step is fingerprinted by a canonical tuple:
+$$\text{ActionSignature} = \langle \text{goal\_id}, \text{op\_id}, \text{scope}, \text{source\_id}, \text{stage}, \text{binding\_hash}, \text{time\_window}, \text{hints\_hash}, \text{cursor}, \text{mode} \rangle$$
+- `LoopGuard` tracks all executed signatures and checks for **`material_delta`** (new rows, new candidate bindings, advancing cursor, or distinct result fingerprint).
+- If an action signature repeats without `material_delta`, `stall_count` increments.
+- When $\text{stall\_count} \ge \text{max\_consecutive\_stalls}$ (default 2), the route is deterministically transitioned to `RouteStatus.NO_PROGRESS` and added to `exhausted_routes`, preventing infinite cycling.
 
 ## 5. Component responsibilities and LLM call boundaries (C1–C6)
 
@@ -276,6 +340,24 @@ Deterministic system components (Zero LLM authority):
 - **Planner:** Composes AND / OR / GATE dependencies and emits `DISCRIMINATOR` queries for ambiguous candidates.
 - **Native Query Gate:** AST parsing, read-only allowlist, and job cancellation hooks.
 - **Claim & Transition Verifier:** Evaluates exact ledger citations, timestamps, roles, and completeness.
+- **Recovery Controller & Triad Engine:** Owns `classify`, `choose_next_action`, and `evaluate_stop` authority.
+- **Loop Guard:** Tracks `ActionSignature`, enforces `material_delta`, and flags `RouteStatus.NO_PROGRESS`.
+
+### 5.1 Token Economics, Preflight Reservations & Payload Validation
+
+1. **Strict Input/Output Caps**:
+   - $C_1$ (Compiler): in $\le 2500$, out $\le 1200$, calls $\le 2$ (1 main + 1 repair)
+   - $C_2$ (Capability / Profiler): in $\le 1800$, out $\le 700$, calls $\le 3$
+   - $C_3$ (Native Query / Planner): in $\le 1800$, out $\le 700$, calls $\le 1$
+   - $C_4$ (Evaluator): in $\le 2500$, out $\le 800$, calls $\le 1$
+   - $C_5$ (Replan): in $\le 2000$, out $\le 900$, calls $\le 1$
+   - $C_6$ (Narrative): in $\le 1500$, out $\le 600$, calls $= 0$ (disabled by default)
+2. **Preflight Budget Reservation**:
+   - Prior to dispatch, the system computes:
+     $$\text{Required} = \text{Estimated\_Input} + \text{Reserved\_Output} + \text{Safety\_Reserve}$$
+   - If $\text{Required} > \text{Remaining\_Tokens}$, the call is rejected immediately before contacting the provider.
+3. **Truncated Response Rejection**:
+   - Outputs with `finish_reason in ("MAX_TOKENS", "LENGTH", "TRUNCATED")` or unclosed JSON structures are rejected by `validate_response()`. Partial outputs are never ingested into state.
 
 ## 6. Coverage coordinate
 

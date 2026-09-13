@@ -7,9 +7,11 @@ The defensible approach is to compose established principles and explicitly
 test the local composition:
 
 ```text
-Request -> Semantic Compilation C1 (GoalGraph + AnswerContract)
-        -> Progressive Frontier F0–F4 -> Controlled Binding & CandidateSet
-        -> QueryIntent (EXPLORE / DISCRIMINATE / PROVE) & Native Gate
+Request -> Semantic Compilation C1 (GoalGraph + AnswerContract + SearchEnvelope E0)
+        -> Bounded Agenda Loop (Ready Goals -> Expandable Hints -> Progressive Frontier F0–F4)
+        -> Controlled Binding & CandidateSet (fanout <= 5)
+        -> QueryIntent (EXPLORE / DISCRIMINATE / PROVE) & Quarantined Native Gate
+        -> ObservationClass 8-Rung Ladder & LoopGuard Monotonicity Check
         -> Evidence Pipeline -> ProofContract Evaluation -> 9-State Stopping
 ```
 
@@ -38,6 +40,10 @@ see [08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md](08-EVIDENCE-BASED-REARCHITECTURE-
 The following are not externally proven and must be evaluated in this repo:
 
 - `GoalGraph`, `AnswerContract`, `SourceCard`, `ProofContract`, and `CandidateSet` schemas;
+- `SearchEnvelope` framework (immutable `HardConstraints`, `ExpandableRetrievalHints`, and versioned derivations $E_0 \to E_1 \to E_2$);
+- `ObservationClass` 8-rung classification ladder and decoupled `TriStatus` ($PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND$);
+- Bounded deterministic controller agenda loop with `LoopGuard` fingerprinting and stall detection;
+- Per-component token ceilings ($C_1 - C_6$) with preflight token reservations and truncated output rejection;
 - The 5-stage progressive frontier F0–F4 and unexamined coverage manifest;
 - Controlled entity binding and ambiguity resolution via `DISCRIMINATOR`;
 - Quarantined AST-gated native query synthesis and SID lifecycle enforcement;

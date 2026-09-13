@@ -26,6 +26,14 @@ Request
 2. **No full-schema prompt, no fixed Top-K cutoff.** The catalog of sources and fields remains outside the hot LLM prompt. The agent expands a progressive frontier (F0–F4) per unresolved goal. Unexamined sources are explicitly recorded as coverage gaps; shortlists never license negative claims.
 3. **Never auto-bind ambiguous candidates without proof.** If multiple entities match, the agent must execute a `DISCRIMINATOR` query or halt for human clarification (`NEEDS_DISAMBIGUATION`). It never selects candidates by substring heuristic or arbitrary ranking.
 
+## Key Architectural Frameworks
+
+- **SearchEnvelope & Derivation Invariants**: Query scope is bounded by `SearchEnvelope`. `HardConstraints` (pinned entities, verified bindings, outer time window, allowed providers, obligations) are strictly immutable. Only declared `ExpandableRetrievalHints` expand via versioned derivations ($E_0 \to E_1 \to E_2$) with `max_candidate_fanout` (default 5) clamping.
+- **Bounded Deterministic Controller Loop**: Loose while-loops are eliminated. The Controller owns the deterministic agenda loop. LLMs are invoked only at declared transition points ($C_1 - C_6$) with per-component token ceilings and preflight reservation checks.
+- **The Deterministic Triad**: Transitions are governed by `classify` (8-rung ObservationClass ladder), `choose_next_action` (deterministic recovery state machine), and `evaluate_stop`.
+- **LoopGuard & Monotonicity**: Fingerprints actions via `ActionSignature`, checks for `material_delta`, and transitions stalled routes to `NO_PROGRESS` / `EXHAUSTED` after 2 consecutive non-progress steps.
+- **Decoupled Orthogonal Axes**: Execution status, Coverage status, Proof status, and Route status are strictly independent: $\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$.
+
 ## Canonical Documents
 
 1. [08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md](08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md) — Candidate master plan, scientific critique resolution, and execution roadmap.

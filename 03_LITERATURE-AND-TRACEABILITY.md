@@ -56,6 +56,10 @@ budgets, stopping enums and F1 thresholds remain local decisions until tested.
 | EvidenceGraph built from verified facts | REF-SLEUTH, REF-HOLMES | Role direction, state transition, and ProofContract evaluation | Transition edge precision/recall/F1 |
 | No universal scenario branch | REF-USENIX-TH, REF-CYBER-BENCH | Pure contract flow; no keyword playbooks | Counterfactual matrix 8/8 passing |
 | LLM bounded to C1–C6 isolated calls | REF-EXCYTIN, REF-SAFE-TOOLS | Token budgets, max 5 calls, schema validation | Call & token ceilings; zero prompt leakage |
+| SearchEnvelope & HardConstraints | REF-UMCP-HTN, REF-SAFE-TOOLS | Immutable hard constraints, expandable hints, derived envelopes ($E_0 \to E_1$), fanout $\le 5$ | Forbidden expansion rejection; scope breach prevention |
+| Bounded Deterministic Controller Loop | REF-UMCP-HTN, REF-RPG, REF-SAFE-TOOLS | Deterministic agenda loop, Triad (`classify`, `choose_next_action`, `evaluate_stop`), LoopGuard | Zero infinite loops; monotonic progress or graceful halt |
+| ObservationClass 8-Rung Ladder & TriStatus | REF-SELECTIVE-CLS, REF-ECTH | 8-rung classification, orthogonal status axes, decoupled TriStatus ($PARTIAL + 0 \neq BOUNDED\_NOT\_FOUND$) | Zero false negative claims on truncated/failed queries |
+| Token Economics & Preflight Reservations | REF-EXCYTIN, REF-SPLUNK-REST | Per-component ceilings ($C_1-C_6$), preflight token checks, truncated output rejection | Budget overrun rejection; zero run-away completion tokens |
 | 9-state stopping taxonomy & selective abstention | REF-SELECTIVE-CLS, REF-ECTH, REF-TAHITI | Explicit stopping enums; complete-empty without license is INCONCLUSIVE | Risk-coverage curve; false-negative rate |
 | Full cost accounting (LLM + Splunk + Analyst) | REF-EXCYTIN, REF-SPLUNK-REST | $C_{run} = C_{llm} + C_{splunk} + C_{control} + C_{analyst}$ | Cost per solved case; scanCount and latency tracking |
 

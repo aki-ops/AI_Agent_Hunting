@@ -34,12 +34,13 @@ Three non-negotiable principles govern every execution:
 
 ## 2. Runtime method (Steps A–J)
 
-### Step A — Freeze request and budget
+### Step A — Freeze request and budget (SearchEnvelope E_0)
 
-Construct an immutable `HuntRunContext`:
+Construct an immutable `HuntRunContext` and boundary `SearchEnvelope`:
 - `request_id`, request text hash, user-supplied entities and seed facts;
-- time policy and permitted provider scopes;
-- hard ceilings: max 5 LLM calls, max 15,000 tokens, provider scan/runtime/query caps;
+- **`HardConstraints` (Immutable)**: pinned entities, verified bindings, outer time policy, allowed provider scopes, proof obligations. Widening attempts raise a `ValueError`;
+- **`ExpandableRetrievalHints`**: bounded relaxations (lexical variants, field aliases, alternative routes) with strict level caps ($\le 3$);
+- **`BudgetEnvelope`**: quantitative budget vector (max 5 LLM calls, max 15,000 tokens, max 20 queries, max candidate fanout 5);
 - prompt, model, and registry versions.
 
 Input text and telemetry rows are untrusted data: prompt injection must never alter scope,
@@ -123,11 +124,23 @@ Authority rests solely in human-reviewed, test-verified contracts:
 
 Cooccurrence defaults to `RETRIEVAL_CAPABLE`. LLM proposals cannot upgrade to `PROOF_CAPABLE`.
 
-### Step J — Controller and Stopping Taxonomy
+### Step J — Bounded Deterministic Controller Loop & Stopping Taxonomy
 
-Halt only via 9 verifiable execution states:
-`STOP_ANSWERED`, `STOP_REFUTED`, `STOP_NOT_FOUND_BOUNDED`, `STOP_NEEDS_CLARIFICATION`,
-`STOP_UNSUPPORTED`, `STOP_UNREACHABLE`, `STOP_INCONCLUSIVE`, `STOP_BUDGET`, `STOP_ERROR`.
+The controller loop is a deterministic agenda queue owned entirely by the Controller. Open-ended loops (`while LLM not satisfied`) are strictly forbidden.
+
+1. **The Deterministic Triad**:
+   - `classify(attempt, proof_contract, ledger, envelope) -> ObservationClass` (8-rung ladder: `QUERY_INVALID` to `VERIFIED`);
+   - `choose_next_action(classification, envelope, loop_guard, ...) -> ControllerNextAction` (deterministic recovery transitions: `RELAX_HINT` in child envelope $E_{i+1}$, `SWITCH_ROUTE`, `PAGINATE`, `REPAIR_QUERY`, `DISCRIMINATE`, `QUARANTINE_CONTRADICTION`, `SEEK_PROOF`, `EMIT_VERIFIED`, `STOP_BOUNDED_NOT_FOUND`);
+   - `evaluate_stop(...) -> StoppingDecision`.
+2. **LoopGuard & Monotonicity Enforcement**:
+   - Every action execution is fingerprinted via `ActionSignature`.
+   - Repeated signatures without `material_delta` (no new rows, no new candidates, no cursor advance) increment stall count.
+   - When $\text{stall\_count} \ge 2$, the route transitions to `RouteStatus.NO_PROGRESS` / `EXHAUSTED`.
+3. **Orthogonal Status Axes & Decoupled TriStatus**:
+   - Execution status, Coverage status, Proof status, and Route status are strictly independent.
+   - Invariant: $\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$. Incomplete executions cannot license negative conclusions.
+4. **9 Verifiable Execution States**:
+   Halt only via: `STOP_ANSWERED`, `STOP_REFUTED`, `STOP_NOT_FOUND_BOUNDED`, `STOP_NEEDS_CLARIFICATION`, `STOP_UNSUPPORTED`, `STOP_UNREACHABLE`, `STOP_INCONCLUSIVE`, `STOP_BUDGET`, `STOP_ERROR`.
 
 ## 3. LLM Call Architecture and Budgets (C1–C6)
 
@@ -135,14 +148,18 @@ Context is strictly isolated per call; no call receives the entire schema catalo
 
 | Call | Trigger | Allowed Context | Output | Default Budget Ceilings |
 |---|---|---|---|---:|
-| **C1: `semantic_compile`** | Every free-text request | Request text, small vocabulary/schema, time policy | `GoalGraph` + `AnswerContract` | 2,500 in / 1,200 out |
-| **C2: `capability_profile`** | Cache miss & F0/F1 insufficient | Single goal + compact `SourceCard` batch | `retrieval_only` candidate mappings | 2 × (1,800 in / 700 out) |
-| **C3: `native_query_proposal`** | Intent compiler unsupported | Single goal + selected source + verified bindings | Sandboxed candidate SPL | 1,800 in / 700 out |
-| **C4: `evidence_interpret`** | Ambiguous evidence semantics | Grouped delta cards (no raw ledger) | Candidate interpretation & gaps | 2,500 in / 800 out |
-| **C5: `replan`** | Deadlock with material new delta | Unresolved goal graph + compact delta | Revised goals (no verdict) | 2,000 in / 900 out |
-| **C6: `narrative`** | Optional human report polish | Verified account facts only | Narrative prose (no new facts) | 1,500 in / 600 out |
+| **C1: `semantic_compile`** | Every free-text request | Request text, small vocabulary/schema, time policy | `GoalGraph` + `AnswerContract` | 2,500 in / 1,200 out (max 2 calls) |
+| **C2: `capability_profile`** | Cache miss & F0/F1 insufficient | Single goal + compact `SourceCard` batch | `retrieval_only` candidate mappings | 1,800 in / 700 out (max 3 calls) |
+| **C3: `native_query_proposal`** | Intent compiler unsupported | Single goal + selected source + verified bindings | Sandboxed candidate SPL | 1,800 in / 700 out (max 1 call) |
+| **C4: `evidence_interpret`** | Ambiguous evidence semantics | Grouped delta cards (no raw ledger) | Candidate interpretation & gaps | 2,500 in / 800 out (max 1 call) |
+| **C5: `replan`** | Deadlock with material new delta | Unresolved goal graph + compact delta | Revised goals (no verdict) | 2,000 in / 900 out (max 1 call) |
+| **C6: `narrative`** | Optional human report polish | Verified account facts only | Narrative prose (no new facts) | 1,500 in / 600 out (0 by default) |
 
 **Execution Ceilings:** Hard limit of max 5 calls and 15,000 total tokens per hunt run (excluding C6).
+
+**Preflight Reservation & Payload Validation:**
+- `preflight(component, prompt, expected_completion_tokens)` enforces input/output ceilings and verifies remaining tokens before any network dispatch.
+- Truncated outputs (`MAX_TOKENS`) and unclosed JSON payloads are rejected immediately via `validate_response()`. Partial outputs are never ingested into the investigation state.
 
 ### Cost Accounting
 
