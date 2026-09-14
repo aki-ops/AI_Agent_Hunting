@@ -18,6 +18,7 @@ from typing import Any
 
 from hunting.contracts.hunt import StoppingDecision
 from hunting.contracts.observation_class import (
+    ControllerAttempt,
     CoverageStatus,
     ObservationClass,
 )
@@ -47,7 +48,7 @@ class RecoveryController:
 
     def classify(
         self,
-        attempt: Any,
+        attempt: ControllerAttempt | Any,
         proof_contract: ProofContract | None = None,
         ledger: Any = None,
         envelope: SearchEnvelope | None = None,
@@ -95,10 +96,10 @@ class RecoveryController:
             return ObservationClass.EMPTY
 
         # 5. CONTRADICTORY: Direct conflict with immutable hard constraints or verified facts
-        if conflict_detected:
+        if conflict_detected or getattr(attempt, "conflict_detected", False):
             return ObservationClass.CONTRADICTORY
 
-        candidates = extracted_candidates or []
+        candidates = extracted_candidates or getattr(attempt, "candidate_delta", None) or []
         if envelope and envelope.hard_constraints:
             for cand in candidates:
                 for role, val in envelope.hard_constraints.verified_bindings:
@@ -113,14 +114,20 @@ class RecoveryController:
                 return ObservationClass.AMBIGUOUS
 
         # 7 & 8. PROOF_GAP vs VERIFIED: ProofContract evaluation
+        is_conforming = getattr(attempt, "proof_conforming", False)
+        if hasattr(attempt, "proof_result") and attempt.proof_result is not None:
+            is_conforming = bool(getattr(attempt.proof_result, "verified", False))
+
         if proof_contract is not None:
             if not proof_contract.is_approved:
                 return ObservationClass.PROOF_GAP
 
-            is_conforming = getattr(attempt, "proof_conforming", False)
             if not is_conforming:
                 return ObservationClass.PROOF_GAP
 
+            return ObservationClass.VERIFIED
+
+        if is_conforming:
             return ObservationClass.VERIFIED
 
         if candidates:
@@ -253,29 +260,67 @@ class RecoveryController:
 
     def evaluate_stop(
         self,
-        obligations: list[str],
-        verified_obligations: list[str],
-        coverage: CoverageStatus,
-        contradictions: list[str],
-        budgets: Any,
+        obligations: list[str] | None = None,
+        verified_obligations: list[str] | None = None,
+        coverage: CoverageStatus = CoverageStatus.COMPLETE,
+        contradictions: list[str] | None = None,
+        budgets: Any = None,
         routes_exhausted: bool = False,
         negative_license_granted: bool = False,
+        needs_clarification: bool = False,
+        unsupported: bool = False,
+        unreachable: bool = False,
+        error: bool = False,
+        aborted_by_user: bool = False,
+        outcome_verified: bool | None = None,
     ) -> StoppingDecision:
-        """Evaluate terminal stopping decision strictly according to v9 taxonomy."""
-        # 1. Budget exhausted
+        """Evaluate terminal stopping decision strictly according to v9 taxonomy.
+
+        No engine branch directly sets a terminal state.
+        Precedence:
+        1. Explicit error / abortion / unreachability
+        2. Budget exhaustion
+        3. Clarification / Ambiguity
+        4. Unsupported capability
+        5. Unresolved contradiction
+        6. Verified obligations + outcome verification
+        7. Bounded negative (routes exhausted + negative license + complete coverage)
+        8. Inconclusive (unproven, partial scan, or unverified outcome)
+        """
+        # 1. Error / abortion / unreachable
+        if error:
+            return StoppingDecision.STOP_ERROR
+        if aborted_by_user:
+            return StoppingDecision.STOP_ABORTED_BY_USER
+        if unreachable:
+            return StoppingDecision.STOP_UNREACHABLE
+
+        # 2. Budget exhausted
         is_budget_exhausted = getattr(budgets, "is_exhausted", False)
         if is_budget_exhausted:
             return StoppingDecision.STOP_BUDGET
 
-        # 2. Contradiction unresolved
+        # 3. Clarification / user decision required
+        if needs_clarification:
+            return StoppingDecision.STOP_NEEDS_CLARIFICATION
+
+        # 4. Unsupported capability
+        if unsupported:
+            return StoppingDecision.STOP_UNSUPPORTED
+
+        # 5. Contradiction unresolved
         if contradictions:
             return StoppingDecision.STOP_INCONCLUSIVE
 
-        # 3. All obligations satisfied
-        if obligations and set(obligations).issubset(set(verified_obligations)):
+        # 6. All obligations satisfied
+        ob_list = obligations or []
+        ver_list = verified_obligations or []
+        if ob_list and set(ob_list).issubset(set(ver_list)):
+            if outcome_verified is False:
+                return StoppingDecision.STOP_INCONCLUSIVE
             return StoppingDecision.STOP_ANSWERED
 
-        # 4. Routes exhausted
+        # 7. Routes exhausted
         if routes_exhausted:
             if negative_license_granted and coverage == CoverageStatus.COMPLETE:
                 return StoppingDecision.STOP_NOT_FOUND_BOUNDED

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -172,3 +172,103 @@ class ActionSignature:
             cursor=cursor,
             mode=mode,
         )
+
+
+@dataclass
+class ControllerAttempt:
+    """Canonical attempt adapter uniting QueryResult, CandidateSet delta, and ProofResult.
+
+    Prevents field-name mismatches between isolated classes and runtime objects (G1).
+    """
+
+    query_result: Any | None = None
+    candidate_delta: list[dict[str, Any]] = field(default_factory=list)
+    proof_result: Any | None = None
+    diagnostic_errors: list[str] = field(default_factory=list)
+    executed_ok: bool = True
+    status: str = "COMPLETED"
+    complete: bool = True
+    rows: list[dict[str, Any]] = field(default_factory=list)
+    row_count: int = 0
+    hit_limit: bool = False
+    truncated: bool = False
+    proof_conforming: bool = False
+    conflict_detected: bool = False
+    query_id: str = ""
+    operation_id: str = ""
+    source_id: str = ""
+
+    @classmethod
+    def from_result(
+        cls,
+        query_result: Any | None = None,
+        candidate_delta: list[dict[str, Any]] | None = None,
+        proof_result: Any | None = None,
+        conflict_detected: bool = False,
+        operation_id: str = "",
+        source_id: str = "",
+    ) -> ControllerAttempt:
+        """Convert QueryResult, candidate delta, and ProofResult into one controller input."""
+        cands = list(candidate_delta or [])
+        diag_errors: list[str] = []
+        executed_ok = True
+        status = "COMPLETED"
+        complete = True
+        rows: list[dict[str, Any]] = []
+        row_count = 0
+        hit_limit = False
+        truncated = False
+        query_id = ""
+
+        if query_result is not None:
+            query_id = str(getattr(query_result, "query_id", "") or "")
+            executed_ok = bool(getattr(query_result, "executed_ok", True))
+            complete = bool(getattr(query_result, "complete", getattr(query_result, "completed", True)))
+            rows = list(getattr(query_result, "rows", ()) or [])
+            row_count = int(getattr(query_result, "row_count", len(rows)))
+            hit_limit = bool(getattr(query_result, "hit_limit", False))
+            truncated = bool(getattr(query_result, "truncated", False))
+            status = str(getattr(query_result, "status", "COMPLETED"))
+            raw_diag = getattr(query_result, "diagnostic_errors", None) or getattr(query_result, "diagnostic", None)
+            if raw_diag:
+                if isinstance(raw_diag, (list, tuple)):
+                    diag_errors.extend(str(e) for e in raw_diag)
+                else:
+                    diag_errors.append(str(raw_diag))
+
+        proof_conforming = False
+        if proof_result is not None:
+            proof_conforming = bool(getattr(proof_result, "verified", False))
+            p_errs = getattr(proof_result, "errors", ()) or ()
+            diag_errors.extend(str(e) for e in p_errs)
+
+        return cls(
+            query_result=query_result,
+            candidate_delta=cands,
+            proof_result=proof_result,
+            diagnostic_errors=diag_errors,
+            executed_ok=executed_ok,
+            status=status,
+            complete=complete,
+            rows=rows,
+            row_count=row_count,
+            hit_limit=hit_limit,
+            truncated=truncated,
+            proof_conforming=proof_conforming,
+            conflict_detected=conflict_detected,
+            query_id=query_id,
+            operation_id=operation_id,
+            source_id=source_id,
+        )
+
+
+__all__ = [
+    "ObservationClass",
+    "ExecutionStatus",
+    "CoverageStatus",
+    "ProofStatus",
+    "RouteStatus",
+    "TriStatus",
+    "ActionSignature",
+    "ControllerAttempt",
+]

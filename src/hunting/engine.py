@@ -73,6 +73,8 @@ from hunting.contracts.investigation_model import (
 from hunting.contracts.native_query import NativeQueryCandidate
 from hunting.contracts.observation_class import (
     ActionSignature,
+    ControllerAttempt,
+    CoverageStatus,
 )
 from hunting.contracts.observations import EpistemicType, Observation
 from hunting.contracts.queries import QueryResult
@@ -392,14 +394,52 @@ class HypothesisHuntEngine:
                 for param, vals in getattr(item, "inputs", {}).items():
                     if vals:
                         step_bindings[param] = vals[0] if isinstance(vals, list) else str(vals)
-                proof_results.append(
-                    proof_engine.evaluate(
-                        goal=goal,
-                        operation=operation_by_id.get(item.operation_id),
-                        query_result=item.result,
-                        observations=list(getattr(state, "observations", []) or []),
-                        bindings=step_bindings,
-                    )
+                pr = proof_engine.evaluate(
+                    goal=goal,
+                    operation=operation_by_id.get(item.operation_id),
+                    query_result=item.result,
+                    observations=list(getattr(state, "observations", []) or []),
+                    bindings=step_bindings,
+                )
+                proof_results.append(pr)
+
+                # Deterministic Triad: wrap attempt and classify through RecoveryController
+                attempt = ControllerAttempt.from_result(
+                    query_result=item.result,
+                    candidate_delta=[{"role": k, "value": v} for k, v in getattr(item, "outputs", {}).items()],
+                    proof_result=pr,
+                    operation_id=item.operation_id,
+                    source_id=getattr(scope, "provider_id", ""),
+                )
+                obs_class = self.recovery_controller.classify(
+                    attempt=attempt,
+                    envelope=state.search_envelope,
+                    extracted_candidates=attempt.candidate_delta,
+                )
+                next_action = self.recovery_controller.choose_next_action(
+                    classification=obs_class,
+                    envelope=state.search_envelope or SearchEnvelope(),
+                    loop_guard=self.loop_guard,
+                    current_route=(getattr(scope, "provider_id", ""), item.operation_id),
+                    candidates=attempt.candidate_delta,
+                )
+                item.observation_class = obs_class.value
+                item.next_action_reason = next_action.reason
+                action_sig = ActionSignature.from_params(
+                    goal_id=getattr(item, "step_id", goal.id),
+                    op_id=item.operation_id,
+                    scope=getattr(scope, "scope_id", ""),
+                    source_id=getattr(scope, "provider_id", ""),
+                    stage="TEST",
+                    bindings=step_bindings,
+                    time_window=state.objective.time_window if state.objective else "",
+                )
+                self.loop_guard.record_action(
+                    signature=action_sig,
+                    turn_index=state.turn,
+                    rows_count=len(item.result.rows) if item.result and hasattr(item.result, "rows") else 0,
+                    new_candidates_count=len(attempt.candidate_delta),
+                    result_payload=[dict(r) for r in (item.result.rows[:5] if item.result and hasattr(item.result, "rows") else [])],
                 )
             relation_proven = any(pr.verified for pr in proof_results)
             target = next(variable for variable in goal_graph.variables if variable.id == goal.object)
@@ -489,28 +529,53 @@ class HypothesisHuntEngine:
                 },
             )
 
-        required_verdicts = [item for item, goal in zip(goal_verdicts, goal_graph.relations) if goal.required]
-        if required_verdicts and all(item["status"] == "SUPPORTED" for item in required_verdicts):
+        # Outcome verification and canonical stop evaluation via RecoveryController (G2, G4)
+        required_goals = [goal.id for goal in goal_graph.relations if goal.required]
+        verified_goals = [item["goal_id"] for item in goal_verdicts if item.get("status") in ("SUPPORTED", "VERIFIED")]
+        coverage_status = (
+            CoverageStatus.PARTIAL
+            if any(item.get("status") == "PARTIAL" for item in goal_verdicts)
+            else CoverageStatus.COMPLETE
+        )
+
+        outcome_contract = getattr(state.objective, "outcome_contract", None) if state.objective else None
+        if outcome_contract is None and state.objective and getattr(state.objective, "answer_spec", None):
+            from hunting.contracts.outcome import outcome_contract_from_legacy_answer_contract
+            outcome_contract = outcome_contract_from_legacy_answer_contract(state.objective.answer_spec)
+
+        outcome_result = None
+        if outcome_contract is not None:
+            from hunting.evidence.outcome_verifier import OutcomeVerifier
+            outcome_result = OutcomeVerifier.verify(
+                contract=outcome_contract,
+                bound_variables=goal_bindings,
+                candidate_sets=getattr(state, "candidate_sets", {}),
+                observations=list(getattr(state, "observations", []) or []),
+                cards=list(getattr(state, "evidence_cards", []) or []),
+                verified_goals=verified_goals,
+                coverage_complete=(coverage_status == CoverageStatus.COMPLETE),
+            )
+
+        is_outcome_verified = outcome_result.verified if outcome_result is not None else (
+            bool(required_goals and set(required_goals).issubset(set(verified_goals)))
+        )
+
+        stopping_decision = self.recovery_controller.evaluate_stop(
+            obligations=required_goals,
+            verified_obligations=verified_goals,
+            coverage=coverage_status,
+            contradictions=[],
+            budgets=state.search_envelope.budgets if state.search_envelope else self.budget_ledger,
+            routes_exhausted=bool(getattr(execution, "route_exhausted", False)),
+            needs_clarification=bool(execution.needs_user_decision),
+            outcome_verified=is_outcome_verified,
+        )
+
+        if stopping_decision == StoppingDecision.STOP_ANSWERED:
             for hypothesis in state.hypotheses:
                 hypothesis.status = HypothesisStatus.SUPPORTED
-            self.controller.set_stopping_decision(state, StoppingDecision.STOP_RESOLVED)
-        elif execution.needs_user_decision:
-            self.controller.set_stopping_decision(state, StoppingDecision.STOP_NEEDS_USER_DECISION)
-        elif execution.unresolved_step_ids:
-            # A missing typed binding is an explicit execution boundary.  It
-            # must be visible in the account and cannot be mistaken for a
-            # successful negative search or silently dropped plan steps.
-            # A provider result that was executed but did not reach EOF is a
-            # coverage problem, not proof that the relation is false or that
-            # the graph itself is invalid.  The continuation details are
-            # persisted above so a future controller action can resume/refine
-            # the step without trusting partial rows as proof.
-            if getattr(execution, "continuations", {}):
-                self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP)
-            else:
-                self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
-        else:
-            self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
+
+        self.controller.set_stopping_decision(state, stopping_decision)
 
         if getattr(state, "step_trace", None) is not None:
             state.step_trace.record_step(
@@ -1644,14 +1709,14 @@ class HypothesisHuntEngine:
                 for provider in capability_graph.providers
                 if provider.status == "ONLINE"
             ]
-            self.controller.set_stopping_decision(
-                state,
-                StoppingDecision.STOP_UNSUPPORTED_CAPABILITY
-                if online_providers
-                else StoppingDecision.STOP_UNREACHABLE,
+            stop_decision = self.recovery_controller.evaluate_stop(
+                unsupported=bool(online_providers),
+                unreachable=not online_providers,
             )
+            self.controller.set_stopping_decision(state, stop_decision)
         elif active_catalog is not None and active_catalog.status != "ONLINE":
-            self.controller.set_stopping_decision(state, StoppingDecision.STOP_UNREACHABLE)
+            stop_decision = self.recovery_controller.evaluate_stop(unreachable=True)
+            self.controller.set_stopping_decision(state, stop_decision)
 
         if getattr(objective, "semantic_intent", None):
             state.hunt_spec = HuntSpec.from_semantic(
@@ -1665,13 +1730,15 @@ class HypothesisHuntEngine:
         if inv_model:
             val_res = self.inv_validator.validate_investigation_model(inv_model)
             if not val_res.valid:
-                self.controller.set_stopping_decision(state, StoppingDecision.STOP_INSUFFICIENT)
+                stop_decision = self.recovery_controller.evaluate_stop(needs_clarification=True)
+                self.controller.set_stopping_decision(state, stop_decision)
 
         # 2. Apply fast guards after the Provider Census. Capability discovery
         # has already run exactly once for every configured adapter, and its
         # reachable, unreachable and irrelevant outcomes remain in the graph.
         if any(h.status == HypothesisStatus.INSUFFICIENTLY_SPECIFIED for h in state.hypotheses):
-            self.controller.set_stopping_decision(state, StoppingDecision.STOP_INSUFFICIENT)
+            stop_decision = self.recovery_controller.evaluate_stop(needs_clarification=True)
+            self.controller.set_stopping_decision(state, stop_decision)
 
         # 3. Register Scope and Cells
         scope = getattr(active_adapter, "scope", None)
@@ -1742,10 +1809,8 @@ class HypothesisHuntEngine:
             # An unresolved semantic goal is not permission to scan the whole
             # provider.  Stop with an explicit capability boundary instead of
             # promoting unrelated scope rows to evidence.
-            self.controller.set_stopping_decision(
-                state,
-                StoppingDecision.STOP_UNSUPPORTED_CAPABILITY,
-            )
+            stop_decision = self.recovery_controller.evaluate_stop(unsupported=True)
+            self.controller.set_stopping_decision(state, stop_decision)
 
         # A validated ClaimGraph already contains the semantic observation
         # contract.  It must go directly through capability binding and claim
@@ -1989,7 +2054,12 @@ class HypothesisHuntEngine:
         # The final semantic evaluator still runs below over the discovery
         # cards and explains what the observed rows do and do not prove.
         if state.discovery_completed and getattr(objective, "semantic_intent", None):
-            self.controller.set_stopping_decision(state, StoppingDecision.STOP_BOUNDED)
+            stop_decision = self.recovery_controller.evaluate_stop(
+                routes_exhausted=True,
+                negative_license_granted=True,
+                coverage=CoverageStatus.COMPLETE,
+            )
+            self.controller.set_stopping_decision(state, stop_decision)
 
         # Discovered or targeted instance cells
         if request.entities:
@@ -2094,7 +2164,8 @@ class HypothesisHuntEngine:
                 self.controller.advance_turn(state)
 
                 if self.budget_ledger.is_exhausted:
-                    self.controller.set_stopping_decision(state, StoppingDecision.STOP_EXHAUSTED_BY_BUDGET)
+                    stop_decision = self.recovery_controller.evaluate_stop(budgets=self.budget_ledger)
+                    self.controller.set_stopping_decision(state, stop_decision)
                     break
 
                 decision = self.action_planner.select_action(
@@ -2112,13 +2183,15 @@ class HypothesisHuntEngine:
                     op_name = decision.metadata.get("operation_name")
                     edge = state.case.graph.get_edge(edge_id) if edge_id else None
                     if not edge or not op_name:
-                        self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
+                        stop_decision = self.recovery_controller.evaluate_stop(routes_exhausted=True)
+                        self.controller.set_stopping_decision(state, stop_decision)
                         break
 
                     src_node = state.case.graph.get_node(edge.source_id)
                     tgt_node = state.case.graph.get_node(edge.target_id)
                     if not src_node or not tgt_node:
-                        self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
+                        stop_decision = self.recovery_controller.evaluate_stop(routes_exhausted=True)
+                        self.controller.set_stopping_decision(state, stop_decision)
                         break
 
                     rel_label = edge.relation_type if isinstance(edge.relation_type, str) else edge.relation_type.value
@@ -2170,9 +2243,8 @@ class HypothesisHuntEngine:
                         result_payload=[dict(r) for r in qr.rows[:5]] if qr and hasattr(qr, "rows") else None,
                     )
                     if not has_progress and self.loop_guard.is_stalled(action_sig):
-                        self.controller.set_stopping_decision(
-                            state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN
-                        )
+                        stop_decision = self.recovery_controller.evaluate_stop(routes_exhausted=True)
+                        self.controller.set_stopping_decision(state, stop_decision)
                         break
 
                     # Update instance Cell coverage corresponding to source entity
@@ -2362,7 +2434,8 @@ class HypothesisHuntEngine:
                             for req in turn_reqs:
                                 if req.status in (RequirementStatus.DEFINED, RequirementStatus.PLANNED, RequirementStatus.EXECUTED):
                                     self.controller.update_requirement_status(state, req, RequirementStatus.INCONCLUSIVE)
-                            self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
+                            stop_decision = self.recovery_controller.evaluate_stop(routes_exhausted=True)
+                            self.controller.set_stopping_decision(state, stop_decision)
                             break
                         elif tgt_type_str in (
                             "software", "software_version", "application", "version",
@@ -2391,15 +2464,18 @@ class HypothesisHuntEngine:
                                         req,
                                         RequirementStatus.INCONCLUSIVE,
                                     )
+                            stop_decision = self.recovery_controller.evaluate_stop(routes_exhausted=True)
                             self.controller.set_stopping_decision(
                                 state,
-                                StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN,
+                                stop_decision,
                             )
                             break
                         elif tgt_type_str in ("account", "user", "endpoint", "host"):
-                            self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED)
+                            stop_decision = self.recovery_controller.evaluate_stop(needs_clarification=True)
+                            self.controller.set_stopping_decision(state, stop_decision)
                         else:
-                            self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN)
+                            stop_decision = self.recovery_controller.evaluate_stop(routes_exhausted=True)
+                            self.controller.set_stopping_decision(state, stop_decision)
                         break
 
             if not state.stopping_decision:
@@ -2410,7 +2486,8 @@ class HypothesisHuntEngine:
             self.controller.advance_turn(state)
 
             if self.budget_ledger.is_exhausted:
-                self.controller.set_stopping_decision(state, StoppingDecision.STOP_EXHAUSTED_BY_BUDGET)
+                stop_decision = self.recovery_controller.evaluate_stop(budgets=self.budget_ledger)
+                self.controller.set_stopping_decision(state, stop_decision)
                 break
 
             untested_exps = [e for e in state.expectations if e.test_status == TestStatus.UNTESTED]

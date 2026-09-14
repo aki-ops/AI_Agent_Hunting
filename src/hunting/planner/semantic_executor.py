@@ -51,6 +51,8 @@ class StepExecution:
     stage_id: str = "narrow"
     removed_retrieval_keys: tuple[str, ...] = ()
     goal_id: str = ""
+    observation_class: str = ""
+    next_action_reason: str = ""
 
 
 @dataclass
