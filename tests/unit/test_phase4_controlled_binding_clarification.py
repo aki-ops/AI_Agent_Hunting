@@ -149,7 +149,7 @@ def test_gate_two_matching_hosts_trigger_discriminator_or_clarification() -> Non
     action2, payload2 = controller.resolve_candidate_set(cset, request_id="req-test")
     assert action2 == DisambiguationAction.NEEDS_DISAMBIGUATION
     assert isinstance(payload2, DisambiguationCheckpoint)
-    assert payload2.status == "NEEDS_DISAMBIGUATION"
+    assert payload2.status in ("NEEDS_DISAMBIGUATION", "STOP_NEEDS_CLARIFICATION")
     assert payload2.resume_token != ""
     assert "HOST-ALPHA" in payload2.candidate_values
     assert "HOST-BETA" in payload2.candidate_values

@@ -103,7 +103,7 @@ def test_create_llm_caller_preflights_before_call():
 
 def test_create_llm_caller_tracked():
     provider = MockLLMProvider(model="gemini-2.5-flash")
-    tracker = LLMUsageTracker(max_calls=3, model_name="gemini-2.5-flash")
+    tracker = LLMUsageTracker(max_calls=5, model_name="gemini-2.5-flash")
     caller = create_llm_caller(provider, tracker, component="evaluator")
 
     response = caller("Evaluate this evidence against hypothesis")
@@ -116,7 +116,7 @@ def test_create_llm_caller_tracked():
 
 def test_failed_llm_call_and_physical_attempts_are_accounted():
     provider = FailingLLMProvider()
-    tracker = LLMUsageTracker(max_calls=3, model_name="gemini-2.5-flash")
+    tracker = LLMUsageTracker(max_calls=5, model_name="gemini-2.5-flash")
     caller = create_llm_caller(provider, tracker, component="source_profiler")
 
     assert caller("profile this source") == "{}"

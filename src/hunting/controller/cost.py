@@ -259,6 +259,7 @@ class LLMUsageTracker:
         phase: str | LLMPhase,
         prompt: str = "",
         expected_completion_tokens: int = 0,
+        component: str | None = None,
     ) -> tuple[bool, str]:
         """Check if an LLM invocation in given phase is permissible under reservation policy."""
         norm = normalize_phase(phase)
@@ -268,19 +269,26 @@ class LLMUsageTracker:
         if phase_policy.max_calls <= 0:
             return False, f"Phase '{norm.value}' is disabled by policy (max_calls=0)"
 
-        # 2. Phase-specific call limit
+        # 2. Component-specific call limit
+        comp_key = component or norm.value
+        if self.component_limits and comp_key in self.component_limits:
+            count = sum(1 for c in self.calls if c.component == comp_key or c.phase == comp_key)
+            if count >= self.component_limits[comp_key]:
+                return False, f"budget exhausted for component '{comp_key}' ({count} >= {self.component_limits[comp_key]})"
+
+        # 3. Phase-specific call limit
         if self.phase_call_count(norm) >= phase_policy.max_calls:
             return False, f"Phase '{norm.value}' maximum call limit ({phase_policy.max_calls}) reached"
 
-        # 3. Global call limit
+        # 4. Global call limit
         if self.call_count >= self.max_calls:
             return False, f"Global LLM call budget exhausted: maximum {self.max_calls} calls already used"
 
-        # 4. Global token limit
+        # 5. Global token limit
         if self.total_tokens >= self.max_total_tokens:
             return False, f"Global LLM token budget exhausted: {self.total_tokens} >= {self.max_total_tokens}"
 
-        # 5. Global Reservation Scheduler: Optional calls cannot consume reserved mandatory capacity
+        # 6. Global Reservation Scheduler: Optional calls cannot consume reserved mandatory capacity
         if not phase_policy.is_mandatory:
             remaining = self.remaining_calls
             reserved = self.reserved_mandatory_capacity()
@@ -290,13 +298,13 @@ class LLMUsageTracker:
                     f"remaining calls={remaining}, reserved mandatory={reserved}"
                 )
 
-        # 6. Projected token consumption preflight check
+        # 7. Projected token consumption preflight check
         if prompt:
             prompt_tokens = self.estimate_tokens(prompt)
             projected = prompt_tokens + max(0, expected_completion_tokens)
             if projected > self.remaining_tokens:
                 return False, (
-                    f"Projected tokens ({projected}) exceed remaining global tokens ({self.remaining_tokens})"
+                    f"LLM budget preflight rejected: Projected tokens ({projected}) exceed remaining global tokens ({self.remaining_tokens})"
                 )
 
         return True, "OK"
@@ -321,6 +329,7 @@ class LLMUsageTracker:
             norm,
             prompt=prompt,
             expected_completion_tokens=expected_completion_tokens,
+            component=component,
         )
         if not can_run:
             if "reserved" in denial_reason:

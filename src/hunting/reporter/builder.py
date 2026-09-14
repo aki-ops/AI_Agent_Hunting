@@ -21,6 +21,7 @@ from hunting.contracts.hunt import (
     FinalHuntAccount,
     HuntObjective,
     HuntState,
+    Hypothesis,
     HypothesisStatus,
     RequirementStatus,
     StoppingDecision,
@@ -227,11 +228,30 @@ def build_final_hunt_account(
     ledger: ObservationLedger | None = None,
     residuals: list[str] | None = None,
     diagnostics: list[dict[str, Any]] | None = None,
+    stopping_decision: StoppingDecision | None = None,
+    cost_tracker: Any | None = None,
+    hypothesis_verdict: str | None = None,
 ) -> FinalHuntAccount:
     """Build canonical FinalHuntAccount from HuntState and ObservationLedger."""
     obj = state.objective or HuntObjective(request_id="req-default")
-    stopping_dec = state.stopping_decision or StoppingDecision.STOP_BOUNDED
+    stopping_dec = stopping_decision or state.stopping_decision or StoppingDecision.STOP_BOUNDED
     cov = state.coverage if state.coverage is not None else CoverageBound()
+
+    if cost_tracker is not None:
+        if hasattr(cost_tracker, "to_dict"):
+            state.llm_usage = cost_tracker.to_dict()
+        elif isinstance(cost_tracker, dict):
+            state.llm_usage = cost_tracker
+
+    if hypothesis_verdict is not None and not state.hypotheses:
+        verdict_status = getattr(HypothesisStatus, str(hypothesis_verdict), None) or HypothesisStatus.SUPPORTED
+        state.hypotheses = [
+            Hypothesis(
+                id="hypo-1",
+                statement=obj.statement or "Hunt objective hypothesis",
+                status=verdict_status,
+            )
+        ]
 
     semantic_goal_graph = getattr(state, "semantic_goal_graph", None) or getattr(obj, "semantic_goal_graph", None)
     if semantic_goal_graph is not None:
