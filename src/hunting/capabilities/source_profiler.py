@@ -29,6 +29,14 @@ class SourceProfiler:
     ) -> dict[str, Any]:
         return {
             "component": "source_profiler",
+            "instructions": (
+                "Map available telemetry sources to the requested relations. "
+                "Output MUST be valid JSON conforming to: "
+                "{\"proposals\": [{\"source_id\": \"<source_id>\", \"relation\": \"<relation>\", "
+                "\"input_roles\": {\"<role>\": \"<field_name>\"}, \"output_roles\": {\"<role>\": \"<field_name>\"}, "
+                "\"proof_mode\": \"retrieval_only\" | \"relation_observable\", \"probe_kind\": \"cooccurrence\" | \"filter\"}]}. "
+                "Output ONLY the JSON object. Do not include explanatory text."
+            ),
             "requirements": [dict(item) for item in requirements],
             # The profiler needs schema metadata, not representative values.
             # Values are intentionally omitted to keep the call bounded and
@@ -64,6 +72,22 @@ class SourceProfiler:
     ) -> tuple[list[SourceCapabilityProposal], dict[str, Any]]:
         if self.llm_caller is None:
             return [], {"status": "NO_LLM_CALLER", "proposals": []}
+
+        def _clean_and_parse(text: Any) -> Any:
+            if isinstance(text, dict):
+                return text
+            if not isinstance(text, str):
+                return None
+            s = text.strip()
+            if s.startswith("```"):
+                lines = s.splitlines()
+                if lines and lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].startswith("```"):
+                    lines = lines[:-1]
+                s = "\n".join(lines).strip()
+            return json.loads(s)
+
         # The shared tracked LLM caller accepts a serialized prompt. Keeping
         # the boundary textual also makes the prompt hash/cost auditable.
         raw = self.llm_caller(json.dumps(
@@ -71,8 +95,10 @@ class SourceProfiler:
             ensure_ascii=False,
             sort_keys=True,
         ))
+
+        payload = None
         try:
-            payload = json.loads(raw) if isinstance(raw, str) else raw
+            payload = _clean_and_parse(raw)
         except Exception as exc:
             return [], {
                 "status": "MALFORMED_OUTPUT",
@@ -81,6 +107,7 @@ class SourceProfiler:
                 "proposals": [],
                 "rejected": [],
             }
+
         if not isinstance(payload, dict) or not isinstance(payload.get("proposals"), list):
             return [], {
                 "status": "MALFORMED_OUTPUT",

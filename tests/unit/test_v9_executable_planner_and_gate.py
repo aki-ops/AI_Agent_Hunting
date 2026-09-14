@@ -232,3 +232,165 @@ def test_single_goal_factual_lookup_stays_single_goal() -> None:
     assert plan.steps[0].operation_id == "op-ver"
     assert plan.steps[0].advances_goal_ids == ("g-ver",)
     assert len(plan.unresolved_goal_ids) == 0
+
+
+def test_gate_blocks_downstream_when_upstream_unproven_despite_rows() -> None:
+    """Acceptance: Gate blocks downstream execution when upstream step is unproven despite rows.
+
+    Counterexample scenario:
+    - Step 1: Mallory -> logged_on_to -> host
+    - Step 2: host -> wrote -> secret.pptx (gated on goal-1:verified)
+    - Adapter returns rows containing an unrelated user / host (Eve on UNRELATED-HOST).
+    - Even though adapter returned rows, ProofEngine evaluates proved=False.
+    - Gate condition 'goal-1:verified' must fail, blocking Step 2 from issuing any query.
+    """
+    from hunting.evidence.proof_engine import ProofEngine
+
+    var_user = SemanticVariable(id="var_user", entity_type="account", value="Mallory")
+    var_host = SemanticVariable(id="var_host", entity_type="endpoint")
+    var_file = SemanticVariable(id="var_file", entity_type="file")
+
+    g1 = SemanticRelationGoal(id="goal-1", subject="var_user", relation="logged_on_to", object="var_host")
+    g2 = SemanticRelationGoal(id="goal-2", subject="var_host", relation="wrote", object="var_file")
+
+    goal_graph = SemanticGoalGraph(
+        id="graph-counterexample",
+        request_id="req-counterexample",
+        objective="Did Mallory log on to a host and write secret.pptx?",
+        variables=[var_user, var_host, var_file],
+        relations=[g1, g2],
+    )
+
+    step_1 = PlanStep(
+        id="s1",
+        operation_id="op-logon",
+        input_bindings={"subject": "var_user"},
+        output_bindings={"object": "var_host"},
+        advances_goal_ids=("goal-1",),
+        relation="logged_on_to",
+    )
+    step_2 = PlanStep(
+        id="s2",
+        operation_id="op-file",
+        input_bindings={"subject": "var_host"},
+        output_bindings={"object": "var_file"},
+        advances_goal_ids=("goal-2",),
+        depends_on=("s1",),
+        dependency_operator="GATE",
+        gate_condition="goal-1:verified",
+        relation="wrote",
+    )
+
+    plan = LogicalPlan(
+        id="plan-counterexample",
+        goal_graph_id="graph-counterexample",
+        provider_id="mock",
+        steps=[step_1, step_2],
+    )
+
+    class CounterexampleAdapter:
+        def __init__(self, return_unrelated: bool = True) -> None:
+            self.calls = []
+            self.return_unrelated = return_unrelated
+
+        def execute_query(self, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs["operation_id"] == "op-logon":
+                if self.return_unrelated:
+                    # Returns rows, but for an unrelated user (Eve, not Mallory)
+                    return QueryResult(
+                        kwargs["query_id"],
+                        QueryOutcome.ROWS,
+                        True,
+                        True,
+                        rows=[{"user": "Eve", "host": "UNRELATED-HOST"}],
+                    )
+                else:
+                    # Valid proof row for Mallory
+                    return QueryResult(
+                        kwargs["query_id"],
+                        QueryOutcome.ROWS,
+                        True,
+                        True,
+                        rows=[{"user": "Mallory", "host": "WORKSTATION-01"}],
+                    )
+            return QueryResult(
+                kwargs["query_id"],
+                QueryOutcome.ROWS,
+                True,
+                True,
+                rows=[{"file": "secret.pptx", "host": "WORKSTATION-01"}],
+            )
+
+    ops = [
+        ProviderOperation(
+            id="op-logon",
+            provider_id="mock",
+            scope_ids=("test",),
+            guaranteed_relations=("logged_on_to",),
+            input_entity_kinds=("account",),
+            output_entity_kinds=("endpoint",),
+            output_value_bindings={"object": ("host",)},
+            proof_mode="relation_observable",
+        ),
+        ProviderOperation(
+            id="op-file",
+            provider_id="mock",
+            scope_ids=("test",),
+            guaranteed_relations=("wrote",),
+            input_entity_kinds=("endpoint",),
+            output_entity_kinds=("file",),
+            output_value_bindings={"object": ("file",)},
+            proof_mode="relation_observable",
+        ),
+    ]
+
+    proof_engine = ProofEngine()
+    scope = ProviderScope(provider_id="mock", native_partition={"index": "main"}, scope_id="test")
+
+    # Case 1: Unrelated row returned -> Gate BLOCKS Step 2
+    adapter_unrelated = CounterexampleAdapter(return_unrelated=True)
+    executor_blocked = SemanticPlanExecutor(adapter_unrelated, ops, proof_engine=proof_engine)
+    res_blocked = executor_blocked.execute(
+        plan=plan,
+        scope=scope,
+        time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z",
+        initial_variables={"var_user": "Mallory"},
+        goal_graph=goal_graph,
+    )
+
+    # Step 1 executed and issued a query
+    assert len(adapter_unrelated.calls) == 1
+    assert adapter_unrelated.calls[0]["operation_id"] == "op-logon"
+
+    # Step 1 execution has proof_result that is NOT proved
+    s1_exec = next(e for e in res_blocked.executions if e.step_id == "s1")
+    assert s1_exec.proof_result is not None
+    assert not s1_exec.proof_result.proved
+
+    # Step 2 was BLOCKED at the gate -> ZERO queries issued for op-file!
+    assert "s2" in res_blocked.unresolved_reasons
+    assert "GATE blocked" in res_blocked.unresolved_reasons["s2"]
+    assert all(c["operation_id"] != "op-file" for c in adapter_unrelated.calls)
+
+    # Case 2: Conforming row returned -> Gate OPENS and Step 2 executes
+    adapter_valid = CounterexampleAdapter(return_unrelated=False)
+    executor_valid = SemanticPlanExecutor(adapter_valid, ops, proof_engine=proof_engine)
+    res_valid = executor_valid.execute(
+        plan=plan,
+        scope=scope,
+        time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z",
+        initial_variables={"var_user": "Mallory"},
+        goal_graph=goal_graph,
+    )
+
+    # Both steps executed
+    assert len(adapter_valid.calls) == 2
+    assert adapter_valid.calls[0]["operation_id"] == "op-logon"
+    assert adapter_valid.calls[1]["operation_id"] == "op-file"
+
+    s1_valid_exec = next(e for e in res_valid.executions if e.step_id == "s1")
+    assert s1_valid_exec.proof_result is not None
+    assert s1_valid_exec.proof_result.proved
+    assert "s2" not in res_valid.unresolved_reasons
+

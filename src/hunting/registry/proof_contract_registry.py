@@ -151,6 +151,16 @@ class ProofContractRegistry:
                 status=ProofContractStatus.APPROVED,
                 description="Proves process spawn/creation on an endpoint.",
             ),
+            # 6c. Process executed proof
+            ProofContract(
+                contract_id="proof-process-executed-v1",
+                version="1.0.0",
+                relation="executed",
+                required_entity_roles=("endpoint",),
+                required_value_roles=("process",),
+                status=ProofContractStatus.APPROVED,
+                description="Proves process execution on an endpoint.",
+            ),
             # 7. Tor Browser install/run proof
             ProofContract(
                 contract_id="proof-software-install-v1",

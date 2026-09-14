@@ -56,6 +56,7 @@ class OutcomeVerifier:
         cards: list[Any] | None = None,
         verified_goals: list[str] | None = None,
         coverage_complete: bool = True,
+        proof_results: list[Any] | None = None,
     ) -> OutcomeVerificationResult:
         """Dispatch to the contract-specific verifier."""
         kind = getattr(contract, "contract_kind", OutcomeContractKind.FACTUAL_ANSWER.value)
@@ -68,6 +69,7 @@ class OutcomeVerifier:
                 observations=observations or [],
                 cards=cards or [],
                 coverage_complete=coverage_complete,
+                proof_results=proof_results or [],
             )
         elif kind == OutcomeContractKind.HYPOTHESIS_VERDICT.value or isinstance(contract, HypothesisVerdictContract):
             return cls._verify_hypothesis(
@@ -97,11 +99,13 @@ class OutcomeVerifier:
         observations: list[Any],
         cards: list[Any],
         coverage_complete: bool,
+        proof_results: list[Any] | None = None,
     ) -> OutcomeVerificationResult:
         slot_values: dict[str, Any] = {}
         missing_slots: list[str] = []
         diagnostics: list[str] = []
         citations: list[str] = []
+        all_proven = True
 
         for slot in contract.slots:
             val = bound_variables.get(slot)
@@ -143,18 +147,86 @@ class OutcomeVerifier:
                         )
                 single_val = val[0] if isinstance(val, (list, tuple)) else val
                 slot_values[slot] = str(single_val)
+                target_vals = [str(single_val)]
             else:
-                slot_values[slot] = list(val) if isinstance(val, (list, tuple, set)) else [str(val)]
+                list_vals = list(val) if isinstance(val, (list, tuple, set)) else [str(val)]
+                slot_values[slot] = list_vals
+                target_vals = [str(x) for x in list_vals]
 
-        # Collect citations
-        for obs in observations:
-            obs_id = getattr(obs, "id", None)
-            if obs_id:
-                citations.append(str(obs_id))
-        for card in cards:
-            c_id = getattr(card, "id", None)
-            if c_id:
-                citations.append(str(c_id))
+            # Enforce proof backing for each target value
+            for t_val in target_vals:
+                t_norm = t_val.strip().casefold()
+                val_proven = False
+
+                # 1. Check verified ProofResults
+                if proof_results:
+                    for pr in proof_results:
+                        if not getattr(pr, "proved", getattr(pr, "verified", False)):
+                            continue
+                        pr_bindings = dict(getattr(pr, "bindings", {}) or {})
+                        pr_cited_fields = dict(getattr(pr, "cited_fields", {}) or {})
+                        pr_vals = [
+                            getattr(pr, "subject_binding", ""),
+                            getattr(pr, "object_binding", ""),
+                            *pr_bindings.values(),
+                            *pr_cited_fields.values(),
+                        ]
+                        if any(t_norm == str(pv).strip().casefold() or (len(t_norm) > 3 and t_norm in str(pv).strip().casefold()) for pv in pr_vals if pv):
+                            val_proven = True
+                            pr_cits = getattr(pr, "cited_observation_ids", getattr(pr, "citations", ()))
+                            citations.extend(str(c) for c in pr_cits)
+                            break
+
+                # 2. Check CandidateSets
+                if not val_proven and slot in candidate_sets:
+                    cset = candidate_sets[slot]
+                    for c in getattr(cset, "candidates", ()):
+                        if str(c.value).strip().casefold() == t_norm:
+                            is_verif = getattr(c, "status", "") in ("VERIFIED", "VERIFIED_BINDING") or getattr(c, "is_verified_binding", False)
+                            no_contra = not bool(getattr(c, "contradictions", ()))
+                            if is_verif and no_contra:
+                                val_proven = True
+                                for f_id in getattr(c, "supporting_fact_ids", ()):
+                                    citations.append(str(f_id))
+                                if getattr(c, "provenance", ""):
+                                    citations.append(str(c.provenance))
+                                break
+
+                # 3. Check Observations & Cards
+                if not val_proven and observations:
+                    for obs in observations:
+                        obs_fields = getattr(obs, "fields", None)
+                        obs_raw = getattr(obs, "raw_event", None)
+                        found_in_obs = False
+                        if isinstance(obs_fields, dict):
+                            for ov in obs_fields.values():
+                                if t_norm == str(ov).strip().casefold() or (len(t_norm) > 3 and t_norm in str(ov).strip().casefold()):
+                                    found_in_obs = True
+                                    break
+                        if not found_in_obs and isinstance(obs_raw, dict):
+                            for ov in obs_raw.values():
+                                if t_norm == str(ov).strip().casefold() or (len(t_norm) > 3 and t_norm in str(ov).strip().casefold()):
+                                    found_in_obs = True
+                                    break
+                        if not found_in_obs and not hasattr(obs, "fields") and not hasattr(obs, "raw_event"):
+                            found_in_obs = True
+
+                        if found_in_obs:
+                            val_proven = True
+                            obs_id = getattr(obs, "id", None)
+                            if obs_id:
+                                citations.append(str(obs_id))
+                            break
+
+                if not val_proven:
+                    all_proven = False
+                    diagnostics.append(f"Slot '{slot}' value '{t_val}' is not verified by proof results or observed telemetry")
+
+        if not citations and cards:
+            for card in cards:
+                c_id = getattr(card, "id", None)
+                if c_id:
+                    citations.append(str(c_id))
 
         if missing_slots:
             status = "INCONCLUSIVE" if not coverage_complete else "NOT_FOUND"
@@ -164,7 +236,17 @@ class OutcomeVerifier:
                 slot_values=slot_values,
                 missing_slots=tuple(missing_slots),
                 diagnostics=tuple(diagnostics),
-                citations=tuple(citations[:10]),
+                citations=tuple(list(dict.fromkeys(citations))[:10]),
+            )
+
+        if not all_proven:
+            return OutcomeVerificationResult(
+                verified=False,
+                status="UNPROVEN",
+                slot_values=slot_values,
+                missing_slots=(),
+                diagnostics=tuple(diagnostics),
+                citations=tuple(list(dict.fromkeys(citations))[:10]),
             )
 
         return OutcomeVerificationResult(
@@ -172,8 +254,8 @@ class OutcomeVerifier:
             status="ANSWERED",
             slot_values=slot_values,
             missing_slots=(),
-            diagnostics=(),
-            citations=tuple(citations[:10]),
+            diagnostics=tuple(diagnostics),
+            citations=tuple(list(dict.fromkeys(citations))[:10]),
         )
 
     @classmethod

@@ -61,6 +61,16 @@ class ProofEngine:
                         resolved_contract = c
                         break
 
+            if resolved_contract is None and operation:
+                in_kinds = tuple(str(k).strip().lower() for k in getattr(operation, "input_entity_kinds", ()))
+                out_kinds = tuple(str(k).strip().lower() for k in getattr(operation, "output_entity_kinds", ()))
+                for c in self.registry.list_approved():
+                    c_in = tuple(str(k).strip().lower() for k in c.required_entity_roles)
+                    c_out = tuple(str(k).strip().lower() for k in c.required_value_roles)
+                    if in_kinds == c_in and out_kinds == c_out:
+                        resolved_contract = c
+                        break
+
         # If no contract found or contract is not approved: novel relation exploration / gap
         if resolved_contract is None:
             rel_name = getattr(goal, "relation", None) or (

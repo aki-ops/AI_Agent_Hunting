@@ -1,4 +1,10 @@
-# 07 — Phản biện chiến lược: tính khoa học, chi phí, khả năng mở rộng
+# 07 — Phản biện chiến lược: tính khoa học, chi phí, khả năng mở rộng (v8 record)
+
+> **Trạng thái 2026-09-14:** đây là bản phản biện lịch sử dẫn tới kiến trúc v9,
+> không phải đặc tả runtime. Các quyết định đã chốt nằm trong `01`; phương pháp
+> nằm trong `02`; kế hoạch khắc phục code nằm trong `08`. Những nhận xét về
+> semantic review độc lập, co-occurrence, evaluation và tổng chi phí vẫn là các
+> điều kiện kiểm chứng bắt buộc của v9.
 
 ## Kết luận điều hành
 
@@ -6,7 +12,7 @@
 
 Khuyến nghị: giữ typed QueryIntent, read-only execution, evidence ledger, phân biệt UNKNOWN/absence. Thu hẹp phạm vi chứng minh. Catalog đã xác nhận + discovery tăng dần là ứng viên cần so sánh với exhaustive, chưa phải kiến trúc đã được chứng minh tối ưu. Chỉ đổi mặc định sau matched replay đo chất lượng, coverage và tổng chi phí. Không nâng cooccurrence thành semantic proof.
 
-Đây là review tài liệu, không phải audit code hoặc benchmark production. Đã đọc đủ 6 tài liệu gốc. Những `[x]` và kết quả test trong `04` là tuyên bố của tài liệu; không được kiểm chứng bằng artifact thực thi trong lượt này. Không sửa tài liệu gốc.
+Đây là review tài liệu tại thời điểm v8, không phải audit code hoặc benchmark production. Các nhận xét về trạng thái checklist trong phần còn lại chỉ mô tả snapshot v8; trạng thái hiện hành phải đọc trong `04-IMPLEMENTATION-CHECKLIST.md` v9.
 
 ### Phương pháp research và giới hạn
 

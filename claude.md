@@ -1,54 +1,34 @@
-# Repository Working Rules (v8.0)
+# Repository Working Rules (v9)
 
-Read `context.md` first, then follow canonical documents in priority order:
-1. `08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md` — candidate master plan and execution roadmap;
-2. `01_FINAL-ARCHITECTURE.md` — canonical architecture (Control & Hunt Planes);
-3. `02_METHOD-AND-IMPLEMENTATION-PLAN.md` — executable Steps A–J, C1–C6 call table, and cost accounting;
-4. `03_LITERATURE-AND-TRACEABILITY.md` — literature grounding and architectural traceability;
-5. `04-IMPLEMENTATION-CHECKLIST.md` — evidence-gated implementation checklist (Phases 0–8);
-6. `06-REFERENCE-ARCHITECTURE-DECISION.md` — reference architecture decision record;
-7. `07-STRATEGIC-RESEARCH-REVIEW.md` — strategic research critique.
+Read `context.md` and then the canonical documents in the order declared there.
 
----
+## Architecture authority
 
-## Three Non-Negotiable Invariants
+- `01_FINAL-ARCHITECTURE.md` is the sole normative architecture.
+- `02` defines runtime method; `08` defines migration work; `04` records evidence.
+- Generated reports and artifacts never define intended behavior.
+- Do not mark a checklist item complete because a class exists or a simulated test assigns expected values.
 
-1. **LLM is a semantic planner, not a semantic oracle.** The LLM may propose goals, candidate sources, field mappings, queries, and explanations. Only deterministic validators, adapters, and human-approved `ProofContract` evaluators may promote a claim or answer to verified status.
-2. **No full-schema prompt, no fixed Top-K cutoff.** The catalog of sources and fields remains outside the hot LLM prompt. The agent expands a progressive frontier (F0–F4) per unresolved goal. Unexamined sources are explicitly recorded as coverage gaps; shortlists never license negative claims.
-3. **Never auto-bind ambiguous candidates without proof.** If multiple entities (hosts, accounts, IPs, artifacts) match, the agent must execute a `DISCRIMINATOR` query or halt for human clarification (`NEEDS_DISAMBIGUATION`). It never selects candidates by substring heuristic or arbitrary ranking.
+## Implementation rules
 
----
+1. All request kinds use one SemanticGoalGraph production path.
+2. Use `OutcomeContract` for factual, hypothesis and population outcomes.
+3. Treat LLM outputs as untrusted proposals requiring validation.
+4. Do not implement case branches for email, web, Tor, ransomware, PowerPoint, Mallory, Amber, BOTS or known answers.
+5. Provider operation declarations are not evidence proof.
+6. Only an approved executable ProofContract may verify a relation.
+7. Implement declared AND/OR/GATE semantics exactly.
+8. Never auto-select an ambiguous singular binding.
+9. The deterministic controller is the only stop authority.
+10. Preserve native evidence, citations, completeness, coverage and cost.
+11. Keep provider names, fields and native query logic outside the reasoning kernel.
+12. Add a failing counterexample before fixing an authority or reasoning defect.
 
-## Core Architectural Invariants
+## Current migration priority
 
-- The reasoning unit is the **Contract-Grounded Progressive Hunt Graph** spanning Control Plane and Hunt Plane (Steps A–J).
-- **SearchEnvelope Invariance**: Scope is strictly bounded by `SearchEnvelope`. `HardConstraints` (pinned entities, verified bindings, outer time window, allowed providers, proof obligations) are strictly immutable. Only `ExpandableRetrievalHints` can expand via versioned derivations ($E_0 \to E_1 \to E_2$) bounded by `max_expansion_level` and `max_candidate_fanout` (default 5).
-- **Bounded Deterministic Controller Loop**: Open-ended while-loops are forbidden. The Controller owns the deterministic agenda queue. LLMs are called only at declared state transitions ($C_1 - C_6$) with strict per-component token ceilings and preflight reservation checks. Truncated outputs are rejected.
-- **The Deterministic Triad**: Investigation state transitions are governed exclusively by `classify(...) -> ObservationClass`, `choose_next_action(...) -> ControllerNextAction`, and `evaluate_stop(...) -> StoppingDecision`. LLMs never decide when to stop or whether proof is complete.
-- **ObservationClass Ladder & Orthogonal Axes**: 8-rung classification ladder (`QUERY_INVALID` to `VERIFIED`). Four status axes (`ExecutionStatus`, `CoverageStatus`, `ProofStatus`, `RouteStatus`) are decoupled: $\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$.
-- **LoopGuard & Monotonicity**: Every executed action is fingerprinted via `ActionSignature`. Executing an action without `material_delta` increments stall count; exceeding `max_consecutive_stalls` marks the route `NO_PROGRESS` / `EXHAUSTED` to prevent infinite cycling.
-- `Cell` is strictly `(ProviderScope, entity | ANY, time_bucket)` for execution coverage, never an ontology or thinking graph.
-- Strict field role isolation: `client_ip` ≠ `server_ip`, `endpoint_host` ≠ `server_host`, `account_name` ≠ `person`.
-- Never bind web servers (`jabbah`, `we1149srv`, IIS) as client workstations.
-- C1 Semantic Compilation context is isolated: receives **only** request text, vocabulary schemas, and time policy (zero provider schema, zero raw SPL).
-- Dynamic LLM source mappings default to `RETRIEVAL_CAPABLE`; only approved `ProofContract` records can materialize `PROOF_CAPABLE`.
-- Queries are compiled from typed `QueryIntent` (`EXPLORE`, `DISCRIMINATE`, `PROVE`). Quarantined SPL fallback must pass AST allowlist and manifest binding, with backend SID cancellation on client timeout.
-- 9-state stopping taxonomy: `ANSWER_PROVED`, `BOUNDED_NOT_FOUND`, `NEEDS_DISAMBIGUATION`, `COVERAGE_EXHAUSTED`, `BUDGET_EXHAUSTED`, `BACKEND_DEGRADED`, `SAFETY_QUARANTINE`, `VALIDATION_FAILED`, `ABORTED_BY_USER`.
-- Total investigation cost is tracked and reported: $C_{run} = C_{llm} + C_{splunk} + C_{control} + C_{analyst}$.
+Follow the pull-request sequence in `08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md`. Core reasoning correctness precedes source ranking, query optimization and additional providers.
 
----
+## Required verification
 
-## Documentation Integrity
-
-- `report.md` is an ephemeral per-hunt output artifact, **not** an architecture document.
-- All canonical documents (`01`–`08`, `CLAUDE.md`, `README.md`, `context.md`, `docs/01`) must remain synchronized with the v8 Contract-Grounded Progressive Hunt Graph.
-- `[x]` in `04-IMPLEMENTATION-CHECKLIST.md` is strictly forbidden without automated test, replay, or captured execution evidence.
-
----
-
-## Agent Autonomy & Execution Directive
-
-- **Autonomous Proactivity**: Decide the optimal implementation adhering to v8 invariants and execute directly to completion.
-- **Evidence-Based Rigor**: Never manufacture proof, never bypass verification contracts, and fail closed when telemetry or contracts are missing.
-
+Run unit/static checks and the v9 counterexample suite. Live readiness requires non-skipped BOTS v2 tests. A green legacy suite alone is insufficient.
 

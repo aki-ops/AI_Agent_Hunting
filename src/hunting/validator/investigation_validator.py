@@ -30,6 +30,11 @@ DEVICE_QUALIFIER_TERMS = {
     "iphone", "android", "phone", "mobile", "tablet", "device",
 }
 
+DEVICE_QUALIFIER_REGEX = re.compile(
+    r"\b(macbook(\s*(pro|air))?|air13|laptop|desktop|workstation|pc|computer|iphone|android|phone|mobile|tablet|device)\b",
+    re.IGNORECASE,
+)
+
 NATIVE_QUERY_PATTERNS = [
     re.compile(r"\bindex\s*=", re.IGNORECASE),
     re.compile(r"\bsourcetype\s*=", re.IGNORECASE),
@@ -397,8 +402,8 @@ class SemanticGoalGraphValidator:
 
             # Check: Device qualifier as hostname demotion
             if var.entity_type.casefold() in {"host", "endpoint", "computer"} and var_val:
-                is_device_term = val_lower in DEVICE_QUALIFIER_TERMS or any(
-                    term in val_lower for term in DEVICE_QUALIFIER_TERMS
+                is_device_term = val_lower in DEVICE_QUALIFIER_TERMS or bool(
+                    DEVICE_QUALIFIER_REGEX.search(val_lower)
                 )
                 if is_device_term:
                     diagnostics.append(

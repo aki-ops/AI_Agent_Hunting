@@ -100,7 +100,7 @@
       "field_matches": {
         "cmdline": "powershell.exe -NoProfile"
       },
-      "verified_at": "2026-09-11T10:38:23.860423",
+      "verified_at": "2026-09-14T12:36:16.673851",
       "verified_by": "ClaimContractVerifier"
     }
   }

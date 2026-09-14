@@ -1092,6 +1092,7 @@ def build_final_hunt_account(
         search_envelope=getattr(state, "search_envelope", None),
         outcome_contract=getattr(state, "outcome_contract", None),
         proof_results=list(getattr(state, "proof_results", []) or []),
+        candidate_sets=getattr(state, "candidate_sets", {}),
     )
 
 

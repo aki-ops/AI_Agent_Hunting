@@ -1,7 +1,7 @@
 {
   "hunt_id": "test-adaptive-hunt-success",
   "outcome": "SUPPORTED",
-  "stopping_decision": "STOP_BOUNDED",
+  "stopping_decision": "STOP_NOT_FOUND_BOUNDED",
   "answer": {
     "status": "ANSWERED",
     "answer_type": "software_version",
@@ -67,6 +67,8 @@
     "total_completion_tokens": 0,
     "total_tokens": 0,
     "estimated_cost_usd": 0,
+    "token_accounting_mode": "ESTIMATED",
+    "is_estimate": true,
     "calls": []
   },
   "total_observations": 2,

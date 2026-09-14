@@ -374,7 +374,9 @@
         "server_side_execution"
       ],
       "guaranteed_relations": [
-        "executed"
+        "spawned",
+        "executed",
+        "executed_process"
       ],
       "input_roles": [],
       "output_roles": [],
@@ -423,7 +425,8 @@
         "remote_authentication"
       ],
       "guaranteed_relations": [
-        "authenticated"
+        "authenticated",
+        "logged_on_to"
       ],
       "input_roles": [],
       "output_roles": [],
@@ -469,7 +472,8 @@
         "network_connection"
       ],
       "guaranteed_relations": [
-        "communicated_with"
+        "communicated_with",
+        "connected_to"
       ],
       "input_roles": [],
       "output_roles": [],
@@ -514,7 +518,8 @@
         "persistence_change"
       ],
       "guaranteed_relations": [
-        "persisted"
+        "persisted",
+        "modified"
       ],
       "input_roles": [],
       "output_roles": [],
@@ -563,6 +568,7 @@
         "file_artifact"
       ],
       "guaranteed_relations": [
+        "wrote",
         "modified"
       ],
       "input_roles": [],
@@ -752,7 +758,8 @@
         "identity_binding"
       ],
       "guaranteed_relations": [
-        "associated_with"
+        "associated_with",
+        "logged_on_to"
       ],
       "input_roles": [],
       "output_roles": [
@@ -848,7 +855,8 @@
         "identity_binding"
       ],
       "guaranteed_relations": [
-        "associated_with"
+        "associated_with",
+        "logged_on_to"
       ],
       "input_roles": [],
       "output_roles": [],
@@ -1028,7 +1036,9 @@
         "server_side_execution"
       ],
       "guaranteed_relations": [
-        "executed"
+        "spawned",
+        "executed",
+        "executed_process"
       ],
       "input_roles": [],
       "output_roles": [],
@@ -1075,6 +1085,7 @@
         "file_artifact"
       ],
       "guaranteed_relations": [
+        "wrote",
         "modified"
       ],
       "input_roles": [],
@@ -1122,6 +1133,7 @@
         "file_artifact"
       ],
       "guaranteed_relations": [
+        "wrote",
         "modified"
       ],
       "input_roles": [],

@@ -49,5 +49,7 @@
   ],
   "forbidden_inferences": [],
   "clarification_triggers": [],
-  "validation_diagnostics": []
+  "validation_diagnostics": [],
+  "graph_revision": "G0",
+  "revision_history": []
 }

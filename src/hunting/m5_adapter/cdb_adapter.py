@@ -236,24 +236,33 @@ class CdbAdapter:
             query_builder: str = "",
         ) -> ProviderOperation:
             relation_by_fact = {
-                "identity_binding": "associated_with",
-                "web_request": "visited",
-                "web_request_activity": "visited",
-                "web_navigation": "visited",
-                "dns_activity": "resolved",
-                "network_connection": "communicated_with",
-                "process_ancestry": "executed",
-                "server_side_execution": "executed",
-                "file_modification": "modified",
-                "file_artifact": "modified",
-                "authentication_activity": "authenticated",
-                "remote_authentication": "authenticated",
-                "persistence_change": "persisted",
-                "software_version": "has_version",
+                "identity_binding": ("associated_with", "logged_on_to"),
+                "web_request": ("visited",),
+                "web_request_activity": ("visited",),
+                "web_navigation": ("visited",),
+                "dns_activity": ("resolved",),
+                "network_connection": ("communicated_with", "connected_to"),
+                "process_ancestry": ("spawned", "executed", "executed_process"),
+                "server_side_execution": ("spawned", "executed", "executed_process"),
+                "file_modification": ("wrote", "modified"),
+                "file_artifact": ("wrote", "modified"),
+                "authentication_activity": ("authenticated", "logged_on_to"),
+                "remote_authentication": ("authenticated", "logged_on_to"),
+                "persistence_change": ("persisted", "modified"),
+                "software_version": ("has_version", "installed_on"),
             }
-            declared_relations = guaranteed_relations or tuple(dict.fromkeys(
-                relation_by_fact[fact] for fact in fact_kinds if fact in relation_by_fact
-            ))
+            if guaranteed_relations:
+                declared_relations = tuple(dict.fromkeys(guaranteed_relations))
+            else:
+                rel_list: list[str] = []
+                for fact in fact_kinds:
+                    if fact in relation_by_fact:
+                        val = relation_by_fact[fact]
+                        if isinstance(val, (list, tuple)):
+                            rel_list.extend(val)
+                        else:
+                            rel_list.append(str(val))
+                declared_relations = tuple(dict.fromkeys(rel_list))
             value_fields = tuple(
                 field_name for field_name in output_fields
                 if field_name.casefold() not in {"timestamp", "host", "user", "native_type", "sourcetype"}
@@ -272,6 +281,15 @@ class CdbAdapter:
             ))
             if operation_id == "resolve_person_to_account" and output_value_bindings is None:
                 output_value_bindings = {"object": ("user",)}
+            valid_cols = {
+                "id", "timestamp", "event_id", "native_type", "host", "user",
+                "pid", "ppid", "cmdline", "image", "ip", "port",
+                "domain", "file_path", "action", "status", "raw_ref",
+            }
+            derived_supported = tuple(dict.fromkeys(
+                f for f in output_fields if f.casefold() in valid_cols and f.casefold() not in {"timestamp", "raw_ref"}
+            ))
+            final_supported = supported_constraints or derived_supported
             return ProviderOperation(
                 operation_id,
                 "cdb",
@@ -289,7 +307,7 @@ class CdbAdapter:
                 guaranteed_relations=declared_relations,
                 output_value_bindings=output_value_bindings or ({"object": value_fields} if value_fields else {}),
                 output_binding_entity_kinds=output_binding_entity_kinds or {},
-                supported_constraints=supported_constraints,
+                supported_constraints=final_supported,
                 searchable_constraints=searchable_constraints,
                 query_builder=query_builder,
                 completeness="limit+1 EOF proof",
@@ -418,34 +436,75 @@ class CdbAdapter:
                 conditions.append("host = ? AND file_path = ?")
                 sql_params.extend([entity.host, entity.path])
 
-        # Predicate filtering
+        # Predicate and constraint filtering
+        field_map = {
+            "destination_port": "port",
+            "source_port": "port",
+            "destination_ip": "ip",
+            "source_ip": "ip",
+            "command_line": "cmdline",
+            "process_id": "pid",
+            "parent_process_id": "ppid",
+        }
+        valid_cols = {
+            "id", "timestamp", "event_id", "native_type", "host", "user",
+            "pid", "ppid", "cmdline", "image", "ip", "port",
+            "domain", "file_path", "action", "status", "raw_ref",
+        }
+        removed_keys = {
+            str(k).strip().casefold()
+            for k in parameters.get("removed_retrieval_keys", [])
+            if str(k).strip()
+        }
+        raw_constraints: list[dict[str, Any]] = []
         if predicate:
-            fn = predicate.field.strip().lower()
-            field_map = {
-                "destination_port": "port",
-                "source_port": "port",
-                "destination_ip": "ip",
-                "source_ip": "ip",
-                "command_line": "cmdline",
-                "process_id": "pid",
-                "parent_process_id": "ppid",
-            }
-            fn = field_map.get(fn, fn)
-            valid_cols = {
-                "id", "timestamp", "event_id", "native_type", "host", "user",
-                "pid", "ppid", "cmdline", "image", "ip", "port",
-                "domain", "file_path", "action", "status", "raw_ref",
-            }
+            raw_constraints.append({
+                "field": predicate.field,
+                "op": predicate.op.value if hasattr(predicate.op, "value") else str(predicate.op),
+                "value": predicate.value,
+            })
+        if isinstance(parameters.get("constraint_metadata"), (list, tuple)):
+            for cm in parameters["constraint_metadata"]:
+                if isinstance(cm, dict) and cm.get("key"):
+                    raw_constraints.append({
+                        "field": cm["key"],
+                        "op": cm.get("operator", "equals"),
+                        "value": cm.get("value"),
+                    })
+        elif isinstance(parameters.get("constraints"), (list, tuple)):
+            for c_str in parameters["constraints"]:
+                if isinstance(c_str, str):
+                    if ":exists" in c_str or "=exists" in c_str:
+                        k = c_str.replace(":exists", "").replace("=exists", "").strip()
+                        raw_constraints.append({"field": k, "op": "exists", "value": None})
+                    elif "=" in c_str:
+                        k, v = c_str.split("=", 1)
+                        raw_constraints.append({"field": k.strip(), "op": "equals", "value": v.strip()})
+        if query_intent and isinstance(query_intent.get("predicates"), (list, tuple)):
+            for p in query_intent["predicates"]:
+                p_key = getattr(p, "key", None) or (p.get("key") if isinstance(p, dict) else None)
+                p_op = getattr(p, "operator", None) or (p.get("operator") if isinstance(p, dict) else "equals")
+                p_val = getattr(p, "value", None) or (p.get("value") if isinstance(p, dict) else None)
+                if p_key and not any(rc["field"] == p_key for rc in raw_constraints):
+                    raw_constraints.append({"field": p_key, "op": p_op, "value": p_val})
+
+        for item in raw_constraints:
+            raw_field = str(item.get("field", "")).strip().lower()
+            if raw_field in removed_keys:
+                continue
+            fn = field_map.get(raw_field, raw_field)
+            op = str(item.get("op", "equals")).strip().lower()
+            val = item.get("value")
             if fn in valid_cols:
-                if predicate.op == FieldOp.EQUALS:
+                if op in ("equals", "eq", FieldOp.EQUALS):
                     conditions.append(f"{fn} = ?")
-                    sql_params.append(predicate.value)
-                elif predicate.op == FieldOp.CONTAINS:
+                    sql_params.append(val)
+                elif op in ("contains", "like", FieldOp.CONTAINS):
                     conditions.append(f"{fn} LIKE ?")
-                    sql_params.append(f"%{predicate.value}%")
-                elif predicate.op == FieldOp.EXISTS:
-                    conditions.append(f"{fn} IS NOT NULL AND {fn} != ''")
-                elif predicate.op == FieldOp.ABSENT:
+                    sql_params.append(f"%{val}%")
+                elif op in ("exists", FieldOp.EXISTS):
+                    conditions.append(f"({fn} IS NOT NULL AND {fn} != '')")
+                elif op in ("absent", FieldOp.ABSENT):
                     conditions.append(f"({fn} IS NULL OR {fn} = '')")
 
         # Specific operation constraints

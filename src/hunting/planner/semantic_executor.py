@@ -7,6 +7,7 @@ from typing import Any
 
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.entities import Account, Domain, File, Host, IPAddress, Process
+from hunting.contracts.observations import EpistemicType, Observation
 from hunting.contracts.queries import (
     Diagnostic,
     ProviderOperation,
@@ -53,6 +54,8 @@ class StepExecution:
     goal_id: str = ""
     observation_class: str = ""
     next_action_reason: str = ""
+    proof_result: Any | None = None
+    observations: list[Any] = field(default_factory=list)
 
 
 @dataclass
@@ -91,9 +94,15 @@ class SemanticPlanExecutor:
     operation contract, so output values cannot be invented by the executor.
     """
 
-    def __init__(self, adapter: Any, operations: tuple[ProviderOperation, ...] | list[ProviderOperation]) -> None:
+    def __init__(
+        self,
+        adapter: Any,
+        operations: tuple[ProviderOperation, ...] | list[ProviderOperation],
+        proof_engine: Any | None = None,
+    ) -> None:
         self.adapter = adapter
         self.operations = {operation.id: operation for operation in operations}
+        self.proof_engine = proof_engine
 
     @staticmethod
     def _type_compatible(actual: str, declared: str) -> bool:
@@ -141,7 +150,15 @@ class SemanticPlanExecutor:
         allow_candidate_inputs: bool = False,
         initial_variable_sources: dict[str, str] | None = None,
         target_cardinality: dict[str, str] | None = None,
+        proof_engine: Any | None = None,
+        goal_graph: Any | None = None,
     ) -> SemanticExecutionResult:
+        var_types = dict(variable_types or {})
+        if goal_graph and getattr(goal_graph, "variables", None):
+            for v in goal_graph.variables:
+                if v.id not in var_types and getattr(v, "entity_type", None):
+                    var_types[v.id] = v.entity_type
+        variable_types = var_types
         variables: dict[str, list[str]] = {
             key: ([value] if isinstance(value, str) else list(value))
             for key, value in (initial_variables or {}).items()
@@ -171,7 +188,13 @@ class SemanticPlanExecutor:
         needs_user_decision = False
         page_trace: list[dict[str, Any]] = []
         continuations: dict[str, dict[str, Any]] = {}
-        variable_types = dict(variable_types or {})
+        active_proof_engine = proof_engine if proof_engine is not None else self.proof_engine
+        if active_proof_engine is None:
+            try:
+                from hunting.evidence.proof_engine import ProofEngine
+                active_proof_engine = ProofEngine()
+            except Exception:
+                active_proof_engine = None
 
         while remaining:
             progress = False
@@ -231,11 +254,11 @@ class SemanticPlanExecutor:
                         if prev_step.id in prior:
                             p_exec = prior[prev_step.id]
                             for g_id in prev_step.advances_goal_ids:
-                                has_rows = bool(p_exec.result and p_exec.result.rows)
+                                is_proved = bool(p_exec.proof_result and p_exec.proof_result.proved)
                                 is_executed = p_exec.status in ("EXECUTED", "USER_SELECTED", "COMPLETE_EMPTY")
                                 runtime_goal_states[g_id] = {
                                     "execution_status": "COMPLETED" if is_executed else "FAILED",
-                                    "proof_status": "PROVEN" if (is_executed and has_rows) else "UNPROVEN",
+                                    "proof_status": "PROVEN" if is_proved else "UNPROVEN",
                                     "coverage_status": "COMPLETE" if (p_exec.result and p_exec.result.complete) else "PARTIAL",
                                 }
                     gate_res = GateEvaluator.evaluate(step.gate_condition, runtime_goal_states)
@@ -475,6 +498,67 @@ class SemanticPlanExecutor:
                             row_count=sum(item.row_count for item in candidate_results),
                         )
                         advances_goal = step.advances_goal_ids[0] if step.advances_goal_ids else step.id
+                        step_observations = [
+                            Observation(
+                                id=f"obs-{result.query_id}-{row_index}",
+                                provider_scope=scope,
+                                cell_id=time_window or getattr(scope, "scope_id", ""),
+                                timestamp=str(row.get("_time", row.get("timestamp", ""))) or "1970-01-01T00:00:00Z",
+                                epistemic_type=EpistemicType.OBSERVED,
+                                native_type=str(row.get("sourcetype", row.get("native_type", ""))),
+                                fields=dict(row),
+                                raw_event=dict(row.get("raw_event") or row),
+                                query_id=result.query_id,
+                            )
+                            for row_index, row in enumerate(result.rows or ())
+                        ]
+                        step_goal = None
+                        if goal_graph and getattr(goal_graph, "relations", None):
+                            for rel in goal_graph.relations:
+                                if rel.id in step.advances_goal_ids or rel.id == advances_goal:
+                                    step_goal = rel
+                                    break
+                        if step_goal is None:
+                            from hunting.contracts.semantic_graph import SemanticRelationGoal
+                            rel_name = getattr(step, "relation", None)
+                            if not rel_name and operation and operation.guaranteed_relations:
+                                rel_name = operation.guaranteed_relations[0]
+                            if not rel_name and operation:
+                                in_kinds = tuple(str(k).strip().lower() for k in getattr(operation, "input_entity_kinds", ()))
+                                out_kinds = tuple(str(k).strip().lower() for k in getattr(operation, "output_entity_kinds", ()))
+                                if active_proof_engine and getattr(active_proof_engine, "registry", None):
+                                    for c in active_proof_engine.registry.list_approved():
+                                        c_in = tuple(str(k).strip().lower() for k in c.required_entity_roles)
+                                        c_out = tuple(str(k).strip().lower() for k in c.required_value_roles)
+                                        if in_kinds == c_in and out_kinds == c_out:
+                                            rel_name = c.relation
+                                            break
+                            if not rel_name:
+                                rel_name = "observed_transition"
+                            step_goal = SemanticRelationGoal(
+                                id=advances_goal,
+                                subject=str(step.input_bindings.get("subject", "subject") or "subject"),
+                                relation=rel_name,
+                                object=str(step.output_bindings.get("object", "object") or "object"),
+                            )
+                        step_bindings = {k: v[0] if isinstance(v, list) else str(v) for k, v in variables.items() if v}
+                        for param, vals in bound_values.items():
+                            if vals:
+                                step_bindings[param] = vals[0] if isinstance(vals, list) else str(vals)
+
+                        step_pr = None
+                        if active_proof_engine is not None:
+                            try:
+                                step_pr = active_proof_engine.evaluate(
+                                    goal=step_goal,
+                                    operation=operation,
+                                    query_result=result,
+                                    observations=step_observations,
+                                    bindings=step_bindings,
+                                )
+                            except Exception:
+                                pass
+
                         semantic_attempts.append(SemanticAttempt(
                             attempt_id=f"attempt-{len(semantic_attempts) + 1}",
                             goal_id=advances_goal,
@@ -537,6 +621,8 @@ class SemanticPlanExecutor:
                             stage_id=stage.stage_id,
                             removed_retrieval_keys=tuple(sorted(removed_keys)),
                             goal_id=advances_goal,
+                            proof_result=step_pr,
+                            observations=step_observations,
                         ))
                         continue
                     # A partial result requires continuation. A candidate or a
@@ -599,6 +685,8 @@ class SemanticPlanExecutor:
                                 stage_id=stage.stage_id,
                                 removed_retrieval_keys=tuple(sorted(removed_keys)),
                                 goal_id=advances_goal,
+                                proof_result=step_pr,
+                                observations=step_observations,
                             )
                             executions.append(attempted)
                             # Do not run another OR method for the same
@@ -646,6 +734,8 @@ class SemanticPlanExecutor:
                             stage_id=stage.stage_id,
                             removed_retrieval_keys=tuple(sorted(removed_keys)),
                             goal_id=advances_goal,
+                            proof_result=step_pr,
+                            observations=step_observations,
                         )
                         executions.append(attempted)
                         # A complete attempt that produces declared, typed
@@ -688,6 +778,11 @@ class SemanticPlanExecutor:
             for goal_id in goal_ids:
                 attempts = attempts_by_goal.get(goal_id, [])
                 proof_complete = any(
+                    execution.step_id == step.id
+                    and execution.status == "EXECUTED"
+                    and bool(execution.proof_result and execution.proof_result.proved)
+                    for execution in executions
+                ) or any(
                     execution.step_id == step.id
                     and execution.status == "EXECUTED"
                     and bool(execution.outputs)

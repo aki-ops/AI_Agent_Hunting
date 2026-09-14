@@ -349,17 +349,23 @@ class RelationVerifier:
     @classmethod
     def _contract_aliases(cls, value: str) -> set[str]:
         normalized = str(value or "").strip().casefold()
-        return set(cls.CONTRACT_FIELD_ALIASES.get(normalized, {normalized}))
+        aliases = set(cls.CONTRACT_FIELD_ALIASES.get(normalized, {normalized}))
+        if normalized:
+            aliases.add(normalized)
+        return aliases
 
     @classmethod
     def _contract_role_aliases(cls, value: str) -> set[str]:
         normalized = str(value or "").strip().casefold()
-        return set(
+        aliases = set(
             cls.CONTRACT_ROLE_ALIASES.get(
                 normalized,
                 cls.CONTRACT_FIELD_ALIASES.get(normalized, {normalized}),
             )
         )
+        if normalized:
+            aliases.add(normalized)
+        return aliases
 
     @staticmethod
     def _contract_contains(fields: dict[str, str], needle: str) -> bool:

@@ -1,80 +1,69 @@
-# 05 — SCIENTIFIC ARCHITECTURE REVIEW (v8)
+# 05 — SCIENTIFIC ARCHITECTURE REVIEW (v9)
 
 ## Review conclusion
 
-No single external paper validates the exact architecture in this repository.
-The defensible approach is to compose established principles and explicitly
-test the local composition:
+The v9 **Evidence-Grounded Progressive Hunt Graph** is a defensible thesis architecture, not a scientifically proven optimum and not yet a completed implementation.
+
+Its strongest property is separation of authority:
 
 ```text
-Request -> Semantic Compilation C1 (GoalGraph + AnswerContract + SearchEnvelope E0)
-        -> Bounded Agenda Loop (Ready Goals -> Expandable Hints -> Progressive Frontier F0–F4)
-        -> Controlled Binding & CandidateSet (fanout <= 5)
-        -> QueryIntent (EXPLORE / DISCRIMINATE / PROVE) & Quarantined Native Gate
-        -> ObservationClass 8-Rung Ladder & LoopGuard Monotonicity Check
-        -> Evidence Pipeline -> ProofContract Evaluation -> 9-State Stopping
+LLM interpretation proposal
+  != accepted semantic contract
+  != provider retrieval capability
+  != observed row
+  != verified semantic relation
+  != verified final outcome
 ```
 
-This is a general contract, not a universal attack path. It must not contain
-branches such as `if email`, `if Tor`, `if CVE`, `event_family` or
-`request_mode` that manufacture a scenario.
-For the comprehensive strategic critiques on science, cost, and scalability,
-see [07-STRATEGIC-RESEARCH-REVIEW.md](07-STRATEGIC-RESEARCH-REVIEW.md).
-For the candidate master plan and proof-grounded execution specifications,
-see [08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md](08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md).
+The architecture should be retained if evaluation tests these boundaries independently. It should be rejected or simplified if an executable direct-query baseline achieves comparable quality and safety at lower total cost.
 
-## What external work supports
+## Supported design principles
 
-| Principle used in v8 | Evidence | Limit |
+| Principle | Evidence | Valid conclusion |
 |---|---|---|
-| Provenance and multi-hop evidence | [SLEUTH](https://www.usenix.org/system/files/conference/usenixsecurity17/sec17-hossain.pdf), [HOLMES](https://ieeexplore.ieee.org/document/8835390/), [OmegaLog](https://experts.illinois.edu/en/publications/omegalog-high-fidelity-attack-investigation-via-transparent-multi/) | Supports causal reconstruction, not a mandatory path for every question. |
-| Typed logical query layer | [AIQL](https://www.usenix.org/system/files/conference/atc18/atc18-gao.pdf), [ThreatRaptor](https://github.com/peng-gao-lab/threatraptor) | Supports an intermediate representation, not our exact SemanticGoalGraph. |
-| Hypothesis/evidence/action loop | [Evidential Cyber Threat Hunting](https://arxiv.org/abs/2104.10319), [ATHAFI](https://arxiv.org/abs/2003.03663), [TaHiTI](https://www.nvb.nl/themas/veilig-bankieren/tahiti/) | Supports uncertainty and adaptive collection; budgets/stopping are local. |
-| Heterogeneous schema/capability binding | [OCSF](https://ocsf.io/), [MITRE Data Components](https://attack.mitre.org/datacomponents/), [Microsoft Threat Hunting Assistant](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-security-copilot) | No standard covers every provider-native field. |
-| Bounded LLM/tool execution | [ExCyTIn-Bench](https://www.microsoft.com/en-us/research/publication/excytin-bench-evaluating-llm-agents-on-cyber-threat-investigation/), [Verifiably Safe Tool Use](https://doi.org/10.1145/3786582.3786839) | Current LLMs remain unreliable on multistep cyber investigation. |
-| Progressive schema discovery | [AutoLink](https://arxiv.org/abs/2402.13204), [MDB-Link](https://arxiv.org/abs/2403.01567) | Explores schema incrementally without full context exposure. |
-| Flexible hunting workflow | [Maxam et al., USENIX Security 2024](https://www.usenix.org/conference/usenixsecurity24/presentation/maxam) | Shows process diversity; does not specify our implementation. |
+| Graph-based, multi-step investigation | [SLEUTH](https://www.usenix.org/system/files/conference/usenixsecurity17/sec17-hossain.pdf), [HOLMES](https://ieeexplore.ieee.org/document/8835390/), [Kestrel](https://kestrel.readthedocs.io/en/latest/theory.html), [ExCyTIn-Bench](https://www.microsoft.com/en-us/research/publication/excytin-bench-evaluating-llm-agents-on-cyber-threat-investigation/) | Relations and intermediate evidence should be explicit and auditable |
+| Typed semantic query layer | [AIQL](https://www.usenix.org/conference/atc18/presentation/gao), [ThreatRaptor](https://github.com/peng-gao-lab/threatraptor) | Separate investigation intent from provider-native query syntax |
+| Progressive source/schema discovery | [AutoLink](https://ojs.aaai.org/index.php/AAAI/article/view/40672), [MDB-Link](https://arxiv.org/abs/2608.09588), [CHESS](https://arxiv.org/abs/2405.16755) | Full-schema prompting is avoidable; incremental discovery is a credible candidate |
+| Hypothesis/action/evidence cycle | [Evidential CTH](https://arxiv.org/abs/2104.10319), [ATHAFI](https://arxiv.org/abs/2003.03663) | Hypotheses and actions should update from evidence, not only keywords |
+| Diverse human hunting processes | [Maxam and Davis, USENIX Security 2024](https://www.usenix.org/conference/usenixsecurity24/presentation/maxam) | Do not encode one universal scenario path; support hypothesis and data-driven discovery |
+| Safe bounded tool use | [Verifiably Safe Tool Use](https://doi.org/10.1145/3786582.3786839) | External validators should constrain model-proposed actions |
+| Selective abstention | [Selective Classification](https://arxiv.org/abs/1805.08206) | Measure error versus coverage; abstention is not automatically success |
 
-## What is our engineering contribution
+## What the literature does not prove
 
-The following are not externally proven and must be evaluated in this repo:
+The sources do not establish:
 
-- `GoalGraph`, `AnswerContract`, `SourceCard`, `ProofContract`, and `CandidateSet` schemas;
-- `SearchEnvelope` framework (immutable `HardConstraints`, `ExpandableRetrievalHints`, and versioned derivations $E_0 \to E_1 \to E_2$);
-- `ObservationClass` 8-rung classification ladder and decoupled `TriStatus` ($PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND$);
-- Bounded deterministic controller agenda loop with `LoopGuard` fingerprinting and stall detection;
-- Per-component token ceilings ($C_1 - C_6$) with preflight token reservations and truncated output rejection;
-- The 5-stage progressive frontier F0–F4 and unexamined coverage manifest;
-- Controlled entity binding and ambiguity resolution via `DISCRIMINATOR`;
-- Quarantined AST-gated native query synthesis and SID lifecycle enforcement;
-- Bounded replanning, card limits, and the 9-state stopping taxonomy;
-- Claim, evidence-edge, answer F1, and financial cost results ($C_{run}$);
-- Generalization from Splunk/BotSv2 to other providers.
+- that arbitrary natural language can be converted into the correct graph without independent review;
+- that a finite relation registry covers all future hunts;
+- that AND/OR/GATE planning is optimal for telemetry investigation;
+- that F0–F4 beats exhaustive discovery or a simpler baseline;
+- that five LLM calls or 15,000 tokens is an optimal budget;
+- that a design validated on one Splunk dataset generalizes to SIEM, EDR and IDS providers;
+- that a cited row semantically proves the user's intended claim.
 
-## Review of the former design
+## Architecture corrections adopted in v9
 
-The former design was unsafe when it let an answer keyword create a fixed graph,
-for example a mail question automatically becoming a message/recipient/role
-investigation. It also treated identity-to-endpoint as universally mandatory
-and could fall back to an unrelated provider. These are route-selection and
-source-selection errors, not merely query syntax errors.
+1. `OutcomeContract` replaces universal `AnswerContract` so the kernel supports factual answers, hypothesis verdicts and population discovery.
+2. `Semantic Acceptance Gate` addresses the gap between a structurally valid graph and a semantically faithful interpretation.
+3. Proof authority moves from operation metadata to an executable, approved ProofContract evaluator.
+4. Candidate ambiguity is evaluated against slot cardinality rather than a fixed global fanout.
+5. Graph dependencies must execute their declared AND/OR/GATE semantics.
+6. One deterministic controller owns recovery and stopping.
+7. Evaluation must run the real pipeline; assigned metrics are not evidence.
 
-The v8 design corrects this by making the LLM propose claims, deterministic
-code validate them, adapters bind them to real capabilities, and evidence
-verification decide what can be asserted.
+## Required empirical evidence
 
-## Evidence required before architectural claims
+Evaluation must separate:
 
-- Plan faithfulness: required claims are covered without unsupported expansion.
-- Provider correctness: only sources whose outputs satisfy the claim are used.
-- Evidence grounding: every final value has an observation/fact citation.
-- Causal correctness: evidence-edge precision/recall/F1 on labelled graphs.
-- Hunt effectiveness: campaign/TTP precision/recall/F1 on labelled scope.
-- Operational quality: latency, query count, tokens, cost and budget-stop rate.
+- request-to-graph precision, recall and forbidden expansion;
+- source/capability retrieval recall and unexamined coverage;
+- query denotation and execution completeness;
+- relation/transition proof precision and recall;
+- candidate binding error;
+- answer exactness and citation grounding;
+- abstention risk-coverage;
+- LLM, backend, controller and analyst cost;
+- performance against executable B0/B1 baselines.
 
-F1 cannot be reported honestly on unlabeled production telemetry. Use labelled
-question-answer cases, evidence-graph cases, and campaign/provenance replays.
-The [DARPA Transparent Computing dataset](https://github.com/darpa-i2o/Transparent-Computing)
-is suitable for provenance-oriented replay; provider-specific labelled data is
-still required for SIEM/EDR/IDS claims.
+Until these are measured, the correct description is “evidence-informed target architecture under implementation.”
 

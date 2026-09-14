@@ -1,261 +1,217 @@
-# 02 — METHOD AND IMPLEMENTATION PLAN (v8 / Evidence-Based Implementation Plan)
+# 02 — METHOD AND IMPLEMENTATION PLAN (v9)
 
-`01_FINAL-ARCHITECTURE.md` defines the architecture. `08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md`
-is the master evidence-based rearchitecture and execution blueprint. This document defines
-the operational execution method, component boundaries, LLM call contracts, and phased migration.
-`03` records the research basis; `04` is the evidence-gated implementation checklist.
+`01_FINAL-ARCHITECTURE.md` is normative. This file defines the executable method for the v9 reasoning kernel. `08` contains the code migration plan and acceptance order.
 
-## 1. Decision and boundary
+## 1. Runtime method
 
-The agent operates across unfamiliar provider telemetry without hardcoding scenario logic,
-keywords, or entity names. It enforces a **Contract-Grounded Progressive Hunt Graph**:
+### Step A — Freeze the run
 
-```text
-Yêu cầu tự nhiên
-  -> LLM biên dịch GoalGraph + AnswerContract (C1)
-  -> Kiểm tra graph và provenance (deterministic validation)
-  -> Chọn goal đang sẵn sàng (AND / OR / GATE planner)
-  -> Tìm capability theo progressive frontier (F0 -> F4)
-  -> Bind entity/value hoặc hỏi người dùng nếu còn mơ hồ (CandidateSet / Discriminator)
-  -> QueryIntent (EXPLORE | DISCRIMINATE | PROVE)
-       -> Compiler xác định (preferred)
-       -> Quarantined SPL candidate (C3 trong sandbox)
-  -> Kiểm tra an toàn (Native SPL Gate: AST, read-only, bounds, cancel SID)
-  -> Observation -> FieldFact -> Candidate Evidence
-  -> ProofContract xác minh quan hệ và answer slot (STRUCTURALLY_VALID / RETRIEVAL_CAPABLE / PROOF_CAPABLE)
-  -> Tiếp tục / mở rộng / hỏi / dừng theo 9 trạng thái kiểm tra được
-  -> Báo cáo 6 phần + Machine Run Account JSON
-```
+Create immutable `RequestContract`, `SearchEnvelope E0`, `BudgetEnvelope` and run identifiers. Preserve the original text and explicit entities exactly. Provider discovery may occur here for availability, but provider schema is not supplied to C1.
 
-Three non-negotiable principles govern every execution:
-1. **LLM is a semantic planner, not a semantic oracle.** It proposes; only deterministic validators and approved `ProofContract` instances establish proof.
-2. **No full-schema prompt, no fixed Top-K cutoff.** Progressive frontier (`F0` to `F4`) incrementally explores sources. Unexamined sources are explicit coverage gaps.
-3. **Never auto-bind ambiguous candidates without proof.** Ambiguous bindings trigger a `DISCRIMINATOR` query or halt for human clarification / `NEEDS_DISAMBIGUATION`.
+Output: frozen request, scope and budget.
 
-## 2. Runtime method (Steps A–J)
+### Step B — C1 semantic proposal
 
-### Step A — Freeze request and budget (SearchEnvelope E_0)
+C1 converts the request into:
 
-Construct an immutable `HuntRunContext` and boundary `SearchEnvelope`:
-- `request_id`, request text hash, user-supplied entities and seed facts;
-- **`HardConstraints` (Immutable)**: pinned entities, verified bindings, outer time policy, allowed provider scopes, proof obligations. Widening attempts raise a `ValueError`;
-- **`ExpandableRetrievalHints`**: bounded relaxations (lexical variants, field aliases, alternative routes) with strict level caps ($\le 3$);
-- **`BudgetEnvelope`**: quantitative budget vector (max 5 LLM calls, max 15,000 tokens, max 20 queries, max candidate fanout 5);
-- prompt, model, and registry versions.
+- one `SemanticGoalGraph`;
+- one typed `OutcomeContract`;
+- provenance spans;
+- assumptions, uncertainties and forbidden inferences.
 
-Input text and telemetry rows are untrusted data: prompt injection must never alter scope,
-provider selection, budget, or verdict.
+C1 does not select indexes, sourcetypes, provider operations or native query text. All request kinds must reach this canonical contract, whether compiled by LLM, deterministic CTI adapter or a hybrid compiler.
 
-### Step B — LLM Semantic Compilation (Call C1)
+Output status: `PROPOSED`, never `VERIFIED`.
 
-C1 receives only the request, small vocabulary/JSON schema, and time policy.
-**It does not receive the provider catalog and does not emit SPL.**
-It compiles a schema-strict `GoalGraph` and `AnswerContract`:
-- `answer_slots`: required variable, expected type, acceptance condition;
-- `goals`: atomic obligations with request text span provenance;
-- `dependencies`: AND / OR / GATE relationships;
-- `variables`: typed entities/values;
-- `qualifiers`: time, action, state, mechanism restrictions;
-- `assumptions`: explicit, non-binding;
-- `forbidden_inferences` and `clarification_triggers`.
+### Step C — Semantic Acceptance Gate
 
-### Step C — Deterministic Graph Validation
+Perform deterministic structural checks:
 
-The validator checks:
-- provenance spans exist for all proposed goals;
-- no invented proper nouns or entity mutations (e.g. changing Mallory to Alice, MacBook to hostname);
-- acyclic dependencies and valid GATE semantics;
-- no acceptance rules demanding specific field names invented by the LLM.
+- graph references and DAG validity;
+- entity/literal preservation;
+- provenance span validity;
+- hard-scope preservation;
+- outcome-slot reachability;
+- explicit dependencies and gate predicates;
+- absence of provider-native syntax;
+- registered versus novel relations.
 
-### Step D — AND / OR / GATE Planning
+Then apply selective semantic review. If an interpretation is novel, conflicting, low-confidence or changes the user's objective, run C1V or ask the user. C1V cannot prove the interpretation; it can approve execution risk, request clarification or reject malformed expansion.
 
-A deterministic planner (not a prompt) maintains:
-- `AND`: all predecessor goals must be verified;
-- `OR`: any verified branch satisfies the parent obligation;
-- `GATE`: downstream execution is blocked until required input bindings are proven;
-- `DISCRIMINATOR`: automated low-cost queries specifically targeting candidate ambiguity.
+Output: `ACCEPTED`, `NEEDS_CLARIFICATION` or `REJECTED` graph.
 
-### Step E — Capability Discovery via Progressive Frontier (F0–F4)
+### Step D — Build the obligation agenda
 
-Rather than fixed Top-K or full-catalog prompting, search expands iteratively:
-- **`F0` Certified frontier:** Operations with approved `ProofContract` matching relation and roles.
-- **`F1` Metadata frontier:** Retrieve `SourceCard` candidates via lexical + embedding score without hard cutoffs.
-- **`F2` Adjacent expansion:** Open related sources sharing partition, field alias, or join keys upon gaps.
-- **`F3` Bounded semantic profiling:** Bounded LLM batching for a single goal; mappings default strictly to `retrieval_only`.
-- **`F4` Approved exhaustive:** Run only under explicit escalation or offline audit.
+The planner reads the accepted graph directly.
 
-Unexamined sources are recorded in the coverage manifest (`unexamined_source_ids`).
+- A goal is ready when its `AND` dependencies are verified.
+- An `OR` goal exposes admissible proof methods and succeeds when one method proves it.
+- A `GATE` goal remains blocked until its deterministic predicate over runtime state evaluates true.
+- The planner may propose intermediate typed goals required by a capability path, but the graph revision must pass Step C and be recorded.
 
-### Step F — Controlled Entity Binding
+Select actions by mandatory status, answer utility, information gain and bounded cost. Ranking affects order only.
 
-Variables maintain a `CandidateSet` of `CandidateBinding` records (supporting facts, directness, contradictions, confidence class).
-- If exactly 1 candidate is proven by contract without contradiction: bind.
-- If multiple candidates exist: dispatch a `DISCRIMINATOR` query.
-- If ambiguity persists: halt for user clarification or output structured `NEEDS_DISAMBIGUATION`. Never pick by heuristic, string matching, or first row.
+### Step E — Discover capabilities progressively
 
-### Step G — QueryIntent before Native SPL
+For the current unresolved goal only:
 
-Query synthesis operates in two tiers:
-1. **Normal tier (Typed `QueryIntent`):** Declares `mode` (`EXPLORE` | `DISCRIMINATE` | `PROVE`), bound inputs, projected roles, predicates, and budget. Compiled deterministically by the adapter.
-2. **Quarantined Native Candidate (C3 fallback):** When intent cannot express needed syntax, isolated C3 proposes SPL. It must pass the `NativeQueryGate`:
-   - AST validation against read-only command allowlist;
-   - only census-known sources and fields;
-   - explicit time bounds, scan/result caps;
-   - cancellation SID tracking and backend job telemetry (`scanCount`, `runDuration`).
+1. F0: approved proof-capable operations;
+2. F1: catalog metadata and semantic index;
+3. F2: adjacent sources through declared joins/field relations;
+4. F3: bounded dynamic profiling;
+5. F4: approved exhaustive discovery.
 
-### Step H — Evidence Pipeline
+Unexamined sources remain explicit coverage gaps. Retrieval scores cannot create proof authority or license a negative conclusion.
 
-Raw rows are transformed strictly via:
-```text
-native row
-  -> immutable Observation (append-only ledger)
-  -> deterministic FieldFact
-  -> CandidateRelation
-  -> ProofContract evaluation
-  -> EvidenceItem / AnswerCandidate
-```
+### Step F — Manage candidate bindings
 
-### Step I — ProofContract Evaluation
+Store every value in a `CandidateSet` with provenance. Apply answer/variable cardinality:
 
-Authority rests solely in human-reviewed, test-verified contracts:
-- `STRUCTURALLY_VALID`: Schema fields exist.
-- `RETRIEVAL_CAPABLE`: Rows retrieved, but relation semantics unproven.
-- `PROOF_CAPABLE`: Conforms to approved contract; cited observations satisfy all required roles, temporal order, and state transitions.
+- singular + one proof-supported candidate: bind;
+- singular + multiple candidates: execute discriminator, otherwise ask user;
+- plural: preserve all admissible candidates within budget;
+- candidate-only evidence may support exploration but not downstream proof that requires a verified input.
 
-Cooccurrence defaults to `RETRIEVAL_CAPABLE`. LLM proposals cannot upgrade to `PROOF_CAPABLE`.
+No selection by first row, substring, provider order or fixed hostname rules.
 
-### Step J — Bounded Deterministic Controller Loop & Stopping Taxonomy
+### Step G — Compile and execute EvidenceAction
 
-The controller loop is a deterministic agenda queue owned entirely by the Controller. Open-ended loops (`while LLM not satisfied`) are strictly forbidden.
+The planner emits provider-neutral `QueryIntent` in one mode:
 
-1. **The Deterministic Triad**:
-   - `classify(attempt, proof_contract, ledger, envelope) -> ObservationClass` (8-rung ladder: `QUERY_INVALID` to `VERIFIED`);
-   - `choose_next_action(classification, envelope, loop_guard, ...) -> ControllerNextAction` (deterministic recovery transitions: `RELAX_HINT` in child envelope $E_{i+1}$, `SWITCH_ROUTE`, `PAGINATE`, `REPAIR_QUERY`, `DISCRIMINATE`, `QUARANTINE_CONTRADICTION`, `SEEK_PROOF`, `EMIT_VERIFIED`, `STOP_BOUNDED_NOT_FOUND`);
-   - `evaluate_stop(...) -> StoppingDecision`.
-2. **LoopGuard & Monotonicity Enforcement**:
-   - Every action execution is fingerprinted via `ActionSignature`.
-   - Repeated signatures without `material_delta` (no new rows, no new candidates, no cursor advance) increment stall count.
-   - When $\text{stall\_count} \ge 2$, the route transitions to `RouteStatus.NO_PROGRESS` / `EXHAUSTED`.
-3. **Orthogonal Status Axes & Decoupled TriStatus**:
-   - Execution status, Coverage status, Proof status, and Route status are strictly independent.
-   - Invariant: $\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$. Incomplete executions cannot license negative conclusions.
-4. **9 Verifiable Execution States**:
-   Halt only via: `STOP_ANSWERED`, `STOP_REFUTED`, `STOP_NOT_FOUND_BOUNDED`, `STOP_NEEDS_CLARIFICATION`, `STOP_UNSUPPORTED`, `STOP_UNREACHABLE`, `STOP_INCONCLUSIVE`, `STOP_BUDGET`, `STOP_ERROR`.
+- `EXPLORE`: find candidate values;
+- `DISCRIMINATE`: distinguish candidates;
+- `PROVE`: retrieve evidence required by an approved contract.
 
-## 3. LLM Call Architecture and Budgets (C1–C6)
+Prefer a deterministic provider compiler. C3 may propose a native query only when no compiler supports the intent. The query must pass parsing, read-only allowlist, scope binding, field/role checks, time/row/scan/runtime limits and cancellation support.
 
-Context is strictly isolated per call; no call receives the entire schema catalog or raw ledger.
+Output: a `QueryResult` whose `executed_ok`, `complete`, rows, cursor, diagnostics, scan and runtime are explicit.
 
-| Call | Trigger | Allowed Context | Output | Default Budget Ceilings |
-|---|---|---|---|---:|
-| **C1: `semantic_compile`** | Every free-text request | Request text, small vocabulary/schema, time policy | `GoalGraph` + `AnswerContract` | 2,500 in / 1,200 out (max 2 calls) |
-| **C2: `capability_profile`** | Cache miss & F0/F1 insufficient | Single goal + compact `SourceCard` batch | `retrieval_only` candidate mappings | 1,800 in / 700 out (max 3 calls) |
-| **C3: `native_query_proposal`** | Intent compiler unsupported | Single goal + selected source + verified bindings | Sandboxed candidate SPL | 1,800 in / 700 out (max 1 call) |
-| **C4: `evidence_interpret`** | Ambiguous evidence semantics | Grouped delta cards (no raw ledger) | Candidate interpretation & gaps | 2,500 in / 800 out (max 1 call) |
-| **C5: `replan`** | Deadlock with material new delta | Unresolved goal graph + compact delta | Revised goals (no verdict) | 2,000 in / 900 out (max 1 call) |
-| **C6: `narrative`** | Optional human report polish | Verified account facts only | Narrative prose (no new facts) | 1,500 in / 600 out (0 by default) |
+### Step H — Build evidence without semantic promotion
 
-**Execution Ceilings:** Hard limit of max 5 calls and 15,000 total tokens per hunt run (excluding C6).
+Append raw rows as immutable `Observation` records. Extract `FieldFact` records while preserving native provenance. Group repeated evidence for LLM context, but retain raw observation IDs.
 
-**Preflight Reservation & Payload Validation:**
-- `preflight(component, prompt, expected_completion_tokens)` enforces input/output ceilings and verifies remaining tokens before any network dispatch.
-- Truncated outputs (`MAX_TOKENS`) and unclosed JSON payloads are rejected immediately via `validate_response()`. Partial outputs are never ingested into the investigation state.
+Rows and extracted values are candidates. They are not verified relations.
 
-### Cost Accounting
+### Step I — Evaluate executable ProofContracts
 
-Cost accounting reports total real-world expenditure, not just estimated LLM USD:
+For each goal attempt:
+
+1. locate the approved contract and exact evaluator version;
+2. validate subject/object direction and native role mappings;
+3. evaluate action, state, temporal, identity, correlation and qualifier obligations;
+4. verify completeness requirements;
+5. emit `ProofResult` with exact citations and missing obligations.
+
+An operation declaration can make a route eligible. Only the evaluator can change `ProofStatus` to `VERIFIED` or `REFUTED`.
+
+### Step J — Recover, verify outcome and stop
+
+The single controller loop executes:
 
 ```text
-C_run = C_llm + C_splunk + C_cache/control + C_analyst
-
-C_llm = Σ(input_uncached * rate_in + input_cached * rate_cached + output * rate_out)
-Splunk work = Σ(scanCount, runDuration, queue_time, resultCount, cancelled_state)
-Human work = clarification_time + review_minutes
+ObservationClass = classify(QueryResult, CandidateSet, ProofResult, SearchEnvelope)
+NextAction       = choose_next_action(ObservationClass, routes, budget, LoopGuard)
+StopDecision     = evaluate_stop(OutcomeContract, GoalRuntimeState, coverage, budget)
 ```
 
-## 4. Phased Implementation Roadmap (Phases 0–8)
+Before `STOP_ANSWERED`, run the appropriate outcome verifier. The verified value must be present in cited evidence and every mandatory gate must be complete.
 
-### Phase 0 — Baseline & Scope Freeze
-- Freeze 20–30 representative requests (`eval/corpus/*.jsonl`, `eval/splits.json`).
-- Establish B0 (current execution) and B1 (direct LLM-to-query) baselines.
-- Isolate BOTS v2 as integration fixture; do not hardcode entities or answers.
+## 2. Observation classification
 
-### Phase 1 — Lock Semantic Authority
-- Create `contracts/proof_contract.py` and `registry/proof_contract_registry.py`.
-- Enforce three capability levels: `STRUCTURALLY_VALID`, `RETRIEVAL_CAPABLE`, `PROOF_CAPABLE`.
-- LLM mappings default strictly to `retrieval_only`.
-- Materialize proof capability only via `APPROVED` registry contracts and conformance tests.
+Use one canonical precedence order:
 
-### Phase 2 — Semantic Compiler and Real Graph
-- Upgrade C1 compiler to output `GoalGraph` and `AnswerContract` with request text provenance spans.
-- Enforce AND / OR / GATE dependency graph.
-- Validator preserves request entities (Mallory cannot mutate into Alice; MacBook cannot become hostname).
+1. `QUERY_INVALID`
+2. `QUERY_FAILURE`
+3. `PARTIAL`
+4. `EMPTY`
+5. `CONTRADICTORY`
+6. `AMBIGUOUS`
+7. `PROOF_GAP`
+8. `VERIFIED`
 
-### Phase 3 — Source Catalog and Progressive Frontier (F0–F4)
-- Create `SourceCardStore`, `frontier.py`, and `catalog_index.py`.
-- Replace per-hunt exhaustive prompt batching with progressive frontier expansion:
-  `F0` (Certified) -> `F1` (Metadata) -> `F2` (Adjacent) -> `F3` (Bounded profiling) -> `F4` (Approved exhaustive).
-- Record unexamined sources as explicit coverage gaps (`unexamined_source_ids`).
+`CANDIDATES` is a proof state/detail, not a ninth outcome that can bypass ambiguity handling.
 
-### Phase 4 — Controlled Binding & Mixed-Initiative Control
-- Create `contracts/bindings.py` with `CandidateSet` and `CandidateBinding`.
-- Implement automated `DISCRIMINATOR` queries for candidate ambiguity.
-- Halt for human clarification or output structured `NEEDS_DISAMBIGUATION`. Never auto-bind by heuristic.
+## 3. Controller recovery rules
 
-### Phase 5 — Typed Query & Native-Query Quarantine
-- Implement `QueryIntent` modes: `EXPLORE`, `DISCRIMINATE`, `PROVE`.
-- Deterministic compiler handles approved mappings; quarantined C3 fallback runs in AST sandbox.
-- Capture Splunk backend execution telemetry (`scanCount`, `runDuration`, cancellation SID).
+| Class | Default action |
+|---|---|
+| QUERY_INVALID | deterministic repair or alternate route |
+| QUERY_FAILURE | retry within policy, alternate route or unreachable |
+| PARTIAL | cursor pagination or bounded time split |
+| EMPTY | relax declared hint, alternate route or exhaust route |
+| CONTRADICTORY | quarantine conflict and run one bounded re-check |
+| AMBIGUOUS | discriminator or clarification |
+| PROOF_GAP | seek a proof-capable route or stop unsupported/inconclusive |
+| VERIFIED | update goal and outcome state |
 
-### Phase 6 — Evidence, Verification & Stopping Taxonomy
-- Evidence pipeline preserves native field roles, timestamps, and causal transitions.
-- Evaluates proof solely against `ProofContract`.
-- Enforce 9-state stopping taxonomy (`STOP_ANSWERED` through `STOP_ERROR`).
+Every recovery action derives a new envelope without changing immutable constraints.
 
-### Phase 7 — Report, Tracing & Cost
-- Build unified `StepTrace` from C1 through stop.
-- Generate 6-part Markdown `report.md` and machine `run_account.json`.
+## 4. LLM policy and cost
 
-### Phase 8 — Evaluation & Ablation
-- Execute benchmark across B0, B1, and candidate architecture.
-- Run ablation studies (graph oracle, mapping oracle, frontier vs. exhaustive).
-- Report layer metrics: goal F1, candidate recall, binding precision, citation grounding, false support rate, wrong auto-binding rate.
+Mandatory budget reservation order:
 
-## 5. End-to-End Required Test Matrix
+1. C1 semantic compile;
+2. one repair or C1V review if required;
+3. reserve at least one proof/recovery decision opportunity;
+4. optional C2/C3/C4/C5 calls compete for the remaining budget;
+5. C6 remains disabled by default.
 
-| Category | Scenario | Mandatory Expectation |
-|---|---|---|
-| Factual single-hop | Single attribute lookup | 1 goal, narrow query, cited answer |
-| Multi-hop | person -> account/host -> artifact | GATE enforced; no artifact query before verified host binding |
-| OR path | person->host OR person->account->host | One verified path opens gate; alternative not forced |
-| Ambiguity | Multiple candidate hosts | `DISCRIMINATOR` or user clarification; no auto-selection |
-| Missing source | Required relation lacks source | `UNSUPPORTED`/coverage gap, never routes to irrelevant source |
-| Permission/retention | Source unreachable | `UNREACHABLE`, never `NOT_FOUND` |
-| Partial result | Result limit or timeout | No negative license; reports partial coverage |
-| Unknown native event | Schema outside vocabulary | Native observation preserved; exploratory candidate |
-| Misleading schema | Source named "email" lacking roles | Proposal rejected; name never implies proof |
-| Role swap | Inverted client/server or sender/rcpt | Contract rejects or detects contradiction |
-| Prompt injection in logs | Row contains instructions | Zero change to graph, budget, or tool policy |
-| LLM compiler failure | Empty/invalid JSON | Max 1 repair, then graceful stop; no fake graph |
-| LLM query failure | Malformed or unsafe SPL | AST gate blocks execution; zero dispatch |
-| Provider failure | Splunk disconnects mid-run | Job cancelled; error reported with clean checkpoint |
-| No progress | Repeated identical queries | Bounded recovery exhausts; halts with no-progress signature |
+Do not assign independent component quotas whose sum exceeds the global budget without a scheduler. Record prompt/completion tokens, model, latency, retries, validation result and estimated cost for every call.
 
-## 6. Definition of Done and Priorities
+Default ceilings remain configuration candidates, not architecture constants. The documentation and CLI must read the same configuration object.
 
-### P0 (Mandatory before further optimization):
-- LLM cannot materialize proof-capable capability.
-- GoalGraph carries AnswerContract, provenance spans, and AND/OR/GATE semantics.
-- Ambiguous candidate bindings never auto-bind.
-- Progressive frontier replaces full-catalog prompting; coverage retains unexamined sources.
-- Stop rules strictly enforce proof obligations.
-- Report displays graph, actions, queries, evidence, and cost.
+## 5. Implementation boundaries
 
-### P1 (Required for evaluable prototype):
-- Native SPL quarantine with AST parser, scanCount, and cancellation telemetry.
-- SourceCard cache invalidation on schema/permission/contract changes.
-- Evaluation corpus, baseline B0/B1 comparison, and layer metrics.
-- Live Splunk replay with failure/partial/ambiguity cases.
+### Reasoning kernel
 
-### P2 (Post-measurement enhancements):
-- Secondary providers, graph databases, online contract promotion, or multi-agent reflection.
+Provider-independent:
+
+- request/outcome/graph contracts;
+- semantic acceptance;
+- obligation planner;
+- candidate state;
+- proof state;
+- recovery controller;
+- stopping and reporting.
+
+### Provider boundary
+
+Provider-specific:
+
+- manifests and native partitions;
+- source/field discovery;
+- query compilation and execution;
+- pagination, cancellation and completeness semantics.
+
+Provider code cannot define a semantic investigation path.
+
+### Knowledge boundary
+
+CVE/TTP/IOC/CTI records may contain cited behavior knowledge, but adapters convert that knowledge into the same graph contracts. They do not execute a separate legacy architecture.
+
+## 6. Implementation sequence
+
+1. Make documentation and status claims truthful.
+2. Add failing authority-gap and graph-semantics tests.
+3. Canonicalize contracts and stop taxonomy.
+4. Route every input type into one graph.
+5. implement explicit AND/OR/GATE planning.
+6. Integrate executable proof evaluation.
+7. Integrate the deterministic triad and one agenda loop.
+8. Remove production legacy routes and scenario branches.
+9. Replace simulated evaluation with executable evaluation.
+10. Run mock-provider, API and BOTS v2 live acceptance suites.
+
+## 7. Definition of done
+
+The reasoning kernel is complete only when:
+
+- a row with incompatible semantics cannot prove a relation despite operation metadata;
+- all declared graph dependencies and gates affect execution;
+- all terminal states originate from the canonical controller;
+- ambiguous singular bindings never auto-select;
+- every output contract type completes on mock data;
+- all input kinds use the same production graph path;
+- evaluation metrics are computed from actual executions;
+- reports show structured decisions, returned evidence, proof outcomes and cost;
+- live-provider claims are based on non-skipped BOTS v2 runs.

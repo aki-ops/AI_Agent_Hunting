@@ -1,34 +1,49 @@
-# AI Agent Hunting — Project Context (v8)
+# AI Agent Hunting — Project Context (v9)
 
-Read the canonical documentation in this order:
+## Document priority
 
-1. `08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md` — candidate master plan, scientific critique resolution, and execution roadmap;
-2. `01_FINAL-ARCHITECTURE.md` — Contract-Grounded Progressive Hunt Graph (Control & Hunt Planes);
-3. `02_METHOD-AND-IMPLEMENTATION-PLAN.md` — executable Steps A–J, C1–C6 LLM calls, and cost accounting;
-4. `03_LITERATURE-AND-TRACEABILITY.md` — external literature grounding and architectural traceability;
-5. `04-IMPLEMENTATION-CHECKLIST.md` — evidence-gated implementation checklist (Phases 0–8);
-6. `06-REFERENCE-ARCHITECTURE-DECISION.md` — reference architecture decision record;
-7. `07-STRATEGIC-RESEARCH-REVIEW.md` — strategic critique on science, cost, and scalability;
-8. `docs/01-REAL-PROVIDER-SPECIFICATIONS.md` — provider capabilities, operations, and field roles.
+1. `01_FINAL-ARCHITECTURE.md` — sole normative architecture.
+2. `02_METHOD-AND-IMPLEMENTATION-PLAN.md` — executable method.
+3. `03_LITERATURE-AND-TRACEABILITY.md` — external basis and claim boundary.
+4. `04-IMPLEMENTATION-CHECKLIST.md` — implementation evidence and open work.
+5. `08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md` — ordered code migration plan.
+6. `06-REFERENCE-ARCHITECTURE-DECISION.md` — accepted v9 decision.
+7. `05-SCIENTIFIC-ARCHITECTURE-REVIEW.md` and `07-STRATEGIC-RESEARCH-REVIEW.md` — review records.
+8. `docs/01-REAL-PROVIDER-SPECIFICATIONS.md` — provider boundary.
 
-## Three Non-Negotiable Invariants
+`report.md`, `baseline_reports/` and `artifacts/` are generated/historical and never override the documents above.
 
-1. **LLM is a semantic planner, not a semantic oracle.** The LLM may propose goals, candidate sources, field mappings, queries, and explanations. Only deterministic validators, adapters, and human-approved `ProofContract` evaluators may promote a claim or answer to verified status.
-2. **No full-schema prompt, no fixed Top-K cutoff.** The catalog of sources and fields remains outside the hot LLM prompt. The agent expands a progressive frontier (F0–F4) per unresolved goal. Unexamined sources are explicitly recorded as coverage gaps; shortlists never license negative claims.
-3. **Never auto-bind ambiguous candidates without proof.** If multiple entities match, the agent must execute a `DISCRIMINATOR` query or halt for human clarification (`NEEDS_DISAMBIGUATION`). It never selects candidates by substring heuristic or arbitrary ranking.
+## Current status
 
-## Core Architectural Invariants
+The v9 Evidence-Grounded Progressive Hunt Graph is the accepted target. The repository is under migration. Existing classes and passing unit tests do not imply that proof, graph planning, controller or evaluation are integrated.
 
-1. The reasoning model is a **Contract-Grounded Progressive Hunt Graph** operating across a Control Plane (manifests, catalog, proof contracts) and a Hunt Plane (Steps A–J).
-2. The semantic compilation (Call C1) emits `GoalGraph` and `AnswerContract` without provider catalog or raw SPL context.
-3. Providers and sources are explored through a 5-stage progressive frontier F0–F4 (Certified $\rightarrow$ Metadata $\rightarrow$ Adjacent $\rightarrow$ Profiling $\rightarrow$ Exhaustive).
-4. Entities are tracked in a `CandidateSet`. Auto-binding requires a unique proof-supported candidate; ambiguities trigger `DISCRIMINATOR` or `NEEDS_DISAMBIGUATION`.
-5. Queries are expressed as typed `QueryIntent` (`EXPLORE`, `DISCRIMINATE`, `PROVE`). Unregistered queries pass through a quarantined AST gate with SID cancellation on timeout.
-6. Raw observations are immutable and append-only; normalized `FieldFact` entries retain native provenance.
-7. Verification requires an approved `ProofContract` (`STRUCTURALLY_VALID`, `RETRIEVAL_CAPABLE`, `PROOF_CAPABLE`). Co-occurrence defaults to `retrieval_only`.
-8. Execution terminates deterministically under the 9-state stopping taxonomy and outputs a 6-part human report and a machine `run_account.json`.
-9. All runs track comprehensive financial and operational cost: $C_{run} = C_{llm} + C_{splunk} + C_{control} + C_{analyst}$.
-10. Query scope is bounded by `SearchEnvelope`. `HardConstraints` are strictly immutable; `ExpandableRetrievalHints` expand only via versioned derivations ($E_0 \to E_1 \to E_2$) with `max_candidate_fanout` (default 5) clamping.
-11. Execution loop is a **Bounded Deterministic Controller Loop** owned by the Controller via the Deterministic Triad (`classify`, `choose_next_action`, `evaluate_stop`). Action cycling without `material_delta` is blocked by `LoopGuard`.
-12. Outcomes are triaged across an 8-rung `ObservationClass` ladder. Four orthogonal status axes strictly decouple execution, coverage, proof, and route states: $\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$.
+## Core invariants
+
+1. Every input kind reaches one `SemanticGoalGraph` and one `OutcomeContract`.
+2. `OutcomeContract` supports factual answers, hypothesis verdicts and population discovery.
+3. LLM output is a proposal. It cannot establish proof, binding, scope mutation or stopping.
+4. A Semantic Acceptance Gate checks structure, provenance, scope, outcome utility and semantic uncertainty before execution.
+5. AND/OR/GATE are executable graph semantics.
+6. Candidate ambiguity is cardinality-aware; singular ambiguity triggers discrimination or user clarification.
+7. Provider operation metadata grants route eligibility only. An approved executable ProofContract verifies cited observations.
+8. Execution, coverage, proof and route states are independent.
+9. A single deterministic controller owns classify, recovery and stop decisions.
+10. `PARTIAL + 0 rows` is never bounded absence.
+11. Provider-native fields, sources and queries stay behind provider contracts.
+12. Evaluation metrics must come from actual pipeline runs with independent labels.
+
+## Immediate P0 work
+
+Follow `08` in order:
+
+1. authority-gap tests;
+2. canonical OutcomeContract/state/taxonomy;
+3. unified semantic entry point and acceptance gate;
+4. executable graph semantics;
+5. CandidateSet and clarification;
+6. ProofEngine;
+7. one controller loop;
+8. actual evaluation runner.
+
+Do not prioritize source ranking or SPL optimization before these reasoning gates pass.
 

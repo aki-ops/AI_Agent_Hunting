@@ -238,7 +238,14 @@ class HypothesisHuntEngine:
             )
 
         operations = tuple(getattr(getattr(state, "capability_catalog", None), "operations", ()) or ())
-        execution = SemanticPlanExecutor(active_adapter, operations).execute(
+        target_outcome_contract = getattr(state.objective, "outcome_contract", None) if state.objective else None
+        if target_outcome_contract is None and state.objective and getattr(state.objective, "answer_spec", None):
+            from hunting.contracts.outcome import outcome_contract_from_legacy_answer_contract
+            target_outcome_contract = outcome_contract_from_legacy_answer_contract(state.objective.answer_spec)
+        target_cardinality = getattr(target_outcome_contract, "cardinality", None)
+        max_bindings = state.search_envelope.max_candidate_fanout if getattr(state, "search_envelope", None) else 32
+        engine_proof_evaluator = ProofEngine()
+        execution = SemanticPlanExecutor(active_adapter, operations, proof_engine=engine_proof_evaluator).execute(
             logical_plan,
             scope,
             state.objective.time_window if state.objective else "",
@@ -248,7 +255,31 @@ class HypothesisHuntEngine:
             variable_types={variable.id: variable.entity_type for variable in goal_graph.variables},
             allow_candidate_inputs=allow_candidate_inputs,
             initial_variable_sources=initial_variable_sources,
+            target_cardinality=target_cardinality,
+            max_bindings=max_bindings,
+            proof_engine=engine_proof_evaluator,
+            goal_graph=goal_graph,
         )
+
+        from hunting.contracts.bindings import CandidateBinding, CandidateSet
+        for var_id, vals in getattr(execution, "variables", {}).items():
+            if not vals:
+                continue
+            v_type = next((v.entity_type for v in goal_graph.variables if v.id == var_id), "opaque")
+            c_card = (target_cardinality or {}).get(var_id, "plural")
+            cset = CandidateSet(variable_id=var_id, entity_type=v_type, cardinality=c_card)
+            for v_val in vals:
+                prov_list = execution.binding_provenance.get(var_id, [])
+                prov_match = next((p for p in prov_list if str(p.get("value")) == str(v_val)), {})
+                p_status = prov_match.get("status", "CANDIDATE")
+                cset.add_candidate(CandidateBinding(
+                    value=str(v_val),
+                    entity_type=v_type,
+                    status="VERIFIED_BINDING" if p_status == "VERIFIED" else "ACTIVE",
+                    provenance=prov_match.get("query_id", ""),
+                    supporting_fact_ids=(prov_match.get("query_id"),) if prov_match.get("query_id") else (),
+                ))
+            state.candidate_sets[var_id] = cset
 
         if getattr(state, "step_trace", None) is not None:
             state.step_trace.record_step(
@@ -314,6 +345,18 @@ class HypothesisHuntEngine:
                 getattr(execution, "continuations", {}).get(item.step_id, {})
             )
             self.controller.record_query_execution(state, query_plan, item.result)
+            self.controller.advance_turn(state)
+
+            for c in state.cells:
+                ent_name = getattr(c.entity, "name", getattr(c.entity, "username", getattr(c.entity, "address", None)))
+                input_vals = {str(v) for vals in getattr(item, "inputs", {}).values() for v in (vals if isinstance(vals, list) else [vals]) if v}
+                if c.is_wildcard or (ent_name and ent_name in input_vals) or not ent_name:
+                    if item.result.executed_ok and item.result.complete:
+                        self.controller.transition_cell_state(state, c, CellState.EXPLORED)
+                    elif item.result.executed_ok and not item.result.complete:
+                        self.controller.transition_cell_state(state, c, CellState.PARTIAL)
+                    elif not item.result.executed_ok:
+                        self.controller.transition_cell_state(state, c, CellState.UNQUERYABLE)
 
             for row_index, row in enumerate(item.result.rows or ()):
                 observation_id = f"obs-{item.query_id}-{row_index}"
@@ -357,7 +400,16 @@ class HypothesisHuntEngine:
         ]
         if goal_observations:
             self.group_builder.ingest_delta(goal_observations)
-            self.controller.set_evidence_cards(state, self.group_builder.build_cards())
+            cards = self.group_builder.build_cards()
+            self.controller.set_evidence_cards(state, cards)
+            for card in cards:
+                for exp in state.expectations:
+                    if self.evaluator.evaluate_card_against_expectation(card, exp):
+                        self.controller.update_expectation_status(state, exp, TestStatus.CONFIRMED)
+                        req = next((r for r in state.requirements if r.id in exp.id), None)
+                        if req:
+                            self.controller.update_requirement_status(state, req, RequirementStatus.CONFIRMED)
+            self.reasoner.evaluate_hypothesis_network(state.hypotheses, state.expectations, state.evidence_cards)
 
         if getattr(state, "step_trace", None) is not None:
             state.step_trace.record_step(
@@ -365,6 +417,19 @@ class HypothesisHuntEngine:
                 inputs_summary={"total_observations": len(ledger.observations) if ledger is not None else 0},
                 outputs_summary={"evidence_cards": len(state.evidence_cards)},
             )
+
+        for item in execution.executions:
+            if item.result and item.result.executed_ok and item.result.complete and not item.result.rows:
+                step_obj = next((s for s in logical_plan.steps if s.id == item.step_id), None)
+                if step_obj:
+                    for goal_id in step_obj.advances_goal_ids:
+                        for exp in state.expectations:
+                            if goal_id in exp.id and exp.test_status == TestStatus.UNTESTED:
+                                self.controller.update_expectation_status(state, exp, TestStatus.REFUTED)
+                                req = next((r for r in state.requirements if r.id in exp.id), None)
+                                if req:
+                                    self.controller.update_requirement_status(state, req, RequirementStatus.REFUTED)
+        self.reasoner.evaluate_hypothesis_network(state.hypotheses, state.expectations, state.evidence_cards)
 
         goal_verdicts: list[dict[str, Any]] = []
         operation_by_id = {
@@ -395,13 +460,19 @@ class HypothesisHuntEngine:
                 for param, vals in getattr(item, "inputs", {}).items():
                     if vals:
                         step_bindings[param] = vals[0] if isinstance(vals, list) else str(vals)
-                pr = proof_engine.evaluate(
-                    goal=goal,
-                    operation=operation_by_id.get(item.operation_id),
-                    query_result=item.result,
-                    observations=list(getattr(state, "observations", []) or []),
-                    bindings=step_bindings,
-                )
+                pr = getattr(item, "proof_result", None)
+                if pr is None:
+                    step_obs = getattr(item, "observations", None)
+                    if step_obs is None:
+                        step_obs = observations_by_query.get(item.query_id, [])
+                    pr = proof_engine.evaluate(
+                        goal=goal,
+                        operation=operation_by_id.get(item.operation_id),
+                        query_result=item.result,
+                        observations=list(step_obs),
+                        bindings=step_bindings,
+                    )
+                    item.proof_result = pr
                 proof_results.append(pr)
 
                 # Deterministic Triad: wrap attempt and classify through RecoveryController
@@ -520,6 +591,8 @@ class HypothesisHuntEngine:
             ],
         })
 
+        state.proof_results = [item.proof_result for item in execution.executions if getattr(item, "proof_result", None)]
+
         if getattr(state, "step_trace", None) is not None:
             state.step_trace.record_step(
                 HuntStepName.STEP_H_VERIFY_PROOF,
@@ -555,6 +628,7 @@ class HypothesisHuntEngine:
                 cards=list(getattr(state, "evidence_cards", []) or []),
                 verified_goals=verified_goals,
                 coverage_complete=(coverage_status == CoverageStatus.COMPLETE),
+                proof_results=list(getattr(state, "proof_results", []) or []),
             )
 
         is_outcome_verified = outcome_result.verified if outcome_result is not None else (
@@ -574,7 +648,9 @@ class HypothesisHuntEngine:
 
         if stopping_decision == StoppingDecision.STOP_ANSWERED:
             for hypothesis in state.hypotheses:
-                hypothesis.status = HypothesisStatus.SUPPORTED
+                if hypothesis.hypothesis_class != "benign_baseline":
+                    hypothesis.status = HypothesisStatus.SUPPORTED
+            self.reasoner.evaluate_hypothesis_network(state.hypotheses, state.expectations, state.evidence_cards)
 
         self.controller.set_stopping_decision(state, stopping_decision)
 
@@ -1555,8 +1631,29 @@ class HypothesisHuntEngine:
             # is still untrusted until the selected adapter executes a bounded
             # source-side probe.
             accepted_source_proposals = cached_proposals
+
+            # If static capabilities already cover all goal relations, bypass C2 profiling
+            static_guaranteed_relations: set[str] = set()
+            for op in getattr(getattr(state, "capability_catalog", None), "operations", ()) or ():
+                for gr in getattr(op, "guaranteed_relations", ()):
+                    static_guaranteed_relations.add(str(gr).strip().casefold())
+            if active_adapter is not None and hasattr(active_adapter, "declared_operations"):
+                for op in active_adapter.declared_operations():
+                    for gr in getattr(op, "guaranteed_relations", ()):
+                        static_guaranteed_relations.add(str(gr).strip().casefold())
+
+            all_relations_covered = bool(
+                state.semantic_goal_graph
+                and getattr(state.semantic_goal_graph, "relations", None)
+                and all(
+                    str(rel.relation).strip().casefold() in static_guaranteed_relations
+                    for rel in state.semantic_goal_graph.relations
+                )
+            )
+
             if (
-                self.source_profiler_caller is not None
+                not all_relations_covered
+                and self.source_profiler_caller is not None
                 and not self.llm_tracker.is_exhausted
                 and active_profiles
                 and profiling_requirements
@@ -1883,7 +1980,10 @@ class HypothesisHuntEngine:
         # 2. Apply fast guards after the Provider Census. Capability discovery
         # has already run exactly once for every configured adapter, and its
         # reachable, unreachable and irrelevant outcomes remain in the graph.
-        if any(h.status == HypothesisStatus.INSUFFICIENTLY_SPECIFIED for h in state.hypotheses):
+        if (
+            any(h.status == HypothesisStatus.INSUFFICIENTLY_SPECIFIED for h in state.hypotheses)
+            or (getattr(objective, "semantic_goal_graph", None) and getattr(objective.semantic_goal_graph, "needs_clarification", False))
+        ):
             stop_decision = self.recovery_controller.evaluate_stop(needs_clarification=True)
             self.controller.set_stopping_decision(state, stop_decision)
 
@@ -1927,6 +2027,58 @@ class HypothesisHuntEngine:
         )
         self.controller.add_cell(state, wc_cell)
 
+        # Discovered or targeted instance cells
+        if request.entities:
+            for ent in request.entities:
+                if not any(c.entity == ent for c in state.cells):
+                    inst_cell = Cell(
+                        provider_scope=scope,
+                        entity=ent,
+                        time_bucket=objective.time_window,
+                        state=CellState.UNEXPLORED,
+                    )
+                    self.controller.add_cell(state, inst_cell)
+
+        # Instantiate initial Expectations for targeted entities
+        if request.entities:
+            for ent in request.entities:
+                for hyp in state.hypotheses:
+                    for req in state.requirements:
+                        is_bound = (
+                            req.id in hyp.requirements
+                            or hyp.id in req.supports
+                            or (not hyp.requirements
+                                and hyp.hypothesis_class != "benign_baseline"
+                                and req.semantic_intent != "operational_baseline")
+                        )
+                        if is_bound:
+                            try:
+                                ev_enum = EvidenceRequirement(req.evidence_type)
+                            except ValueError:
+                                ev_enum = EvidenceRequirement.PROCESS_ANCESTRY
+
+                            if not is_entity_compatible_with_requirement(ent, ev_enum):
+                                continue
+
+                            ent_label = getattr(ent, "name", getattr(ent, "username", getattr(ent, "address", "ent")))
+                            exp_id = f"exp-{hyp.id}-{req.id}-{ent_label}"
+                            if not any(e.id == exp_id for e in state.expectations):
+                                self.controller.add_expectation(
+                                    state,
+                                    Expectation(
+                                        id=exp_id,
+                                        owner_explanation_id=hyp.id,
+                                        evidence_requirement=ev_enum,
+                                        predicted_observation=req.description,
+                                        entity_ref=ent,
+                                        field_predicate=req.predicate,
+                                        provider_scope_id=scope.scope_id,
+                                        time_window=objective.time_window,
+                                        falsification_condition=req.falsification_condition,
+                                        test_status=TestStatus.UNTESTED,
+                                    ),
+                                )
+
         if (
             native_semantic_graph
             and state.semantic_logical_plan is not None
@@ -1945,9 +2097,15 @@ class HypothesisHuntEngine:
                 initial_bindings=initial_bindings,
             )
 
+        is_legacy_untyped = bool(
+            explicit_adapter
+            and active_catalog
+            and getattr(active_catalog, "details", {}).get("descriptor_status") == "LEGACY_UNTYPED"
+        )
         if (
             native_semantic_graph
             and not legacy_explicit_adapter
+            and not is_legacy_untyped
             and state.semantic_logical_plan is not None
             and state.semantic_logical_plan.unresolved_goal_ids
             and not state.semantic_logical_plan.steps
@@ -1965,7 +2123,7 @@ class HypothesisHuntEngine:
         # the request from answer-type heuristics and could add unrelated
         # queries.  Discovery remains the compatibility path for requests
         # compiled without a ClaimGraph.
-        if not state.stopping_decision and not use_claim_graph and (not native_semantic_graph or legacy_explicit_adapter):
+        if not state.stopping_decision and not use_claim_graph and (not native_semantic_graph or legacy_explicit_adapter or is_legacy_untyped):
             self._run_semantic_discovery(
                 state=state,
                 active_adapter=active_adapter,
@@ -2211,13 +2369,14 @@ class HypothesisHuntEngine:
         # Discovered or targeted instance cells
         if request.entities:
             for ent in request.entities:
-                inst_cell = Cell(
-                    provider_scope=scope,
-                    entity=ent,
-                    time_bucket=objective.time_window,
-                    state=CellState.UNEXPLORED,
-                )
-                self.controller.add_cell(state, inst_cell)
+                if not any(c.entity == ent for c in state.cells):
+                    inst_cell = Cell(
+                        provider_scope=scope,
+                        entity=ent,
+                        time_bucket=objective.time_window,
+                        state=CellState.UNEXPLORED,
+                    )
+                    self.controller.add_cell(state, inst_cell)
 
         # 3. Instantiate initial Expectations for targeted entities
         if request.entities:
@@ -2242,21 +2401,22 @@ class HypothesisHuntEngine:
 
                             ent_label = getattr(ent, "name", getattr(ent, "username", getattr(ent, "address", "ent")))
                             exp_id = f"exp-{hyp.id}-{req.id}-{ent_label}"
-                            self.controller.add_expectation(
-                                state,
-                                Expectation(
-                                    id=exp_id,
-                                    owner_explanation_id=hyp.id,
-                                    evidence_requirement=ev_enum,
-                                    predicted_observation=req.description,
-                                    entity_ref=ent,
-                                    field_predicate=req.predicate,
-                                    provider_scope_id=scope.scope_id,
-                                    time_window=objective.time_window,
-                                    falsification_condition=req.falsification_condition,
-                                    test_status=TestStatus.UNTESTED,
-                                ),
-                            )
+                            if not any(e.id == exp_id for e in state.expectations):
+                                self.controller.add_expectation(
+                                    state,
+                                    Expectation(
+                                        id=exp_id,
+                                        owner_explanation_id=hyp.id,
+                                        evidence_requirement=ev_enum,
+                                        predicted_observation=req.description,
+                                        entity_ref=ent,
+                                        field_predicate=req.predicate,
+                                        provider_scope_id=scope.scope_id,
+                                        time_window=objective.time_window,
+                                        falsification_condition=req.falsification_condition,
+                                        test_status=TestStatus.UNTESTED,
+                                    ),
+                                )
 
         # 4. Central Action Loop governed by CanonicalActionController
         MAX_PIVOTS_PER_HUNT = 3

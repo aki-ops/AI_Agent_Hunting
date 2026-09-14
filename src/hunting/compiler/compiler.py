@@ -866,7 +866,7 @@ class RequestAdapter:
             inv_case = self._build_cve_case(cve_id, record, request, [hypo_exploited, hypo_benign], [req_exploit, req_post])
 
             outcome_contract = HypothesisVerdictContract(
-                support_obligations=(req_exploit.id, req_post.id),
+                support_obligations=(req_exploit.id,),
                 refutation_obligations=(req_baseline.id,),
                 falsification_conditions=(
                     req_exploit.falsification_condition
@@ -874,10 +874,17 @@ class RequestAdapter:
                 ),
                 scope="; ".join(request.provider_hints or ["cdb_native_scope"]),
             )
+            host_val = None
+            if getattr(request, "entities", None):
+                for ent in request.entities:
+                    val = getattr(ent, "name", None) or (str(ent) if isinstance(ent, str) else None)
+                    if val:
+                        host_val = val
+                        break
             var_endpoint = SemanticVariable(
                 id="var_endpoint",
                 entity_type="host",
-                value=None,
+                value=host_val,
                 value_origin="request",
                 constraints=(),
             )
@@ -888,7 +895,7 @@ class RequestAdapter:
             var_proc = SemanticVariable(
                 id="var_exploit_proc",
                 entity_type="process",
-                value=exploit_ind,
+                value=None,
                 value_origin="request",
                 constraints=tuple([SemanticConstraint(key="cmdline", value=exploit_ind, operator="contains")]) if exploit_ind else (),
             )
@@ -913,7 +920,7 @@ class RequestAdapter:
                 subject="var_exploit_proc",
                 relation="wrote",
                 object="var_webshell_file",
-                required=True,
+                required=False,
                 description=req_post.description,
                 atomic_obligation=f"Detect artifact write for {cve_id}",
                 dependencies=(rel_proc.id,),
@@ -1306,13 +1313,20 @@ class RequestAdapter:
                 goal_graph = val_result.validated_graph
                 goal_graph.raw_llm_proposal = raw_data
                 goal_graph.validation_diagnostics = list(val_result.diagnostics)
+                if getattr(val_result, "needs_clarification", False):
+                    goal_graph.needs_clarification = True
                 goal_graph = _mark_request_grounded_values(goal_graph, request.content, request.entities)
 
+                hypothesis_status = (
+                    HypothesisStatus.INSUFFICIENTLY_SPECIFIED
+                    if getattr(val_result, "needs_clarification", False)
+                    else HypothesisStatus.LIVE
+                )
                 hypothesis = Hypothesis(
                     id=f"hypo-{request.id}",
                     statement=goal_graph.objective,
                     origin=HypothesisOrigin.LLM_PROPOSAL,
-                    status=HypothesisStatus.LIVE,
+                    status=hypothesis_status,
                     requirements=[relation.id for relation in goal_graph.relations if relation.required],
                 )
                 requirements = [EvidenceRequirementV4(

@@ -351,7 +351,7 @@ def test_9_telemetry_null_pid_and_unknown_event_survives_real_engine():
             "pid": None,
             "ppid": None,
             "image": "C:\\test\\app.exe",
-            "cmdline": "app.exe --status",
+            "cmdline": "python app.exe --status",
         },
         # Event with pid=None and ppid=None
         {

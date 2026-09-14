@@ -1,71 +1,61 @@
-# AI Agent Hunting (v8)
+# AI Agent Hunting
 
-This repository implements an evidence-grounded threat hunting and cyber investigation agent based on a **Contract-Grounded Progressive Hunt Graph**.
+Research prototype for an **Evidence-Grounded Progressive Hunt Graph** agent.
 
-The architecture operates across two planes:
-1. **Control Plane**: Provider manifests, source catalog, semantic vocabulary, human-approved proof contracts, query compilers, and ground-truth evaluation corpus.
-2. **Hunt Plane**: A deterministic, progressive 10-step lifecycle (Steps A–J) with bounded LLM semantic planning, quarantined query synthesis, and strict evidence verification.
+## Status
+
+The v9 architecture is accepted as the target design but is not fully integrated or empirically validated. The current unit suite includes legacy behavior and isolated component tests; live and end-to-end claims must be checked against `04-IMPLEMENTATION-CHECKLIST.md`.
+
+## Target flow
 
 ```text
-Request
-  -> Freeze Request & Budget (Step A)
-  -> LLM Semantic Compilation C1: GoalGraph + AnswerContract (Step B)
-  -> Deterministic Validation (Step C)
-  -> AND/OR/GATE Graph Planning (Step D)
-  -> Progressive Frontier F0–F4 Discovery (Step E)
-  -> Controlled Entity Binding & CandidateSet (Step F)
-  -> Typed QueryIntent (EXPLORE/DISCRIMINATE/PROVE) & Quarantined Native Gate (Step G)
-  -> Evidence Pipeline: Row -> Observation -> Fact -> CandidateRelation (Step H)
-  -> ProofContract Evaluation & Verification (Step I)
-  -> 9-State Stopping Taxonomy & 6-Part Report + Machine Run Account (Step J)
+Question / hypothesis / alert / PoC / CTI / TTP / IOC / CVE / scheduled hunt
+  -> RequestContract + SearchEnvelope
+  -> SemanticGoalGraph + OutcomeContract proposal
+  -> Semantic Acceptance Gate
+  -> explicit AND/OR/GATE obligation planning
+  -> progressive capability discovery
+  -> controlled CandidateSet binding or user clarification
+  -> typed EvidenceAction / QueryIntent
+  -> bounded provider execution
+  -> Observation -> FieldFact -> CandidateRelation
+  -> executable ProofContract
+  -> deterministic recovery and stopping
+  -> grounded report and machine run account
 ```
 
-## Three Non-Negotiable Invariants
+The LLM proposes interpretation and actions. It cannot verify evidence, select ambiguous entities, broaden scope or stop the hunt.
 
-1. **LLM is a semantic planner, not a semantic oracle.** The LLM may propose goals, candidate sources, field mappings, queries, and explanations. Only deterministic validators, adapters, and human-approved `ProofContract` evaluators may promote a claim or answer to verified status.
-2. **No full-schema prompt, no fixed Top-K cutoff.** The catalog of sources and fields remains outside the hot LLM prompt. The agent expands a progressive frontier (F0–F4) per unresolved goal. Unexamined sources are explicitly recorded as coverage gaps; shortlists never license negative claims.
-3. **Never auto-bind ambiguous candidates without proof.** If multiple entities match, the agent must execute a `DISCRIMINATOR` query or halt for human clarification (`NEEDS_DISAMBIGUATION`). It never selects candidates by substring heuristic or arbitrary ranking.
+## Documentation
 
-## Key Architectural Frameworks
+Read in this order:
 
-- **SearchEnvelope & Derivation Invariants**: Query scope is bounded by `SearchEnvelope`. `HardConstraints` (pinned entities, verified bindings, outer time window, allowed providers, obligations) are strictly immutable. Only declared `ExpandableRetrievalHints` expand via versioned derivations ($E_0 \to E_1 \to E_2$) with `max_candidate_fanout` (default 5) clamping.
-- **Bounded Deterministic Controller Loop**: Loose while-loops are eliminated. The Controller owns the deterministic agenda loop. LLMs are invoked only at declared transition points ($C_1 - C_6$) with per-component token ceilings and preflight reservation checks.
-- **The Deterministic Triad**: Transitions are governed by `classify` (8-rung ObservationClass ladder), `choose_next_action` (deterministic recovery state machine), and `evaluate_stop`.
-- **LoopGuard & Monotonicity**: Fingerprints actions via `ActionSignature`, checks for `material_delta`, and transitions stalled routes to `NO_PROGRESS` / `EXHAUSTED` after 2 consecutive non-progress steps.
-- **Decoupled Orthogonal Axes**: Execution status, Coverage status, Proof status, and Route status are strictly independent: $\mathbf{PARTIAL + 0\text{ rows} \neq BOUNDED\_NOT\_FOUND}$.
+1. `01_FINAL-ARCHITECTURE.md` — sole normative architecture;
+2. `02_METHOD-AND-IMPLEMENTATION-PLAN.md` — runtime method;
+3. `03_LITERATURE-AND-TRACEABILITY.md` — research basis and claim limits;
+4. `04-IMPLEMENTATION-CHECKLIST.md` — honest implementation status;
+5. `08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md` — detailed migration plan;
+6. `06-REFERENCE-ARCHITECTURE-DECISION.md` — v9 decision record;
+7. `05-SCIENTIFIC-ARCHITECTURE-REVIEW.md` and `07-STRATEGIC-RESEARCH-REVIEW.md` — reviews;
+8. `docs/01-REAL-PROVIDER-SPECIFICATIONS.md` — provider boundary.
 
-## Canonical Documents
+Generated `report.md`, `artifacts/` and `baseline_reports/` are not architecture sources.
 
-1. [08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md](08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md) — Candidate master plan, scientific critique resolution, and execution roadmap.
-2. [01_FINAL-ARCHITECTURE.md](01_FINAL-ARCHITECTURE.md) — Architectural boundaries, Two Planes, and data contracts.
-3. [02_METHOD-AND-IMPLEMENTATION-PLAN.md](02_METHOD-AND-IMPLEMENTATION-PLAN.md) — Executable Steps A–J, C1–C6 LLM call table, and financial cost accounting.
-4. [03_LITERATURE-AND-TRACEABILITY.md](03_LITERATURE-AND-TRACEABILITY.md) — Peer-reviewed literature grounding and decision traceability.
-5. [04-IMPLEMENTATION-CHECKLIST.md](04-IMPLEMENTATION-CHECKLIST.md) — Evidence-gated implementation checklist (Phases 0–8).
-6. [05-SCIENTIFIC-ARCHITECTURE-REVIEW.md](05-SCIENTIFIC-ARCHITECTURE-REVIEW.md) — Scientific principles and local contribution boundaries.
-7. [06-REFERENCE-ARCHITECTURE-DECISION.md](06-REFERENCE-ARCHITECTURE-DECISION.md) — Reference architecture decision record and operational loop.
-8. [07-STRATEGIC-RESEARCH-REVIEW.md](07-STRATEGIC-RESEARCH-REVIEW.md) — Strategic critique on science, cost, and scalability.
-9. [docs/01-REAL-PROVIDER-SPECIFICATIONS.md](docs/01-REAL-PROVIDER-SPECIFICATIONS.md) — Real provider contracts, capabilities, and field roles.
+## Current verification
 
-## Installation
-
-```bash
-python -m venv .venv
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
-```
-
-## Running
-
-```bash
-python main.py --hypothesis "Amber Turing visited a competitor website. What domain was it?"
-```
-
-## Tests
-
-```bash
-python -m pytest tests/unit -q
+```powershell
+python -m pytest -q
 python -m compileall -q src main.py
-ruff check .
+ruff check src tests
 ```
+
+Do not interpret a green test suite as v9 completion unless the P0 integration and executable evaluation gates in `04` pass.
+
+## CLI
+
+```powershell
+python main.py --llm api --hypothesis "<question or hunt hypothesis>"
+```
+
+Provider configuration and secrets belong in `.env` or deployment-specific configuration. Never commit API keys or credentials.
 

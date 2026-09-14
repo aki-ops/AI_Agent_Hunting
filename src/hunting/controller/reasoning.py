@@ -290,8 +290,12 @@ class HypothesisReasoningEngine:
             elif refuted and not confirmed and not untested and not inconclusive:
                 h.status = HypothesisStatus.REFUTED
             elif inconclusive or untested or (not confirmed and not refuted):
-                if h.status not in (HypothesisStatus.SUPPORTED, HypothesisStatus.REFUTED):
-                    h.status = HypothesisStatus.UNKNOWN
+                if h.hypothesis_class == "benign_baseline":
+                    if h.status not in (HypothesisStatus.LIVE, HypothesisStatus.SUPPORTED, HypothesisStatus.REFUTED):
+                        h.status = HypothesisStatus.LIVE
+                else:
+                    if h.status not in (HypothesisStatus.SUPPORTED, HypothesisStatus.REFUTED):
+                        h.status = HypothesisStatus.UNKNOWN
 
         # Competing hypotheses resolution
         attack_hypos = [h for h in hypotheses if h.hypothesis_class != "benign_baseline"]

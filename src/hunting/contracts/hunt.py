@@ -486,6 +486,7 @@ class HuntState:
     residuals: list[str] = field(default_factory=list)
     outcome_contract: Any | None = None
     proof_results: list[Any] = field(default_factory=list)
+    candidate_sets: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -534,6 +535,7 @@ class FinalHuntAccount:
     search_envelope: Any | None = None
     outcome_contract: Any | None = None
     proof_results: list[Any] = field(default_factory=list)
+    candidate_sets: dict[str, Any] = field(default_factory=dict)
 
 
     @property

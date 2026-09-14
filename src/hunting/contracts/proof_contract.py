@@ -251,6 +251,14 @@ class ProofResult:
         return self.verified
 
     @property
+    def proved(self) -> bool:
+        return self.verified
+
+    @property
+    def cited_observation_ids(self) -> tuple[str, ...]:
+        return self.citations
+
+    @property
     def bindings_dict(self) -> dict[str, str]:
         return dict(self.bindings)
 

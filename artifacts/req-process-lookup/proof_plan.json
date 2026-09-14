@@ -7,5 +7,6 @@
     "claim-process"
   ],
   "proof_methods": [],
-  "selected_method_ids": {}
+  "selected_method_ids": {},
+  "graph_revision": "G0"
 }

@@ -466,6 +466,7 @@ class ApiLLMProvider(LLMProvider):
         self.last_usage = {}
         self.last_finish_reason = None
         for attempt in range(1, max_retries + 1):
+            self.last_attempt_count = attempt
             try:
                 with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
                     content_type = resp.headers.get("Content-Type", "")

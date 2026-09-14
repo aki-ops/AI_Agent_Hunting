@@ -1,76 +1,66 @@
-# 03 — LITERATURE AND TRACEABILITY (v7)
+# 03 — LITERATURE AND TRACEABILITY (v9)
 
-This file separates external support from thesis engineering. “Supports” does
-not mean “proves our exact implementation”. Exact class names, prompts,
-budgets, stopping enums and F1 thresholds remain local decisions until tested.
+This record distinguishes external evidence, engineering transfer and thesis hypotheses. “Supports” never means that a source proves the exact local architecture.
 
-## 1. Canonical source register
+## 1. Source register
 
-| ID | Source | Supports | Does not establish |
+| ID | Primary source | Supported principle | Transfer limit |
 |---|---|---|---|
-| REF-SLEUTH | [USENIX Security 2017](https://www.usenix.org/system/files/conference/usenixsecurity17/sec17-hossain.pdf) | Provenance/dependency graph reconstruction from audit logs. | A universal path for every question. |
-| REF-HOLMES | [IEEE S&P 2019](https://ieeexplore.ieee.org/document/8835390/) | Correlation of suspicious information flows in multi-stage attacks. | A mandatory relation graph for factual lookup. |
-| REF-OMEGALOG | [NDSS 2020](https://experts.illinois.edu/en/publications/omegalog-high-fidelity-attack-investigation-via-transparent-multi/) | Reconciliation of application/system/network context. | A closed event taxonomy. |
-| REF-AIQL | [USENIX ATC 2018](https://www.usenix.org/system/files/conference/atc18/atc18-gao.pdf) | Typed logical query semantics and execution planning. | Our exact SemanticGoalGraph or scoring formula. |
-| REF-THREATRAPTOR | [ICDE 2021 / implementation](https://github.com/peng-gao-lab/threatraptor) | Structured behaviour extraction before typed query synthesis. | That all NL questions are attack-behaviour graphs. |
-| REF-USENIX-TH | [Maxam et al., USENIX Security 2024](https://www.usenix.org/conference/usenixsecurity24/presentation/maxam) | Empirical diversity of threat-hunting processes. | Our controller or query policy. |
-| REF-ECTH | [Evidential Cyber Threat Hunting](https://arxiv.org/abs/2104.10319) | Explicit knowledge/hypothesis/action and uncertainty concepts. Preprint. | Production effectiveness of our state machine. |
-| REF-ATHAFI | [ATHAFI](https://arxiv.org/abs/2003.03663) | Adaptive telemetry collection and hypothesis testing. Preprint. | Our action score or budget. |
-| REF-EXCYTIN | [ExCyTIn-Bench](https://www.microsoft.com/en-us/research/publication/excytin-bench-evaluating-llm-agents-on-cyber-threat-investigation/) | Graph-grounded benchmark for multistep investigation and evidence paths. | General reliability of LLMs. |
-| REF-MITRE-DC | [ATT&CK Data Components](https://attack.mitre.org/datacomponents/) | Properties observable for techniques/sub-techniques. | Complete telemetry coverage. |
-| REF-MITRE-ANALYTICS | [ATT&CK Detection Strategies](https://attack.mitre.org/detectionstrategies/) | High-level detection strategies and analytics. | Provider-specific query availability. |
-| REF-OCSF | [OCSF](https://ocsf.io/) | Extensible vendor-neutral event normalization. | A replacement for native records. |
-| REF-SCHEMA-LLM | [Schema Matching with Large Language Models](https://arxiv.org/abs/2407.11852) | LLM-assisted generation of semantic schema-match candidates; context size/selection materially affects match quality. | That a candidate mapping is correct without validation. |
-| REF-REMATCH | [ReMatch](https://arxiv.org/abs/2403.01567) | Retrieval-enhanced LLM schema matching over heterogeneous real-world schemas. | A cybersecurity-specific source mapping or query-safety policy. |
-| REF-CHESS | [CHESS](https://arxiv.org/abs/2405.16755) | Retrieval, schema selection, query generation and validation as separate stages; reducing the context sent to the model. | That its database setting or component budgets transfer unchanged to telemetry. |
-| REF-RAT-SQL | [RAT-SQL](https://arxiv.org/abs/1911.04942) | Relation-aware schema linking instead of treating schema items as an unordered list. | Our source-score formula or security semantics. |
-| REF-ADAPTIVE-K | [Adaptive-K](https://arxiv.org/abs/2506.08479) | A documented alternative for dynamic context sizing; evaluated but not adopted as the source-selection policy here because it can discard low-scoring telemetry. | A universal cutoff or a guarantee that lexical scores find every relevant source. |
-| REF-TOOLSHED | [ToolShed](https://arxiv.org/abs/2410.14594) | Tool/capability retrieval under a recall--context-size trade-off. | Correctness of a telemetry mapping without validation. |
-| REF-MDB-LINK | [MDB-Link](https://arxiv.org/abs/2608.09588) | Field-level retrieval, aggregation by source, shortlist construction and budget-aware reranking. | A cybersecurity-specific field ontology or proof of our thresholds. |
-| REF-AUTOLINK | [AutoLink, AAAI 2026](https://ojs.aaai.org/index.php/AAAI/article/view/40672) | Autonomous iterative schema exploration, progressive expansion without full-schema prompts. | Exact parameters transfer to threat hunting without calibration. |
-| REF-CYBER-BENCH | [Cyber Defense Benchmark, 2026](https://arxiv.org/abs/2604.19533) | Real-world threat hunting evaluation over 75k-135k raw events; models struggle without structural constraints. | That all agentic hunting is infeasible; refutes assumption that unguided LLMs succeed. |
-| REF-SOC-OPS | [Autonomous SOC Operations, PMLR 2026](https://proceedings.mlr.press/v318/saju26a.html) | Constrained query generation with syntax constraints and documentation-grounded prompts. | BLEU/ROUGE overlap proves query denotation or execution semantics. |
-| REF-SELECTIVE-CLS | [Selective Classification](https://arxiv.org/abs/1805.08206) | Abstention models evaluated on risk-coverage curves rather than precision on answered cases only. | Statistical classifier guarantees transfer unchanged to adaptive agents. |
-| REF-KESTREL | [Kestrel Threat Hunting](https://kestrel.readthedocs.io/en/stable/theory.html) | Threat hunting as iterative subgraph pattern matching over incomplete telemetry. | LLM-generated graph is valid without independent proof contracts. |
-| REF-UMCP-HTN | [UMCP / HTN Planning, AIPS 1994](https://www.cs.umd.edu/~nau/papers/erol1994umcp.pdf) | Task-network decomposition, AND/OR/GATE dependency graphs. | Soundness/completeness of our local planning heuristic. |
-| REF-SPLUNK-REST | [Splunk Search Job API](https://help.splunk.com/en/splunk-enterprise/leverage-rest-apis/rest-api-reference/10.2/search-endpoints/search-endpoint-descriptions) | Search dispatch with `max_time`, cancellation, `scanCount`, `runDuration`, and `resultCount`. | `head 100` limits backend scanning work. |
-| REF-OTEL | [OpenTelemetry events](https://opentelemetry.io/docs/specs/semconv/general/events/) | Extensible semantic events and attributes. | Security-specific coverage. |
-| REF-MICROSOFT | [Microsoft Threat Hunting Assistant](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-security-copilot) | Schema/table-aware query assistance and review. | Correctness without verification. |
-| REF-SAFE-TOOLS | [Verifiably Safe Tool Use, ICSE-NIER 2026](https://doi.org/10.1145/3786582.3786839) | External specification enforcement for tool capability and action sequences. | Hunting-specific verifier completeness. |
-| REF-RPG | [Retrieve-Plan-Generation, EMNLP 2024](https://aclanthology.org/2024.emnlp-main.270/) | Iterative planning and retrieval conditioned on evidence. | Our controller's optimality. |
-| REF-TAHITI | [FI-ISAC TaHiTI](https://www.nvb.nl/themas/veilig-bankieren/fi-isac/tahiti/) | Practitioner hypothesis-driven hunting lifecycle. | A universal industrial standard. |
-| REF-PEAK | [Cisco PEAK](https://blogs.cisco.com/security/introducing-peak-threat-hunting-assistant) | Practical hunting archetypes/playbook thinking. | Scientific validity of our architecture. |
-| REF-DARPA-TC | [DARPA Transparent Computing](https://github.com/darpa-i2o/Transparent-Computing/blob/master/README.md) | Provenance data and attack engagements for evaluation. | Dataset completeness/perfection. |
+| REF-SLEUTH | [SLEUTH, USENIX Security 2017](https://www.usenix.org/system/files/conference/usenixsecurity17/sec17-hossain.pdf) | Provenance/dependency reconstruction from audit logs | Does not provide a universal path for arbitrary questions |
+| REF-HOLMES | [HOLMES, IEEE S&P 2019](https://ieeexplore.ieee.org/document/8835390/) | Correlation of suspicious information flows in multi-stage attacks | Does not prove arbitrary factual relations |
+| REF-OMEGALOG | [OmegaLog, NDSS 2020](https://experts.illinois.edu/en/publications/omegalog-high-fidelity-attack-investigation-via-transparent-multi/) | Reconciliation across application, system and network context | Does not define a closed event ontology |
+| REF-AIQL | [AIQL, USENIX ATC 2018](https://www.usenix.org/conference/atc18/presentation/gao) | Typed domain query primitives and semantics-aware planning | Does not prove the local GoalGraph or planner |
+| REF-THREATRAPTOR | [ThreatRaptor, ICDE 2021 implementation](https://github.com/peng-gao-lab/threatraptor) | Natural-language attack description to behavior graph and query | Focuses on described attack behavior and system audit data, not arbitrary QA |
+| REF-KESTREL | [Kestrel theory](https://kestrel.readthedocs.io/en/latest/theory.html) | Iterative graph/subset identification over incomplete real telemetry | Does not validate LLM-generated graph semantics |
+| REF-ECTH | [Evidential Cyber Threat Hunting](https://arxiv.org/abs/2104.10319) | Knowledge, hypothesis and action subspaces; human-machine investigation | Preprint; no proof of this controller or its budgets |
+| REF-ATHAFI | [ATHAFI](https://arxiv.org/abs/2003.03663) | Adaptive collection and hypothesis testing | Does not establish local action scoring |
+| REF-USENIX-TH | [Maxam and Davis, USENIX Security 2024](https://www.usenix.org/conference/usenixsecurity24/presentation/maxam) | Practitioner processes are diverse; hunting uses hypothesis-driven and data-driven work | Qualitative study of 11 DHS-associated hunters, not an optimal agent design |
+| REF-EXCYTIN | [ExCyTIn-Bench, ICML 2026](https://www.microsoft.com/en-us/research/publication/excytin-bench-evaluating-llm-agents-on-cyber-threat-investigation/) | Multi-step investigation graphs, intermediate actions and executable evaluation | Controlled Azure/Sentinel SQL benchmark; not unknown-provider semantic proof |
+| REF-CYBER-BENCH | [Cyber Defense Benchmark](https://arxiv.org/abs/2604.19533) | Raw-event cyber hunting remains difficult for general LLMs | 2026 preprint; does not prove all agentic hunting is infeasible |
+| REF-UMCP | [UMCP / HTN Planning, AIPS 1994](https://www.cs.umd.edu/~nau/papers/erol1994umcp.pdf) | Formal task-network decomposition | Soundness/completeness does not transfer to the local heuristic |
+| REF-RPG | [Retrieve-Plan-Generation, EMNLP 2024](https://aclanthology.org/2024.emnlp-main.270/) | Iterative retrieval and planning conditioned on observations | Does not establish the local recovery policy |
+| REF-AUTOLINK | [AutoLink, AAAI 2026](https://ojs.aaai.org/index.php/AAAI/article/view/40672) | Progressive schema exploration without full-schema prompts | Text-to-SQL; reported thresholds and actions do not transfer unchanged |
+| REF-MDB-LINK | [MDB-Link](https://arxiv.org/abs/2608.09588) | Hierarchical multi-database schema retrieval and budget-aware reranking | 2026 preprint; ranking does not guarantee telemetry recall or proof |
+| REF-REMATCH | [ReMatch](https://arxiv.org/abs/2403.01567) | Retrieval-enhanced matching over heterogeneous schemas | Candidate mappings still require independent validation |
+| REF-CHESS | [CHESS](https://arxiv.org/abs/2405.16755) | Separate retrieval, schema selection, generation and validation | Database assumptions and budgets do not transfer directly |
+| REF-RATSQL | [RAT-SQL](https://arxiv.org/abs/1911.04942) | Relation-aware schema linking | Does not define cybersecurity semantics |
+| REF-TOOLSHED | [ToolShed](https://arxiv.org/abs/2410.14594) | Tool retrieval has recall/context/cost trade-offs | Does not license a fixed cutoff for telemetry |
+| REF-SELECTIVE | [Selective Classification](https://arxiv.org/abs/1805.08206) | Evaluate abstention using risk-coverage, not answered accuracy alone | Classifier guarantees do not transfer automatically to agents |
+| REF-SAFE-TOOLS | [Verifiably Safe Tool Use, ICSE-NIER 2026](https://doi.org/10.1145/3786582.3786839) | External specifications can constrain agent tool actions | Does not provide hunting-specific proof contracts |
+| REF-MITRE | [MITRE ATT&CK Data Components](https://attack.mitre.org/datacomponents/) | Observable properties for ATT&CK behavior | Does not guarantee local telemetry availability |
+| REF-OCSF | [OCSF](https://ocsf.io/) | Extensible vendor-neutral event normalization | Must not replace native evidence provenance |
+| REF-SPLUNK | [Splunk Search Job API](https://help.splunk.com/en/splunk-enterprise/leverage-rest-apis/rest-api-reference/10.2/search-endpoints/search-endpoint-descriptions) | Job bounds, cancellation and execution telemetry | `head` does not imply bounded backend scan or completeness |
+| REF-TAHITI | [FI-ISAC TaHiTI](https://www.nvb.nl/themas/veilig-bankieren/fi-isac/tahiti/) | Practitioner hypothesis-driven hunt lifecycle | Practitioner guidance, not universal scientific proof |
+| REF-DARPA-TC | [DARPA Transparent Computing](https://github.com/darpa-i2o/Transparent-Computing) | Provenance datasets and attack engagements | Dataset coverage is not complete or provider-universal |
 
-## 2. Traceability matrix
+## 2. Architecture traceability
 
-| Architecture Decision (v8 / 08 Plan) | Source basis | Local engineering | Required evidence |
-|---|---|---|---|
-| GoalGraph carries AnswerContract & request spans | REF-THREATRAPTOR, REF-AIQL, REF-EXCYTIN | Typed variables, relations, qualifiers, provenance spans, AND/OR/GATE | Goal precision/recall/F1; forbidden-expansion rate |
-| ProofContract independent of LLM proposal | REF-SLEUTH, REF-SCHEMA-LLM, REF-SAFE-TOOLS | Three levels: STRUCTURALLY_VALID, RETRIEVAL_CAPABLE, PROOF_CAPABLE | Role-swap & cooccurrence reject tests; probe precision |
-| Progressive Frontier (F0–F4) replaces fixed Top-K | REF-AUTOLINK, REF-MDB-LINK, REF-TOOLSHED | Incremental expansion (certified -> metadata -> adjacent -> profiling -> exhaustive) | Unexamined source coverage; token reduction per hunt |
-| Controlled CandidateSet & Discriminator queries | REF-UMCP-HTN, REF-SAFE-TOOLS | Multi-candidate sets; automated discriminator before user prompt | Zero wrong auto-binding; disambiguation rate |
-| QueryIntent modes (EXPLORE/DISCRIMINATE/PROVE) | REF-AIQL, REF-SOC-OPS, REF-SAFE-TOOLS | Provider-neutral intent; adapter parameterization | Execution success; denotation accuracy; zero injection |
-| Quarantined Native SPL Gate & AST telemetry | REF-SAFE-TOOLS, REF-SPLUNK-REST | AST parser allowlist, time bounds, scan/runtime tracking, cancel SID | Unsafe query rejection; backend scan monitoring |
-| Raw observations append-only in ledger | REF-SLEUTH, REF-OMEGALOG, REF-OCSF | Ledger/envelope/card format | Citation integrity and unknown-field tests |
-| EvidenceGraph built from verified facts | REF-SLEUTH, REF-HOLMES | Role direction, state transition, and ProofContract evaluation | Transition edge precision/recall/F1 |
-| No universal scenario branch | REF-USENIX-TH, REF-CYBER-BENCH | Pure contract flow; no keyword playbooks | Counterfactual matrix 8/8 passing |
-| LLM bounded to C1–C6 isolated calls | REF-EXCYTIN, REF-SAFE-TOOLS | Token budgets, max 5 calls, schema validation | Call & token ceilings; zero prompt leakage |
-| SearchEnvelope & HardConstraints | REF-UMCP-HTN, REF-SAFE-TOOLS | Immutable hard constraints, expandable hints, derived envelopes ($E_0 \to E_1$), fanout $\le 5$ | Forbidden expansion rejection; scope breach prevention |
-| Bounded Deterministic Controller Loop | REF-UMCP-HTN, REF-RPG, REF-SAFE-TOOLS | Deterministic agenda loop, Triad (`classify`, `choose_next_action`, `evaluate_stop`), LoopGuard | Zero infinite loops; monotonic progress or graceful halt |
-| ObservationClass 8-Rung Ladder & TriStatus | REF-SELECTIVE-CLS, REF-ECTH | 8-rung classification, orthogonal status axes, decoupled TriStatus ($PARTIAL + 0 \neq BOUNDED\_NOT\_FOUND$) | Zero false negative claims on truncated/failed queries |
-| Token Economics & Preflight Reservations | REF-EXCYTIN, REF-SPLUNK-REST | Per-component ceilings ($C_1-C_6$), preflight token checks, truncated output rejection | Budget overrun rejection; zero run-away completion tokens |
-| 9-state stopping taxonomy & selective abstention | REF-SELECTIVE-CLS, REF-ECTH, REF-TAHITI | Explicit stopping enums; complete-empty without license is INCONCLUSIVE | Risk-coverage curve; false-negative rate |
-| Full cost accounting (LLM + Splunk + Analyst) | REF-EXCYTIN, REF-SPLUNK-REST | $C_{run} = C_{llm} + C_{splunk} + C_{control} + C_{analyst}$ | Cost per solved case; scanCount and latency tracking |
+| v9 decision | Basis | Local contribution requiring evaluation |
+|---|---|---|
+| SemanticGoalGraph as obligation DAG | REF-AIQL, REF-THREATRAPTOR, REF-EXCYTIN, REF-UMCP | Generic factual/hypothesis/population graph and explicit AND/OR/GATE semantics |
+| OutcomeContract union | REF-EXCYTIN, REF-ECTH, REF-USENIX-TH, REF-SELECTIVE | Unifying factual answers, hypothesis verdicts and population discovery |
+| Semantic Acceptance Gate | REF-SAFE-TOOLS, REF-SELECTIVE, schema-matching sources | Provenance checks plus selective clarification for semantic uncertainty |
+| Progressive Capability Frontier | REF-AUTOLINK, REF-MDB-LINK, REF-CHESS, REF-TOOLSHED | F0–F4 stages and explicit unexamined-source coverage |
+| Controlled CandidateSet | REF-UMCP, REF-SAFE-TOOLS | Cardinality-aware discriminator and human checkpoint |
+| Typed EvidenceAction / QueryIntent | REF-AIQL, REF-THREATRAPTOR | Provider-neutral EXPLORE/DISCRIMINATE/PROVE contract |
+| Immutable observations and evidence graph | REF-SLEUTH, REF-HOLMES, REF-OMEGALOG, REF-OCSF | Native-preserving FieldFacts and cited CandidateRelations |
+| Executable ProofContracts | REF-SAFE-TOOLS, provenance systems | Approved relation-specific evaluators and negative licences |
+| Deterministic recovery and stopping | REF-ECTH, REF-RPG, REF-SELECTIVE | Observation ladder, orthogonal state axes and terminal taxonomy |
+| Population-discovery hunt | REF-USENIX-TH, REF-KESTREL, REF-MITRE | DiscoveryContract, prevalence and bounded population coverage |
+| End-to-end evaluation | REF-EXCYTIN, REF-CYBER-BENCH | Independent gold graphs/answers/evidence and executable baselines |
 
-## 3. Claims that remain thesis hypotheses
+## 3. Scientific claims permitted now
 
-The following are not externally proven: exact graph classes; action scoring;
-budgets; optimal LLM call count; minimum evidence thresholds; generalization
-from one Splunk dataset to all SIEM/EDR/IDS; and any F1 result without labelled
-ground truth.
+The project may claim that its design is informed by established work on graph-based investigation, typed query languages, evidence-centric hunting, progressive schema discovery, constrained tool use and selective abstention.
 
-Peer-reviewed papers and official standards support principles. Preprints and
-vendor/practitioner material inform design with weaker evidentiary weight. A
-local replay supports only the exact repository behaviour measured in that
-replay.
+It may not yet claim:
+
+- that v9 is optimal or universally sound/complete;
+- that its semantic compiler understands arbitrary requests reliably;
+- that its ProofContract registry covers every relation;
+- that F0–F4 is better than exhaustive or simpler baselines;
+- a cross-provider generalization result;
+- F1, answer accuracy or cost superiority from the current simulated runner;
+- production readiness from skipped live tests.
+
+These remain thesis hypotheses until measured using independent labels and actual pipeline execution.
