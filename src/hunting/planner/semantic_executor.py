@@ -138,6 +138,7 @@ class SemanticPlanExecutor:
         max_bindings: int = 32,
         allow_candidate_inputs: bool = False,
         initial_variable_sources: dict[str, str] | None = None,
+        target_cardinality: dict[str, str] | None = None,
     ) -> SemanticExecutionResult:
         variables: dict[str, list[str]] = {
             key: ([value] if isinstance(value, str) else list(value))
@@ -565,16 +566,25 @@ class SemanticPlanExecutor:
                         # one broad process result into hundreds of PID
                         # candidates, then launch downstream work for all of
                         # them.  Preserve the rows for audit, but require an
-                        # explicit narrowing decision before propagating an
-                        # ambiguous binding.
-                        if len(deduped) > max_bindings:
+                        var_cardinality = (target_cardinality or {}).get(variable_id, "singular").casefold()
+                        is_ambiguous_binding = (
+                            (var_cardinality == "singular" and len(deduped) > 1)
+                            or (len(deduped) > max_bindings)
+                        )
+                        if is_ambiguous_binding:
                             ambiguous_output = True
                             needs_user_decision = True
-                            unresolved_reasons[step.id] = (
+                            reason = (
                                 f"ambiguous output binding '{variable_id}' has "
-                                f"{len(deduped)} candidates; fan-out limit is "
-                                f"{max_bindings}"
+                                f"{len(deduped)} candidates for singular slot; auto-binding prohibited"
+                                if var_cardinality == "singular" and len(deduped) > 1
+                                else (
+                                    f"ambiguous output binding '{variable_id}' has "
+                                    f"{len(deduped)} candidates; fan-out limit is "
+                                    f"{max_bindings}"
+                                )
                             )
+                            unresolved_reasons[step.id] = reason
                             attempted = StepExecution(
                                 step_id=step.id,
                                 query_id=query.id,
@@ -583,7 +593,7 @@ class SemanticPlanExecutor:
                                 outputs={},
                                 inputs=bound_values,
                                 status="AMBIGUOUS",
-                                blocked_reason=unresolved_reasons[step.id],
+                                blocked_reason=reason,
                                 stage_id=stage.stage_id,
                                 removed_retrieval_keys=tuple(sorted(removed_keys)),
                                 goal_id=advances_goal,

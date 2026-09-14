@@ -29,6 +29,7 @@ class DiscriminatorQuerySpec:
     candidate_values: tuple[str, ...]
     discriminator_relation: str
     discriminator_field: str
+    expected_information_gain: float = 1.0
     estimated_cost: int = 1
     description: str = ""
 
@@ -38,6 +39,7 @@ class DiscriminatorQuerySpec:
             "candidate_values": list(self.candidate_values),
             "discriminator_relation": self.discriminator_relation,
             "discriminator_field": self.discriminator_field,
+            "expected_information_gain": self.expected_information_gain,
             "estimated_cost": self.estimated_cost,
             "description": self.description,
         }
@@ -100,21 +102,23 @@ class ClarificationController:
             var_id = candidate_set.variable_id
             attempts = self._discriminator_attempts.get(var_id, 0)
 
-            # Step 1: Synthesize a cheap discriminator query if budget allows
-            if attempts < self.max_discriminator_attempts:
+            # Step 1: Synthesize a cheap discriminator query only if differentiating field exists
+            has_differentiating_field = bool(candidate_set.entity_type in {"host", "endpoint", "user", "account"})
+            if attempts < self.max_discriminator_attempts and has_differentiating_field:
                 self._discriminator_attempts[var_id] = attempts + 1
                 cand_vals = tuple(c.value for c in valid)
                 discriminator = DiscriminatorQuerySpec(
                     target_variable_id=var_id,
                     candidate_values=cand_vals,
                     discriminator_relation="logged_on_to" if candidate_set.entity_type in {"host", "endpoint"} else "observed",
-                    discriminator_field="host" if candidate_set.entity_type in {"host", "endpoint"} else "entity",
+                    discriminator_field="host" if candidate_set.entity_type in {"host", "endpoint"} else "username",
+                    expected_information_gain=1.0,
                     estimated_cost=1,
                     description=f"Differentiate {len(cand_vals)} candidates for '{var_id}': {cand_vals}",
                 )
                 return DisambiguationAction.DISCRIMINATE, discriminator
 
-            # Step 2: Discriminator exhausted or unavailable -> Clarification / Halt
+            # Step 2: No differentiating action available or Discriminator exhausted -> STOP_NEEDS_CLARIFICATION
             all_citations: list[str] = []
             for c in valid:
                 all_citations.extend(c.supporting_fact_ids)
@@ -135,7 +139,7 @@ class ClarificationController:
                 expected_cost=1,
                 prompt_question=question,
                 resume_token=token,
-                status="NEEDS_DISAMBIGUATION",
+                status="STOP_NEEDS_CLARIFICATION",
             )
 
             if self.interactive:
