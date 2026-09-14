@@ -184,6 +184,7 @@ from hunting.contracts.state import (
     TerminalState,
     TimeWindow,
 )
+from hunting.controller.cost import LLMBudgetPolicy, LLMPhase
 
 __all__ = [
     # v5 Investigation Case Graph Contracts
@@ -338,6 +339,8 @@ __all__ = [
     "HardConstraints",
     "ExpandableRetrievalHints",
     "BudgetEnvelope",
+    "LLMBudgetPolicy",
+    "LLMPhase",
     "ObservationClass",
     "ExecutionStatus",
     "CoverageStatus",

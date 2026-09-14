@@ -35,7 +35,7 @@ class BindingEvent:
     source: str = "user_selection"
 
 
-@dataclass(frozen=True)
+@dataclass
 class StepExecution:
     step_id: str
     query_id: str

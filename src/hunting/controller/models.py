@@ -28,7 +28,7 @@ class HuntBudgetLedger:
     """Tracks and enforces execution resource budgets."""
     max_turns: int = 15
     max_queries: int = 60
-    max_llm_calls: int = 3
+    max_llm_calls: int = 5
     max_llm_calls_per_epoch: int = 1
     max_scan_cells: int = 100
     max_runtime_seconds: float = 300.0
@@ -38,9 +38,16 @@ class HuntBudgetLedger:
     llm_calls: int = 0
     scan_cells: int = 0
     start_time: float = field(default_factory=time.time)
+    policy: Any | None = None
     # The LLMUsageTracker is the authoritative call budget for live API mode.
     # The field is optional so offline/unit-test ledgers remain independent.
     llm_tracker: Any | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self.policy is not None:
+            self.max_llm_calls = getattr(self.policy, "max_total_calls", self.max_llm_calls)
+        elif self.llm_tracker is not None:
+            self.max_llm_calls = getattr(self.llm_tracker, "max_calls", self.max_llm_calls)
 
     def record_turn(self) -> None:
         """Increment turn count."""

@@ -25,7 +25,7 @@ from hunting.compiler.compiler import KnowledgeBehaviorCompiler
 from hunting.contracts.entities import Account, Domain, Host, IPAddress
 from hunting.contracts.hunt import HuntRequest, HuntRequestKind, StoppingDecision
 from hunting.contracts.state import Alert
-from hunting.controller.cost import LLMUsageTracker
+from hunting.controller.cost import LLMBudgetPolicy, LLMUsageTracker
 from hunting.engine import HypothesisHuntEngine
 from hunting.evidence.evaluator import EvidenceEvaluator
 from hunting.m1_ledger.store import ObservationStore
@@ -864,7 +864,8 @@ def run_cli(args: argparse.Namespace) -> int:
                     api_key=args.api_key or config.api_key,
                 )
             llm_provider = ApiLLMProvider(config)
-            llm_tracker = LLMUsageTracker(max_calls=4, model_name=config.model)
+            policy = LLMBudgetPolicy(model_name=config.model)
+            llm_tracker = LLMUsageTracker(policy=policy)
             compiler_caller = create_llm_caller(llm_provider, llm_tracker, "compiler")
             source_profiler_caller = create_llm_caller(llm_provider, llm_tracker, "source_profiler")
             planner_caller = create_llm_caller(llm_provider, llm_tracker, "planner")
@@ -880,7 +881,8 @@ def run_cli(args: argparse.Namespace) -> int:
             evaluator = EvidenceEvaluator(llm_caller=evaluator_caller)
             print(f"[+] [AI SUB-SYSTEM] Active ApiLLMProvider: model='{config.model}' endpoint='{config.endpoint}'")
         elif args.llm == "stub":
-            llm_tracker = LLMUsageTracker(max_calls=3, model_name="stub")
+            policy = LLMBudgetPolicy(model_name="stub")
+            llm_tracker = LLMUsageTracker(policy=policy)
             # Stub mode is deliberately non-semantic. It must not invent a
             # generic interpretation for arbitrary free text; use --llm api
             # when natural-language compilation is required.
@@ -901,7 +903,8 @@ def run_cli(args: argparse.Namespace) -> int:
                     "Use a structured template (CVE, TTP, or YAML hypothesis) for offline deterministic execution.",
                     file=sys.stderr,
                 )
-            llm_tracker = LLMUsageTracker(max_calls=3, model_name="stub")
+            policy = LLMBudgetPolicy(model_name="stub")
+            llm_tracker = LLMUsageTracker(policy=policy)
             compiler = KnowledgeBehaviorCompiler()
             planner = CanonicalQueryPlanner()
             adaptive_planner = AdaptiveOperationPlanner()

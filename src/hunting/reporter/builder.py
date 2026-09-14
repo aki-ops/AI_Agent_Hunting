@@ -1067,6 +1067,8 @@ def build_final_hunt_account(
         validation_diagnostics=validation_diagnostics,
         stopping_taxonomy_state=stopping_dec.to_taxonomy_state() if hasattr(stopping_dec, "to_taxonomy_state") else None,
         step_trace=getattr(state, "step_trace", None),
+        deferred_actions=list(getattr(state, "deferred_actions", []) or []),
+        coverage_gaps=list(getattr(state, "coverage_gaps", []) or []),
     )
 
 

@@ -1468,14 +1468,34 @@ class HypothesisHuntEngine:
                         })
                         continue
                     for batch_index, compact_profiles in enumerate(batches, start=1):
-                        if self.llm_tracker.is_exhausted:
+                        can_sched, sched_reason = (True, "OK")
+                        if hasattr(self.llm_tracker, "can_schedule"):
+                            can_sched, sched_reason = self.llm_tracker.can_schedule("C2_SOURCE_PROFILER")
+
+                        if not can_sched or self.llm_tracker.is_exhausted:
+                            denial_err = sched_reason if not can_sched else "LLM token/call budget exhausted before batch profiling"
                             source_profile_audit["relation_calls"].append({
                                 "relation": relation,
                                 "batch_index": batch_index,
                                 "batch_count": len(batches),
                                 "status": "RELATION_DEFERRED_BY_BUDGET",
                                 "repair_status": "NOT_ATTEMPTED",
-                                "error": "LLM token/call budget exhausted before batch profiling",
+                                "error": denial_err,
+                            })
+                            if not hasattr(state, "deferred_actions") or state.deferred_actions is None:
+                                state.deferred_actions = []
+                            state.deferred_actions.append({
+                                "phase": "C2_SOURCE_PROFILER",
+                                "action": "source_profiling_batch",
+                                "relation": relation,
+                                "reason": denial_err,
+                            })
+                            if not hasattr(state, "coverage_gaps") or state.coverage_gaps is None:
+                                state.coverage_gaps = []
+                            state.coverage_gaps.append({
+                                "category": "source_profiling",
+                                "relation": relation,
+                                "description": f"Source profiling deferred for relation '{relation}': {denial_err}",
                             })
                             continue
                         try:
@@ -1498,8 +1518,8 @@ class HypothesisHuntEngine:
                             source_profile_audit["rejected"].extend(audit.get("rejected", []))
                         except Exception as error:
                             error_text = str(error)
-                            budget_error = "budget" in error_text.lower()
-                            malformed = "proposals[]" in error_text.lower() or "json" in error_text.lower()
+                            budget_error = "budget" in error_text.lower() or "reserved" in error_text.lower()
+                            malformed = "proposals[]" in error_text.lower() or "json" in error_text.lower() or "truncated" in error_text.lower() or "malformed" in error_text.lower()
                             status_val = (
                                 "RELATION_DEFERRED_BY_BUDGET"
                                 if budget_error
@@ -1515,6 +1535,22 @@ class HypothesisHuntEngine:
                                 "repair_status": "REPAIR_NOT_ATTEMPTED" if malformed else "NOT_ATTEMPTED",
                                 "error": error_text,
                             })
+                            if budget_error:
+                                if not hasattr(state, "deferred_actions") or state.deferred_actions is None:
+                                    state.deferred_actions = []
+                                state.deferred_actions.append({
+                                    "phase": "C2_SOURCE_PROFILER",
+                                    "action": "source_profiling_batch",
+                                    "relation": relation,
+                                    "reason": error_text,
+                                })
+                                if not hasattr(state, "coverage_gaps") or state.coverage_gaps is None:
+                                    state.coverage_gaps = []
+                                state.coverage_gaps.append({
+                                    "category": "source_profiling",
+                                    "relation": relation,
+                                    "description": f"Source profiling deferred for relation '{relation}': {error_text}",
+                                })
                 if source_profile_audit["relation_calls"]:
                     deferred = any(
                         item.get("status") == "RELATION_DEFERRED_BY_BUDGET"
@@ -1543,8 +1579,21 @@ class HypothesisHuntEngine:
                 }
             elif self.source_profiler_caller is None:
                 source_profile_audit["status"] = "NO_LLM_CALLER"
-            elif self.llm_tracker.is_exhausted:
+            elif self.llm_tracker.is_exhausted or (hasattr(self.llm_tracker, "can_schedule") and not self.llm_tracker.can_schedule("C2_SOURCE_PROFILER")[0]):
                 source_profile_audit["status"] = "LLM_BUDGET_EXHAUSTED_BEFORE_PROFILING"
+                if not hasattr(state, "deferred_actions") or state.deferred_actions is None:
+                    state.deferred_actions = []
+                state.deferred_actions.append({
+                    "phase": "C2_SOURCE_PROFILER",
+                    "action": "source_profiling",
+                    "reason": "LLM budget/reservation exhausted before source profiling could begin",
+                })
+                if not hasattr(state, "coverage_gaps") or state.coverage_gaps is None:
+                    state.coverage_gaps = []
+                state.coverage_gaps.append({
+                    "category": "source_profiling",
+                    "description": "Source profiling deferred due to budget reservation limits",
+                })
             elif static_plan_ready:
                 source_profile_audit["status"] = "STATIC_TYPED_CAPABILITIES"
 

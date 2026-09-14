@@ -215,6 +215,7 @@ class ApiLLMProvider(LLMProvider):
         self.config = config
         self.last_attempt_count = 0
         self.last_usage: dict[str, int] = {}
+        self.last_finish_reason: str | None = None
 
     def generate(self, prompt_context: dict[str, Any]) -> str:
         """Execute real HTTP POST request to external LLM API and return structured JSON string."""
@@ -463,8 +464,8 @@ class ApiLLMProvider(LLMProvider):
         last_err: Exception | None = None
         self.last_attempt_count = 0
         self.last_usage = {}
+        self.last_finish_reason = None
         for attempt in range(1, max_retries + 1):
-            self.last_attempt_count = attempt
             try:
                 with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
                     content_type = resp.headers.get("Content-Type", "")
@@ -494,6 +495,8 @@ class ApiLLMProvider(LLMProvider):
                                             "completion_tokens": int(c_tok) if c_tok is not None else None,
                                         }
                                     for choice in chunk_json.get("choices", []):
+                                        if choice.get("finish_reason"):
+                                            self.last_finish_reason = str(choice.get("finish_reason"))
                                         delta = choice.get("delta", {})
                                         if "content" in delta and delta["content"]:
                                             chunks.append(delta["content"])
@@ -520,16 +523,28 @@ class ApiLLMProvider(LLMProvider):
                             "prompt_tokens": int(p_tok) if p_tok is not None else None,
                             "completion_tokens": int(c_tok) if c_tok is not None else None,
                         }
+                        f_reason = None
                         if isinstance(resp_json.get("content"), list):
                             content = "".join(
                                 b.get("text", "") for b in resp_json["content"]
                                 if isinstance(b, dict) and b.get("type") == "text"
                             ).strip()
+                            f_reason = resp_json.get("stop_reason")
                         else:
                             choices = resp_json.get("choices", [])
-                            if not choices:
+                            if choices:
+                                f_reason = choices[0].get("finish_reason")
+                            candidates = resp_json.get("candidates", [])
+                            if candidates and not f_reason:
+                                f_reason = candidates[0].get("finishReason")
+                            if not choices and not candidates:
                                 raise ValueError(f"LLM API returned no choices: {resp_json}")
-                            content = str(choices[0].get("message", {}).get("content", "")).strip()
+                            if choices:
+                                content = str(choices[0].get("message", {}).get("content", "")).strip()
+                            else:
+                                parts = candidates[0].get("content", {}).get("parts", [])
+                                content = "".join(p.get("text", "") for p in parts).strip()
+                        self.last_finish_reason = str(f_reason) if f_reason else None
 
                     content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
                     if content.startswith("```json"):
@@ -581,28 +596,40 @@ def create_llm_caller(
     provider: ApiLLMProvider | LLMProvider,
     tracker: Any | None = None,
     component: str = "generic",
-) -> Callable[[str], str]:
-    """Factory creating a tracked, bounded LLM caller function for engine components."""
+    default_phase: Any | None = None,
+) -> Callable[..., str]:
+    """Factory creating a tracked, bounded LLM caller function for engine components (Gate H)."""
     import logging
     import sys
     import time
+
+    from hunting.controller.cost import (
+        COMPONENT_TOKEN_CEILINGS,
+        LLMMalformedResponseError,
+        LLMTruncatedResponseError,
+        normalize_phase,
+    )
     logger = logging.getLogger(__name__)
 
-    def caller(prompt: str) -> str:
-        if tracker is not None and tracker.is_exhausted:
-            raise RuntimeError(f"LLM budget exhausted for component '{component}' - maximum {tracker.max_calls} calls exceeded")
-        if tracker is not None and hasattr(tracker, "preflight"):
-            from hunting.controller.cost import COMPONENT_TOKEN_CEILINGS
+    def caller(prompt: str, reason: str = "", phase: Any | None = None) -> str:
+        active_phase = normalize_phase(phase or default_phase or component)
+        active_reason = reason or active_phase.value
 
+        if tracker is not None and hasattr(tracker, "preflight"):
             configured_completion = int(getattr(getattr(provider, "config", None), "max_tokens", 4000) or 4000)
-            ceilings = COMPONENT_TOKEN_CEILINGS.get(component)
+            ceilings = COMPONENT_TOKEN_CEILINGS.get(active_phase.value) or COMPONENT_TOKEN_CEILINGS.get(component)
             if ceilings and "max_output" in ceilings:
                 configured_completion = min(configured_completion, ceilings["max_output"])
             tracker.preflight(
                 prompt,
                 expected_completion_tokens=configured_completion,
                 component=component,
+                phase=active_phase,
+                reason=active_reason,
             )
+        elif tracker is not None and tracker.is_exhausted:
+            raise RuntimeError(f"LLM budget exhausted for component '{component}' - maximum {tracker.max_calls} calls exceeded")
+
         t0 = time.perf_counter()
         resp = "{}"
         try:
@@ -656,8 +683,11 @@ def create_llm_caller(
                         actual_prompt_tokens=None,
                         actual_completion_tokens=0,
                         status="FAILED",
+                        validation_status="FAILED",
                         physical_attempts=attempts,
                         error=str(err),
+                        phase=active_phase,
+                        reason=active_reason,
                     )
                 except Exception as rec_err:
                     logger.debug(f"Failed to record failed call in tracker: {rec_err}")
@@ -681,11 +711,18 @@ def create_llm_caller(
             return "{}"
 
         elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        finish_reason = getattr(provider, "last_finish_reason", None)
+        valid, val_msg = True, "VALID"
+        if tracker is not None and hasattr(tracker, "validate_response"):
+            valid, val_msg = tracker.validate_response(resp, finish_reason=finish_reason)
+
         if tracker is not None:
             model = getattr(getattr(provider, "config", None), "model", getattr(tracker, "model_name", "stub"))
             last_usage = getattr(provider, "last_usage", {}) or {}
             actual_prompt = last_usage.get("prompt_tokens")
             actual_completion = last_usage.get("completion_tokens")
+            val_status = "VALID" if valid else ("TRUNCATED" if ("truncated" in val_msg.lower() or str(finish_reason).upper() in ("LENGTH", "MAX_TOKENS", "TRUNCATED")) else "MALFORMED")
+            status_val = "SUCCESS" if valid else "FAILED"
             try:
                 tracker.record_call(
                     component=component,
@@ -695,11 +732,23 @@ def create_llm_caller(
                     model=model,
                     actual_prompt_tokens=actual_prompt,
                     actual_completion_tokens=actual_completion,
-                    status="SUCCESS",
+                    status=status_val,
+                    validation_status=val_status,
+                    validation_result=val_msg,
                     physical_attempts=int(getattr(provider, "last_attempt_count", 1) or 1),
+                    phase=active_phase,
+                    reason=active_reason,
+                    error="" if valid else val_msg,
                 )
             except Exception as rec_err:
                 logger.debug(f"Failed to record call in tracker: {rec_err}")
+
+        if not valid:
+            logger.warning(f"LLM output validation failed for component '{component}': {val_msg}")
+            if "truncated" in val_msg.lower() or str(finish_reason).upper() in ("LENGTH", "MAX_TOKENS", "TRUNCATED"):
+                raise LLMTruncatedResponseError(f"Response truncated for component '{component}': {val_msg}")
+            raise LLMMalformedResponseError(f"Malformed response for component '{component}': {val_msg}")
+
         return resp
 
     return caller

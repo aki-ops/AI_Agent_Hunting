@@ -1366,6 +1366,13 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         lines.append("No query was executed.")
 
     usage = account.llm_usage or {}
+    token_mode = usage.get("token_accounting_mode", "ESTIMATED")
+    total_tokens = usage.get("total_tokens", 0)
+    token_label = (
+        "(actual provider usage)"
+        if token_mode == "ACTUAL"
+        else ("(estimated)" if token_mode == "ESTIMATED" else "(hybrid actual/estimated)")
+    )
     lines.extend([
         "## 5. Cost",
         "",
@@ -1373,9 +1380,51 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         f"- Calls: `{usage.get('calls_made', 0)}`",
         f"- Physical API attempts: `{sum(int(item.get('physical_attempts', 0) or 0) for item in usage.get('calls', []))}`",
         f"- Failed calls: `{sum(1 for item in usage.get('calls', []) if item.get('status') == 'FAILED')}`",
-        f"- Tokens: `{usage.get('total_tokens', 0)}`",
+        f"- Tokens: `{total_tokens}` {token_label}",
+        f"- Token accounting mode: `{token_mode}`",
         f"- Estimated cost: `${float(usage.get('estimated_cost_usd', 0.0)):.6f}`",
     ])
+
+    calls = usage.get("calls", [])
+    if calls:
+        lines.extend([
+            "",
+            "### LLM Touchpoint Trace",
+            "",
+            "| Phase | Reason | Payload | Tokens | Latency (ms) | Status | Validation | Accounting |",
+            "|---|---|---|---|---|---|---|---|",
+        ])
+        for c in calls:
+            p = c.get("phase") or c.get("component") or "unknown"
+            r = c.get("reason") or "-"
+            pay = c.get("payload_size", c.get("prompt_len", 0))
+            tok = c.get("total_tokens", c.get("estimated_prompt_tokens", 0) + c.get("estimated_completion_tokens", 0))
+            lat = float(c.get("latency_ms", c.get("duration_ms", 0.0)) or 0.0)
+            st = c.get("status", "SUCCESS")
+            val = c.get("validation_status", c.get("validation_result", "VALID"))
+            est = "Estimated" if c.get("is_estimate", True) else "Actual"
+            lines.append(f"| `{p}` | `{r}` | `{pay}` | `{tok}` | `{lat:.1f}` | `{st}` | `{val}` | `{est}` |")
+
+    deferred_actions = getattr(account, "deferred_actions", []) or []
+    if deferred_actions:
+        lines.extend([
+            "",
+            "### Deferred Actions (Budget Reservation)",
+            "",
+        ])
+        for d in deferred_actions:
+            lines.append(f"- Phase `{d.get('phase', 'UNKNOWN')}` action `{d.get('action', '')}`: {d.get('reason', '')}")
+
+    coverage_gaps = getattr(account, "coverage_gaps", []) or []
+    if coverage_gaps:
+        lines.extend([
+            "",
+            "### Coverage Gaps",
+            "",
+        ])
+        for g in coverage_gaps:
+            lines.append(f"- [{g.get('category', 'general')}] {g.get('description', g.get('gap', ''))}")
+
     return "\n".join(lines) + "\n"
 
 

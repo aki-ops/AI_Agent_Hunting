@@ -481,6 +481,8 @@ class HuntState:
     validation_diagnostics: list[str] = field(default_factory=list)
     step_trace: Any | None = None
     search_envelope: Any | None = None
+    deferred_actions: list[dict[str, Any]] = field(default_factory=list)
+    coverage_gaps: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -524,6 +526,8 @@ class FinalHuntAccount:
     validation_diagnostics: list[str] = field(default_factory=list)
     stopping_taxonomy_state: StoppingTaxonomyState | None = None
     step_trace: Any | None = None
+    deferred_actions: list[dict[str, Any]] = field(default_factory=list)
+    coverage_gaps: list[dict[str, Any]] = field(default_factory=list)
 
 
     @property

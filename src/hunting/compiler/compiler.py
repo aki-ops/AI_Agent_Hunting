@@ -1267,7 +1267,11 @@ class RequestAdapter:
 
         self.llm_calls_made += 1
         prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
-        raw_resp = self.llm_caller(prompt)
+        try:
+            raw_resp = self.llm_caller(prompt, reason="initial_semantic_compilation", phase="C1_COMPILER")
+        except TypeError:
+            raw_resp = self.llm_caller(prompt)
+
         if isinstance(raw_resp, dict):
             response_text = json.dumps(raw_resp, ensure_ascii=False, sort_keys=True)
         else:
@@ -1279,10 +1283,10 @@ class RequestAdapter:
             "validation_result": "PENDING",
         }
 
-        try:
-            raw_data = raw_resp
-            if isinstance(raw_resp, str):
-                cleaned_response = raw_resp.strip()
+        def _try_parse(current_resp: Any, p_hash: str) -> tuple[HuntObjective, list[Hypothesis], list[EvidenceRequirementV4]]:
+            raw_data = current_resp
+            if isinstance(current_resp, str):
+                cleaned_response = current_resp.strip()
                 if cleaned_response.startswith("```"):
                     lines = cleaned_response.splitlines()[1:]
                     if lines and lines[-1].startswith("```"):
@@ -1290,8 +1294,9 @@ class RequestAdapter:
                     cleaned_response = "\n".join(lines).strip()
                 try:
                     raw_data = json.loads(cleaned_response)
-                except json.JSONDecodeError:
-                    raw_data = None
+                except json.JSONDecodeError as json_err:
+                    raise ValueError(f"LLM output is not valid JSON: {json_err}") from json_err
+
             if isinstance(raw_data, dict) and "variables" in raw_data and "relations" in raw_data:
                 goal_graph = parse_and_validate_semantic_goal_graph(raw_data, request.id)
                 validator = SemanticGoalGraphValidator()
@@ -1330,7 +1335,7 @@ class RequestAdapter:
                     validation_diagnostics=list(val_result.diagnostics),
                     outcome_contract=goal_graph.outcome_contract,
                 )
-                logger.info("[LLM_OBSERVABILITY] phase=compiler prompt_hash=%s selected_operation=semantic_goal_graph validation_result=VALID", prompt_hash)
+                logger.info("[LLM_OBSERVABILITY] phase=compiler prompt_hash=%s selected_operation=semantic_goal_graph validation_result=VALID", p_hash)
                 self.last_compile_trace["validation_result"] = "VALID"
                 self.last_compile_trace["output_kind"] = "semantic_goal_graph"
                 return objective, [hypothesis], requirements
@@ -1339,7 +1344,7 @@ class RequestAdapter:
                     "Live API semantic compilation must return SemanticGoalGraph; "
                     "legacy ClaimGraph output is rejected to prevent fixed provider routing"
                 )
-            claim_graph, answer_spec = parse_and_validate_claim_graph(raw_resp, request.id)
+            claim_graph, answer_spec = parse_and_validate_claim_graph(current_resp, request.id)
             claim_graph.metadata.setdefault("request_content", request.content)
             claim_graph.metadata.setdefault("question", answer_spec["question"])
             hypotheses, requirements, intent = _claim_graph_compatibility(claim_graph)
@@ -1363,13 +1368,36 @@ class RequestAdapter:
 
             logger.info(
                 "[LLM_OBSERVABILITY] phase=compiler prompt_hash=%s selected_operation=claim_graph_compilation validation_result=VALID",
-                prompt_hash,
+                p_hash,
             )
             self.last_compile_trace["validation_result"] = "VALID"
             self.last_compile_trace["output_kind"] = "claim_graph"
             return objective, hypotheses, requirements
 
+        try:
+            return _try_parse(raw_resp, prompt_hash)
         except Exception as exc:
+            # Policy H2: C1: 1 mandatory + at most 1 repair
+            if self.llm_calls_made == 1:
+                logger.info("Attempting C1 compiler repair following validation failure: %s", exc)
+                repair_prompt = (
+                    f"{prompt}\n\n"
+                    f"PREVIOUS VALIDATION ERROR: {exc}\n"
+                    "Please correct the error and output ONLY the valid JSON SemanticGoalGraph object."
+                )
+                repair_hash = hashlib.sha256(repair_prompt.encode("utf-8")).hexdigest()[:16]
+                self.llm_calls_made += 1
+                try:
+                    try:
+                        repair_resp = self.llm_caller(repair_prompt, reason="compiler_repair", phase="C1_COMPILER")
+                    except TypeError:
+                        repair_resp = self.llm_caller(repair_prompt)
+                    self.last_compile_trace["repair_attempted"] = True
+                    return _try_parse(repair_resp, repair_hash)
+                except Exception as repair_exc:
+                    logger.warning("C1 compiler repair attempt failed: %s", repair_exc)
+                    exc = repair_exc
+
             # Under strict anti-hallucination policy, DO NOT fallback to keyword guessing!
             logger.warning("Semantic compiler rejected LLM output: %s", exc)
             logger.info(

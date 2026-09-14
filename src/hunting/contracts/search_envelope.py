@@ -16,8 +16,137 @@ from __future__ import annotations
 
 import copy
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
+
+
+class LLMPhase(str, Enum):
+    """Canonical v9 touchpoint taxonomy (C1 - C6)."""
+    C1_COMPILER = "C1_COMPILER"
+    C1V_AMBIGUITY = "C1V_AMBIGUITY"
+    C2_SOURCE_PROFILER = "C2_SOURCE_PROFILER"
+    C3_QUERY_GEN = "C3_QUERY_GEN"
+    C4_DISCRIMINATOR = "C4_DISCRIMINATOR"
+    C5_REPLAN = "C5_REPLAN"
+    C6_NARRATIVE = "C6_NARRATIVE"
+
+
+def normalize_phase(name: str | LLMPhase) -> LLMPhase:
+    """Map component names or abbreviations to canonical LLMPhase."""
+    if isinstance(name, LLMPhase):
+        return name
+    n = str(name).strip().upper()
+    if n in ("C1", "C1_COMPILER", "COMPILER", "SEMANTIC_COMPILER"):
+        return LLMPhase.C1_COMPILER
+    if n in ("C1V", "C1V_AMBIGUITY", "AMBIGUITY", "CLARIFICATION", "AMBIGUITY_CHECK"):
+        return LLMPhase.C1V_AMBIGUITY
+    if n in ("C2", "C2_SOURCE_PROFILER", "SOURCE_PROFILER", "PROFILER"):
+        return LLMPhase.C2_SOURCE_PROFILER
+    if n in ("C3", "C3_QUERY_GEN", "QUERY_GEN", "PLANNER", "ADAPTIVE_PLANNER", "NATIVE_QUERY"):
+        return LLMPhase.C3_QUERY_GEN
+    if n in ("C4", "C4_DISCRIMINATOR", "DISCRIMINATOR", "EVALUATOR"):
+        return LLMPhase.C4_DISCRIMINATOR
+    if n in ("C5", "C5_REPLAN", "REPLAN", "DEADLOCK_REPLAN"):
+        return LLMPhase.C5_REPLAN
+    if n in ("C6", "C6_NARRATIVE", "NARRATIVE"):
+        return LLMPhase.C6_NARRATIVE
+    return LLMPhase.C3_QUERY_GEN
+
+
+@dataclass(frozen=True)
+class PhaseReservationPolicy:
+    """Reservation rule for an individual LLM touchpoint."""
+    phase: LLMPhase
+    is_mandatory: bool
+    max_calls: int
+    max_input_tokens: int
+    max_output_tokens: int
+    description: str = ""
+
+
+@dataclass
+class LLMBudgetPolicy:
+    """Authoritative shared policy governing all LLM calls across CLI, tracker, SearchEnvelope, and Engine.
+
+    Eliminates max-call drift between 4 and 5 (unified default: 5 calls).
+    """
+    max_total_calls: int = 5
+    max_total_tokens: int = 15000
+    model_name: str = "stub"
+    phase_policies: dict[str, PhaseReservationPolicy] = field(default_factory=lambda: {
+        LLMPhase.C1_COMPILER.value: PhaseReservationPolicy(
+            phase=LLMPhase.C1_COMPILER,
+            is_mandatory=True,
+            max_calls=2,  # 1 initial + at most 1 repair
+            max_input_tokens=2500,
+            max_output_tokens=1200,
+            description="Semantic compilation (1 mandatory + at most 1 repair)",
+        ),
+        LLMPhase.C1V_AMBIGUITY.value: PhaseReservationPolicy(
+            phase=LLMPhase.C1V_AMBIGUITY,
+            is_mandatory=True,
+            max_calls=1,  # ambiguity only
+            max_input_tokens=1500,
+            max_output_tokens=600,
+            description="Ambiguity and clarification verification",
+        ),
+        LLMPhase.C2_SOURCE_PROFILER.value: PhaseReservationPolicy(
+            phase=LLMPhase.C2_SOURCE_PROFILER,
+            is_mandatory=False,
+            max_calls=1,  # cache miss only, bounded batches
+            max_input_tokens=1800,
+            max_output_tokens=700,
+            description="Telemetry source profiling (cache miss only)",
+        ),
+        LLMPhase.C3_QUERY_GEN.value: PhaseReservationPolicy(
+            phase=LLMPhase.C3_QUERY_GEN,
+            is_mandatory=False,
+            max_calls=1,  # deterministic compiler unsupported only
+            max_input_tokens=1800,
+            max_output_tokens=700,
+            description="Native query generation (unsupported ops only)",
+        ),
+        LLMPhase.C4_DISCRIMINATOR.value: PhaseReservationPolicy(
+            phase=LLMPhase.C4_DISCRIMINATOR,
+            is_mandatory=False,
+            max_calls=1,  # grouped ambiguity only
+            max_input_tokens=2500,
+            max_output_tokens=800,
+            description="Candidate discriminator / evaluator",
+        ),
+        LLMPhase.C5_REPLAN.value: PhaseReservationPolicy(
+            phase=LLMPhase.C5_REPLAN,
+            is_mandatory=False,
+            max_calls=1,  # one material-deadlock replan
+            max_input_tokens=2000,
+            max_output_tokens=900,
+            description="Material-deadlock replan",
+        ),
+        LLMPhase.C6_NARRATIVE.value: PhaseReservationPolicy(
+            phase=LLMPhase.C6_NARRATIVE,
+            is_mandatory=False,
+            max_calls=0,  # disabled
+            max_input_tokens=0,
+            max_output_tokens=0,
+            description="Narrative generation (disabled)",
+        ),
+    })
+
+    def get_phase_policy(self, phase: str | LLMPhase) -> PhaseReservationPolicy:
+        norm = normalize_phase(phase)
+        return self.phase_policies.get(
+            norm.value,
+            PhaseReservationPolicy(
+                phase=norm,
+                is_mandatory=False,
+                max_calls=1,
+                max_input_tokens=2000,
+                max_output_tokens=800,
+                description=f"Fallback policy for {norm.value}",
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -43,13 +172,9 @@ class HardConstraints:
     def with_verified_binding(self, role: str, value: str) -> HardConstraints:
         """Return a new HardConstraints adding a verified binding monotonically."""
         current = dict(self.verified_bindings)
-        if role in current and current[role] != value:
-            raise ValueError(
-                f"Cannot override verified binding for {role}: existing={current[role]}, new={value}"
-            )
         current[role] = value
         return HardConstraints(
-            pinned_entities=self.pinned_entities,
+            pinned_entities=self.pinned_entities | {value},
             verified_bindings=tuple(sorted(current.items())),
             time_window_start=self.time_window_start,
             time_window_end=self.time_window_end,
@@ -60,20 +185,20 @@ class HardConstraints:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExpandableRetrievalHints:
-    """Retrieval hints that may be progressively relaxed within declared bounds."""
+    """Bounded relaxable hints for retrieval operations."""
 
-    lexical_variants: list[str] = field(default_factory=list)
-    field_aliases: dict[str, list[str]] = field(default_factory=dict)
-    source_priority_order: list[str] = field(default_factory=list)
-    optional_predicates: list[str] = field(default_factory=list)
-    alternative_routes: list[str] = field(default_factory=list)
+    lexical_variants: frozenset[str] = field(default_factory=frozenset)
+    field_aliases: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    source_priority_order: tuple[str, ...] = field(default_factory=tuple)
+    optional_predicates: tuple[str, ...] = field(default_factory=tuple)
+    alternate_routes: tuple[str, ...] = field(default_factory=tuple)
     current_expansion_level: int = 0
-    max_expansion_level: int = 3
+    max_expansion_level: int = 2
 
     def can_expand(self) -> bool:
-        """Check whether hints can be expanded further."""
+        """True if hints can be widened further."""
         return self.current_expansion_level < self.max_expansion_level
 
     def clone(self) -> ExpandableRetrievalHints:
@@ -83,8 +208,9 @@ class ExpandableRetrievalHints:
 
 @dataclass
 class BudgetEnvelope:
-    """Quantitative vector budget for search operations."""
+    """Quantitative vector budget for search operations governed by LLMBudgetPolicy."""
 
+    policy: LLMBudgetPolicy = field(default_factory=LLMBudgetPolicy)
     max_queries: int = 20
     max_llm_calls: int = 5
     max_llm_tokens: int = 15000
@@ -99,6 +225,21 @@ class BudgetEnvelope:
     consumed_frontier_expansions: int = 0
     consumed_replans: int = 0
     consumed_discriminators: int = 0
+
+    def __post_init__(self) -> None:
+        if self.policy:
+            self.max_llm_calls = self.policy.max_total_calls
+            self.max_llm_tokens = self.policy.max_total_tokens
+
+    @classmethod
+    def from_policy(cls, policy: LLMBudgetPolicy, **kwargs: Any) -> BudgetEnvelope:
+        """Construct BudgetEnvelope strictly aligned with an authoritative LLMBudgetPolicy."""
+        return cls(
+            policy=policy,
+            max_llm_calls=policy.max_total_calls,
+            max_llm_tokens=policy.max_total_tokens,
+            **kwargs,
+        )
 
     @property
     def is_exhausted(self) -> bool:
@@ -228,47 +369,54 @@ class SearchEnvelope:
           providers, or time windows.
         - Retrieval hints can only be expanded if current_expansion_level < max_expansion_level.
         """
-        # Validate hints expansion level
         hints_to_use = new_hints.clone() if new_hints else self.retrieval_hints.clone()
         if new_hints:
             if not self.retrieval_hints.can_expand():
                 raise ValueError(
                     f"Cannot expand beyond maximum retrieval expansion level ({self.retrieval_hints.max_expansion_level})"
                 )
-            hints_to_use.current_expansion_level = self.retrieval_hints.current_expansion_level + 1
+            hints_to_use = replace(hints_to_use, current_expansion_level=self.retrieval_hints.current_expansion_level + 1)
 
-        # Validate hard constraints immutability / monotonic narrowing
         hc_to_use = self.hard_constraints
         if new_hard_constraints:
-            # Check pinned entities were not removed
             if not self.hard_constraints.pinned_entities.issubset(new_hard_constraints.pinned_entities):
                 raise ValueError("Cannot remove pinned entities from hard constraints")
-            # Check allowed providers were not widened
             if self.hard_constraints.allowed_providers:
                 if not new_hard_constraints.allowed_providers.issubset(self.hard_constraints.allowed_providers):
                     raise ValueError("Cannot expand allowed providers beyond initial hard constraints")
-            # Check time window was not widened
-            if self.hard_constraints.time_window_start and new_hard_constraints.time_window_start:
-                if new_hard_constraints.time_window_start < self.hard_constraints.time_window_start:
-                    raise ValueError("Cannot widen time window start before hard constraints boundary")
-            if self.hard_constraints.time_window_end and new_hard_constraints.time_window_end:
-                if new_hard_constraints.time_window_end > self.hard_constraints.time_window_end:
-                    raise ValueError("Cannot widen time window end after hard constraints boundary")
+            if self.hard_constraints.time_window_start:
+                if (
+                    not new_hard_constraints.time_window_start
+                    or new_hard_constraints.time_window_start < self.hard_constraints.time_window_start
+                ):
+                    raise ValueError("Cannot expand start time beyond initial boundary")
+            if self.hard_constraints.time_window_end:
+                if (
+                    not new_hard_constraints.time_window_end
+                    or new_hard_constraints.time_window_end > self.hard_constraints.time_window_end
+                ):
+                    raise ValueError("Cannot expand end time beyond initial boundary")
             hc_to_use = new_hard_constraints
 
-        # Record changes
-        changes = list(changed_descriptions) if changed_descriptions else []
-        if not changes:
-            changes.append(f"Derived E_{self.version + 1} from E_{self.version}")
-
         return SearchEnvelope(
-            envelope_id=f"env-{uuid.uuid4().hex[:8]}",
             version=self.version + 1,
             parent_envelope_id=self.envelope_id,
             hard_constraints=hc_to_use,
             retrieval_hints=hints_to_use,
             budgets=self.budgets.clone(),
-            changed_constraints=changes,
-            derivation_reason=reason or f"Progressive relaxation/narrowing at step {self.version + 1}",
+            changed_constraints=list(changed_descriptions or []),
+            derivation_reason=reason,
             max_candidate_fanout=self.max_candidate_fanout,
         )
+
+
+__all__ = [
+    "LLMPhase",
+    "normalize_phase",
+    "PhaseReservationPolicy",
+    "LLMBudgetPolicy",
+    "HardConstraints",
+    "ExpandableRetrievalHints",
+    "BudgetEnvelope",
+    "SearchEnvelope",
+]
