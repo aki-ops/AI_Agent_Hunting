@@ -368,34 +368,65 @@ class StoppingTaxonomyState(str, Enum):
 
 
 class StoppingDecision(str, Enum):
-    """Deterministic terminal stopping decisions."""
-    STOP_RESOLVED = "STOP_RESOLVED"
+    """Deterministic terminal stopping decisions (canonical v9 taxonomy with legacy compatibility)."""
+    # Canonical v9
+    STOP_ANSWERED = "STOP_ANSWERED"
     STOP_REFUTED = "STOP_REFUTED"
+    STOP_NOT_FOUND_BOUNDED = "STOP_NOT_FOUND_BOUNDED"
+    STOP_NEEDS_CLARIFICATION = "STOP_NEEDS_CLARIFICATION"
+    STOP_UNSUPPORTED = "STOP_UNSUPPORTED"
+    STOP_UNREACHABLE = "STOP_UNREACHABLE"
+    STOP_INCONCLUSIVE = "STOP_INCONCLUSIVE"
+    STOP_BUDGET = "STOP_BUDGET"
+    STOP_ERROR = "STOP_ERROR"
+    STOP_ABORTED_BY_USER = "STOP_ABORTED_BY_USER"
+
+    # Legacy compatibility members (distinct string values to prevent enum collision)
+    STOP_RESOLVED = "STOP_RESOLVED"
+    STOP_BOUNDED = "STOP_BOUNDED"
+    STOP_NEEDS_USER_DECISION = "STOP_NEEDS_USER_DECISION"
     STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED = "STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED"
     STOP_INCONCLUSIVE_RELATION_UNPROVEN = "STOP_INCONCLUSIVE_RELATION_UNPROVEN"
     STOP_INCONCLUSIVE_COVERAGE_GAP = "STOP_INCONCLUSIVE_COVERAGE_GAP"
-    STOP_NEEDS_USER_DECISION = "STOP_NEEDS_USER_DECISION"
-    STOP_EXHAUSTED_BY_BUDGET = "STOP_EXHAUSTED_BY_BUDGET"
-    STOP_BUDGET_EXHAUSTED = "STOP_EXHAUSTED_BY_BUDGET"
-    STOP_BOUNDED = "STOP_BOUNDED"
     STOP_INSUFFICIENT = "STOP_INSUFFICIENT"
-    STOP_UNSUPPORTED = "STOP_UNSUPPORTED"
+    STOP_EXHAUSTED_BY_BUDGET = "STOP_EXHAUSTED_BY_BUDGET"
+    STOP_BUDGET_EXHAUSTED = "STOP_BUDGET_EXHAUSTED"
     STOP_UNSUPPORTED_CAPABILITY = "STOP_UNSUPPORTED_CAPABILITY"
-    STOP_UNREACHABLE = "STOP_UNREACHABLE"
+
+    def to_canonical_v9(self) -> StoppingDecision:
+        """Map any legacy stop decision to its canonical v9 terminal counterpart."""
+        legacy_map = {
+            StoppingDecision.STOP_RESOLVED: StoppingDecision.STOP_ANSWERED,
+            StoppingDecision.STOP_BOUNDED: StoppingDecision.STOP_NOT_FOUND_BOUNDED,
+            StoppingDecision.STOP_NEEDS_USER_DECISION: StoppingDecision.STOP_NEEDS_CLARIFICATION,
+            StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED: StoppingDecision.STOP_NEEDS_CLARIFICATION,
+            StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN: StoppingDecision.STOP_INCONCLUSIVE,
+            StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP: StoppingDecision.STOP_INCONCLUSIVE,
+            StoppingDecision.STOP_INSUFFICIENT: StoppingDecision.STOP_INCONCLUSIVE,
+            StoppingDecision.STOP_EXHAUSTED_BY_BUDGET: StoppingDecision.STOP_BUDGET,
+            StoppingDecision.STOP_BUDGET_EXHAUSTED: StoppingDecision.STOP_BUDGET,
+            StoppingDecision.STOP_UNSUPPORTED_CAPABILITY: StoppingDecision.STOP_UNSUPPORTED,
+        }
+        return legacy_map.get(self, self)
 
     def to_taxonomy_state(self) -> StoppingTaxonomyState:
-        if self == StoppingDecision.STOP_RESOLVED:
+        canonical = self.to_canonical_v9()
+        if canonical == StoppingDecision.STOP_ANSWERED:
             return StoppingTaxonomyState.ANSWER_PROVED
-        if self in (StoppingDecision.STOP_REFUTED, StoppingDecision.STOP_BOUNDED):
+        if canonical in (StoppingDecision.STOP_REFUTED, StoppingDecision.STOP_NOT_FOUND_BOUNDED):
             return StoppingTaxonomyState.BOUNDED_NOT_FOUND
-        if self in (StoppingDecision.STOP_NEEDS_USER_DECISION, StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED):
+        if canonical == StoppingDecision.STOP_NEEDS_CLARIFICATION:
             return StoppingTaxonomyState.NEEDS_DISAMBIGUATION
-        if self in (StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP, StoppingDecision.STOP_UNSUPPORTED, StoppingDecision.STOP_UNSUPPORTED_CAPABILITY, StoppingDecision.STOP_INSUFFICIENT):
+        if canonical == StoppingDecision.STOP_UNSUPPORTED:
             return StoppingTaxonomyState.COVERAGE_EXHAUSTED
-        if self in (StoppingDecision.STOP_EXHAUSTED_BY_BUDGET, StoppingDecision.STOP_BUDGET_EXHAUSTED):
+        if canonical == StoppingDecision.STOP_BUDGET:
             return StoppingTaxonomyState.BUDGET_EXHAUSTED
-        if self == StoppingDecision.STOP_UNREACHABLE:
+        if canonical == StoppingDecision.STOP_UNREACHABLE:
             return StoppingTaxonomyState.BACKEND_DEGRADED
+        if canonical == StoppingDecision.STOP_ABORTED_BY_USER:
+            return StoppingTaxonomyState.ABORTED_BY_USER
+        if canonical == StoppingDecision.STOP_ERROR:
+            return StoppingTaxonomyState.VALIDATION_FAILED
         return StoppingTaxonomyState.COVERAGE_EXHAUSTED
 
 

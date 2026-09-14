@@ -79,15 +79,18 @@ class RecoveryController:
             return ObservationClass.QUERY_FAILURE
 
         # 3. PARTIAL: Truncation, timeout, limit hit, partition
-        completed = getattr(attempt, "completed", True)
+        complete = getattr(attempt, "complete", getattr(attempt, "completed", True))
         hit_limit = getattr(attempt, "hit_limit", False)
         truncated = getattr(attempt, "truncated", False)
-        if not completed or hit_limit or truncated:
+        if not complete or hit_limit or truncated:
             # INVARIANT: Even if row_count == 0, incomplete execution is PARTIAL
             return ObservationClass.PARTIAL
 
         # 4. EMPTY: Completed execution with 0 rows
+        rows = getattr(attempt, "rows", None)
         row_count = getattr(attempt, "row_count", 0)
+        if rows is not None and len(rows) > 0 and row_count == 0:
+            row_count = len(rows)
         if row_count == 0:
             return ObservationClass.EMPTY
 
@@ -258,24 +261,24 @@ class RecoveryController:
         routes_exhausted: bool = False,
         negative_license_granted: bool = False,
     ) -> StoppingDecision:
-        """Evaluate terminal stopping decision strictly according to taxonomy."""
+        """Evaluate terminal stopping decision strictly according to v9 taxonomy."""
         # 1. Budget exhausted
         is_budget_exhausted = getattr(budgets, "is_exhausted", False)
         if is_budget_exhausted:
-            return StoppingDecision.STOP_EXHAUSTED_BY_BUDGET
+            return StoppingDecision.STOP_BUDGET
 
         # 2. Contradiction unresolved
         if contradictions:
-            return StoppingDecision.STOP_INCONCLUSIVE_RELATION_UNPROVEN
+            return StoppingDecision.STOP_INCONCLUSIVE
 
         # 3. All obligations satisfied
         if obligations and set(obligations).issubset(set(verified_obligations)):
-            return StoppingDecision.STOP_RESOLVED
+            return StoppingDecision.STOP_ANSWERED
 
         # 4. Routes exhausted
         if routes_exhausted:
             if negative_license_granted and coverage == CoverageStatus.COMPLETE:
-                return StoppingDecision.STOP_BOUNDED
-            return StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP
+                return StoppingDecision.STOP_NOT_FOUND_BOUNDED
+            return StoppingDecision.STOP_INCONCLUSIVE
 
-        return StoppingDecision.STOP_INSUFFICIENT
+        return StoppingDecision.STOP_INCONCLUSIVE

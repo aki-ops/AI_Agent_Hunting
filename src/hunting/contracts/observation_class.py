@@ -55,6 +55,9 @@ class ExecutionStatus(str, Enum):
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
 
+    # Canonical aliases
+    OK = "EXECUTED"
+
 
 class CoverageStatus(str, Enum):
     """Orthogonal axis: Search space coverage within the declared envelope."""
@@ -74,6 +77,11 @@ class ProofStatus(str, Enum):
     VERIFIED = "VERIFIED"
     REFUTED = "REFUTED"
 
+    # Canonical aliases
+    UNPROVEN = "PROOF_GAP"
+    PROVEN = "VERIFIED"
+    REJECTED = "REFUTED"
+
 
 class RouteStatus(str, Enum):
     """Orthogonal axis: Telemetry route operational state."""
@@ -82,6 +90,9 @@ class RouteStatus(str, Enum):
     ACTIVE = "ACTIVE"
     EXHAUSTED = "EXHAUSTED"
     NO_PROGRESS = "NO_PROGRESS"
+
+    # Canonical aliases
+    PROGRESS = "ACTIVE"
 
 
 @dataclass

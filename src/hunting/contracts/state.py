@@ -10,13 +10,55 @@ from enum import Enum
 from typing import Any
 
 from hunting.contracts.abduction import AbductionRuntime
+from hunting.contracts.bindings import CandidateSet
 from hunting.contracts.conflicts import Conflict, HumanInput
 from hunting.contracts.coverage import CoverageBound
 from hunting.contracts.entities import EntityRef
 from hunting.contracts.expectations import Expectation
 from hunting.contracts.explanations import Explanation
+from hunting.contracts.observation_class import (
+    CoverageStatus,
+    ExecutionStatus,
+    ProofStatus,
+    RouteStatus,
+)
 from hunting.contracts.observations import Observation
 from hunting.contracts.queries import ControlResult, Query, QueryResult
+
+
+@dataclass
+class GoalRuntimeState:
+    """Canonical runtime state for one semantic goal (v9).
+
+    Enforces orthogonal status axes consistency:
+    - execution_status (low-level execution)
+    - coverage_status (search envelope coverage)
+    - proof_status (epistemic proof state)
+    - route_status (route progression or exhaustion)
+    """
+    goal_id: str
+    execution_status: ExecutionStatus = ExecutionStatus.NOT_STARTED
+    coverage_status: CoverageStatus = CoverageStatus.UNKNOWN
+    proof_status: ProofStatus = ProofStatus.UNPROVEN
+    route_status: RouteStatus = RouteStatus.PROGRESS
+    candidate_set: CandidateSet | None = None
+    proof_results: tuple[Any, ...] = ()
+    active_methods: tuple[str, ...] = ()
+    exhausted_methods: tuple[str, ...] = ()
+    last_material_delta: str | None = None
+
+    def __post_init__(self) -> None:
+        self.assert_consistent_state_axes()
+
+    def assert_consistent_state_axes(self) -> None:
+        """Invariant: Contradictory combinations across orthogonal axes are strictly prohibited."""
+        if self.execution_status == ExecutionStatus.FAILED and self.proof_status == ProofStatus.PROVEN:
+            raise ValueError(f"Contradictory state axes for goal '{self.goal_id}': cannot be PROVEN when execution FAILED")
+        if self.execution_status == ExecutionStatus.NOT_STARTED and self.proof_status == ProofStatus.PROVEN:
+            raise ValueError(f"Contradictory state axes for goal '{self.goal_id}': cannot be PROVEN when execution NOT_STARTED")
+        if self.coverage_status == CoverageStatus.PARTIAL and self.proof_status == ProofStatus.REJECTED:
+            # Under decoupled TriStatus: partial search cannot declare full rejection/negative
+            raise ValueError(f"Contradictory state axes for goal '{self.goal_id}': PARTIAL coverage cannot license REJECTED proof")
 
 
 @dataclass
