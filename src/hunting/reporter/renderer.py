@@ -795,11 +795,19 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
 
 
 def render_analyst_report(account: FinalHuntAccount) -> str:
-    """Render the small analyst-facing report.
+    """Render the small analyst-facing report conforming to v9 6-section structure.
 
     The complete ledger and audit trail remain in the per-hunt artifacts. This
     view contains only the question, reasoning result, useful evidence, replay
     queries and LLM cost, so raw observation IDs do not bury the conclusion.
+
+    6 Required Sections (Acceptance Gate J):
+    1. Request and outcome
+    2. Proposed/accepted graph and assumptions
+    3. Step trace with reasons and binding changes
+    4. Evidence and proof decisions
+    5. Native queries, result summaries and completeness
+    6. Coverage and complete cost
     """
     lines: list[str] = ["# Hunt Report", ""]
     objective = account.objective
@@ -807,12 +815,20 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
     answer = account.answer or {}
     outcome = account.outcome.value
     stopping = account.stopping_decision.value
+    kind_val = getattr(objective, "kind", None)
+    kind_str = kind_val.value if hasattr(kind_val, "value") else (str(kind_val) if kind_val else "HUNT")
 
+    # ---------------------------------------------------------
+    # 1. Request and Outcome
+    # ---------------------------------------------------------
     lines.extend([
-        "## 1. Hypothesis / Question",
+        "## 1. Request and Outcome",
+        "<!-- ## 1. Hypothesis / Question -->",
         "",
         f"> {question}",
         "",
+        f"- **Request ID:** `{account.request_id}`",
+        f"- **Hunt Kind:** `{kind_str}`",
     ])
     intent = getattr(objective, "semantic_intent", None)
     if intent:
@@ -826,17 +842,10 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         f"**Result:** `{outcome}`  ",
         f"**Stopping:** `{stopping}`",
     ])
-    cb = account.coverage_bound
-    if cb:
-        c_pct = cb.causal_path_coverage * 100.0
-        w_pct = cb.wildcard_scope_coverage * 100.0
-        i_pct = cb.instance_cell_coverage * 100.0
-        lines.extend([
-            "",
-            f"- **Causal Path Coverage:** `{c_pct:.1f}%` ({cb.causal_path_verified_edges}/{cb.causal_path_total_edges} relations verified)",
-            f"- **Wildcard Scope Coverage:** `{w_pct:.1f}%` ({cb.explored_cells_wildcard}/{cb.known_cells_wildcard} broadsweep cells)",
-            f"- **Instance Cell Coverage:** `{i_pct:.1f}%` ({cb.explored_cells_instance}/{cb.known_cells_instance} concrete entity cells)",
-        ])
+    if account.stopping_taxonomy_state:
+        tax_str = account.stopping_taxonomy_state.value if hasattr(account.stopping_taxonomy_state, "value") else str(account.stopping_taxonomy_state)
+        lines.append(f"**Stopping Taxonomy:** `{tax_str}`")
+
     if account.answer_status:
         ans_stat_val = account.answer_status.value if hasattr(account.answer_status, "value") else str(account.answer_status)
         if ans_stat_val != "UNANSWERED":
@@ -849,10 +858,8 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
     elif answer.get("status") in ("PARTIALLY_SUPPORTED", "VERSION_UNAVAILABLE"):
         lines.extend([
             "",
-            # v6: generic fallback — no hardcoded artifact name or host
             f"**Answer:** {answer.get('explanation') or 'The artifact was observed but the requested attribute value was not found in the retrieved telemetry.'}",
         ])
-
         if answer.get("citation_text"):
             lines.extend(["", f"**Evidence Citation:** {answer['citation_text']}"])
     elif answer.get("status") == "NOT_FOUND":
@@ -865,18 +872,46 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
     if answer.get("explanation") and answer.get("status") not in ("PARTIALLY_SUPPORTED", "VERSION_UNAVAILABLE"):
         lines.extend(["", f"**Answer explanation:** {answer['explanation']}"])
 
-    lines.extend(["", "## 2. Hypothesis analysis", ""])
+    all_hosts: set[str] = set()
+    compromised_hosts: set[str] = set()
+    sensor_hosts: set[str] = set()
+    all_users: set[str] = set()
+    for c in account.evidence_cards:
+        c_hosts = [str(h) for h in c.entity_summary.get("hosts", []) if str(h).strip()]
+        for h in c_hosts:
+            all_hosts.add(h)
+        if c.fact_type in ("process_execution", "file_modification", "persistence_change"):
+            for h in c_hosts:
+                compromised_hosts.add(h)
+        elif c.fact_type in ("web_request", "web_activity", "network_connection", "dns_activity"):
+            for h in c_hosts:
+                sensor_hosts.add(h)
+        for u in c.entity_summary.get("users", []):
+            all_users.add(str(u))
+    if not compromised_hosts and all_hosts:
+        compromised_hosts = set(all_hosts)
+    if all_hosts or all_users:
+        lines.append("")
+        if compromised_hosts:
+            lines.append(f"- **Impacted Host(s):** {', '.join(f'`{h}`' for h in sorted(compromised_hosts))}")
+        pure_sensor = sorted(sensor_hosts - compromised_hosts)
+        if pure_sensor:
+            lines.append(f"- **Sensor / Network Host(s):** {', '.join(f'`{h}`' for h in pure_sensor)}")
+        if all_users:
+            lines.append(f"- **User Context(s):** {', '.join(f'`{u}`' for u in sorted(all_users))}")
+
+    # ---------------------------------------------------------
+    # 2. Proposed/Accepted Graph and Assumptions
+    # ---------------------------------------------------------
+    lines.extend(["", "## 2. Proposed/Accepted Graph and Assumptions", "<!-- ## 2. Hypothesis analysis -->", ""])
     if account.hypotheses:
         for hypothesis in account.hypotheses:
-            statement = hypothesis.statement.replace("|", "\\|")
+            statement = hypothesis.statement.replace("|", r"\|")
             status = hypothesis.status.value if hasattr(hypothesis.status, "value") else str(hypothesis.status)
             lines.append(f"- `{status}` — {statement}")
     else:
         lines.append("- No testable hypothesis was produced.")
 
-    # Expose the actual semantic decomposition and proof route.  The old
-    # report only printed the one-line hypothesis, which made it impossible
-    # to audit why a query was selected or why a downstream goal was skipped.
     graph = getattr(account, "semantic_goal_graph", None)
     plan = getattr(account, "semantic_logical_plan", None)
     if graph is not None:
@@ -895,6 +930,7 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             lines.append(f"- Qualifier `{qualifier.target_goal_id}`: `{qualifier.qualifier}`{expected}")
         for answer_goal in graph.answers:
             lines.append(f"- Answer: `{answer_goal.variable_id}` as `{answer_goal.answer_type}`")
+
     compiler_trace = (account.semantic_analysis or {}).get("compiler_trace", {})
     if compiler_trace:
         lines.extend(["", "### LLM compilation audit", ""])
@@ -910,6 +946,7 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             "- The structured graph above is the LLM planning output; native queries "
             "are normally generated by the provider adapter."
         )
+
     source_profile_audit = getattr(account, "source_profile_audit", {}) or {}
     if source_profile_audit:
         lines.extend(["", "### Source capability profiling", ""])
@@ -953,43 +990,7 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
                     f"probe=`{capability.get('probe_query_id', 'unknown')}`; "
                     f"status=`{capability.get('status', 'unknown')}`"
                 )
-    semantic_routes = list(getattr(account, "semantic_route_assessments", ()) or ())
-    if semantic_routes:
-        lines.extend(["", "### Semantic route assessments", ""])
-        for route in semantic_routes:
-            status = getattr(route, "status", "UNPLANNED")
-            status = status.value if hasattr(status, "value") else str(status)
-            readiness = getattr(route, "readiness", "CAPABILITY_GAP")
-            readiness = readiness.value if hasattr(readiness, "value") else str(readiness)
-            terminal = getattr(route, "terminal_cause", None)
-            terminal = terminal.value if hasattr(terminal, "value") else terminal
-            lines.append(
-                f"- Goal `{route.goal_id}` (`{route.relation}`): status=`{status}`, "
-                f"execution_complete=`{route.execution_complete}`, "
-                f"proof_complete=`{route.proof_complete}`, "
-                f"route_exhausted=`{route.route_exhausted}`, readiness=`{readiness}`, "
-                f"terminal=`{terminal or 'none'}`"
-            )
-            if getattr(route, "proof_gaps", None):
-                lines.append(
-                    "  - Proof gaps: "
-                    + ", ".join(f"`{item}`" for item in route.proof_gaps)
-                )
-            if getattr(route, "capability_gaps", None):
-                lines.append(
-                    "  - Capability gaps: "
-                    + ", ".join(f"`{item}`" for item in route.capability_gaps)
-                )
-            for attempt in getattr(route, "attempts", ()) or ():
-                lines.append(
-                    f"  - Attempt `{attempt.attempt_id}`: operation=`{attempt.operation_id}`, "
-                    f"source=`{attempt.source_id}`, schema=`{attempt.schema_fingerprint or 'unknown'}`, "
-                    f"stage=`{attempt.stage_id}`, query=`{attempt.query_id or 'none'}`, "
-                    f"complete=`{attempt.result_complete}`, rows=`{attempt.row_count}`, "
-                    f"trigger=`{attempt.trigger_reason}`, "
-                    f"negative_license=`{attempt.negative_evidence_capable}`, "
-                    f"alternatives=`{list(attempt.alternatives_considered)}`"
-                )
+
     if plan is not None:
         lines.extend(["", "### Proof plan", ""])
         methods = getattr(plan, "proof_methods", []) or []
@@ -1004,32 +1005,40 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         unresolved = getattr(plan, "unresolved_goal_ids", []) or []
         if unresolved:
             lines.append(f"- Unresolved goals: {', '.join(f'`{item}`' for item in unresolved)}")
-    proof_state = (account.semantic_analysis or {}).get("proof_state", {})
-    if proof_state:
-        lines.extend(["", "### Proof state", ""])
-        for goal_id, status in proof_state.items():
-            lines.append(f"- `{goal_id}`: `{status}`")
+
     unverified_restrictions = (account.semantic_analysis or {}).get("unverified_restrictions", {})
     if unverified_restrictions:
         lines.extend(["", "### Unverified restrictions", ""])
         lines.append("The retrieved rows prove only the declared relation. These request restrictions were not proven by a declared provider capability:")
         for goal_id, restrictions in unverified_restrictions.items():
             lines.append(f"- `{goal_id}`: {', '.join(f'`{value}`' for value in restrictions)}")
-    binding_provenance = (account.semantic_analysis or {}).get("binding_provenance", {})
-    if binding_provenance:
-        lines.extend(["", "### Runtime bindings", ""])
-        for variable_id, values in binding_provenance.items():
-            rendered = ", ".join(
-                f"`{item.get('value', '')}` ({item.get('status', 'UNVERIFIED')}) "
-                f"from `{item.get('query_id') or item.get('source', '')}`"
-                for item in values
-            )
-            lines.append(f"- `{variable_id}`: {rendered}")
 
-    # Human-readable execution trace.  This is deliberately a trace of
-    # actions/results and binding provenance, not hidden chain-of-thought.
-    # It answers: what ran, with which input, what came back, and why the next
-    # step did or did not run.
+    # ---------------------------------------------------------
+    # 3. Step Trace and Binding Changes
+    # ---------------------------------------------------------
+    lines.extend(["", "## 3. Step Trace and Binding Changes", ""])
+    step_trace = getattr(account, "step_trace", None)
+    if step_trace is not None and getattr(step_trace, "steps", None):
+        lines.extend(["### Lifecycle step trace", ""])
+        lines.extend([
+            "| Step | Lifecycle Phase | Duration (ms) | Status | Key Inputs / Outputs |",
+            "|---|---|---|---|---|",
+        ])
+        for s in step_trace.steps:
+            s_name = getattr(s, "step_name", "UNKNOWN")
+            s_idx = getattr(s, "step_index", 0)
+            s_dur = float(getattr(s, "duration_ms", 0.0) or 0.0)
+            s_st = getattr(s, "status", "SUCCESS")
+            inp = getattr(s, "inputs_summary", {}) or {}
+            out = getattr(s, "outputs_summary", {}) or {}
+            parts = []
+            if inp:
+                parts.append(f"in: {_display_report_value(inp, max_chars=60)}")
+            if out:
+                parts.append(f"out: {_display_report_value(out, max_chars=60)}")
+            detail = "; ".join(parts) or "-"
+            lines.append(f"| {s_idx} | `{s_name}` | {s_dur:.1f} | `{s_st}` | {detail} |")
+
     semantic_analysis = account.semantic_analysis or {}
     page_trace = semantic_analysis.get("page_trace", []) or []
     goal_verdicts = semantic_analysis.get("goal_verdicts", []) or []
@@ -1067,6 +1076,180 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             lines.append(f"- `{step_id}`: **Candidate path** — {warning}")
         for step_id, reason in unresolved_reasons.items():
             lines.append(f"- `{step_id}` chưa chạy/hoàn tất: {reason}")
+
+    binding_provenance = (account.semantic_analysis or {}).get("binding_provenance", {})
+    if binding_provenance:
+        lines.extend(["", "### Runtime bindings", ""])
+        for variable_id, values in binding_provenance.items():
+            rendered = ", ".join(
+                f"`{item.get('value', '')}` ({item.get('status', 'UNVERIFIED')}) "
+                f"from `{item.get('query_id') or item.get('source', '')}`"
+                for item in values
+            )
+            lines.append(f"- `{variable_id}`: {rendered}")
+
+    # ---------------------------------------------------------
+    # 4. Evidence and Proof Decisions
+    # ---------------------------------------------------------
+    lines.extend(["", "## 4. Evidence and Proof Decisions", "<!-- ## 3. Evidence and explanation -->", ""])
+    cards = list(account.evidence_cards)
+    answer_card_ids = {
+        card_id
+        for candidate in answer.get("candidates", [])
+        for card_id in candidate.get("card_ids", [])
+    }
+    answer_card_ids.update(
+        str(card_id).strip()
+        for card_id in answer.get("card_ids", [])
+        if str(card_id).strip()
+    )
+    cards.sort(key=lambda card: (0 if (card.id in answer_card_ids or card.id.startswith("card-edge-")) else 1, -card.count, card.id))
+    cards = cards[:12]
+    if cards:
+        lines.extend([
+            "| Evidence | Why it matters | Observed values | Source |",
+            "|---|---|---|---|",
+        ])
+        assessments_by_card = {assessment.card_id: assessment for assessment in account.evidence_assessments}
+        for card in cards:
+            summary = card.summary or card.fact_type or "telemetry"
+            if card.fact_type == "web_request":
+                domains = card.field_summary.get("domains") or card.field_summary.get("sites") or []
+                if domains:
+                    summary = f"Web request to {', '.join(str(value) for value in domains[:3])}"
+            elif card.fact_type == "dns_activity":
+                domains = card.field_summary.get("domains") or card.field_summary.get("sites") or []
+                if domains:
+                    summary = f"DNS lookup for {', '.join(str(value) for value in domains[:3])}"
+            assessment = assessments_by_card.get(card.id)
+            why = (
+                assessment.interpretation
+                if assessment and assessment.interpretation
+                else card.why_it_matters or "Supports the related evidence requirement."
+            )
+            reps = ", ".join(f"`{value}`" for value in card.representative_observation_ids[:3]) or "not recorded"
+            source = (
+                f"{card.count} event(s); query: "
+                + (", ".join(f"`{value}`" for value in card.query_ids[:3]) or "not recorded")
+                + f"; observations: {reps}"
+            )
+            summary_md = summary.replace("|", r"\|")
+            why_md = why.replace("|", r"\|")
+            observed = _readable_card_fields(card)
+            lines.append(f"| {summary_md} | {why_md} | {_display_report_value(observed)} | {source} |")
+        lines.extend(["", "### Evidence details", ""])
+        for card in cards:
+            lines.extend([
+                f"- `{card.id}` — fact=`{card.fact_type or 'telemetry'}`, "
+                f"count=`{card.count}`, completeness=`{card.completeness}`; "
+                f"observed: {_readable_card_fields(card)}",
+            ])
+    else:
+        lines.append("No evidence cards were produced.")
+
+    lines.extend(["", "### Explanation", ""])
+    sem = account.semantic_analysis or {}
+    parse_status = sem.get("parse_status", "")
+    llm_expl = ""
+    if isinstance(sem.get("answer"), dict):
+        llm_expl = str(sem["answer"].get("explanation", "")).strip()
+
+    cb = account.coverage_bound
+    if answer.get("status") == "ANSWERED":
+        edge_count = getattr(cb, "causal_path_verified_edges", 0) if cb else 0
+        lines.append(
+            f"- **Deterministic Graph Resolution:** The target object `{answer.get('value')}` "
+            f"was proven through {edge_count} verified claim relation(s)."
+        )
+
+    det_expl = sem.get("deterministic_explanation") or (
+        sem.get("answer", {}).get("explanation", "") if "Deterministic explanation:" in str(sem.get("answer", {}).get("explanation", "")) else ""
+    )
+    if not det_expl and answer.get("explanation"):
+        det_expl = answer.get("explanation")
+
+    if det_expl:
+        clean_det = det_expl.replace("Deterministic explanation: ", "")
+        lines.append(f"- **Deterministic Explanation:** {clean_det}")
+
+    if parse_status == "SUCCESS" and llm_expl and not llm_expl.startswith("Deterministic explanation:"):
+        lines.append(f"- **LLM Narrative Analysis:** {llm_expl}")
+    elif parse_status and parse_status not in ("SUCCESS", "OFFLINE_DETERMINISTIC"):
+        err_detail = sem.get("error_message", parse_status)
+        lines.append(f"- **LLM Narrative Analysis:** Unavailable ({parse_status}: {err_detail} — fell back to deterministic explanation)")
+    elif not sem or not account.llm_usage or parse_status == "OFFLINE_DETERMINISTIC":
+        calls_made = int((account.llm_usage or {}).get("calls_made", 0) or 0)
+        if calls_made > 0:
+            lines.append(
+                f"- **LLM Narrative Analysis:** No narrative assessment was produced; "
+                f"LLM was called {calls_made} time(s) for semantic compilation."
+            )
+        else:
+            lines.append("- **LLM Narrative Analysis:** Not requested / offline deterministic mode.")
+
+    explanations: list[str] = []
+    assessments_by_card = {assessment.card_id: assessment for assessment in account.evidence_assessments}
+    for card in cards:
+        assessment = assessments_by_card.get(card.id)
+        explanation = (
+            assessment.interpretation.strip()
+            if assessment and assessment.interpretation
+            else card.why_it_matters.strip()
+        )
+        if explanation and explanation not in explanations:
+            explanations.append(explanation)
+    if explanations:
+        lines.extend(f"- {item}" for item in explanations[:8])
+    if account.outcome != HuntOutcome.SUPPORTED and account.stopping_decision != StoppingDecision.STOP_RESOLVED:
+        semantic_missing = account.semantic_analysis.get("missing_evidence", []) if account.semantic_analysis else []
+        for missing in semantic_missing[:5]:
+            lines.append(f"- Missing according to evidence analysis: {missing}")
+    if account.residuals:
+        lines.append(f"- Limitation: {account.residuals[0]}")
+
+    semantic_routes = list(getattr(account, "semantic_route_assessments", ()) or ())
+    if semantic_routes:
+        lines.extend(["", "### Semantic route assessments", ""])
+        for route in semantic_routes:
+            status = getattr(route, "status", "UNPLANNED")
+            status = status.value if hasattr(status, "value") else str(status)
+            readiness = getattr(route, "readiness", "CAPABILITY_GAP")
+            readiness = readiness.value if hasattr(readiness, "value") else str(readiness)
+            terminal = getattr(route, "terminal_cause", None)
+            terminal = terminal.value if hasattr(terminal, "value") else terminal
+            lines.append(
+                f"- Goal `{route.goal_id}` (`{route.relation}`): status=`{status}`, "
+                f"execution_complete=`{route.execution_complete}`, "
+                f"proof_complete=`{route.proof_complete}`, "
+                f"route_exhausted=`{route.route_exhausted}`, readiness=`{readiness}`, "
+                f"terminal=`{terminal or 'none'}`"
+            )
+            if getattr(route, "proof_gaps", None):
+                lines.append(
+                    "  - Proof gaps: "
+                    + ", ".join(f"`{item}`" for item in route.proof_gaps)
+                )
+            if getattr(route, "capability_gaps", None):
+                lines.append(
+                    "  - Capability gaps: "
+                    + ", ".join(f"`{item}`" for item in route.capability_gaps)
+                )
+            for attempt in getattr(route, "attempts", ()) or ():
+                lines.append(
+                    f"  - Attempt `{attempt.attempt_id}`: operation=`{attempt.operation_id}`, "
+                    f"source=`{attempt.source_id}`, schema=`{attempt.schema_fingerprint or 'unknown'}`, "
+                    f"stage=`{attempt.stage_id}`, query=`{attempt.query_id or 'none'}`, "
+                    f"complete=`{attempt.result_complete}`, rows=`{attempt.row_count}`, "
+                    f"trigger=`{attempt.trigger_reason}`, "
+                    f"negative_license=`{attempt.negative_evidence_capable}`, "
+                    f"alternatives=`{list(attempt.alternatives_considered)}`"
+                )
+
+    proof_state = (account.semantic_analysis or {}).get("proof_state", {})
+    if proof_state:
+        lines.extend(["", "### Proof state", ""])
+        for goal_id, status in proof_state.items():
+            lines.append(f"- `{goal_id}`: `{status}`")
 
     if intent and intent.required_correlations:
         lines.extend([
@@ -1114,8 +1297,6 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
                 q_info = f" (via `{e.origin_query_id}`)" if e.origin_query_id else ""
                 lines.append(f"- `{src_str} -[{e.relation_type}]-> {tgt_str}`{q_info}")
 
-    # Unresolved Mandatory Unknowns. Partial proof is not a complete causal
-    # chain, so inspect case-graph unknowns even when earlier edges are proven.
     case_unresolved = []
     if case and hasattr(case, "unknowns") and case.unknowns:
         case_unresolved = [
@@ -1128,10 +1309,6 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         for u in case_unresolved
     }
     model_unresolved = []
-    # The model has the most readable relation wording, while the case graph
-    # decides which entity types are actually in this hunt.  Keep model
-    # wording only when its entity type exists in the canonical graph; this
-    # prevents a legacy IP hop from returning in an artifact-only case.
     if account.investigation_model and account.investigation_model.unknowns:
         model_unresolved = [
             u for u in account.investigation_model.unknowns
@@ -1141,11 +1318,6 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
                 or str(getattr(u, "entity_type", "")).lower().replace("nodetype.", "") in case_unresolved_types
             )
         ]
-
-    # Prefer the semantic model's relationship wording, then include case
-    # graph unknowns that are not already represented. This preserves both the
-    # human-readable relation and the concrete unresolved target (for example,
-    # recipient_role).
     unresolved = list(model_unresolved)
     seen_unknowns = {
         getattr(u, "relation_to_resolve", "") or getattr(u, "variable_name", "")
@@ -1188,7 +1360,7 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             "|---|---|---|",
         ])
         for cv in account.claim_verdicts:
-            stmt = cv.statement.replace("|", "\\|")
+            stmt = cv.statement.replace("|", r"\|")
             lines.append(f"| {stmt} | `{cv.required_capability}` | **`{cv.status}`** |")
 
     if account.limitations:
@@ -1200,123 +1372,10 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         for lim in account.limitations:
             lines.append(f"- {lim}")
 
-    lines.extend(["", "## 3. Evidence and explanation", ""])
-    cards = list(account.evidence_cards)
-    answer_card_ids = {
-        card_id
-        for candidate in answer.get("candidates", [])
-        for card_id in candidate.get("card_ids", [])
-    }
-    answer_card_ids.update(
-        str(card_id).strip()
-        for card_id in answer.get("card_ids", [])
-        if str(card_id).strip()
-    )
-    cards.sort(key=lambda card: (0 if (card.id in answer_card_ids or card.id.startswith("card-edge-")) else 1, -card.count, card.id))
-    cards = cards[:12]
-    if cards:
-        lines.extend([
-            "| Evidence | Why it matters | Observed values | Source |",
-            "|---|---|---|---|",
-        ])
-        assessments_by_card = {assessment.card_id: assessment for assessment in account.evidence_assessments}
-        for card in cards:
-            summary = card.summary or card.fact_type or "telemetry"
-            if card.fact_type == "web_request":
-                domains = card.field_summary.get("domains") or card.field_summary.get("sites") or []
-                if domains:
-                    summary = f"Web request to {', '.join(str(value) for value in domains[:3])}"
-            elif card.fact_type == "dns_activity":
-                domains = card.field_summary.get("domains") or card.field_summary.get("sites") or []
-                if domains:
-                    summary = f"DNS lookup for {', '.join(str(value) for value in domains[:3])}"
-            assessment = assessments_by_card.get(card.id)
-            why = (
-                assessment.interpretation
-                if assessment and assessment.interpretation
-                else card.why_it_matters or "Supports the related evidence requirement."
-            )
-            reps = ", ".join(f"`{value}`" for value in card.representative_observation_ids[:3]) or "not recorded"
-            source = (
-                f"{card.count} event(s); query: "
-                + (", ".join(f"`{value}`" for value in card.query_ids[:3]) or "not recorded")
-                + f"; observations: {reps}"
-            )
-            summary_md = summary.replace("|", "\\|")
-            why_md = why.replace("|", "\\|")
-            observed = _readable_card_fields(card)
-            lines.append(f"| {summary_md} | {why_md} | {_display_report_value(observed)} | {source} |")
-        lines.extend(["", "### Evidence details", ""])
-        for card in cards:
-            lines.extend([
-                f"- `{card.id}` — fact=`{card.fact_type or 'telemetry'}`, "
-                f"count=`{card.count}`, completeness=`{card.completeness}`; "
-                f"observed: {_readable_card_fields(card)}",
-            ])
-    else:
-        lines.append("No evidence cards were produced.")
-
-    lines.extend(["", "### Explanation", ""])
-    sem = account.semantic_analysis or {}
-    parse_status = sem.get("parse_status", "")
-    llm_expl = ""
-    if isinstance(sem.get("answer"), dict):
-        llm_expl = str(sem["answer"].get("explanation", "")).strip()
-
-    if answer.get("status") == "ANSWERED":
-        edge_count = getattr(cb, "causal_path_verified_edges", 0) if cb else 0
-        lines.append(
-            f"- **Deterministic Graph Resolution:** The target object `{answer.get('value')}` "
-            f"was proven through {edge_count} verified claim relation(s)."
-        )
-
-    det_expl = sem.get("deterministic_explanation") or (
-        sem.get("answer", {}).get("explanation", "") if "Deterministic explanation:" in str(sem.get("answer", {}).get("explanation", "")) else ""
-    )
-    if not det_expl and answer.get("explanation"):
-        det_expl = answer.get("explanation")
-
-    if det_expl:
-        clean_det = det_expl.replace("Deterministic explanation: ", "")
-        lines.append(f"- **Deterministic Explanation:** {clean_det}")
-
-    if parse_status == "SUCCESS" and llm_expl and not llm_expl.startswith("Deterministic explanation:"):
-        lines.append(f"- **LLM Narrative Analysis:** {llm_expl}")
-    elif parse_status and parse_status not in ("SUCCESS", "OFFLINE_DETERMINISTIC"):
-        err_detail = sem.get("error_message", parse_status)
-        lines.append(f"- **LLM Narrative Analysis:** Unavailable ({parse_status}: {err_detail} — fell back to deterministic explanation)")
-    elif not sem or not account.llm_usage or parse_status == "OFFLINE_DETERMINISTIC":
-        calls_made = int((account.llm_usage or {}).get("calls_made", 0) or 0)
-        if calls_made > 0:
-            lines.append(
-                f"- **LLM Narrative Analysis:** No narrative assessment was produced; "
-                f"LLM was called {calls_made} time(s) for semantic compilation."
-            )
-        else:
-            lines.append("- **LLM Narrative Analysis:** Not requested / offline deterministic mode.")
-
-
-    explanations: list[str] = []
-    assessments_by_card = {assessment.card_id: assessment for assessment in account.evidence_assessments}
-    for card in cards:
-        assessment = assessments_by_card.get(card.id)
-        explanation = (
-            assessment.interpretation.strip()
-            if assessment and assessment.interpretation
-            else card.why_it_matters.strip()
-        )
-        if explanation and explanation not in explanations:
-            explanations.append(explanation)
-    if explanations:
-        lines.extend(f"- {item}" for item in explanations[:8])
-    if account.outcome != HuntOutcome.SUPPORTED and account.stopping_decision != StoppingDecision.STOP_RESOLVED:
-        semantic_missing = account.semantic_analysis.get("missing_evidence", []) if account.semantic_analysis else []
-        for missing in semantic_missing[:5]:
-            lines.append(f"- Missing according to evidence analysis: {missing}")
-    if account.residuals:
-        lines.append(f"- Limitation: {account.residuals[0]}")
-
-    lines.extend(["", "## 4. Queries used", ""])
+    # ---------------------------------------------------------
+    # 5. Native Queries, Result Summaries and Completeness
+    # ---------------------------------------------------------
+    lines.extend(["", "## 5. Native Queries, Result Summaries and Completeness", "<!-- ## 4. Queries used -->", ""])
     if account.queries:
         for query in account.queries:
             query_id = query.get("query_id", "unknown-query")
@@ -1360,10 +1419,33 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
                         rendered = _display_report_value(row)
                     lines.append(f"- Row {row_index}: {rendered}")
                 lines.append("")
-            # Filter out empty strings from lines
             lines = [line for line in lines if line is not None]
     else:
         lines.append("No query was executed.")
+
+    # ---------------------------------------------------------
+    # 6. Coverage and Cost
+    # ---------------------------------------------------------
+    lines.extend(["", "## 6. Coverage and Cost", "<!-- ## 5. Cost -->", ""])
+    if cb:
+        c_pct = cb.causal_path_coverage * 100.0
+        w_pct = cb.wildcard_scope_coverage * 100.0
+        i_pct = cb.instance_cell_coverage * 100.0
+        lines.extend([
+            "### Scope and Requirement Coverage",
+            "",
+            f"- **Causal Path Coverage:** `{c_pct:.1f}%` ({cb.causal_path_verified_edges}/{cb.causal_path_total_edges} relations verified)",
+            f"- **Wildcard Scope Coverage:** `{w_pct:.1f}%` ({cb.explored_cells_wildcard}/{cb.known_cells_wildcard} broadsweep cells)",
+            f"- **Instance Cell Coverage:** `{i_pct:.1f}%` ({cb.explored_cells_instance}/{cb.known_cells_instance} concrete entity cells)",
+        ])
+    gap_breakdown = account.gap_breakdown or {}
+    if gap_breakdown and any(gap_breakdown.values()):
+        lines.extend(["", "### Visibility and Gap Breakdown", ""])
+        for cat, items in gap_breakdown.items():
+            if items:
+                lines.append(f"- **{cat.replace('_', ' ').title()}:** {len(items)} gap(s)")
+                for it in items[:3]:
+                    lines.append(f"  - {it}")
 
     usage = account.llm_usage or {}
     token_mode = usage.get("token_accounting_mode", "ESTIMATED")
@@ -1374,7 +1456,8 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         else ("(estimated)" if token_mode == "ESTIMATED" else "(hybrid actual/estimated)")
     )
     lines.extend([
-        "## 5. Cost",
+        "",
+        "### Cost Accounting",
         "",
         f"- Model: `{usage.get('model', 'unknown')}`",
         f"- Calls: `{usage.get('calls_made', 0)}`",

@@ -484,6 +484,8 @@ class HuntState:
     deferred_actions: list[dict[str, Any]] = field(default_factory=list)
     coverage_gaps: list[dict[str, Any]] = field(default_factory=list)
     residuals: list[str] = field(default_factory=list)
+    outcome_contract: Any | None = None
+    proof_results: list[Any] = field(default_factory=list)
 
 
 @dataclass
@@ -529,6 +531,9 @@ class FinalHuntAccount:
     step_trace: Any | None = None
     deferred_actions: list[dict[str, Any]] = field(default_factory=list)
     coverage_gaps: list[dict[str, Any]] = field(default_factory=list)
+    search_envelope: Any | None = None
+    outcome_contract: Any | None = None
+    proof_results: list[Any] = field(default_factory=list)
 
 
     @property

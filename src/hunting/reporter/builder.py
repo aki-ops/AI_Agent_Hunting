@@ -1069,6 +1069,9 @@ def build_final_hunt_account(
         step_trace=getattr(state, "step_trace", None),
         deferred_actions=list(getattr(state, "deferred_actions", []) or []),
         coverage_gaps=list(getattr(state, "coverage_gaps", []) or []),
+        search_envelope=getattr(state, "search_envelope", None),
+        outcome_contract=getattr(state, "outcome_contract", None),
+        proof_results=list(getattr(state, "proof_results", []) or []),
     )
 
 
