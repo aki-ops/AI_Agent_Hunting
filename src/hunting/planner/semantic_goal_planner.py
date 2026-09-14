@@ -58,6 +58,7 @@ class SemanticGoalPlanner:
         steps: list[PlanStep] = []
         diagnostics: list[PlannerDiagnostic] = []
         step_for_variable: dict[str, str] = {}
+        step_for_goal: dict[str, str] = {}
         proof_methods: list[ProofMethod] = []
         selected_method_ids: dict[str, str] = {}
 
@@ -65,6 +66,15 @@ class SemanticGoalPlanner:
         while remaining and progress:
             progress = False
             for goal in list(remaining):
+                remaining_goal_ids = {r.id for r in remaining}
+                if goal.dependencies:
+                    if goal.dependency_operator in {"AND", "GATE"}:
+                        if any(dep in remaining_goal_ids for dep in goal.dependencies):
+                            continue
+                    elif goal.dependency_operator == "OR":
+                        if all(dep in remaining_goal_ids for dep in goal.dependencies):
+                            continue
+
                 subject = next(variable for variable in graph.variables if variable.id == goal.subject)
                 target = next(variable for variable in graph.variables if variable.id == goal.object)
                 # A variable's restrictions belong to grounding that
@@ -112,6 +122,8 @@ class SemanticGoalPlanner:
                     relation.id for relation in graph.relations
                     if relation.object == goal.subject and relation.id != goal.id and relation.required
                 )
+                if goal.dependencies and goal.dependency_operator in {"AND", "GATE"}:
+                    prerequisite_goal_ids = tuple(dict.fromkeys(prerequisite_goal_ids + goal.dependencies))
                 candidates = list({operation.id: operation for operation in self.operations
                     if goal.relation.casefold() in {value.casefold() for value in operation.guaranteed_relations}
                     and operation.provider_id == self.provider_id
@@ -139,16 +151,30 @@ class SemanticGoalPlanner:
                         for kind in candidate.input_entity_kinds
                     ):
                         continue
-                    method_id = f"method-{goal.id}-{candidate_index}"
-                    if not any(method.id == method_id for method in proof_methods):
-                        proof_methods.append(ProofMethod(
-                            id=method_id,
-                            goal_id=goal.id,
-                            prerequisite_goal_ids=prerequisite_goal_ids,
-                            operation_ids=(candidate.id,),
-                            expected_cost=candidate.expected_cost or 1,
-                            description=f"{candidate.id} declares relation {goal.relation}",
-                        ))
+                    if goal.dependency_operator == "OR" and goal.dependencies:
+                        for dep_index, dep in enumerate(goal.dependencies, start=1):
+                            branch_prereqs = tuple(dict.fromkeys(prerequisite_goal_ids + (dep,)))
+                            method_id = f"method-{goal.id}-{candidate_index}-or-{dep_index}"
+                            if not any(method.id == method_id for method in proof_methods):
+                                proof_methods.append(ProofMethod(
+                                    id=method_id,
+                                    goal_id=goal.id,
+                                    prerequisite_goal_ids=branch_prereqs,
+                                    operation_ids=(candidate.id,),
+                                    expected_cost=candidate.expected_cost or 1,
+                                    description=f"{candidate.id} declares relation {goal.relation} (OR-branch {dep})",
+                                ))
+                    else:
+                        method_id = f"method-{goal.id}-{candidate_index}"
+                        if not any(method.id == method_id for method in proof_methods):
+                            proof_methods.append(ProofMethod(
+                                id=method_id,
+                                goal_id=goal.id,
+                                prerequisite_goal_ids=prerequisite_goal_ids,
+                                operation_ids=(candidate.id,),
+                                expected_cost=candidate.expected_cost or 1,
+                                description=f"{candidate.id} declares relation {goal.relation}",
+                            ))
                 ready = [
                     operation for operation in candidates
                     if (not operation.input_entity_kinds or any(
@@ -262,10 +288,22 @@ class SemanticGoalPlanner:
                     proof_methods.append(selected_method)
                 selected_method_ids[goal.id] = selected_method.id
                 step_id = f"step-{len(steps) + 1}"
-                dependencies = tuple(
+                var_dependencies = tuple(
                     dependency for variable_id, dependency in step_for_variable.items()
                     if variable_id == execution_subject_id
                 )
+                declared_step_deps: list[str] = []
+                if goal.dependencies:
+                    if goal.dependency_operator in {"AND", "GATE"}:
+                        for dep in goal.dependencies:
+                            if dep in step_for_goal:
+                                declared_step_deps.append(step_for_goal[dep])
+                    elif goal.dependency_operator == "OR":
+                        for dep in goal.dependencies:
+                            if dep in step_for_goal:
+                                declared_step_deps.append(step_for_goal[dep])
+                                break
+                step_dependencies = tuple(dict.fromkeys(list(var_dependencies) + declared_step_deps))
                 steps.append(
                     PlanStep(
                         id=step_id,
@@ -273,7 +311,7 @@ class SemanticGoalPlanner:
                         input_bindings={"subject": execution_subject_id},
                         output_bindings={"object": target.id},
                         advances_goal_ids=(goal.id,),
-                        depends_on=dependencies,
+                        depends_on=step_dependencies,
                         expected_cost=operation.expected_cost or 1,
                         constraints=tuple(dict.fromkeys(goal_constraints)),
                         constraint_retrieval_terms=goal_retrieval_terms,
@@ -282,8 +320,11 @@ class SemanticGoalPlanner:
                         alternative_operation_ids=tuple(
                             candidate.id for candidate in ready if candidate.id != operation.id
                         ),
+                        dependency_operator=goal.dependency_operator,
+                        gate_condition=goal.gate_condition,
                     )
                 )
+                step_for_goal[goal.id] = step_id
                 step_for_variable[target.id] = step_id
                 known.add(target.id)
                 remaining.remove(goal)
@@ -300,6 +341,7 @@ class SemanticGoalPlanner:
             unresolved_goal_ids=[diagnostic.goal_id for diagnostic in diagnostics],
             proof_methods=proof_methods,
             selected_method_ids=selected_method_ids,
+            graph_revision=getattr(graph, "graph_revision", "G0"),
         )
         # Keep diagnostics auditable without adding provider-specific state to
         # the contract itself.  The executor/report layer can serialize them.

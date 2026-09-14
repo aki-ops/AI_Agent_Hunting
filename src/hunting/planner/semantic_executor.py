@@ -221,6 +221,24 @@ class SemanticPlanExecutor:
                     for dependency in step.depends_on
                 ):
                     continue
+                if getattr(step, "dependency_operator", "AND") == "GATE" and getattr(step, "gate_condition", None):
+                    from hunting.planner.gate_evaluator import GateEvaluator
+                    runtime_goal_states: dict[str, Any] = {}
+                    for prev_step in plan.steps:
+                        if prev_step.id in prior:
+                            p_exec = prior[prev_step.id]
+                            for g_id in prev_step.advances_goal_ids:
+                                has_rows = bool(p_exec.result and p_exec.result.rows)
+                                is_executed = p_exec.status in ("EXECUTED", "USER_SELECTED", "COMPLETE_EMPTY")
+                                runtime_goal_states[g_id] = {
+                                    "execution_status": "COMPLETED" if is_executed else "FAILED",
+                                    "proof_status": "PROVEN" if (is_executed and has_rows) else "UNPROVEN",
+                                    "coverage_status": "COMPLETE" if (p_exec.result and p_exec.result.complete) else "PARTIAL",
+                                }
+                    gate_res = GateEvaluator.evaluate(step.gate_condition, runtime_goal_states)
+                    if not gate_res.passed:
+                        unresolved_reasons[step.id] = f"GATE blocked: {gate_res.reason}"
+                        continue
                 if step.requires_complete_inputs and any(
                     dependency not in completed_binding_steps
                     and prior[dependency].status != "EXECUTED"

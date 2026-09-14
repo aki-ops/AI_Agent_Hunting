@@ -322,6 +322,8 @@ class SemanticGoalGraph:
     clarification_triggers: list[str] = field(default_factory=list)
     raw_llm_proposal: dict[str, Any] | None = None
     validation_diagnostics: list[str] = field(default_factory=list)
+    graph_revision: str = "G0"
+    revision_history: tuple[dict[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         self.id = _clean(self.id, "SemanticGoalGraph.id")
@@ -379,6 +381,46 @@ class SemanticGoalGraph:
                 if dep not in goal_ids:
                     raise ValueError(f"Goal '{goal_id}' depends on unknown relation goal '{dep}'")
 
+    def propose_expansion(
+        self,
+        intermediate_variables: list[SemanticVariable],
+        intermediate_relations: list[SemanticRelationGoal],
+        reason: str = "",
+    ) -> "SemanticGoalGraph":
+        """Propose an audited graph expansion revision (e.g. G0 -> G1)."""
+        rev_str = self.graph_revision.lstrip("G")
+        new_rev_num = int(rev_str) + 1 if rev_str.isdigit() else 1
+        new_rev = f"G{new_rev_num}"
+        history_entry = {
+            "from_revision": self.graph_revision,
+            "to_revision": new_rev,
+            "reason": reason,
+            "added_variables": [v.id for v in intermediate_variables],
+            "added_relations": [r.id for r in intermediate_relations],
+        }
+        return SemanticGoalGraph(
+            id=self.id,
+            request_id=self.request_id,
+            objective=self.objective,
+            variables=list(self.variables) + list(intermediate_variables),
+            relations=list(self.relations) + list(intermediate_relations),
+            qualifiers=list(self.qualifiers),
+            answers=list(self.answers),
+            answer_contracts=list(self.answer_contracts),
+            outcome_contract=self.outcome_contract,
+            dependencies=dict(self.dependencies),
+            dependency_kinds=dict(self.dependency_kinds),
+            provenance_spans=dict(self.provenance_spans),
+            assumptions=list(self.assumptions),
+            uncertainties=list(self.uncertainties),
+            forbidden_inferences=list(self.forbidden_inferences),
+            clarification_triggers=list(self.clarification_triggers),
+            raw_llm_proposal=self.raw_llm_proposal,
+            validation_diagnostics=list(self.validation_diagnostics),
+            graph_revision=new_rev,
+            revision_history=tuple(list(self.revision_history) + [history_entry]),
+        )
+
     def to_dict(self) -> dict[str, Any]:
         res = {
             "id": self.id,
@@ -397,6 +439,8 @@ class SemanticGoalGraph:
             "forbidden_inferences": list(self.forbidden_inferences),
             "clarification_triggers": list(self.clarification_triggers),
             "validation_diagnostics": list(self.validation_diagnostics),
+            "graph_revision": self.graph_revision,
+            "revision_history": [dict(item) for item in self.revision_history],
         }
         if self.outcome_contract is not None:
             from hunting.contracts.outcome import outcome_to_dict
@@ -487,6 +531,8 @@ class SemanticGoalGraph:
             clarification_triggers=[str(value) for value in data.get("clarification_triggers", [])],
             raw_llm_proposal=data.get("raw_llm_proposal"),
             validation_diagnostics=[str(value) for value in data.get("validation_diagnostics", [])],
+            graph_revision=str(data.get("graph_revision", "G0")),
+            revision_history=tuple(dict(x) for x in data.get("revision_history", [])),
         )
 
 
@@ -513,6 +559,8 @@ class PlanStep:
     # A downstream proof may only consume an incomplete upstream result when
     # the graph explicitly opts into that weaker epistemic contract.
     requires_complete_inputs: bool = True
+    dependency_operator: str = "AND"
+    gate_condition: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("id", "operation_id"):
@@ -545,9 +593,29 @@ class PlanStep:
         object.__setattr__(self, "constraint_metadata", metadata)
         if isinstance(self.alternative_operation_ids, list):
             object.__setattr__(self, "alternative_operation_ids", tuple(self.alternative_operation_ids))
+        op = str(getattr(self, "dependency_operator", "AND") or "AND").upper()
+        if op not in {"AND", "OR", "GATE"}:
+            op = "AND"
+        object.__setattr__(self, "dependency_operator", op)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "operation_id": self.operation_id, "input_bindings": dict(self.input_bindings), "output_bindings": dict(self.output_bindings), "advances_goal_ids": list(self.advances_goal_ids), "depends_on": list(self.depends_on), "expected_cost": self.expected_cost, "constraints": list(self.constraints), "constraint_retrieval_terms": [list(item) for item in self.constraint_retrieval_terms], "relation": self.relation, "constraint_metadata": [dict(item) for item in self.constraint_metadata], "alternative_operation_ids": list(self.alternative_operation_ids), "requires_complete_inputs": self.requires_complete_inputs}
+        return {
+            "id": self.id,
+            "operation_id": self.operation_id,
+            "input_bindings": dict(self.input_bindings),
+            "output_bindings": dict(self.output_bindings),
+            "advances_goal_ids": list(self.advances_goal_ids),
+            "depends_on": list(self.depends_on),
+            "expected_cost": self.expected_cost,
+            "constraints": list(self.constraints),
+            "constraint_retrieval_terms": [list(item) for item in self.constraint_retrieval_terms],
+            "relation": self.relation,
+            "constraint_metadata": [dict(item) for item in self.constraint_metadata],
+            "alternative_operation_ids": list(self.alternative_operation_ids),
+            "requires_complete_inputs": self.requires_complete_inputs,
+            "dependency_operator": self.dependency_operator,
+            "gate_condition": self.gate_condition,
+        }
 
 
 @dataclass
@@ -560,6 +628,7 @@ class LogicalPlan:
     unresolved_goal_ids: list[str] = field(default_factory=list)
     proof_methods: list[ProofMethod] = field(default_factory=list)
     selected_method_ids: dict[str, str] = field(default_factory=dict)
+    graph_revision: str = "G0"
 
     def __post_init__(self) -> None:
         self.id = _clean(self.id, "LogicalPlan.id")
@@ -582,6 +651,7 @@ class LogicalPlan:
             "unresolved_goal_ids": list(self.unresolved_goal_ids),
             "proof_methods": [method.to_dict() for method in self.proof_methods],
             "selected_method_ids": dict(self.selected_method_ids),
+            "graph_revision": self.graph_revision,
         }
 
 

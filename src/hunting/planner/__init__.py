@@ -5,6 +5,7 @@ from hunting.planner.adaptive import (
     compatible_operations,
 )
 from hunting.planner.cache import PlanCache
+from hunting.planner.gate_evaluator import GateEvaluationResult, GateEvaluator
 from hunting.planner.planner import CanonicalQueryPlanner
 from hunting.planner.semantic_executor import SemanticExecutionResult, SemanticPlanExecutor, StepExecution
 from hunting.planner.semantic_goal_planner import PlannerDiagnostic, SemanticGoalPlanner
@@ -28,4 +29,6 @@ __all__ = [
     "StepExecution",
     "SemanticExecutionResult",
     "SemanticPlanExecutor",
+    "GateEvaluationResult",
+    "GateEvaluator",
 ]
