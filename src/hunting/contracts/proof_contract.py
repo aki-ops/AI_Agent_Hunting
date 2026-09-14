@@ -62,6 +62,18 @@ class ProofContract:
     refutation_conditions: tuple[str, ...] = ()
     status: ProofContractStatus = ProofContractStatus.APPROVED
     description: str = ""
+    # v9 additions:
+    evaluator_id: str = "generic_observed_relation"
+    evaluator_version: str = "1.0"
+    subject_types: tuple[str, ...] = ()
+    object_types: tuple[str, ...] = ()
+    directional_role_bindings: tuple[tuple[str, str], ...] = ()
+    action_requirements: tuple[str, ...] = ()
+    state_requirements: tuple[str, ...] = ()
+    correlation_requirements: tuple[str, ...] = ()
+    constraint_evaluators: tuple[str, ...] = ()
+    negative_evidence_licensed: bool = False
+    scope_and_limitations: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "contract_id", _required(self.contract_id, "contract_id"))
@@ -76,6 +88,12 @@ class ProofContract:
             "required_state_roles",
             "artifact_identity_roles",
             "refutation_conditions",
+            "subject_types",
+            "object_types",
+            "action_requirements",
+            "state_requirements",
+            "correlation_requirements",
+            "constraint_evaluators",
         ):
             items = tuple(dict.fromkeys(str(x).strip().casefold() for x in getattr(self, name) if str(x).strip()))
             object.__setattr__(self, name, items)
@@ -166,6 +184,101 @@ class ProofContract:
             "refutation_conditions": list(self.refutation_conditions),
             "status": self.status.value,
             "description": self.description,
+            "evaluator_id": self.evaluator_id,
+            "evaluator_version": self.evaluator_version,
+            "subject_types": list(self.subject_types),
+            "object_types": list(self.object_types),
+            "directional_role_bindings": [list(item) for item in self.directional_role_bindings],
+            "action_requirements": list(self.action_requirements),
+            "state_requirements": list(self.state_requirements),
+            "correlation_requirements": list(self.correlation_requirements),
+            "constraint_evaluators": list(self.constraint_evaluators),
+            "negative_evidence_licensed": self.negative_evidence_licensed,
+            "scope_and_limitations": self.scope_and_limitations,
+        }
+
+
+@dataclass(frozen=True)
+class ProofResult:
+    """Canonical outcome of deterministic proof evaluation (v9)."""
+
+    contract_id: str | None = None
+    contract_version: str | None = None
+    evaluator_id: str = "default"
+    evaluator_version: str = "1.0"
+    verified: bool = False
+    verdict: str = "UNPROVEN"  # "PROVEN", "UNPROVEN", "REFUTED", "PROOF_GAP", "RETRIEVAL_ONLY"
+    reason_codes: tuple[str, ...] = ()
+    subject_binding: str | None = None
+    object_binding: str | None = None
+    bindings: tuple[tuple[str, str], ...] = ()
+    satisfied_obligations: tuple[str, ...] = ()
+    missing_obligations: tuple[str, ...] = ()
+    citations: tuple[str, ...] = ()
+    cited_fields: tuple[tuple[str, str], ...] = ()
+    completeness_satisfied: bool = False
+    coverage_satisfied: bool = False
+    limitations: tuple[str, ...] = ()
+    diagnostic: str = ""
+
+    def __post_init__(self) -> None:
+        if isinstance(self.bindings, dict):
+            object.__setattr__(self, "bindings", tuple((str(k), str(v)) for k, v in self.bindings.items()))
+        elif isinstance(self.bindings, (list, set)):
+            object.__setattr__(self, "bindings", tuple(self.bindings))
+        if isinstance(self.cited_fields, dict):
+            object.__setattr__(self, "cited_fields", tuple((str(k), str(v)) for k, v in self.cited_fields.items()))
+        elif isinstance(self.cited_fields, (list, set)):
+            object.__setattr__(self, "cited_fields", tuple(self.cited_fields))
+        for name in (
+            "reason_codes",
+            "satisfied_obligations",
+            "missing_obligations",
+            "citations",
+            "limitations",
+        ):
+            val = getattr(self, name)
+            if not isinstance(val, tuple):
+                object.__setattr__(self, name, tuple(val))
+
+    @property
+    def status(self) -> str:
+        """Status string compatible with legacy and v9 proof states."""
+        return "VERIFIED" if self.verified else self.verdict
+
+    @property
+    def is_proven(self) -> bool:
+        return self.verified
+
+    @property
+    def bindings_dict(self) -> dict[str, str]:
+        return dict(self.bindings)
+
+    @property
+    def cited_fields_dict(self) -> dict[str, str]:
+        return dict(self.cited_fields)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "contract_id": self.contract_id,
+            "contract_version": self.contract_version,
+            "evaluator_id": self.evaluator_id,
+            "evaluator_version": self.evaluator_version,
+            "verified": self.verified,
+            "verdict": self.verdict,
+            "status": self.status,
+            "reason_codes": list(self.reason_codes),
+            "subject_binding": self.subject_binding,
+            "object_binding": self.object_binding,
+            "bindings": dict(self.bindings),
+            "satisfied_obligations": list(self.satisfied_obligations),
+            "missing_obligations": list(self.missing_obligations),
+            "citations": list(self.citations),
+            "cited_fields": dict(self.cited_fields),
+            "completeness_satisfied": self.completeness_satisfied,
+            "coverage_satisfied": self.coverage_satisfied,
+            "limitations": list(self.limitations),
+            "diagnostic": self.diagnostic,
         }
 
 
@@ -173,4 +286,7 @@ __all__ = [
     "ProofCapabilityLevel",
     "ProofContractStatus",
     "ProofContract",
+    "ProofResult",
+    "ROLE_INCOMPATIBLE_FIELDS",
 ]
+

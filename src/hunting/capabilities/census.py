@@ -317,7 +317,14 @@ class ProviderCensusService:
                 reason="provider is unreachable",
                 status=catalog.status,
             )
-        if hints and catalog.provider_id not in hints:
+        scope_ids = set(catalog.partitions.keys()) if isinstance(catalog.partitions, dict) else set()
+        matches_hints = (
+            not hints
+            or catalog.provider_id in hints
+            or bool(hints & scope_ids)
+            or ("cdb" in hints and "cdb" in catalog.provider_id)
+        )
+        if not matches_hints:
             return ProviderSelectionAudit(
                 provider_id=catalog.provider_id,
                 selected=False,
@@ -345,7 +352,14 @@ class ProviderCensusService:
                 status=catalog.status,
                 claim_id=claim.id,
             )
-        if hints and catalog.provider_id not in hints:
+        scope_ids = set(catalog.partitions.keys()) if isinstance(catalog.partitions, dict) else set()
+        matches_hints = (
+            not hints
+            or catalog.provider_id in hints
+            or bool(hints & scope_ids)
+            or ("cdb" in hints and "cdb" in catalog.provider_id)
+        )
+        if not matches_hints:
             return ProviderSelectionAudit(
                 provider_id=catalog.provider_id,
                 selected=False,

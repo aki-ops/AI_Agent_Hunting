@@ -141,6 +141,16 @@ class ProofContractRegistry:
                 status=ProofContractStatus.APPROVED,
                 description="Proves execution of a binary/script image on a client endpoint.",
             ),
+            # 6b. Process spawned proof
+            ProofContract(
+                contract_id="proof-process-spawned-v1",
+                version="1.0.0",
+                relation="spawned",
+                required_entity_roles=("endpoint",),
+                required_value_roles=("process",),
+                status=ProofContractStatus.APPROVED,
+                description="Proves process spawn/creation on an endpoint.",
+            ),
             # 7. Tor Browser install/run proof
             ProofContract(
                 contract_id="proof-software-install-v1",
@@ -150,6 +160,36 @@ class ProofContractRegistry:
                 required_value_roles=("endpoint",),
                 status=ProofContractStatus.APPROVED,
                 description="Proves software package or binary artifact presence on an endpoint.",
+            ),
+            # 8. File wrote proof
+            ProofContract(
+                contract_id="proof-file-wrote-v1",
+                version="1.0.0",
+                relation="wrote",
+                required_entity_roles=("endpoint",),
+                required_value_roles=("file",),
+                status=ProofContractStatus.APPROVED,
+                description="Proves process or endpoint wrote to a file.",
+            ),
+            # 9. File modified proof
+            ProofContract(
+                contract_id="proof-file-modified-v1",
+                version="1.0.0",
+                relation="modified",
+                required_entity_roles=("endpoint",),
+                required_value_roles=("file",),
+                status=ProofContractStatus.APPROVED,
+                description="Proves file modification on an endpoint.",
+            ),
+            # 10. Network connected proof
+            ProofContract(
+                contract_id="proof-network-connected-v1",
+                version="1.0.0",
+                relation="connected_to",
+                required_entity_roles=("endpoint",),
+                required_value_roles=("ip",),
+                status=ProofContractStatus.APPROVED,
+                description="Proves outbound or inbound network connection to an IP address.",
             ),
         ]
         for c in canonical:

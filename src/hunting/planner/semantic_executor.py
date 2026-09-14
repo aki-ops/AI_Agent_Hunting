@@ -566,7 +566,7 @@ class SemanticPlanExecutor:
                         # one broad process result into hundreds of PID
                         # candidates, then launch downstream work for all of
                         # them.  Preserve the rows for audit, but require an
-                        var_cardinality = (target_cardinality or {}).get(variable_id, "singular").casefold()
+                        var_cardinality = (target_cardinality or {}).get(variable_id, "plural").casefold()
                         is_ambiguous_binding = (
                             (var_cardinality == "singular" and len(deduped) > 1)
                             or (len(deduped) > max_bindings)

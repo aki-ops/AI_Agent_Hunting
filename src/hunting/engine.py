@@ -93,6 +93,7 @@ from hunting.controller.recovery_controller import RecoveryController
 from hunting.evidence.adjudicator import InvestigationAdjudicator
 from hunting.evidence.evaluator import EvidenceEvaluator
 from hunting.evidence.grouping import EvidenceGroupBuilder
+from hunting.evidence.proof_engine import ProofEngine
 from hunting.evidence.relation_verifier import RelationVerifier
 from hunting.m1_ledger.ledger import ObservationLedger
 from hunting.m5_adapter.allowlist import validate_time_window_format
@@ -373,15 +374,34 @@ class HypothesisHuntEngine:
             ).advances_goal_ids]
             for goal_id in (goal.id for goal in goal_graph.relations)
         }
+        proof_engine = ProofEngine()
+        goal_bindings: dict[str, str] = {
+            v.id: str(v.value)
+            for v in goal_graph.variables
+            if getattr(v, "value", None) not in (None, "", "?")
+        }
+        for k, v in getattr(execution, "variables", {}).items():
+            if v:
+                goal_bindings[k] = v[0] if isinstance(v, list) else str(v)
+
         for goal in goal_graph.relations:
             executions = executed_by_goal.get(goal.id, [])
-            base_relation_proven = any(
-                item.result.executed_ok and bool(item.result.rows)
-                and item.result.complete and bool(item.outputs)
-                and getattr(operation_by_id.get(item.operation_id), "proof_mode", "retrieval_only")
-                == "relation_observable"
-                for item in executions
-            )
+            proof_results = []
+            for item in executions:
+                step_bindings = dict(goal_bindings)
+                for param, vals in getattr(item, "inputs", {}).items():
+                    if vals:
+                        step_bindings[param] = vals[0] if isinstance(vals, list) else str(vals)
+                proof_results.append(
+                    proof_engine.evaluate(
+                        goal=goal,
+                        operation=operation_by_id.get(item.operation_id),
+                        query_result=item.result,
+                        observations=list(getattr(state, "observations", []) or []),
+                        bindings=step_bindings,
+                    )
+                )
+            relation_proven = any(pr.verified for pr in proof_results)
             target = next(variable for variable in goal_graph.variables if variable.id == goal.object)
             # Subject restrictions are obligations of the step that grounded
             # the subject.  They are not silently re-applied to a downstream
@@ -404,14 +424,12 @@ class HypothesisHuntEngine:
                 restriction for restriction in required_restrictions
                 if restriction.split("=", 1)[0].split(":", 1)[0].strip().casefold() not in proof_keys
             ]
-            # A provider may retrieve a candidate with a searchable hint, but
-            # only an explicitly proof-capable operation can satisfy the
-            # corresponding restriction.
-            supported = base_relation_proven and not unverified_restrictions
+            # Only ProofEngine verification satisfies proof obligations.
+            supported = relation_proven and not unverified_restrictions
             partial = any(item.result.executed_ok and not item.result.complete for item in executions)
             status = (
                 "SUPPORTED" if supported
-                else "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED" if base_relation_proven and required_restrictions
+                else "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED" if relation_proven and required_restrictions
                 else "PARTIAL" if partial
                 else "INCONCLUSIVE"
             )
@@ -421,7 +439,8 @@ class HypothesisHuntEngine:
                 "status": status,
                 "query_ids": [item.query_id for item in executions],
                 "proof_method_id": getattr(logical_plan, "selected_method_ids", {}).get(goal.id),
-                "unverified_restrictions": unverified_restrictions if base_relation_proven else [],
+                "unverified_restrictions": unverified_restrictions if relation_proven else [],
+                "proof_results": [pr.to_dict() for pr in proof_results],
             })
         self.controller.set_semantic_analysis(state, {
             # This is an audit of the structured compiler exchange, not hidden
@@ -1714,6 +1733,7 @@ class HypothesisHuntEngine:
 
         if (
             native_semantic_graph
+            and not legacy_explicit_adapter
             and state.semantic_logical_plan is not None
             and state.semantic_logical_plan.unresolved_goal_ids
             and not state.semantic_logical_plan.steps
@@ -1733,7 +1753,7 @@ class HypothesisHuntEngine:
         # the request from answer-type heuristics and could add unrelated
         # queries.  Discovery remains the compatibility path for requests
         # compiled without a ClaimGraph.
-        if not state.stopping_decision and not use_claim_graph and not native_semantic_graph:
+        if not state.stopping_decision and not use_claim_graph and (not native_semantic_graph or legacy_explicit_adapter):
             self._run_semantic_discovery(
                 state=state,
                 active_adapter=active_adapter,
