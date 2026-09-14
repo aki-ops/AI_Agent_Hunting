@@ -483,6 +483,7 @@ class HuntState:
     search_envelope: Any | None = None
     deferred_actions: list[dict[str, Any]] = field(default_factory=list)
     coverage_gaps: list[dict[str, Any]] = field(default_factory=list)
+    residuals: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -628,7 +628,7 @@ def build_final_hunt_account(
     }
 
     # Residuals
-    residual_list = list(residuals) if residuals is not None else []
+    residual_list = list(residuals) if residuals is not None else list(getattr(state, "residuals", []) or [])
     if not supporting and not contradicting:
         residual_list.append("No definitive adversary presence or refutation established in searched frame.")
     if cov.scopes_never_queried:

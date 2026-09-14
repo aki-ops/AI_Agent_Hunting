@@ -172,6 +172,8 @@ class HardConstraints:
     def with_verified_binding(self, role: str, value: str) -> HardConstraints:
         """Return a new HardConstraints adding a verified binding monotonically."""
         current = dict(self.verified_bindings)
+        if role in current and current[role] != value:
+            raise ValueError(f"Cannot override verified binding for role '{role}' from '{current[role]}' to '{value}'")
         current[role] = value
         return HardConstraints(
             pinned_entities=self.pinned_entities | {value},

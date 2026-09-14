@@ -31,6 +31,7 @@ from hunting.capabilities.runtime_materializer import materialize_runtime_operat
 from hunting.capabilities.source_mapping_validator import SourceMappingValidator
 from hunting.capabilities.source_profiler import SourceProfiler
 from hunting.compiler.compiler import KnowledgeBehaviorCompiler
+from hunting.contracts.capabilities import CapabilityGraph
 from hunting.contracts.case_graph import (
     EvidenceSubgraph,
     RelationStatus,
@@ -108,7 +109,7 @@ from hunting.planner.semantic_goal_planner import SemanticGoalPlanner
 from hunting.planner.semantic_query_compiler import query_plan_from_step
 from hunting.planner.semantic_readiness import assess_semantic_readiness
 from hunting.reporter.builder import build_final_hunt_account
-from hunting.reporter.renderer import render_analyst_report
+from hunting.reporter.renderer import render_analyst_report, render_final_hunt_account
 from hunting.validator.investigation_validator import InvestigationValidator
 
 logger = logging.getLogger(__name__)
@@ -150,7 +151,7 @@ class HypothesisHuntEngine:
         self.compiler = compiler if compiler is not None else KnowledgeBehaviorCompiler()
         self.registry = registry if registry is not None else build_default_capability_registry()
         self.planner = planner if planner is not None else CanonicalQueryPlanner(self.registry)
-        self.cdb_adapter = cdb_adapter if cdb_adapter is not None else CdbAdapter()
+        self.cdb_adapter = cdb_adapter
         self.configured_adapters = tuple(configured_adapters or ())
         self.census_service = census_service if census_service is not None else ProviderCensusService()
         self.budget_ledger = budget_ledger if budget_ledger is not None else HuntBudgetLedger()
@@ -1101,10 +1102,10 @@ class HypothesisHuntEngine:
             configured_adapters = [adapter]
         elif self.configured_adapters:
             configured_adapters = list(self.configured_adapters)
-        else:
+        elif self.cdb_adapter is not None:
             configured_adapters = [self.cdb_adapter]
-        if not configured_adapters:
-            raise ValueError("At least one configured provider adapter is required")
+        else:
+            configured_adapters = []
 
         ledger = ObservationLedger()
         step_trace = StepTrace(request_id=request.id)
@@ -1112,6 +1113,35 @@ class HypothesisHuntEngine:
             HuntStepName.STEP_A_FREEZE_REQUEST,
             inputs_summary={"request_id": request.id, "content": request.content},
         )
+
+        if not configured_adapters:
+            # Acceptance Gate I: Provider absence produces explicit terminal state without switching to an unrelated backend.
+            objective, hypotheses, requirements = self.compiler.compile(request)
+            state = HuntState(
+                objective=objective,
+                hypotheses=hypotheses,
+                requirements=requirements,
+                stopping_decision=StoppingDecision.STOP_UNSUPPORTED,
+                step_trace=step_trace,
+                residuals=["Provider absence: No telemetry provider configured."],
+            )
+            state.capability_graph = CapabilityGraph(
+                id=f"capability-graph:{request.id}",
+                census_version="runtime.census.v1",
+                providers=[],
+                operations=[],
+            )
+            account = build_final_hunt_account(state)
+            report = render_final_hunt_account(account)
+            hunt_id = account.request_id or f"hunt-{int(datetime.now(timezone.utc).timestamp())}"
+            persist_hunt_artifacts(Path("artifacts") / hunt_id, request, state, ledger, account, report)
+            return HuntExecutionResult(
+                account=account,
+                report=report,
+                state=state,
+                ledger=ledger,
+                budget=self.budget_ledger,
+            )
 
         # 1. Capture provider capabilities before semantic planning. The
         # census is retained for later relation-scoped retrieval; the semantic
@@ -1218,6 +1248,7 @@ class HypothesisHuntEngine:
             preplan_capability_graph,
             claim_graph=claim_graph,
             provider_hints=request.provider_hints,
+            semantic_goal_graph=getattr(state, "semantic_goal_graph", None),
         )
         state.capability_graph = capability_graph
 
@@ -1236,10 +1267,84 @@ class HypothesisHuntEngine:
             for candidate, catalog in zip(configured_adapters, capability_graph.providers)
             if catalog.provider_id in selected_provider_ids
         ]
-        active_adapter = selected_adapters[0] if selected_adapters else configured_adapters[0]
-        active_index = configured_adapters.index(active_adapter)
-        active_catalog = capability_graph.providers[active_index]
-        active_provider_id = active_catalog.provider_id
+        legacy_explicit_adapter = bool(
+            explicit_adapter
+            and not selected_adapters
+            and configured_adapters
+            and capability_graph.providers
+            and capability_graph.providers[0].status == "ONLINE"
+            and capability_graph.providers[0].details.get("descriptor_status") == "LEGACY_UNTYPED"
+        )
+        if not selected_adapters:
+            if legacy_explicit_adapter:
+                active_adapter = configured_adapters[0]
+                active_index = 0
+                active_catalog = capability_graph.providers[0]
+                active_provider_id = active_catalog.provider_id
+            else:
+                # Acceptance Gate I: Do not select configured_adapters[0] when no eligible provider route exists.
+                active_adapter = None
+                active_catalog = None
+                active_provider_id = ""
+                online_providers = [
+                    provider
+                    for provider in capability_graph.providers
+                    if provider.status == "ONLINE"
+                ]
+                if online_providers:
+                    stop_decision = StoppingDecision.STOP_UNSUPPORTED
+                    reason = "Unsupported capability: No eligible provider route exists for the required goals among online providers."
+                else:
+                    stop_decision = StoppingDecision.STOP_UNREACHABLE
+                    reason = "Backend degradation: All configured providers are offline or unreachable."
+                self.controller.set_stopping_decision(state, stop_decision)
+                state.residuals.append(reason)
+        elif len(selected_adapters) > 1:
+            # Check for disambiguation via provider_hints
+            hints = {str(h).strip() for h in (request.provider_hints or ()) if str(h).strip()}
+            if hints:
+                matching_hints = [
+                    cand for cand, cat in zip(configured_adapters, capability_graph.providers)
+                    if cand in selected_adapters and (cat.provider_id in hints or any(h in cat.provider_id for h in hints))
+                ]
+                if matching_hints:
+                    selected_adapters = matching_hints
+
+            # Check for disambiguation via source_priority_order
+            if len(selected_adapters) > 1 and getattr(state, "search_envelope", None) and state.search_envelope.retrieval_hints.source_priority_order:
+                prio_order = state.search_envelope.retrieval_hints.source_priority_order
+                prio_adapters = sorted(
+                    selected_adapters,
+                    key=lambda cand: prio_order.index(capability_graph.providers[configured_adapters.index(cand)].provider_id)
+                    if capability_graph.providers[configured_adapters.index(cand)].provider_id in prio_order
+                    else 9999,
+                )
+                cand0_id = capability_graph.providers[configured_adapters.index(prio_adapters[0])].provider_id
+                cand1_id = capability_graph.providers[configured_adapters.index(prio_adapters[1])].provider_id
+                prio0 = prio_order.index(cand0_id) if cand0_id in prio_order else 9999
+                prio1 = prio_order.index(cand1_id) if cand1_id in prio_order else 9999
+                if prio0 < prio1:
+                    selected_adapters = [prio_adapters[0]]
+
+            if len(selected_adapters) > 1:
+                ambig_ids = [capability_graph.providers[configured_adapters.index(c)].provider_id for c in selected_adapters]
+                stop_decision = StoppingDecision.STOP_NEEDS_CLARIFICATION
+                reason = f"Provider ambiguity: Multiple eligible provider routes detected ({ambig_ids}) without disambiguating hint or priority order."
+                self.controller.set_stopping_decision(state, stop_decision)
+                state.residuals.append(reason)
+                active_adapter = None
+                active_catalog = None
+                active_provider_id = ""
+            else:
+                active_adapter = selected_adapters[0]
+                active_index = configured_adapters.index(active_adapter)
+                active_catalog = capability_graph.providers[active_index]
+                active_provider_id = active_catalog.provider_id
+        else:
+            active_adapter = selected_adapters[0]
+            active_index = configured_adapters.index(active_adapter)
+            active_catalog = capability_graph.providers[active_index]
+            active_provider_id = active_catalog.provider_id
         if active_catalog is not None:
             state.capability_catalog = active_catalog
             graph = getattr(state, "semantic_goal_graph", None)
@@ -1740,19 +1845,12 @@ class HypothesisHuntEngine:
         # provider lists, but preserve direct-adapter compatibility so unit
         # tests can exercise execution and evidence logic independently of a
         # provider catalog. This path is never used for provider auto-selection.
-        legacy_explicit_adapter = bool(
-            explicit_adapter
-            and not selected_adapters
-            and active_catalog is not None
-            and active_catalog.status == "ONLINE"
-            and active_catalog.details.get("descriptor_status") == "LEGACY_UNTYPED"
-        )
         use_claim_graph = bool(
             claim_graph is not None
             and not legacy_explicit_adapter
             and not bool(getattr(claim_graph, "metadata", {}).get("legacy_fixture_projection"))
         )
-        if claim_graph is not None and not selected_adapters and not legacy_explicit_adapter:
+        if not state.stopping_decision and claim_graph is not None and not selected_adapters and not legacy_explicit_adapter:
             online_providers = [
                 provider
                 for provider in capability_graph.providers
@@ -1763,7 +1861,7 @@ class HypothesisHuntEngine:
                 unreachable=not online_providers,
             )
             self.controller.set_stopping_decision(state, stop_decision)
-        elif active_catalog is not None and active_catalog.status != "ONLINE":
+        elif not state.stopping_decision and active_catalog is not None and active_catalog.status != "ONLINE":
             stop_decision = self.recovery_controller.evaluate_stop(unreachable=True)
             self.controller.set_stopping_decision(state, stop_decision)
 
@@ -1790,12 +1888,12 @@ class HypothesisHuntEngine:
             self.controller.set_stopping_decision(state, stop_decision)
 
         # 3. Register Scope and Cells
-        scope = getattr(active_adapter, "scope", None)
+        scope = getattr(active_adapter, "scope", None) if active_adapter is not None else None
         if scope is None:
             scope = ProviderScope(
-                provider_id="cdb_sqlite",
-                native_partition={"table": "events"},
-                scope_id="cdb_native_scope",
+                provider_id=active_provider_id or "unassigned",
+                native_partition={"partition": "unassigned"},
+                scope_id="unassigned_scope",
             )
 
         if step_callback:
@@ -3085,7 +3183,7 @@ class HypothesisHuntEngine:
                         exec_kwargs["native_query"] = sweep_nqp.native_query
 
                 qr = active_adapter.execute_query(**exec_kwargs)
-                if not qr.rows and sweep_op != "cdb_scope_scan":
+                if not qr.rows and sweep_op != "cdb_scope_scan" and getattr(scope, "provider_id", "") == "cdb":
                     qr = active_adapter.execute_query(
                         operation_id="cdb_scope_scan",
                         entity=AnyEntity(),

@@ -54,6 +54,7 @@ class ProviderCensusService:
         capability_graph: CapabilityGraph,
         claim_graph: ClaimGraph | None,
         provider_hints: Iterable[str] = (),
+        semantic_goal_graph: Any | None = None,
     ) -> CapabilityGraph:
         """Apply claim-specific selection to an already captured census.
 
@@ -68,7 +69,10 @@ class ProviderCensusService:
         claims = claim_graph.claims if claim_graph is not None else []
         for catalog in capability_graph.providers:
             if not claims:
-                audits.append(self._audit_without_claim(catalog, hints))
+                if semantic_goal_graph is not None and getattr(semantic_goal_graph, "relations", None):
+                    audits.append(self._audit_goal_graph(catalog, semantic_goal_graph, hints))
+                else:
+                    audits.append(self._audit_without_claim(catalog, hints))
                 continue
             for claim in claims:
                 audits.append(self._audit_claim(catalog, claim, hints))
@@ -335,6 +339,68 @@ class ProviderCensusService:
             provider_id=catalog.provider_id,
             selected=True,
             reason="provider is online; no ClaimGraph was available for relevance filtering",
+            status=catalog.status,
+        )
+
+    def _audit_goal_graph(
+        self,
+        catalog: ProviderCapabilityCatalog,
+        goal_graph: Any,
+        hints: set[str],
+    ) -> ProviderSelectionAudit:
+        if catalog.status != "ONLINE":
+            return ProviderSelectionAudit(
+                provider_id=catalog.provider_id,
+                selected=False,
+                reason="provider is unreachable",
+                status=catalog.status,
+            )
+        scope_ids = set(catalog.partitions.keys()) if isinstance(catalog.partitions, dict) else set()
+        matches_hints = (
+            not hints
+            or catalog.provider_id in hints
+            or bool(hints & scope_ids)
+            or ("cdb" in hints and "cdb" in catalog.provider_id)
+        )
+        if not matches_hints:
+            return ProviderSelectionAudit(
+                provider_id=catalog.provider_id,
+                selected=False,
+                reason="provider excluded by request provider hints",
+                status="UNSUPPORTED",
+            )
+
+        target_relations = {
+            rel.relation for rel in getattr(goal_graph, "relations", ())
+            if getattr(rel, "required", True)
+        }
+        if not target_relations:
+            target_relations = {
+                rel.relation for rel in getattr(goal_graph, "relations", ())
+            }
+
+        supports = False
+        for op in catalog.operations:
+            op_rels = set(getattr(op, "guaranteed_relations", ()) or ())
+            op_facts = set(getattr(op, "output_fact_kinds", ()) or ())
+            op_intents = set(getattr(op, "semantic_intents", ()) or ())
+            all_caps = op_rels | op_facts | op_intents | {op.id}
+            if any(r in all_caps or any(r in c for c in all_caps) for r in target_relations):
+                supports = True
+                break
+
+        if not supports and catalog.details.get("descriptor_status") != "LEGACY_UNTYPED":
+            return ProviderSelectionAudit(
+                provider_id=catalog.provider_id,
+                selected=False,
+                reason="provider does not support any required relation in goal graph",
+                status="UNSUPPORTED",
+            )
+
+        return ProviderSelectionAudit(
+            provider_id=catalog.provider_id,
+            selected=True,
+            reason="provider supports required relation in goal graph",
             status=catalog.status,
         )
 
