@@ -14,7 +14,7 @@ import hashlib
 import json
 import logging
 import re
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 from hunting.compiler.knowledge_base import build_default_knowledge_base
@@ -47,7 +47,16 @@ from hunting.contracts.hunt import (
     HypothesisStatus,
     RequirementStatus,
 )
-from hunting.contracts.semantic_graph import SemanticGoalGraph
+from hunting.contracts.outcome import (
+    HypothesisVerdictContract,
+    OutcomeContract,
+)
+from hunting.contracts.semantic_graph import (
+    SemanticConstraint,
+    SemanticGoalGraph,
+    SemanticRelationGoal,
+    SemanticVariable,
+)
 from hunting.contracts.semantic_intent import (
     RequestedObject,
     SemanticEvidenceRequirement,
@@ -60,6 +69,20 @@ from hunting.validator.investigation_validator import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SemanticProposal:
+    """Compiled, provider-neutral semantic proposal containing goal graph and outcome contract."""
+
+    goal_graph: SemanticGoalGraph
+    outcome_contract: OutcomeContract
+    objective: HuntObjective
+    hypotheses: list[Hypothesis] = field(default_factory=list)
+    requirements: list[EvidenceRequirementV4] = field(default_factory=list)
+    diagnostics: list[str] = field(default_factory=list)
+    raw_proposal: dict[str, Any] | None = None
+
 
 # Common prompt injection signatures targeting security agents
 INJECTION_PATTERNS = [
@@ -398,10 +421,9 @@ def _mark_request_grounded_values(
         restriction_values = {str(item.value).casefold() for item in variable.constraints if item.value is not None}
         if variable.entity_type.casefold() in {"host", "endpoint", "computer"}:
             is_device_qualifier = candidate in DEVICE_QUALIFIER_TERMS or any(
-                term in candidate for term in ("macbook", "laptop", "desktop", "workstation", "phone", "tablet")
+                term in candidate for term in DEVICE_QUALIFIER_TERMS
             )
             if is_device_qualifier:
-                # MacBook is a device qualifier, never a hostname seed
                 rewritten.append(replace(variable, value=None, value_origin="llm_proposal"))
                 continue
 
@@ -698,8 +720,8 @@ def validate_compiler_llm_output(data: dict | str) -> tuple[list[Hypothesis], li
     return hypotheses, requirements
 
 
-class KnowledgeBehaviorCompiler:
-    """Canonical compiler transforming threat requests into executable hypotheses."""
+class RequestAdapter:
+    """Canonical request adapter transforming threat requests into validated SemanticProposal."""
 
     def __init__(
         self,
@@ -720,6 +742,27 @@ class KnowledgeBehaviorCompiler:
         # Auditable, bounded trace of the semantic compilation boundary.  It
         # is persisted as an artifact; it never becomes execution authority.
         self.last_compile_trace: dict[str, Any] = {}
+
+    def propose(
+        self,
+        request: HuntRequest,
+        time_window: str | None = None,
+        capability_context: dict[str, Any] | None = None,
+    ) -> SemanticProposal:
+        """Compile a HuntRequest into a validated SemanticProposal."""
+        objective, hypotheses, requirements = self.compile(request, time_window, capability_context)
+        contract = objective.outcome_contract
+        if contract is None and objective.semantic_goal_graph is not None:
+            contract = getattr(objective.semantic_goal_graph, "outcome_contract", None)
+        return SemanticProposal(
+            goal_graph=objective.semantic_goal_graph,
+            outcome_contract=contract,
+            objective=objective,
+            hypotheses=hypotheses,
+            requirements=requirements,
+            diagnostics=list(objective.validation_diagnostics),
+            raw_proposal=objective.llm_raw_proposal,
+        )
 
     def compile(
         self,
@@ -821,6 +864,70 @@ class KnowledgeBehaviorCompiler:
             )
 
             inv_case = self._build_cve_case(cve_id, record, request, [hypo_exploited, hypo_benign], [req_exploit, req_post])
+
+            outcome_contract = HypothesisVerdictContract(
+                support_obligations=(req_exploit.id, req_post.id),
+                refutation_obligations=(req_baseline.id,),
+                falsification_conditions=(
+                    req_exploit.falsification_condition
+                    or f"telemetry confirms zero exploitation indicators for {cve_id}",
+                ),
+                scope="; ".join(request.provider_hints or ["cdb_native_scope"]),
+            )
+            var_endpoint = SemanticVariable(
+                id="var_endpoint",
+                entity_type="host",
+                value=None,
+                value_origin="request",
+                constraints=(),
+            )
+            exploit_ind = (
+                "python" if any("python" in ind.lower() for ind in getattr(record.phases, "exploitation_indicators", []))
+                else None
+            )
+            var_proc = SemanticVariable(
+                id="var_exploit_proc",
+                entity_type="process",
+                value=exploit_ind,
+                value_origin="request",
+                constraints=tuple([SemanticConstraint(key="cmdline", value=exploit_ind, operator="contains")]) if exploit_ind else (),
+            )
+            var_file = SemanticVariable(
+                id="var_webshell_file",
+                entity_type="file",
+                value=None,
+                value_origin="request",
+                constraints=(),
+            )
+            rel_proc = SemanticRelationGoal(
+                id=req_exploit.id,
+                subject="var_endpoint",
+                relation="spawned",
+                object="var_exploit_proc",
+                required=True,
+                description=req_exploit.description,
+                atomic_obligation=f"Detect anomalous process execution for {cve_id}",
+            )
+            rel_file = SemanticRelationGoal(
+                id=req_post.id,
+                subject="var_exploit_proc",
+                relation="wrote",
+                object="var_webshell_file",
+                required=True,
+                description=req_post.description,
+                atomic_obligation=f"Detect artifact write for {cve_id}",
+                dependencies=(rel_proc.id,),
+                dependency_operator="AND",
+            )
+            goal_graph = SemanticGoalGraph(
+                id=f"goal-graph-{request.id}",
+                request_id=request.id,
+                objective=f"Evaluate exploitation of {cve_id}",
+                variables=[var_endpoint, var_proc, var_file],
+                relations=[rel_proc, rel_file],
+                outcome_contract=outcome_contract,
+            )
+
             objective = HuntObjective(
                 request_id=request.id,
                 target_hypotheses=[hypo_exploited.id, hypo_benign.id],
@@ -830,6 +937,9 @@ class KnowledgeBehaviorCompiler:
                 statement=request.content,
                 case=inv_case,
                 case_graph=inv_case.graph,
+                semantic_goal_graph=goal_graph,
+                validated_graph=goal_graph,
+                outcome_contract=outcome_contract,
             )
 
             return objective, [hypo_exploited, hypo_benign], [req_exploit, req_post, req_baseline]
@@ -1013,6 +1123,44 @@ class KnowledgeBehaviorCompiler:
 
         requirements = template.requirements if template else []
 
+        outcome_contract = HypothesisVerdictContract(
+            support_obligations=tuple(r.id for r in requirements) if requirements else (f"req-{request.id}-act",),
+            falsification_conditions=(f"telemetry confirms zero behavior matching {request.content}",),
+            scope="; ".join(request.provider_hints or ["cdb_native_scope"]),
+        )
+        var_endpoint = SemanticVariable(id="var_endpoint", entity_type="host", value=None)
+        var_activity = SemanticVariable(id="var_activity", entity_type="event", value=None)
+        rel_goals = [
+            SemanticRelationGoal(
+                id=r.id,
+                subject="var_endpoint",
+                relation=r.evidence_type or "executed",
+                object="var_activity",
+                required=True,
+                description=r.description,
+            )
+            for r in requirements
+        ]
+        if not rel_goals:
+            rel_goals = [
+                SemanticRelationGoal(
+                    id=f"goal-{request.id}-act",
+                    subject="var_endpoint",
+                    relation="executed",
+                    object="var_activity",
+                    required=True,
+                    description=f"Behavioral event matching {request.content}",
+                )
+            ]
+        goal_graph = SemanticGoalGraph(
+            id=f"goal-graph-{request.id}",
+            request_id=request.id,
+            objective=f"Evaluate behavior: {request.content}",
+            variables=[var_endpoint, var_activity],
+            relations=rel_goals,
+            outcome_contract=outcome_contract,
+        )
+
         inv_case = self._build_ttp_case(request, [hypo_attack, hypo_benign], requirements)
         objective = HuntObjective(
             request_id=request.id,
@@ -1023,6 +1171,9 @@ class KnowledgeBehaviorCompiler:
             statement=request.content,
             case=inv_case,
             case_graph=inv_case.graph,
+            semantic_goal_graph=goal_graph,
+            validated_graph=goal_graph,
+            outcome_contract=outcome_contract,
         )
 
         return objective, [hypo_attack, hypo_benign], requirements
@@ -1084,13 +1235,13 @@ class KnowledgeBehaviorCompiler:
             "field assignments, index names, pipes, or event syntax. Do not invent aliases when the request does not justify them.\n"
             "Use required=false only for a genuinely optional corroborating relation. A required downstream relation may consume only values produced by "
             "a declared preceding relation or an initial request value.\n"
-            "Decompose a compound natural-language answer into atomic, observable relations. "
-            "For example, a request for a personal email is not one provider relation: "
-            "represent the identity/value relation using the canonical capability relation "
-            "associated_with or has_attribute when available, and put 'personal' in a qualifier. "
-            "Never invent a provider relation such as has_personal_email_address when the capability "
-            "summary does not declare it. If no declared relation can express the request, preserve "
-            "the uncertainty so the planner can stop as unsupported rather than broad-scan.\n\n"
+            "Decompose compound natural-language requirements into atomic, observable relations. "
+            "Represent the core entity relationship using canonical capability relations "
+            "(such as associated_with or has_attribute) when available, and place descriptive modifiers, "
+            "categories, or roles into qualifiers or variable constraints. "
+            "Never invent ad-hoc provider relations when the capability summary does not declare them. "
+            "If no declared relation can express the request, preserve the uncertainty so the planner "
+            "can stop as unsupported rather than broad-scan.\n\n"
             f"REQUEST ID: {request.id}\n"
             f"REQUEST CONTENT: {request.content}\n\n"
             "The compiler is provider-neutral. Do not infer or select telemetry sources, fields, "
@@ -1099,7 +1250,7 @@ class KnowledgeBehaviorCompiler:
             "In addition, emit AnswerContract structures defining the acceptance condition, expected value type, \n"
             "and citation requirement for each answer slot.\n"
             "Represent relations with atomic obligations and exact request provenance spans. Use AND/OR/GATE dependency operators.\n"
-            "Device labels such as 'MacBook' are qualifiers, never hostnames. Named entities such as 'Mallory' must be preserved verbatim.\n\n"
+            "Hardware form-factors, brand names, and environmental descriptors are qualifiers or constraints, never hostnames or addresses. All named entities from the request must be preserved verbatim without mutation or guessing.\n\n"
             "Return only JSON matching this shape:\n"
             "{\n"
             f'  "id": "goal-graph-{request.id}",\n'
@@ -1177,6 +1328,7 @@ class KnowledgeBehaviorCompiler:
                     llm_raw_proposal=raw_data,
                     validated_graph=goal_graph,
                     validation_diagnostics=list(val_result.diagnostics),
+                    outcome_contract=goal_graph.outcome_contract,
                 )
                 logger.info("[LLM_OBSERVABILITY] phase=compiler prompt_hash=%s selected_operation=semantic_goal_graph validation_result=VALID", prompt_hash)
                 self.last_compile_trace["validation_result"] = "VALID"
@@ -1305,6 +1457,45 @@ class KnowledgeBehaviorCompiler:
                     hypothesis_class="benign_baseline",
                     requirements=[req_baseline.id],
                 )
+                outcome_contract = HypothesisVerdictContract(
+                    support_obligations=tuple(r.id for r in custom_reqs) if custom_reqs else (f"req-{request.id}-1",),
+                    refutation_obligations=(req_baseline.id,),
+                    falsification_conditions=(
+                        (custom_reqs[0].falsification_condition if custom_reqs else "telemetry confirms zero matching behavior"),
+                    ),
+                    scope="; ".join(request.provider_hints or ["cdb_native_scope"]),
+                )
+                var_endpoint = SemanticVariable(id="var_endpoint", entity_type="host", value=None)
+                var_target = SemanticVariable(id="var_target", entity_type="event", value=None)
+                rel_goals = [
+                    SemanticRelationGoal(
+                        id=r.id,
+                        subject="var_endpoint",
+                        relation=r.evidence_type or "executed",
+                        object="var_target",
+                        required=True,
+                        description=r.description,
+                    )
+                    for r in custom_reqs
+                ]
+                if not rel_goals:
+                    rel_goals = [
+                        SemanticRelationGoal(
+                            id="goal-struct-1",
+                            subject="var_endpoint",
+                            relation="executed",
+                            object="var_target",
+                            required=True,
+                        )
+                    ]
+                goal_graph = SemanticGoalGraph(
+                    id=f"goal-graph-{request.id}",
+                    request_id=request.id,
+                    objective=str(data["statement"]),
+                    variables=[var_endpoint, var_target],
+                    relations=rel_goals,
+                    outcome_contract=outcome_contract,
+                )
                 objective = HuntObjective(
                     request_id=request.id,
                     target_hypotheses=[hypo_active.id, hypo_benign.id],
@@ -1312,6 +1503,9 @@ class KnowledgeBehaviorCompiler:
                     target_scopes=request.provider_hints or ["cdb_native_scope"],
                     kind=request.kind,
                     statement=request.content,
+                    semantic_goal_graph=goal_graph,
+                    validated_graph=goal_graph,
+                    outcome_contract=outcome_contract,
                 )
                 return objective, [hypo_active, hypo_benign], [*custom_reqs, req_baseline]
         except Exception:
@@ -1370,8 +1564,16 @@ class KnowledgeBehaviorCompiler:
         return f"NOW-{lookback}d/NOW"
 
 
+class KnowledgeBehaviorCompiler(RequestAdapter):
+    """Canonical compiler transforming threat requests into executable hypotheses (backward compatibility)."""
+
+    pass
+
+
 __all__ = [
+    "RequestAdapter",
     "KnowledgeBehaviorCompiler",
+    "SemanticProposal",
     "parse_and_validate_semantic_intent",
     "validate_compiler_llm_output",
     "parse_and_validate_claim_graph",

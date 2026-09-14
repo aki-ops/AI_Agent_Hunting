@@ -312,6 +312,7 @@ class SemanticGoalGraph:
     qualifiers: list[SemanticQualifierGoal] = field(default_factory=list)
     answers: list[SemanticAnswerGoal] = field(default_factory=list)
     answer_contracts: list[AnswerContract] = field(default_factory=list)
+    outcome_contract: Any | None = None
     dependencies: dict[str, list[str]] = field(default_factory=dict)
     dependency_kinds: dict[str, str] = field(default_factory=dict)
     provenance_spans: dict[str, str] = field(default_factory=dict)
@@ -368,6 +369,9 @@ class SemanticGoalGraph:
                 )
                 for ac in self.answer_contracts
             ]
+        if self.outcome_contract is None and (self.answers or self.answer_contracts):
+            from hunting.contracts.outcome import outcome_from_legacy_answers
+            self.outcome_contract = outcome_from_legacy_answers(self.answers, self.answer_contracts)
         for goal_id, deps in self.dependencies.items():
             if goal_id not in goal_ids:
                 raise ValueError(f"Dependency key '{goal_id}' is not a known relation goal")
@@ -376,7 +380,7 @@ class SemanticGoalGraph:
                     raise ValueError(f"Goal '{goal_id}' depends on unknown relation goal '{dep}'")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        res = {
             "id": self.id,
             "request_id": self.request_id,
             "objective": self.objective,
@@ -394,6 +398,10 @@ class SemanticGoalGraph:
             "clarification_triggers": list(self.clarification_triggers),
             "validation_diagnostics": list(self.validation_diagnostics),
         }
+        if self.outcome_contract is not None:
+            from hunting.contracts.outcome import outcome_to_dict
+            res["outcome_contract"] = outcome_to_dict(self.outcome_contract)
+        return res
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> "SemanticGoalGraph":
@@ -449,6 +457,10 @@ class SemanticGoalGraph:
             for item in data.get("answer_contracts", [])
             if isinstance(item, dict)
         ]
+        outcome_contract = None
+        if "outcome_contract" in data and data["outcome_contract"] is not None:
+            from hunting.contracts.outcome import outcome_from_dict
+            outcome_contract = outcome_from_dict(data["outcome_contract"])
         raw_deps = data.get("dependencies", {})
         dependencies = {str(k): list(v) for k, v in raw_deps.items()} if isinstance(raw_deps, dict) else {}
         raw_dep_kinds = data.get("dependency_kinds", {})
@@ -465,6 +477,7 @@ class SemanticGoalGraph:
             qualifiers=qualifiers,
             answers=answers,
             answer_contracts=answer_contracts,
+            outcome_contract=outcome_contract,
             dependencies=dependencies,
             dependency_kinds=dependency_kinds,
             provenance_spans=provenance_spans,

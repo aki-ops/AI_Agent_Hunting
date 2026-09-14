@@ -105,6 +105,7 @@ class HuntObjective:
     llm_raw_proposal: dict[str, Any] | None = None
     validated_graph: Any | None = None
     validation_diagnostics: list[str] = field(default_factory=list)
+    outcome_contract: Any | None = None
 
     def __post_init__(self) -> None:
         if not self.request_id.strip():

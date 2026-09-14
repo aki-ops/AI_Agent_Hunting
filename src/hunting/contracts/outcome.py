@@ -186,6 +186,44 @@ def outcome_contract_from_legacy_answer_contract(legacy: Any) -> FactualAnswerCo
     return FactualAnswerContract(slots=("target",), types={"target": "entity"})
 
 
+def outcome_to_dict(contract: OutcomeContract) -> dict[str, Any]:
+    return contract.to_dict()
+
+
+def outcome_from_dict(data: dict[str, Any]) -> OutcomeContract:
+    return outcome_contract_from_dict(data)
+
+
+def outcome_from_legacy_answers(
+    answers: list[Any] | tuple[Any, ...] | None = None,
+    answer_contracts: list[Any] | tuple[Any, ...] | None = None,
+) -> FactualAnswerContract:
+    """Derive a canonical FactualAnswerContract from legacy answers or answer_contracts."""
+    slots: list[str] = []
+    types: dict[str, str] = {}
+    qualifiers: list[str] = []
+    for ac in answer_contracts or ():
+        slot_name = getattr(ac, "slot_name", getattr(ac, "target_variable_id", "target"))
+        val_type = getattr(ac, "value_type", "value")
+        slots.append(slot_name)
+        types[slot_name] = val_type
+        for q in getattr(ac, "required_qualifiers", ()):
+            qualifiers.append(str(q))
+    for a in answers or ():
+        var_id = getattr(a, "variable_id", "target")
+        if var_id not in slots:
+            slots.append(var_id)
+            types[var_id] = getattr(a, "answer_type", "value")
+    if not slots:
+        slots = ["target"]
+        types = {"target": "value"}
+    return FactualAnswerContract(
+        slots=tuple(slots),
+        types=types,
+        qualifiers=tuple(qualifiers),
+    )
+
+
 __all__ = [
     "OutcomeContractKind",
     "Cardinality",
@@ -195,4 +233,7 @@ __all__ = [
     "OutcomeContract",
     "outcome_contract_from_dict",
     "outcome_contract_from_legacy_answer_contract",
+    "outcome_to_dict",
+    "outcome_from_dict",
+    "outcome_from_legacy_answers",
 ]

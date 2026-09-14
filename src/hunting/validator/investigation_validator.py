@@ -129,27 +129,66 @@ class InvestigationValidator:
         )
 
 
+CANONICAL_RELATION_VOCABULARY: set[str] = {
+    "owns",
+    "logged_on_to",
+    "assigned_ip",
+    "originated_from",
+    "requested",
+    "resolved_to",
+    "connected_to",
+    "executed",
+    "accessed",
+    "communicated_with",
+    "spawned",
+    "modified",
+    "wrote",
+    "has_email",
+    "sent_message",
+    "received_message",
+    "holds_role",
+    "belongs_to_org",
+    "associated_with",
+    "has_attribute",
+    "visited",
+    "created",
+    "downloaded",
+    "located_at",
+    "stored_on",
+}
+
+VALIDATION_INJECTION_PATTERNS = [
+    re.compile(r"ignore\s+(all\s+)?(previous\s+)?instructions", re.IGNORECASE),
+    re.compile(r"mark\s+(as\s+)?(benign|malicious|clean)", re.IGNORECASE),
+    re.compile(r"system\s*prompt", re.IGNORECASE),
+    re.compile(r"override\s+state", re.IGNORECASE),
+    re.compile(r"bypass\s+(controls|checks)", re.IGNORECASE),
+]
+
+
 @dataclass
 class GoalGraphValidationResult:
-    """Outcome of deterministic SemanticGoalGraph validation."""
+    """Outcome of deterministic SemanticGoalGraph validation across 6 stages."""
     valid: bool
     validated_graph: SemanticGoalGraph
     diagnostics: list[str] = field(default_factory=list)
     rejections: list[str] = field(default_factory=list)
     pruned_goal_ids: list[str] = field(default_factory=list)
+    needs_clarification: bool = False
+    clarification_questions: list[str] = field(default_factory=list)
+    stage_results: dict[str, bool] = field(default_factory=dict)
 
 
 class SemanticGoalGraphValidator:
-    """Deterministic validator for SemanticGoalGraph proposals.
+    """Deterministic 6-stage Semantic Acceptance Gate for SemanticGoalGraph proposals.
 
     Enforces Step C rules from 08 Master Plan:
-    1. Entity Preservation: User-named entities must not be mutated (e.g. Mallory cannot become Alice).
-    2. Invented Proper Nouns: Proper nouns not in request content or request entities are rejected or unbound.
-    3. Device Qualifiers: 'MacBook' / laptop / PC is a device qualifier, never a hostname.
-    4. Answer Utility: Every downstream relation goal must reduce or constrain an answer slot.
-    5. Acyclic DAG: Dependencies must be acyclic.
-    6. GATE validation: GATE dependencies require explicit gate_condition.
-    7. Query Isolation: No native query syntax (SPL/KQL/SQL, index=, sourcetype=) in acceptance rules or constraints.
+    1. Schema, DAG & Reference Validation: acyclic dependencies, unique IDs, explicit gate_condition for GATE.
+    2. Literal & Provenance Validation: entity preservation, no invented proper nouns, provenance verification, query isolation.
+    3. Scope & Outcome Utility Validation: every goal must reduce or constrain an answer slot; prune story expansions.
+    4. Relation Registry Status: canonical vocabulary relations; novel relations flagged as unproven / retrieval-only.
+    5. Semantic-Risk Classification: device qualifiers demoted to typed constraints; prompt injection defense.
+    6. Clarification Triggers: detect ambiguous semantics or explicit clarification requests.
     """
 
     def validate_goal_graph(
@@ -161,6 +200,9 @@ class SemanticGoalGraphValidator:
         diagnostics: list[str] = []
         rejections: list[str] = []
         pruned_goal_ids: list[str] = []
+        clarification_questions: list[str] = []
+        needs_clarification = False
+        stage_results: dict[str, bool] = {}
 
         request_folded = request_content.casefold()
         explicit_entities: dict[str, set[str]] = {}
@@ -179,77 +221,24 @@ class SemanticGoalGraphValidator:
 
         all_explicit_values = {val for vals in explicit_entities.values() for val in vals}
 
-        # 1. Device Qualifiers vs Hostname & Entity Mutation Check
-        rewritten_variables: list[SemanticVariable] = []
-        for var in graph.variables:
-            current_var = var
-            var_val = var.value.strip() if var.value else None
-            val_lower = var_val.casefold() if var_val else ""
+        # =========================================================================
+        # Stage 1: Deterministic Schema, DAG, and Reference Validation
+        # =========================================================================
+        stage1_rejections: list[str] = []
+        var_ids = {v.id for v in graph.variables}
+        goal_ids = {r.id for r in graph.relations}
 
-            # Check: Device qualifier as hostname
-            if var.entity_type.casefold() in {"host", "endpoint", "computer"} and var_val:
-                is_device_term = val_lower in DEVICE_QUALIFIER_TERMS or any(
-                    term in val_lower for term in ("macbook", "laptop", "desktop", "workstation", "phone", "tablet")
-                )
-                if is_device_term:
-                    diagnostics.append(
-                        f"Device qualifier '{var_val}' cannot be used as hostname; "
-                        f"demoting to constraint and unbinding host variable '{var.id}'."
-                    )
-                    existing_keys = {c.key for c in var.constraints}
-                    new_constraints = list(var.constraints)
-                    if "device_type" not in existing_keys:
-                        new_constraints.append(
-                            SemanticConstraint(key="device_type", value=var_val, operator="contains")
-                        )
-                    current_var = replace(
-                        var,
-                        value=None,
-                        value_origin="llm_proposal",
-                        constraints=tuple(new_constraints),
-                    )
-                    rewritten_variables.append(current_var)
-                    continue
+        # Check references
+        for rel in graph.relations:
+            if rel.subject not in var_ids:
+                stage1_rejections.append(f"Goal '{rel.id}' references unknown subject variable '{rel.subject}'")
+            if rel.object not in var_ids:
+                stage1_rejections.append(f"Goal '{rel.id}' references unknown object variable '{rel.object}'")
+        for q in graph.qualifiers:
+            if q.target_goal_id not in goal_ids:
+                stage1_rejections.append(f"Qualifier '{q.id}' references unknown target goal '{q.target_goal_id}'")
 
-            # Check: Entity Mutation (e.g. Mallory -> Alice)
-            if var.entity_type.casefold() in {"person", "user"} and var_val:
-                if val_lower not in request_folded and val_lower not in all_explicit_values:
-                    rejections.append(
-                        f"Entity mutation rejected: proposed person '{var_val}' does not appear in request content."
-                    )
-
-            # Check: Invented proper noun marked as request origin
-            if current_var.value_origin == "request" and var_val:
-                if val_lower not in request_folded and val_lower not in all_explicit_values:
-                    rejections.append(
-                        f"Invented proper noun rejected: variable '{var.id}' value '{var_val}' is marked as request origin but does not appear in request."
-                    )
-
-            rewritten_variables.append(current_var)
-
-        # 2. Check for native query leaks
-        for var in rewritten_variables:
-            for constraint in var.constraints:
-                for term in constraint.retrieval_terms:
-                    for pat in NATIVE_QUERY_PATTERNS:
-                        if pat.search(str(term)):
-                            rejections.append(
-                                f"Native query syntax leaked into constraint retrieval terms: '{term}'"
-                            )
-                for pat in NATIVE_QUERY_PATTERNS:
-                    if pat.search(str(constraint.value or "")):
-                        rejections.append(
-                            f"Native query syntax leaked into constraint value: '{constraint.value}'"
-                        )
-
-        for ac in graph.answer_contracts:
-            for pat in NATIVE_QUERY_PATTERNS:
-                if pat.search(ac.acceptance_rule):
-                    rejections.append(
-                        f"Native query syntax leaked into AnswerContract acceptance rule: '{ac.acceptance_rule}'"
-                    )
-
-        # 3. Check Acyclic Dependencies
+        # Check Acyclic Dependencies
         deps = dict(graph.dependencies)
         for rel in graph.relations:
             if rel.dependencies and rel.id not in deps:
@@ -261,7 +250,7 @@ class SemanticGoalGraphValidator:
             visited[node] = 0
             for neighbor in deps.get(node, []):
                 if visited.get(neighbor) == 0:
-                    rejections.append(f"Cyclic dependency detected: {' -> '.join(path + [neighbor])}")
+                    stage1_rejections.append(f"Cyclic dependency detected: {' -> '.join(path + [neighbor])}")
                     return True
                 if neighbor not in visited:
                     if has_cycle(neighbor, path + [neighbor]):
@@ -273,13 +262,65 @@ class SemanticGoalGraphValidator:
             if node not in visited:
                 has_cycle(node, [node])
 
-        # 4. Check GATE condition
+        # Check GATE condition
         for rel in graph.relations:
             op = graph.dependency_kinds.get(rel.id, rel.dependency_operator).upper()
             if op == "GATE" and not rel.gate_condition:
-                rejections.append(f"Goal '{rel.id}' uses GATE dependency operator but lacks gate_condition.")
+                stage1_rejections.append(f"Goal '{rel.id}' uses GATE dependency operator but lacks gate_condition.")
 
-        # 5. Check Provenance Spans
+        rejections.extend(stage1_rejections)
+        stage_results["schema_dag_references"] = len(stage1_rejections) == 0
+
+        # =========================================================================
+        # Stage 2: Literal and Provenance Validation
+        # =========================================================================
+        stage2_rejections: list[str] = []
+        rewritten_variables: list[SemanticVariable] = []
+
+        for var in graph.variables:
+            current_var = var
+            var_val = var.value.strip() if var.value else None
+            val_lower = var_val.casefold() if var_val else ""
+
+            # Check: Entity Mutation (e.g. Mallory -> Alice)
+            if var.entity_type.casefold() in {"person", "user"} and var_val:
+                if val_lower not in request_folded and val_lower not in all_explicit_values:
+                    stage2_rejections.append(
+                        f"Entity mutation rejected: proposed person '{var_val}' does not appear in request content."
+                    )
+
+            # Check: Invented proper noun marked as request origin
+            if current_var.value_origin == "request" and var_val:
+                if val_lower not in request_folded and val_lower not in all_explicit_values:
+                    stage2_rejections.append(
+                        f"Invented proper noun rejected: variable '{var.id}' value '{var_val}' is marked as request origin but does not appear in request."
+                    )
+
+            rewritten_variables.append(current_var)
+
+        # Check for native query leaks
+        for var in rewritten_variables:
+            for constraint in var.constraints:
+                for term in constraint.retrieval_terms:
+                    for pat in NATIVE_QUERY_PATTERNS:
+                        if pat.search(str(term)):
+                            stage2_rejections.append(
+                                f"Native query syntax leaked into constraint retrieval terms: '{term}'"
+                            )
+                for pat in NATIVE_QUERY_PATTERNS:
+                    if pat.search(str(constraint.value or "")):
+                        stage2_rejections.append(
+                            f"Native query syntax leaked into constraint value: '{constraint.value}'"
+                        )
+
+        for ac in graph.answer_contracts:
+            for pat in NATIVE_QUERY_PATTERNS:
+                if pat.search(ac.acceptance_rule):
+                    stage2_rejections.append(
+                        f"Native query syntax leaked into AnswerContract acceptance rule: '{ac.acceptance_rule}'"
+                    )
+
+        # Check Provenance Spans
         for rel in graph.relations:
             span = rel.provenance_span or graph.provenance_spans.get(rel.id, "")
             if span:
@@ -288,7 +329,12 @@ class SemanticGoalGraphValidator:
             else:
                 diagnostics.append(f"Goal '{rel.id}' missing explicit request provenance span.")
 
-        # 6. Answer Slot Utility / Story Expansion Pruning
+        rejections.extend(stage2_rejections)
+        stage_results["literal_provenance"] = len(stage2_rejections) == 0
+
+        # =========================================================================
+        # Stage 3: Scope & Outcome Utility Validation (Story Expansion Pruning)
+        # =========================================================================
         target_var_ids = {a.variable_id for a in graph.answers} | {
             ac.target_variable_id for ac in graph.answer_contracts
         }
@@ -326,10 +372,83 @@ class SemanticGoalGraphValidator:
             q for q in graph.qualifiers
             if q.target_goal_id in {r.id for r in validated_relations}
         ]
+        stage_results["scope_outcome_utility"] = True
+
+        # =========================================================================
+        # Stage 4: Relation Registry Status Check
+        # =========================================================================
+        for rel in validated_relations:
+            rel_norm = rel.relation.strip().casefold()
+            if rel_norm not in CANONICAL_RELATION_VOCABULARY:
+                diagnostics.append(
+                    f"Novel relation '{rel.relation}' is not in approved canonical registry; "
+                    f"can be explored with retrieval_only but cannot be proven without approved contract."
+                )
+        stage_results["relation_registry"] = True
+
+        # =========================================================================
+        # Stage 5: Semantic-Risk Classification
+        # =========================================================================
+        final_variables: list[SemanticVariable] = []
+        for var in rewritten_variables:
+            current_var = var
+            var_val = var.value.strip() if var.value else None
+            val_lower = var_val.casefold() if var_val else ""
+
+            # Check: Device qualifier as hostname demotion
+            if var.entity_type.casefold() in {"host", "endpoint", "computer"} and var_val:
+                is_device_term = val_lower in DEVICE_QUALIFIER_TERMS or any(
+                    term in val_lower for term in DEVICE_QUALIFIER_TERMS
+                )
+                if is_device_term:
+                    diagnostics.append(
+                        f"Device qualifier '{var_val}' cannot be used as hostname; "
+                        f"demoting to constraint and unbinding host variable '{var.id}'."
+                    )
+                    existing_keys = {c.key for c in var.constraints}
+                    new_constraints = list(var.constraints)
+                    if "device_type" not in existing_keys:
+                        new_constraints.append(
+                            SemanticConstraint(key="device_type", value=var_val, operator="contains")
+                        )
+                    current_var = replace(
+                        var,
+                        value=None,
+                        value_origin="llm_proposal",
+                        constraints=tuple(new_constraints),
+                    )
+            final_variables.append(current_var)
+
+        # Prompt injection check across all proposal texts
+        for pat in VALIDATION_INJECTION_PATTERNS:
+            for text_to_check in [graph.objective] + [r.description for r in graph.relations]:
+                if pat.search(text_to_check):
+                    rejections.append(f"Prompt injection pattern detected in graph text: '{text_to_check}'")
+                    break
+        stage_results["semantic_risk"] = True
+
+        # =========================================================================
+        # Stage 6: Clarification Triggers
+        # =========================================================================
+        if graph.clarification_triggers:
+            needs_clarification = True
+            clarification_questions.extend(graph.clarification_triggers)
+
+        # Check for unresolved ambiguity across variables
+        for var in final_variables:
+            if var.constraints:
+                equals_vals = [c.value for c in var.constraints if c.operator == "equals" and c.value is not None]
+                if len(set(equals_vals)) > 1:
+                    needs_clarification = True
+                    q_text = f"Variable '{var.id}' has conflicting equality constraints: {equals_vals}"
+                    clarification_questions.append(q_text)
+                    diagnostics.append(q_text)
+
+        stage_results["clarification"] = True
 
         validated_graph = replace(
             graph,
-            variables=rewritten_variables,
+            variables=final_variables,
             relations=validated_relations,
             qualifiers=validated_qualifiers,
             validation_diagnostics=list(diagnostics),
@@ -342,7 +461,13 @@ class SemanticGoalGraphValidator:
             diagnostics=diagnostics,
             rejections=rejections,
             pruned_goal_ids=pruned_goal_ids,
+            needs_clarification=needs_clarification,
+            clarification_questions=clarification_questions,
+            stage_results=stage_results,
         )
+
+
+SemanticAcceptanceGate = SemanticGoalGraphValidator
 
 
 __all__ = [
@@ -350,5 +475,7 @@ __all__ = [
     "InvestigationValidator",
     "GoalGraphValidationResult",
     "SemanticGoalGraphValidator",
+    "SemanticAcceptanceGate",
     "DEVICE_QUALIFIER_TERMS",
+    "CANONICAL_RELATION_VOCABULARY",
 ]
