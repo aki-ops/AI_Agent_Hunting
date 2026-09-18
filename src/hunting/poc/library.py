@@ -11,6 +11,10 @@ flow requested by the user.
 """
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
+
 from hunting.poc.models import (
     EscalationHint,
     FieldOp,
@@ -21,6 +25,17 @@ from hunting.poc.models import (
 
 
 POC_LIBRARY: dict[str, PoC] = {}
+
+_OP_BY_NAME = {
+    "EQUALS": FieldOp.EQUALS,
+    "CONTAINS": FieldOp.CONTAINS,
+    "STARTS_WITH": FieldOp.STARTS_WITH,
+    "ENDS_WITH": FieldOp.ENDS_WITH,
+    "MATCHES": FieldOp.MATCHES,
+    "EXISTS": FieldOp.EXISTS,
+}
+
+_KIND_BY_NAME = {k.value: k for k in PocKind}
 
 
 def _register(poc: PoC) -> PoC:
@@ -247,3 +262,100 @@ _register(
         expected_chain=["web_request", "process_creation"],
     )
 )
+
+
+# ---------------------------------------------------------------------------
+# PoC from JSON file (analyst-authored)
+# ---------------------------------------------------------------------------
+
+def _step_from_dict(raw: dict) -> TestStep:
+    op_name = str(raw.get("op", "")).upper()
+    if op_name not in _OP_BY_NAME:
+        raise ValueError(
+            f"step.op must be one of {sorted(_OP_BY_NAME)}; got {raw.get('op')!r}"
+        )
+    return TestStep(
+        step_id=str(raw.get("step_id", "")),
+        description=str(raw.get("description", "")),
+        target_field=str(raw.get("target_field", "")),
+        op=_OP_BY_NAME[op_name],
+        value=str(raw.get("value", "")),
+        time_window_hint=raw.get("time_window_hint"),
+        source_kind=str(raw.get("source_kind", "process")),
+    )
+
+
+def poc_from_file(path) -> PoC:
+    """Load a PoC from a JSON file and register it in ``POC_LIBRARY``.
+
+    The PoC becomes available via ``get_poc(poc_id)`` and the ``--poc``
+    CLI argument for the rest of the process. JSON shape::
+
+        {
+          "poc_id": "poc-bruteforce-ssh",
+          "name": "Brute force login detected",
+          "kind": "behavior",
+          "summary": "...",
+          "steps": [
+            {
+              "step_id": "s1-failed-auth",
+              "description": "Failed authentication",
+              "target_field": "action",
+              "op": "EQUALS",
+              "value": "failure",
+              "source_kind": "authentication"
+            }
+          ],
+          "fallbacks": [],
+          "references": ["MITRE ATT&CK T1110"],
+          "expected_chain": ["authentication"]
+        }
+
+    ``kind`` is one of ``ttp``, ``cve``, ``ioc``, ``behavior``. ``op`` is
+    one of ``EQUALS`` / ``CONTAINS`` / ``STARTS_WITH`` / ``ENDS_WITH`` /
+    ``MATCHES`` / ``EXISTS``. ``source_kind`` is ``process`` / ``dns`` /
+    ``web`` / ``file`` (defaults to ``process``). See ``docs/POC-HOW-IT-WORKS.md``.
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    data = json.loads(text)
+    poc_id = str(data.get("poc_id", "")).strip()
+    if not poc_id:
+        raise ValueError("poc_id is required")
+    if not re.match(r"^[a-zA-Z0-9_-]{3,64}$", poc_id):
+        raise ValueError(
+            f"poc_id must match ^[a-zA-Z0-9_-]{{3,64}}$; got {poc_id!r}"
+        )
+
+    kind_name = str(data.get("kind", "behavior")).lower()
+    kind = _KIND_BY_NAME.get(kind_name)
+    if kind is None:
+        raise ValueError(
+            f"kind must be one of {sorted(_KIND_BY_NAME)}; got {kind_name!r}"
+        )
+
+    steps = [_step_from_dict(s) for s in data.get("steps", [])]
+    if not steps:
+        raise ValueError("at least one step is required")
+    fallbacks = [_step_from_dict(s) for s in data.get("fallbacks", [])]
+
+    hint_raw = data.get("escalation_hint")
+    hint = None
+    if isinstance(hint_raw, dict):
+        hint = EscalationHint(
+            question=str(hint_raw.get("question", "")).strip(),
+            evidence_requirement=str(hint_raw.get("evidence_requirement", "")),
+            max_tokens=int(hint_raw.get("max_tokens", 2000)),
+        )
+
+    poc = PoC(
+        poc_id=poc_id,
+        name=str(data.get("name", poc_id)),
+        kind=kind,
+        summary=str(data.get("summary", "")),
+        steps=steps,
+        fallbacks=fallbacks,
+        references=[str(r) for r in data.get("references", [])],
+        escalation_hint=hint,
+        expected_chain=[str(c) for c in data.get("expected_chain", [])],
+    )
+    return _register(poc)

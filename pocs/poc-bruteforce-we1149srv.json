@@ -1,0 +1,30 @@
+{
+  "poc_id": "poc-bruteforce-we1149srv",
+  "name": "Brute force login against public-facing server",
+  "kind": "behavior",
+  "summary": "Repeated failed authentication events targeting user accounts on a host. The encoded cmdline row carries 'Logon Failed' for failed attempts.",
+  "steps": [
+    {
+      "step_id": "s1-failed-auth",
+      "description": "Failed logon attempts (encoded in cmdline)",
+      "target_field": "cmdline",
+      "op": "CONTAINS",
+      "value": "Logon Failed",
+      "source_kind": "authentication"
+    },
+    {
+      "step_id": "s2-targeted-user",
+      "description": "Privileged user account being targeted",
+      "target_field": "user",
+      "op": "EQUALS",
+      "value": "admin",
+      "source_kind": "authentication"
+    }
+  ],
+  "fallbacks": [],
+  "references": [
+    "MITRE ATT&CK T1110 - Brute Force",
+    "BOTS v1 walkthrough - brute-force phase"
+  ],
+  "expected_chain": ["authentication_failure_burst"]
+}

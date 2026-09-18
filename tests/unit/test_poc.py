@@ -267,3 +267,91 @@ def test_judge_report_section(tmp_path: Path):
     report = render_poc_report(result, poc_render)
     assert "LLM Judge" in report
     assert "TRUE_POSITIVE" in report
+
+
+def test_poc_file_loads_and_registers(tmp_path: Path):
+    """An analyst-authored PoC in JSON form is registered in the library."""
+    from hunting.poc import poc_from_file, list_pocs
+
+    spec = tmp_path / "my-poc.json"
+    spec.write_text(
+        """{
+            "poc_id": "poc-my-test",
+            "name": "Test JSON PoC",
+            "kind": "behavior",
+            "summary": "demo",
+            "steps": [
+                {"step_id": "s1", "description": "x", "target_field": "user", "op": "EQUALS", "value": "admin", "source_kind": "process"}
+            ],
+            "references": ["MITRE T1110"]
+        }""",
+        encoding="utf-8",
+    )
+
+    before = {p.poc_id for p in list_pocs()}
+    poc = poc_from_file(spec)
+    after = {p.poc_id for p in list_pocs()}
+    assert poc.poc_id == "poc-my-test"
+    assert "poc-my-test" not in before
+    assert "poc-my-test" in after
+    assert poc.kind.value == "behavior"
+    assert poc.steps[0].value == "admin"
+    assert poc.references == ["MITRE T1110"]
+
+
+def test_poc_file_rejects_invalid_kind(tmp_path: Path):
+    from hunting.poc import poc_from_file
+
+    spec = tmp_path / "bad.json"
+    spec.write_text(
+        """{"poc_id": "poc-bad", "name": "x", "kind": "wrong", "summary": "x", "steps": [{"step_id": "s1", "description": "x", "target_field": "user", "op": "EQUALS", "value": "x", "source_kind": "process"}]}""",
+        encoding="utf-8",
+    )
+    with pytest.raises(Exception):
+        poc_from_file(spec)
+
+
+def test_poc_file_rejects_invalid_op(tmp_path: Path):
+    from hunting.poc import poc_from_file
+
+    spec = tmp_path / "bad-op.json"
+    spec.write_text(
+        """{"poc_id": "poc-badop", "name": "x", "kind": "ttp", "summary": "x", "steps": [{"step_id": "s1", "description": "x", "target_field": "user", "op": "WILDCARD", "value": "x", "source_kind": "process"}]}""",
+        encoding="utf-8",
+    )
+    with pytest.raises(Exception):
+        poc_from_file(spec)
+
+
+def test_analytic_poc_runs_against_botsv1_sample(tmp_path: Path):
+    """An analyst PoC loaded from JSON finds the BOTS v1 brute-force rows."""
+    from hunting.m5_adapter import CdbAdapter
+    from hunting.poc import poc_from_file
+    from scripts.seed_botsv1_sample import BOTS_SAMPLE
+
+    adapter = CdbAdapter(":memory:")
+    adapter.insert_events(BOTS_SAMPLE)
+
+    spec = tmp_path / "bruteforce.json"
+    spec.write_text(
+        """{
+            "poc_id": "poc-bruteforce-test",
+            "name": "BF test",
+            "kind": "behavior",
+            "summary": "BOTS v1 brute force",
+            "steps": [{"step_id": "s1-failed", "description": "Failed logon",
+                       "target_field": "action", "op": "EQUALS",
+                       "value": "Logon Failed", "source_kind": "authentication"}],
+            "references": ["MITRE T1110"]
+        }""",
+        encoding="utf-8",
+    )
+
+    poc = poc_from_file(spec)
+    agent = PocAgent(adapter=adapter, ledger_dir=tmp_path)
+    result = agent.run(
+        poc.poc_id,
+        time_window="2016-08-21T00:00:00Z/2016-08-22T00:00:00Z",
+    )
+    assert result.verdict == "MATCHED"
+    assert result.total_observations >= 5

@@ -13,6 +13,7 @@ from hunting.poc.judge import (
     judge_run,
     parse_judgment,
 )
+from hunting.poc.library import poc_from_file
 from hunting.poc.reporter import render_poc_report
 
 __all__ = [
@@ -28,5 +29,6 @@ __all__ = [
     "parse_judgment",
     "get_poc",
     "list_pocs",
+    "poc_from_file",
     "render_poc_report",
 ]

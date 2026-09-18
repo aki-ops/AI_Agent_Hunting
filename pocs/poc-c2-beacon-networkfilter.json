@@ -1,0 +1,29 @@
+{
+  "poc_id": "poc-c2-beacon-networkfilter",
+  "name": "C2 beacon to ad.networkfilter.co (BOTS v1 known IOC)",
+  "kind": "ioc",
+  "summary": "Outbound HTTP request to ad.networkfilter.co, the ad-fraud beacon seen in BOTS v1.",
+  "steps": [
+    {
+      "step_id": "s1-c2-domain",
+      "description": "HTTP request to known C2 host",
+      "target_field": "cmdline",
+      "op": "CONTAINS",
+      "value": "ad.networkfilter.co",
+      "source_kind": "web"
+    },
+    {
+      "step_id": "s2-c2-banner",
+      "description": "GET request to /banner/ path (ad-fraud beacon pattern)",
+      "target_field": "cmdline",
+      "op": "CONTAINS",
+      "value": "/banner/",
+      "source_kind": "web"
+    }
+  ],
+  "references": [
+    "MITRE ATT&CK T1071.001 - Application Layer Protocol: Web",
+    "BOTS v1 known IOC"
+  ],
+  "expected_chain": ["web_request", "process_creation"]
+}

@@ -546,6 +546,7 @@ def build_parser() -> argparse.ArgumentParser:
     poc_group.add_argument("--poc-judge", action="store_true", help="After the adapter run, ask the LLM to judge the matched hits as TRUE_POSITIVE / FALSE_POSITIVE / INCONCLUSIVE / NO_SIGNAL.")
     poc_group.add_argument("--poc-report", type=str, default=None, help="Path to write the PoC case-file Markdown report.")
     poc_group.add_argument("--poc-judge-max-tokens", type=int, default=2000, help="Max tokens for the post-hoc judge LLM call.")
+    poc_group.add_argument("--poc-file", type=str, default=None, help="Load one PoC from a JSON file (overrides --poc).")
 
     # Forensic Audit & Replay Flags
     forensic_group = parser.add_argument_group("Forensic Audit & Replay")
@@ -813,8 +814,21 @@ def run_cli(args: argparse.Namespace) -> int:
     # PoC-driven Auto-Hunt dispatch (v6).
     poc_id = getattr(args, "poc", None)
     poc_chain = getattr(args, "poc_chain", None)
-    if poc_id or poc_chain:
+    poc_file = getattr(args, "poc_file", None)
+    if poc_id or poc_chain or poc_file:
         from hunting.poc import PocAgent, get_poc, render_poc_report
+
+        # Load --poc-file first; it overrides --poc / --poc-chain.
+        if poc_file:
+            try:
+                from hunting.poc import poc_from_file
+                loaded = poc_from_file(poc_file)
+                poc_id = loaded.poc_id
+                poc_chain = None
+                print(f"[+] [POC FILE] Loaded '{poc_id}' from {poc_file}")
+            except Exception as e:
+                print(f"[-] [POC FILE] Failed to load {poc_file}: {e}", file=sys.stderr)
+                return 1
 
         llm_caller = None
         judge_caller = None
