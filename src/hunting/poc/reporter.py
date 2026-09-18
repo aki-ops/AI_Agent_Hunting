@@ -74,8 +74,10 @@ def render_poc_report(result: PocHuntResult, poc_render: dict) -> str:
     lines.append("")
     lines.append("## LLM Cost")
     lines.append("")
-    lines.append(f"- Calls: {result.llm_calls}")
-    lines.append(f"- Tokens: {result.llm_tokens}")
+    total_calls = result.llm_calls + result.judgment_llm_calls
+    total_tokens = result.llm_tokens + result.judgment_llm_tokens
+    lines.append(f"- Calls: {total_calls} (match/escalation={result.llm_calls}, judge={result.judgment_llm_calls})")
+    lines.append(f"- Tokens: {total_tokens} (match/escalation={result.llm_tokens}, judge={result.judgment_llm_tokens})")
     lines.append(f"- Cost: ${result.llm_cost_usd:.6f}")
     if result.escalation_called:
         lines.append("")

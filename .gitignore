@@ -9,8 +9,15 @@ build/
 venv/
 data/cdb_sample/
 *.sqlite
+*.sqlite.backup
 data/*.sqlite
+data/*.tgz
+data/*.gz
+data/*.csv
+data/raw/
 .env
+.env.*
+!.env.example
 
 # Generated hunt run artifacts
 artifacts/hunt-*

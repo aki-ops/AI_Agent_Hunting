@@ -886,10 +886,13 @@ def run_cli(args: argparse.Namespace) -> int:
         for r in chain_results:
             poc_render = get_poc(r.poc_id).render()
             print("\n" + "=" * 72)
+            total_calls = r.llm_calls + r.judgment_llm_calls
+            total_tokens = r.llm_tokens + r.judgment_llm_tokens
             line = (
                 f"PoC {r.poc_id} — verdict {r.verdict} — {r.total_observations} obs, "
                 f"{len(r.matched_step_ids)} matched step(s), "
-                f"{r.llm_calls} LLM call(s), {r.runtime_seconds:.4f}s"
+                f"{total_calls} LLM call(s) [match={r.llm_calls}, judge={r.judgment_llm_calls}], "
+                f"{total_tokens} tokens, {r.runtime_seconds:.4f}s"
             )
             if r.judgment is not None:
                 line += f" | JUDGE: {r.judgment.verdict} ({r.judgment.confidence:.2f})"
