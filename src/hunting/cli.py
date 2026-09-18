@@ -543,7 +543,9 @@ def build_parser() -> argparse.ArgumentParser:
     poc_group.add_argument("--list-pocs", action="store_true", help="List all built-in PoCs and exit.")
     poc_group.add_argument("--poc-chain", type=str, default=None, help="Run a chain of PoCs by comma-separated ids (e.g. poc-phishing-powershell-enc,poc-c2-beacon).")
     poc_group.add_argument("--poc-allow-escalation", action="store_true", help="Allow the PoC agent to call the LLM only when local adapter returns empty (uses --llm).")
+    poc_group.add_argument("--poc-judge", action="store_true", help="After the adapter run, ask the LLM to judge the matched hits as TRUE_POSITIVE / FALSE_POSITIVE / INCONCLUSIVE / NO_SIGNAL.")
     poc_group.add_argument("--poc-report", type=str, default=None, help="Path to write the PoC case-file Markdown report.")
+    poc_group.add_argument("--poc-judge-max-tokens", type=int, default=2000, help="Max tokens for the post-hoc judge LLM call.")
 
     # Forensic Audit & Replay Flags
     forensic_group = parser.add_argument_group("Forensic Audit & Replay")
@@ -815,8 +817,9 @@ def run_cli(args: argparse.Namespace) -> int:
         from hunting.poc import PocAgent, get_poc, render_poc_report
 
         llm_caller = None
+        judge_caller = None
         llm_tracker = None
-        if getattr(args, "poc_allow_escalation", False) and args.llm == "api":
+        if (getattr(args, "poc_allow_escalation", False) or getattr(args, "poc_judge", False)) and args.llm == "api":
             try:
                 from hunting.m2_abduction.provider import (
                     ApiLLMConfig,
@@ -840,15 +843,21 @@ def run_cli(args: argparse.Namespace) -> int:
                     return provider.call_raw(question)
 
                 llm_caller = _question_only
-                print(f"[+] [POC ESCALATION] Active ApiLLMProvider: model='{config.model}'")
+                judge_caller = _question_only
+                if getattr(args, "poc_allow_escalation", False):
+                    print(f"[+] [POC ESCALATION] Active ApiLLMProvider: model='{config.model}'")
+                if getattr(args, "poc_judge", False):
+                    print(f"[+] [POC JUDGE] Active ApiLLMProvider: model='{config.model}' max_tokens={args.poc_judge_max_tokens}")
             except Exception as e:
-                print(f"[-] [POC ESCALATION] Disabled (init failed: {e})", file=sys.stderr)
+                print(f"[-] [POC LLM] Disabled (init failed: {e})", file=sys.stderr)
 
         agent = PocAgent(
             adapter=adapter,
             llm_caller=llm_caller,
             llm_tracker=llm_tracker,
             ledger_dir=Path("artifacts") / "poc_hunts",
+            judge_caller=judge_caller,
+            enable_judge=getattr(args, "poc_judge", False),
         )
         ids = [poc_id] if poc_id else [x.strip() for x in poc_chain.split(",") if x.strip()]
         for pid in ids:
@@ -863,10 +872,18 @@ def run_cli(args: argparse.Namespace) -> int:
         for r in chain_results:
             poc_render = get_poc(r.poc_id).render()
             print("\n" + "=" * 72)
-            print(f"PoC {r.poc_id} — verdict {r.verdict} — {r.total_observations} obs, "
-                  f"{len(r.matched_step_ids)} matched step(s), "
-                  f"{r.llm_calls} LLM call(s), {r.runtime_seconds:.4f}s")
+            line = (
+                f"PoC {r.poc_id} — verdict {r.verdict} — {r.total_observations} obs, "
+                f"{len(r.matched_step_ids)} matched step(s), "
+                f"{r.llm_calls} LLM call(s), {r.runtime_seconds:.4f}s"
+            )
+            if r.judgment is not None:
+                line += f" | JUDGE: {r.judgment.verdict} ({r.judgment.confidence:.2f})"
+            print(line)
             print(f"  Rationale: {r.rationale}")
+            if r.judgment is not None:
+                print(f"  Judge:     {r.judgment.verdict} (conf={r.judgment.confidence:.2f})")
+                print(f"             {r.judgment.rationale}")
             if r.ledger_path:
                 print(f"  Ledger:    {r.ledger_path}")
             report_path = Path(args.poc_report) if args.poc_report else (

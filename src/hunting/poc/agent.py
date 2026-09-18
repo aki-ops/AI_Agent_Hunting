@@ -105,6 +105,9 @@ class PocHuntResult:
     runtime_seconds: float
     verdict: str  # "MATCHED" | "EMPTY" | "ESCALATED" | "INCONCLUSIVE"
     rationale: str
+    judgment: Any | None = None  # Judgment or None when --poc-judge disabled
+    judgment_llm_calls: int = 0
+    judgment_llm_tokens: int = 0
     ledger_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -126,6 +129,9 @@ class PocHuntResult:
             "runtime_seconds": self.runtime_seconds,
             "verdict": self.verdict,
             "rationale": self.rationale,
+            "judgment": (self.judgment.to_dict() if self.judgment is not None else None),
+            "judgment_llm_calls": self.judgment_llm_calls,
+            "judgment_llm_tokens": self.judgment_llm_tokens,
             "ledger_path": self.ledger_path,
         }
 
@@ -156,12 +162,16 @@ class PocAgent:
         llm_caller: Callable[[str, int], str] | None = None,
         llm_tracker: LLMUsageTracker | None = None,
         ledger_dir: str | Path | None = None,
+        judge_caller: Callable[[str, int], str] | None = None,
+        enable_judge: bool = False,
     ) -> None:
         self.adapter = adapter
         self.llm_caller = llm_caller
         self.llm_tracker = llm_tracker
         self.ledger_dir = Path(ledger_dir) if ledger_dir else Path("artifacts") / "poc_hunts"
         self.ledger_dir.mkdir(parents=True, exist_ok=True)
+        self.judge_caller = judge_caller or llm_caller
+        self.enable_judge = enable_judge
 
     def _run_step(self, step: TestStep, time_window: str, query_id: str) -> StepResult:
         terms = _compile_terms(step)
@@ -285,7 +295,35 @@ class PocAgent:
             runtime_seconds=elapsed,
             verdict=verdict,
             rationale=rationale,
+            judgment=None,
+            judgment_llm_calls=0,
+            judgment_llm_tokens=0,
         )
+
+        # Optional post-hoc LLM judge. Runs only when --poc-judge is set.
+        if self.enable_judge and self.judge_caller is not None:
+            from hunting.poc.judge import judge_run
+            judgment, j_calls, j_tokens = judge_run(
+                poc=poc,
+                matched_step_ids=matched_step_ids,
+                step_results=step_results,
+                total_observations=len(all_observations),
+                time_window=time_window,
+                llm_caller=self.judge_caller,
+            )
+            result.judgment = judgment
+            result.judgment_llm_calls = j_calls
+            result.judgment_llm_tokens = j_tokens
+            if self.llm_tracker is not None and j_calls > 0:
+                t0j = time.perf_counter()
+                # capture response was already produced inside judge_run; here
+                # we only record the cost envelope.
+                self.llm_tracker.record_call(
+                    component="poc_judge",
+                    prompt="judge",
+                    response=str(judgment.to_dict()),
+                    duration_ms=round((time.perf_counter() - t0j) * 1000.0, 2),
+                )
 
         ledger_path = self.ledger_dir / f"{request_id}.json"
         ledger_path.write_text(

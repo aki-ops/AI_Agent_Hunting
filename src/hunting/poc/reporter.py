@@ -23,6 +23,18 @@ def render_poc_report(result: PocHuntResult, poc_render: dict) -> str:
     lines.append("")
     lines.append(result.rationale)
     lines.append("")
+    if result.judgment is not None:
+        lines.append(f"## LLM Judge: **{result.judgment.verdict}** (confidence {result.judgment.confidence:.2f})")
+        lines.append("")
+        lines.append(result.judgment.rationale)
+        if result.judgment.notes:
+            lines.append("")
+            lines.append("**Notes:**")
+            for note in result.judgment.notes:
+                lines.append(f"- {note}")
+        lines.append("")
+        lines.append(f"_Judge cost: {result.judgment_llm_calls} call(s), {result.judgment_llm_tokens} token(s)_")
+        lines.append("")
     lines.append("## PoC Definition")
     lines.append("")
     lines.append(f"- Kind: `{poc_render.get('kind')}`")

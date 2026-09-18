@@ -147,3 +147,123 @@ def test_poc_report_renders_markdown(tmp_path: Path):
     assert "# PoC Hunt Report" in report
     assert "MATCHED" in report
     assert "powershell.exe" in report
+
+
+def _stub_judge_tp(prompt: str, max_tokens: int) -> str:
+    return json.dumps({
+        "verdict": "TRUE_POSITIVE",
+        "confidence": 0.85,
+        "rationale": "Parent image is OUTLOOK.EXE, user is interactive, time matches email arrival.",
+        "notes": ["parent=outlook", "user=interactive"],
+    })
+
+
+def _stub_judge_fp(prompt: str, max_tokens: int) -> str:
+    return json.dumps({
+        "verdict": "FALSE_POSITIVE",
+        "confidence": 0.9,
+        "rationale": "Parent is Microsoft Configuration Manager, scheduled baseline deployment.",
+        "notes": ["parent=sccm"],
+    })
+
+
+def test_judge_disabled_by_default(tmp_path: Path):
+    adapter = CdbAdapter(":memory:")
+    _seed_cdb(adapter)
+    agent = PocAgent(adapter=adapter, ledger_dir=tmp_path)
+    result = agent.run("poc-phishing-powershell-enc", time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z")
+    assert result.judgment is None
+    assert result.judgment_llm_calls == 0
+
+
+def test_judge_true_positive(tmp_path: Path):
+    adapter = CdbAdapter(":memory:")
+    _seed_cdb(adapter)
+    agent = PocAgent(
+        adapter=adapter,
+        ledger_dir=tmp_path,
+        judge_caller=_stub_judge_tp,
+        enable_judge=True,
+    )
+    result = agent.run("poc-phishing-powershell-enc", time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z")
+    assert result.judgment is not None
+    assert result.judgment.verdict == "TRUE_POSITIVE"
+    assert result.judgment.confidence == 0.85
+    assert "outlook" in result.judgment.rationale.lower()
+
+
+def test_judge_false_positive_admin_script(tmp_path: Path):
+    adapter = CdbAdapter(":memory:")
+    adapter.insert_events([
+        {
+            "timestamp": "2026-09-01T10:14:30Z",
+            "host": "SCCM-SERVER",
+            "user": "CORP\\svc_admin",
+            "image": "powershell.exe",
+            "cmdline": "powershell.exe -NoP -W Hidden -Enc Zm9v",
+            "parent_image": "C:\\Program Files\\Microsoft Configuration Manager\\bin\\CmRcViewer.exe",
+            "raw_ref": "sccm-001",
+            "native_type": "process",
+        }
+    ])
+    agent = PocAgent(
+        adapter=adapter,
+        ledger_dir=tmp_path,
+        judge_caller=_stub_judge_fp,
+        enable_judge=True,
+    )
+    result = agent.run("poc-phishing-powershell-enc", time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z")
+    assert result.verdict == "MATCHED"
+    assert result.judgment.verdict == "FALSE_POSITIVE"
+    assert result.judgment.confidence == 0.9
+
+
+def test_judge_no_signal_when_empty(tmp_path: Path):
+    adapter = CdbAdapter(":memory:")
+    agent = PocAgent(
+        adapter=adapter,
+        ledger_dir=tmp_path,
+        judge_caller=_stub_judge_tp,
+        enable_judge=True,
+    )
+    result = agent.run("poc-phishing-powershell-enc", time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z")
+    assert result.verdict == "EMPTY"
+    assert result.judgment.verdict == "NO_SIGNAL"
+    assert result.judgment_llm_calls == 0
+
+
+def test_judge_parser_handles_malformed_response():
+    from hunting.poc import parse_judgment
+    j = parse_judgment("not even json")
+    assert j.verdict == "INCONCLUSIVE"
+    assert j.confidence == 0.0
+
+
+def test_judge_parser_strips_markdown_fence():
+    from hunting.poc import parse_judgment
+    raw = "```json\n{\"verdict\":\"FALSE_POSITIVE\",\"confidence\":0.7,\"rationale\":\"x\"}\n```"
+    j = parse_judgment(raw)
+    assert j.verdict == "FALSE_POSITIVE"
+    assert j.confidence == 0.7
+
+
+def test_judge_parser_rejects_unknown_verdict():
+    from hunting.poc import parse_judgment
+    j = parse_judgment(json.dumps({"verdict": "MAYBE", "confidence": 0.5}))
+    assert j.verdict == "INCONCLUSIVE"
+
+
+def test_judge_report_section(tmp_path: Path):
+    adapter = CdbAdapter(":memory:")
+    _seed_cdb(adapter)
+    agent = PocAgent(
+        adapter=adapter,
+        ledger_dir=tmp_path,
+        judge_caller=_stub_judge_tp,
+        enable_judge=True,
+    )
+    result = agent.run("poc-phishing-powershell-enc", time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z")
+    poc_render = get_poc(result.poc_id).render()
+    report = render_poc_report(result, poc_render)
+    assert "LLM Judge" in report
+    assert "TRUE_POSITIVE" in report
