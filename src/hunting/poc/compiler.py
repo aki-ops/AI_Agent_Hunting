@@ -157,7 +157,18 @@ def compile_poc(poc, request_id: str, time_window: str) -> SemanticGoalGraph:
         relations=relations,
         qualifiers=qualifiers,
         answers=answers,
-        assumptions=[f"PoC {poc.poc_id}: {poc.name}"],
+        assumptions=[
+            f"PoC {poc.poc_id}: {poc.name}",
+            *( [f"topic: {poc.topic}"] if poc.topic else [] ),
+            *( [f"ABLE actor: {poc.actor}"] if poc.actor else ["ABLE actor: (unknown)"] ),
+            *( [f"ABLE behavior: {poc.behavior}"] if poc.behavior else [] ),
+            *( [f"ABLE location: {poc.location}"] if poc.location else [] ),
+            *( [f"ABLE evidence: {poc.evidence}"] if poc.evidence else [] ),
+            *( [f"scope: {poc.scope}"] if poc.scope else [] ),
+            *( [f"max_duration: {poc.max_duration}"] if poc.max_duration else [] ),
+            *( [f"plan: {poc.plan}"] if poc.plan else [] ),
+            *( [f"research: {r}" for r in poc.research_refs] ),
+        ],
         uncertainties=list(poc.expected_chain),
     )
     return graph

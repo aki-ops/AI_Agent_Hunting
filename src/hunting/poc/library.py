@@ -62,6 +62,15 @@ _register(
         poc_id="poc-phishing-powershell-enc",
         name="Phishing email led to PowerShell encoded command",
         kind=PocKind.TTP,
+        topic="phishing payload execution",
+        actor="",  # unknown actor — any phish operator
+        behavior="Spear-phishing attachment (T1566) leading to encoded PowerShell (T1059.001)",
+        location="end-user workstations with a mail client",
+        evidence="process_creation telemetry; hit = powershell.exe with -Enc and hidden window",
+        research_refs=["Splunk SURGe PEAK hypothesis-driven hunting", "MITRE ATT&CK T1566 / T1059.001"],
+        scope="workstation fleet in the investigation window",
+        max_duration="3d",
+        plan="search_text over process telemetry for powershell + encoded + hidden flags",
         summary=(
             "Detect encoded PowerShell execution on a workstation. Encoded "
             "PowerShell with -NoP/-W Hidden is a high-fidelity indicator of a "
@@ -128,6 +137,15 @@ _register(
         poc_id="poc-c2-beacon",
         name="Outbound C2 beacon to external domain",
         kind=PocKind.BEHAVIOR,
+        topic="command-and-control beaconing",
+        actor="",
+        behavior="Application-layer C2 beacon (T1071.001 / T1572)",
+        location="egress DNS/HTTP from managed hosts",
+        evidence="dns + web_request telemetry; hit = repeated outbound queries to an external domain",
+        research_refs=["Splunk SURGe PEAK hypothesis-driven hunting", "MITRE ATT&CK T1071.001"],
+        scope="hosts with egress DNS/HTTP in the investigation window",
+        max_duration="3d",
+        plan="search_text over dns and web telemetry for the external domain",
         summary=(
             "Find repeated outbound DNS or HTTP requests to an external "
             "domain. Use the connected domain as the host-side fingerprint "
@@ -182,6 +200,15 @@ _register(
         poc_id="poc-office-macro",
         name="Office macro dropper spawning child process",
         kind=PocKind.TTP,
+        topic="malicious document execution",
+        actor="",
+        behavior="Malicious attachment (T1566.001) executed by user (T1204.002)",
+        location="end-user workstations with Office suite",
+        evidence="process_creation telemetry; hit = office parent spawning script-host child",
+        research_refs=["Splunk SURGe PEAK hypothesis-driven hunting", "MITRE ATT&CK T1566.001 / T1204.002"],
+        scope="workstations with Office telemetry in the investigation window",
+        max_duration="3d",
+        plan="search_text over process telemetry for office parent + script-host child",
         summary=(
             "Office processes (Word/Excel/PowerPoint) that spawn cmd.exe, "
             "powershell.exe, wscript.exe or mshta.exe are a strong indicator "
@@ -228,6 +255,15 @@ _register(
         poc_id="poc-credential-phish",
         name="Credential phishing landing page POST observed",
         kind=PocKind.BEHAVIOR,
+        topic="credential harvesting via phishing link",
+        actor="",
+        behavior="Spear-phishing link (T1566.002) leading to credential submission",
+        location="browser traffic from end-user workstations",
+        evidence="web_request telemetry; hit = browser POST to login/verify/account URL pattern",
+        research_refs=["Splunk SURGe PEAK hypothesis-driven hunting", "MITRE ATT&CK T1566.002"],
+        scope="workstation browser traffic in the investigation window",
+        max_duration="3d",
+        plan="search_text over web telemetry for phishing URL pattern + POST + browser process",
         summary=(
             "Browser POST to a known credential-phishing URL pattern. Looks "
             "for both the URL hit and the originating browser process."
@@ -357,5 +393,14 @@ def poc_from_file(path) -> PoC:
         references=[str(r) for r in data.get("references", [])],
         escalation_hint=hint,
         expected_chain=[str(c) for c in data.get("expected_chain", [])],
+        topic=str(data.get("topic", "")),
+        actor=str((data.get("able") or {}).get("actor", data.get("actor", ""))),
+        behavior=str((data.get("able") or {}).get("behavior", data.get("behavior", ""))),
+        location=str((data.get("able") or {}).get("location", data.get("location", ""))),
+        evidence=str((data.get("able") or {}).get("evidence", data.get("evidence", ""))),
+        research_refs=[str(r) for r in data.get("research_refs", [])],
+        scope=str(data.get("scope", "")),
+        max_duration=str(data.get("max_duration", "")),
+        plan=str(data.get("plan", "")),
     )
     return _register(poc)

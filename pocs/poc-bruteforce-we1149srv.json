@@ -3,6 +3,17 @@
   "name": "Brute force login against public-facing server",
   "kind": "behavior",
   "summary": "Repeated failed authentication events targeting user accounts on a host. The encoded cmdline row carries 'Logon Failed' for failed attempts.",
+  "topic": "password guessing against a server",
+  "able": {
+    "actor": "",
+    "behavior": "Brute Force logons (T1110) against a privileged account",
+    "location": "we1149srv authentication log",
+    "evidence": "authentication telemetry; hit = burst of Logon Failed rows for user admin"
+  },
+  "research_refs": ["Splunk SURGe PEAK hypothesis-driven hunting", "BOTS v1 walkthrough - brute-force phase"],
+  "scope": "we1149srv on 2016-08-21",
+  "max_duration": "3d",
+  "plan": "search_text over authentication telemetry for Logon Failed + admin",
   "steps": [
     {
       "step_id": "s1-failed-auth",

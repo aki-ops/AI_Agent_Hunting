@@ -99,22 +99,22 @@ Dùng algorithm tìm lead khi phương pháp đơn giản không đủ. Output: 
 - **Execute:** Gather → Pre-Process (+encode, label) → **Develop Model** → **Refine** (tune hyperparameter) → **Apply** → **Analyze** (filter/stack trên output + enrich reputation; FP thì label lại ném về train) → Escalate.
 - **Act:** Preserve (**cả trained model** + notebook) → Document → Create Detections/**Notables**/**Playbooks** (best-case thành detection định kỳ; thường model đi 80%, 20% còn lại đóng thành analyst-in-the-loop playbook) → Backlog → Communicate.
 
-## 7. Đối chiếu với hệ thống hiện tại
+## 7. Đối chiếu với hệ thống hiện tại (cập nhật sau refactor ABLE)
 
 | PEAK yêu cầu | Hệ thống hiện tại | Đánh giá |
 |---|---|---|
-| Hypothesis + ABLE + scope + plan | PoC JSON (`poc_id`, steps field/op/value, MITRE refs) ≈ hypothesis đã pre-compile | **Đạt 70%.** Thiếu ABLE tường minh, scope duration, research refs |
+| Hypothesis + ABLE + scope + plan | PoC schema đã có `topic`, `able{actor,behavior,location,evidence}`, `research_refs`, `scope`, `max_duration`, `plan` — 4 PoC built-in + 3 PoC JSON BOTS v1 đều điền đủ; compiler đưa ABLE vào graph assumptions; report có mục "PEAK Prepare (ABLE)" | **Đạt ~90%.** ABLE actor được phép trống (unknown actor hợp lệ theo PEAK) |
 | Execute: gather → preprocess → analyze → refine → escalate | `PocAgent`: `search_text` qua adapter → MATCHED/EMPTY → LLM judge | **Đạt 60%.** Thiếu preprocess/normalize, vòng refine, escalate-to-IR |
 | Baseline hunts | Chưa có | **Chưa có.** Thiếu data dictionary, distributions, outlier detection |
 | M-ATH | Judge hiện tại là LLM-as-judge TP/FP (advisory), không phải hunting model | **Chưa có M-ATH thật.** Chưa có clustering/anomaly sinh lead |
-| Act: preserve → document → create detections → backlog → communicate | Ledger JSON + report `.md` trong `artifacts/poc_hunts/` | **Đạt 50%.** Thiếu sinh SPL draft, backlog, stakeholder summary |
-| Knowledge thấm mọi phase | MITRE refs + PoC library + ledger | **Đạt 50%.** Thiếu intel ingest, org context, baseline/model store versioned |
+| Act: preserve → document → create detections → backlog → communicate | Ledger JSON + report `.md` trong `artifacts/poc_hunts/` (nay kèm ABLE + judge cost tách riêng) | **Đạt ~60%.** Thiếu sinh SPL draft, backlog, stakeholder summary |
+| Knowledge thấm mọi phase | MITRE refs + research_refs + PoC library + ledger (graph assumptions giữ ABLE) | **Đạt ~65%.** Thiếu intel ingest, org context, baseline/model store versioned |
 
 **Điểm khớp triết lý (mạnh):** PEAK nhấn mạnh analyst-in-the-loop và "model đi 80%, người đóng 20%" — đúng dual-layer của hệ thống: rules bắt signal (deterministic, reproducible), LLM chỉ giải thích/adjudicate, match không phụ thuộc LLM.
 
 ## 8. Lộ trình align PEAK (không phá code cũ)
 
-1. **PoC schema += ABLE (tương thích ngược):** thêm `actor`, `behavior`, `location`, `evidence`, `topic`, `research_refs`, `scope`, `max_duration` — optional fields.
+1. ✅ **PoC schema += ABLE (đã xong, tương thích ngược):** `topic`, `able{actor,behavior,location,evidence}`, `research_refs`, `scope`, `max_duration`, `plan` — optional; PoC JSON cũ không có các field này vẫn load bình thường. ABLE đi vào graph assumptions + mục "PEAK Prepare (ABLE)" trong report. Test: 494 passed.
 2. **Baseline mode mới:** `--baseline-data-source <name>` sinh data dictionary + distributions + outliers (stack counting, z-score) từ CDB, lưu `baselines/` versioned.
 3. **M-ATH lite:** clustering/cardinality trên CDB rows (rare cmdline, rare parent→child) để sinh lead; LLM vẫn chỉ classify TP/FP.
 4. **Hoàn thiện Act:** report thêm detection draft (SPL), backlog suggestions, stakeholder summary.

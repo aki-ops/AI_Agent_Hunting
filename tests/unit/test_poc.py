@@ -30,6 +30,15 @@ def test_poc_steps_have_required_fields():
         assert poc.name
         assert poc.summary
         assert poc.steps, f"{poc.poc_id} has no steps"
+        # PEAK Prepare: built-in PoCs must carry ABLE context
+        assert poc.topic, f"{poc.poc_id} missing topic"
+        assert poc.behavior, f"{poc.poc_id} missing ABLE behavior"
+        assert poc.location, f"{poc.poc_id} missing ABLE location"
+        assert poc.evidence, f"{poc.poc_id} missing ABLE evidence"
+        assert poc.scope, f"{poc.poc_id} missing scope"
+        assert poc.max_duration, f"{poc.poc_id} missing max_duration"
+        assert poc.plan, f"{poc.poc_id} missing plan"
+        assert poc.research_refs, f"{poc.poc_id} missing research_refs"
         for step in poc.steps:
             assert step.step_id
             assert step.target_field
@@ -43,6 +52,70 @@ def test_poc_renders_to_dict():
     assert render["poc_id"] == "poc-phishing-powershell-enc"
     assert render["kind"] == "ttp"
     assert len(render["steps"]) == 3
+    assert render["able"]["behavior"]
+    assert render["able"]["location"]
+    assert render["able"]["evidence"]
+    assert render["scope"]
+    assert render["plan"]
+
+
+def test_poc_file_accepts_peak_prepare_fields(tmp_path: Path):
+    """Analyst JSON PoCs may carry PEAK Prepare (topic/ABLE/scope/plan)."""
+    from hunting.poc import poc_from_file
+
+    spec = tmp_path / "peak-poc.json"
+    spec.write_text(
+        """{
+            "poc_id": "poc-peak-test",
+            "name": "PEAK test",
+            "kind": "ttp",
+            "summary": "demo",
+            "topic": "phishing payload execution",
+            "able": {"actor": "", "behavior": "T1566 -> T1059.001",
+                      "location": "workstations", "evidence": "process telemetry"},
+            "research_refs": ["Splunk SURGe PEAK"],
+            "scope": "fleet in window",
+            "max_duration": "3d",
+            "plan": "search_text over process telemetry",
+            "steps": [
+                {"step_id": "s1", "description": "x", "target_field": "image",
+                 "op": "EQUALS", "value": "powershell.exe", "source_kind": "process"}
+            ],
+            "references": ["MITRE T1059.001"]
+        }""",
+        encoding="utf-8",
+    )
+    poc = poc_from_file(spec)
+    assert poc.topic == "phishing payload execution"
+    assert poc.behavior == "T1566 -> T1059.001"
+    assert poc.location == "workstations"
+    assert poc.evidence == "process telemetry"
+    assert poc.scope == "fleet in window"
+    assert poc.max_duration == "3d"
+    assert poc.plan == "search_text over process telemetry"
+    assert poc.research_refs == ["Splunk SURGe PEAK"]
+    # actor may be empty (unknown actor is valid per ABLE)
+    assert poc.actor == ""
+    rendered = poc.render()
+    assert rendered["able"]["behavior"] == "T1566 -> T1059.001"
+
+
+def test_poc_file_prepare_fields_default_empty(tmp_path: Path):
+    """Old JSON PoCs without PEAK fields still load (backward compatible)."""
+    from hunting.poc import poc_from_file
+
+    spec = tmp_path / "legacy.json"
+    spec.write_text(
+        """{"poc_id": "poc-legacy", "name": "x", "kind": "behavior",
+            "summary": "x", "steps": [{"step_id": "s1", "description": "x",
+            "target_field": "user", "op": "EQUALS", "value": "admin",
+            "source_kind": "process"}]}""",
+        encoding="utf-8",
+    )
+    poc = poc_from_file(spec)
+    assert poc.topic == ""
+    assert poc.behavior == ""
+    assert poc.plan == ""
 
 
 def _seed_cdb(adapter: CdbAdapter) -> None:

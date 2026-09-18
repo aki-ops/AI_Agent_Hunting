@@ -21,6 +21,11 @@ Each PoC declares:
 - A list of MITRE references for traceability.
 - An optional LLM escalation hint that is only consulted if local CDB
   queries do not produce sufficient evidence.
+- PEAK Prepare context (ABLE + scope), all optional for backward
+  compatibility: ``topic``, ``actor``, ``behavior``, ``location``,
+  ``evidence``, ``research_refs``, ``scope``, ``max_duration``, ``plan``.
+  See Splunk SURGe PEAK hypothesis-driven flow: ABLE turns a hypothesis
+  into an actionable hunt plan.
 """
 from __future__ import annotations
 
@@ -99,6 +104,16 @@ class PoC:
     references: list[str] = field(default_factory=list)
     escalation_hint: EscalationHint | None = None
     expected_chain: list[str] = field(default_factory=list)
+    # --- PEAK Prepare context (all optional, backward compatible) ---
+    topic: str = ""               # hunt topic, not yet a hypothesis
+    actor: str = ""               # ABLE Actor; may be empty (unknown actor)
+    behavior: str = ""            # ABLE Behavior (1-2 TTPs)
+    location: str = ""            # ABLE Location (where in the network)
+    evidence: str = ""            # ABLE Evidence (data sources + what a hit looks like)
+    research_refs: list[str] = field(default_factory=list)
+    scope: str = ""               # systems / data / timeframe boundary
+    max_duration: str = ""        # e.g. "3d" — stop hunting after this
+    plan: str = ""                # how data is gathered, techniques, owners
 
     def render(self) -> dict[str, Any]:
         return {
@@ -106,6 +121,17 @@ class PoC:
             "name": self.name,
             "kind": self.kind.value,
             "summary": self.summary,
+            "topic": self.topic,
+            "able": {
+                "actor": self.actor,
+                "behavior": self.behavior,
+                "location": self.location,
+                "evidence": self.evidence,
+            },
+            "research_refs": list(self.research_refs),
+            "scope": self.scope,
+            "max_duration": self.max_duration,
+            "plan": self.plan,
             "steps": [s.render() for s in self.steps],
             "fallbacks": [s.render() for s in self.fallbacks],
             "references": list(self.references),

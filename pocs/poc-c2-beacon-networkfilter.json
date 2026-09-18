@@ -3,6 +3,17 @@
   "name": "C2 beacon to ad.networkfilter.co (BOTS v1 known IOC)",
   "kind": "ioc",
   "summary": "Outbound HTTP request to ad.networkfilter.co, the ad-fraud beacon seen in BOTS v1.",
+  "topic": "command-and-control beaconing",
+  "able": {
+    "actor": "",
+    "behavior": "Application-layer C2 beacon (T1071.001) to a known ad-fraud domain",
+    "location": "egress web traffic from we1149srv",
+    "evidence": "web_request telemetry; hit = GET to ad.networkfilter.co /banner/ path"
+  },
+  "research_refs": ["Splunk SURGe PEAK hypothesis-driven hunting", "BOTS v1 known IOC"],
+  "scope": "BOTS v1 hosts on 2016-08-21",
+  "max_duration": "3d",
+  "plan": "search_text over web telemetry for the C2 domain + banner path",
   "steps": [
     {
       "step_id": "s1-c2-domain",

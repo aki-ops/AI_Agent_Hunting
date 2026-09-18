@@ -19,6 +19,27 @@ def render_poc_report(result: PocHuntResult, poc_render: dict) -> str:
     lines.append(f"**Finished:** {result.finished_at}")
     lines.append(f"**Runtime:** {result.runtime_seconds:.4f} s")
     lines.append("")
+    lines.append("## PEAK Prepare (ABLE)")
+    lines.append("")
+    if poc_render.get("topic"):
+        lines.append(f"- Topic: {poc_render.get('topic')}")
+    able = poc_render.get("able") or {}
+    lines.append(f"- Actor: {able.get('actor') or '(unknown)'}")
+    if able.get("behavior"):
+        lines.append(f"- Behavior: {able.get('behavior')}")
+    if able.get("location"):
+        lines.append(f"- Location: {able.get('location')}")
+    if able.get("evidence"):
+        lines.append(f"- Evidence: {able.get('evidence')}")
+    if poc_render.get("scope"):
+        lines.append(f"- Scope: {poc_render.get('scope')}")
+    if poc_render.get("max_duration"):
+        lines.append(f"- Max duration: {poc_render.get('max_duration')}")
+    if poc_render.get("plan"):
+        lines.append(f"- Plan: {poc_render.get('plan')}")
+    if poc_render.get("research_refs"):
+        lines.append(f"- Research: {', '.join(poc_render.get('research_refs'))}")
+    lines.append("")
     lines.append(f"## Verdict: **{result.verdict}**")
     lines.append("")
     lines.append(result.rationale)
