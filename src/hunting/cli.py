@@ -548,6 +548,14 @@ def build_parser() -> argparse.ArgumentParser:
     poc_group.add_argument("--poc-judge-max-tokens", type=int, default=2000, help="Max tokens for the post-hoc judge LLM call.")
     poc_group.add_argument("--poc-file", type=str, default=None, help="Load one PoC from a JSON file (overrides --poc).")
 
+    # PEAK Baseline hunting / EDA (no LLM)
+    baseline_group = parser.add_argument_group("PEAK Baseline Hunting (EDA)")
+    baseline_group.add_argument("--baseline", type=str, default=None, metavar="DATA_SOURCE", help="Run a PEAK Baseline (EDA) over a CDB source, e.g. --baseline cdb:events. Writes baselines/<id>.json + report.")
+    baseline_group.add_argument("--baseline-fields", type=str, default=None, help="Comma-separated CDB columns to profile (default: security-relevant fields).")
+    baseline_group.add_argument("--baseline-limit", type=int, default=5000, help="Max rows to pull for the baseline window [default: 5000].")
+    baseline_group.add_argument("--baseline-rare", type=int, default=2, help="Stack-counting threshold: values seen <= N times are outliers [default: 2].")
+    baseline_group.add_argument("--baseline-report", type=str, default=None, help="Path to write the baseline Markdown report.")
+
     # Forensic Audit & Replay Flags
     forensic_group = parser.add_argument_group("Forensic Audit & Replay")
     forensic_group.add_argument("--hunt-id", type=str, default=None, help="Target hunt ID for artifact inspection or query replay")
@@ -585,6 +593,62 @@ def run_cli(args: argparse.Namespace) -> int:
         from hunting.poc import list_pocs
         for poc in list_pocs():
             print(f"[+] {poc.poc_id}\t{poc.kind.value}\t{poc.name}")
+        return 0
+
+    # 0b. PEAK Baseline dispatch — needs only the CDB adapter, no LLM.
+    # Runs before provider setup so --baseline works with just --db + --time-window.
+    if getattr(args, "baseline", None):
+        from hunting.baseline import render_baseline_report, run_baseline
+
+        data_source = str(args.baseline)
+        window = getattr(args, "time_window", None) or "NOW-14d/NOW"
+        fields = None
+        if getattr(args, "baseline_fields", None):
+            fields = [c.strip() for c in str(args.baseline_fields).split(",") if c.strip()]
+        limit = int(getattr(args, "baseline_limit", 5000) or 5000)
+        rare = int(getattr(args, "baseline_rare", 2) or 2)
+        db_path = Path(getattr(args, "db", "data/cdb_sample.sqlite"))
+        adapter = CdbAdapter(str(db_path) if db_path.exists() else ":memory:")
+        print(f"[*] Baseline backend: Local CDB ({db_path if db_path.exists() else ':memory:'})")
+        try:
+            from hunting.m5_adapter.allowlist import validate_time_window_format
+            start_dt, end_dt = validate_time_window_format(window)
+            start_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            end_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            cur = adapter._conn.execute(
+                "SELECT * FROM events WHERE timestamp >= ? AND timestamp <= ? "
+                "ORDER BY timestamp ASC LIMIT ?",
+                [start_iso, end_iso, limit + 1],
+            )
+            fetched = [dict(r) for r in cur.fetchall()]
+            complete = len(fetched) <= limit
+            rows = fetched[:limit]
+        except Exception as e:
+            print(f"[-] [BASELINE] Gather failed: {e}", file=sys.stderr)
+            return 1
+        result = run_baseline(
+            rows,
+            data_source=data_source,
+            time_window=window,
+            fields=fields,
+            rare_threshold=rare,
+        )
+        print("\n" + "=" * 72)
+        print(
+            f"Baseline {result.baseline_id} — {result.row_count} rows, "
+            f"{len(result.fields)} fields, {len(result.outliers)} outliers, "
+            f"{len(result.gaps)} gaps ({result.runtime_seconds:.4f}s)"
+            + (" [TRUNCATED: window has more rows than --baseline-limit]" if not complete else "")
+        )
+        for o in result.outliers[:10]:
+            print(f"  [!] outlier `{o.field}={o.value}` x{o.count} ({o.reason})")
+        for g in result.gaps:
+            print(f"  [-] gap: {g}")
+        print(f"  Ledger: {result.ledger_path}")
+        report_path = Path(getattr(args, "baseline_report", None) or (Path("baselines") / f"{result.baseline_id}.md"))
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(render_baseline_report(result), encoding="utf-8")
+        print(f"  Report: {report_path}")
         return 0
 
     # Check if hypothesis threat hunting mode is triggered

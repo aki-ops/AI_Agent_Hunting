@@ -15,6 +15,7 @@ data/*.tgz
 data/*.gz
 data/*.csv
 data/raw/
+baselines/
 .env
 .env.*
 !.env.example
