@@ -107,7 +107,7 @@ Dùng algorithm tìm lead khi phương pháp đơn giản không đủ. Output: 
 | Execute: gather → preprocess → analyze → refine → escalate | `PocAgent`: `search_text` qua adapter → MATCHED/EMPTY → LLM judge | **Đạt 60%.** Thiếu preprocess/normalize, vòng refine, escalate-to-IR |
 | Baseline hunts | ✅ `--baseline cdb:events`: Gather (bounded SQL, limit+1 truncation flag) → Data Dictionary (kind, null/distinct/top) → Distributions (mean/median/stdev) → Outliers (stack counting + z-score) → Gap Analysis → Relationships (co-occurrence) → Preserve (`baselines/*.json`) + Document (report `.md`). Không LLM | **Đạt ~85%.** Còn thiếu baseline window dài ngày (30–90d) trên data thật và known-benign outlier list |
 | M-ATH | ✅ M-ATH lite (`--math cdb:events`): stdlib detectors — rare_value (frequency), lexical (encoded/hidden/cradle/persistence/cred-tool + entropy), rare_sequence (parent→child, user::image), dga (consonant-heavy labels). Ranked leads → `models/math_runs/`. Không numpy/sklearn, không LLM. Judge TP/FP giữ vai trò advisory phía sau | **Đạt ~75%.** Còn thiếu supervised classifier + model store versioned |
-| Act: preserve → document → create detections → backlog → communicate | Ledger JSON + report `.md` trong `artifacts/poc_hunts/` (nay kèm ABLE + judge cost tách riêng) | **Đạt ~60%.** Thiếu sinh SPL draft, backlog, stakeholder summary |
+| Act: preserve → document → create detections → backlog → communicate | ✅ Shared `hunting.act` (pure functions, không LLM): SPL draft từ PoC steps / M-ATH lead / baseline outlier (đánh dấu DRAFT, analyst review), backlog (missed steps → Refine, sibling TTP, coverage tasks, lead follow-up), stakeholder summary (headline + facts + next). Cả 3 report (PoC, Baseline, M-ATH) đều có mục `## PEAK Act` | **Đạt ~85%.** Còn thiếu auto-preserve vào wiki và gửi stakeholder |
 | Knowledge thấm mọi phase | MITRE refs + research_refs + PoC library + ledger (graph assumptions giữ ABLE) | **Đạt ~65%.** Thiếu intel ingest, org context, baseline/model store versioned |
 
 **Điểm khớp triết lý (mạnh):** PEAK nhấn mạnh analyst-in-the-loop và "model đi 80%, người đóng 20%" — đúng dual-layer của hệ thống: rules bắt signal (deterministic, reproducible), LLM chỉ giải thích/adjudicate, match không phụ thuộc LLM.
@@ -117,7 +117,7 @@ Dùng algorithm tìm lead khi phương pháp đơn giản không đủ. Output: 
 1. ✅ **PoC schema += ABLE (đã xong, tương thích ngược):** `topic`, `able{actor,behavior,location,evidence}`, `research_refs`, `scope`, `max_duration`, `plan` — optional; PoC JSON cũ không có các field này vẫn load bình thường. ABLE đi vào graph assumptions + mục "PEAK Prepare (ABLE)" trong report. Test: 494 passed.
 2. ✅ **Baseline mode (đã xong):** `--baseline cdb:events [--baseline-fields ...] [--baseline-limit N] [--baseline-rare N]` — deterministic, không LLM; lưu `baselines/<id>.json` (gitignored) + report `.md`. Test: 500 passed.
 3. ✅ **M-ATH lite (đã xong):** `--math cdb:events [--math-detectors ...] [--math-min-score X]` — 4 stdlib detectors, ranked leads, không thêm dependency, không LLM; lưu `models/math_runs/`. Test: 506 passed.
-4. **Hoàn thiện Act:** report thêm detection draft (SPL), backlog suggestions, stakeholder summary.
+4. ✅ **Hoàn thiện Act (đã xong):** shared `src/hunting/act/` — SPL draft + backlog + stakeholder summary cho cả 3 loại hunt, pure functions không LLM, đánh dấu DRAFT cần analyst review. Test: 514 passed.
 5. **Knowledge store:** `pocs/` + `baselines/` + `models/` versioned, ledger trỏ tới đúng phiên bản dùng.
 
 ## 9. Kết luận

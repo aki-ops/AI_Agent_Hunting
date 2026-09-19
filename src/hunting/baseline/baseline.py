@@ -267,6 +267,17 @@ def run_baseline(
 
 
 def render_baseline_report(result: BaselineResult) -> str:
+    from hunting.act import backlog_from_baseline, spl_from_outlier, stakeholder_summary
+
+    spls = [spl_from_outlier(o.to_dict()) for o in result.outliers[:3]]
+    backlog = backlog_from_baseline([o.to_dict() for o in result.outliers], result.gaps)
+    stakeholder = stakeholder_summary(
+        "baseline",
+        f"Baseline `{result.data_source}` over {result.row_count} rows: "
+        f"{len(result.outliers)} outliers, {len(result.gaps)} gaps.",
+        [f"Top outlier: `{result.outliers[0].field}={result.outliers[0].value}`."] if result.outliers else [],
+    )
+    act_block = {"detection_spls": spls, "backlog": backlog, "stakeholder": stakeholder}
     lines: list[str] = []
     lines.append(f"# Baseline Report — `{result.data_source}`")
     lines.append("")
@@ -307,6 +318,26 @@ def render_baseline_report(result: BaselineResult) -> str:
             lines.append(f"- … (+{len(result.outliers) - 20} more)")
     else:
         lines.append("No outliers under current thresholds.")
+    lines.append("")
+    lines.append("## PEAK Act")
+    lines.append("")
+    lines.append("### Detection Drafts (SPL — analyst review required)")
+    lines.append("")
+    for spl in act_block["detection_spls"][:3]:
+        lines.append("```spl")
+        lines.append(spl)
+        lines.append("```")
+        lines.append("")
+    if act_block["backlog"]:
+        lines.append("### Backlog")
+        lines.append("")
+        for item in act_block["backlog"]:
+            lines.append(f"- {item}")
+        lines.append("")
+    lines.append("### Stakeholder Summary")
+    lines.append("")
+    for bullet in act_block["stakeholder"]:
+        lines.append(f"- {bullet}")
     lines.append("")
     lines.append("## Gap Analysis")
     lines.append("")

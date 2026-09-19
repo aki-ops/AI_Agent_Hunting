@@ -281,6 +281,18 @@ def run_math(
 
 
 def render_math_report(result: MathResult) -> str:
+    from hunting.act import backlog_from_math, spl_from_lead, stakeholder_summary
+
+    spls = [spl_from_lead(lead.to_dict()) for lead in result.leads[:3]]
+    backlog = backlog_from_math([lead.to_dict() for lead in result.leads])
+    stakeholder = stakeholder_summary(
+        "math",
+        f"M-ATH run `{result.run_id}` over {result.row_count} rows: "
+        f"{len(result.leads)} leads above threshold.",
+        [f"Top lead: `{result.leads[0].lead_id}` {result.leads[0].kind} "
+         f"score={result.leads[0].score:.2f}."] if result.leads else [],
+    )
+    act_block = {"detection_spls": spls, "backlog": backlog, "stakeholder": stakeholder}
     lines: list[str] = []
     lines.append(f"# M-ATH Lite Report — `{result.data_source}`")
     lines.append("")
@@ -304,6 +316,26 @@ def render_math_report(result: MathResult) -> str:
     else:
         lines.append("No leads above threshold. Tune `--math-min-score` or `--math-rare`.")
         lines.append("")
+    lines.append("## PEAK Act")
+    lines.append("")
+    lines.append("### Detection Drafts (SPL — analyst review required)")
+    lines.append("")
+    for spl in act_block["detection_spls"][:3]:
+        lines.append("```spl")
+        lines.append(spl)
+        lines.append("```")
+        lines.append("")
+    if act_block["backlog"]:
+        lines.append("### Backlog")
+        lines.append("")
+        for item in act_block["backlog"]:
+            lines.append(f"- {item}")
+        lines.append("")
+    lines.append("### Stakeholder Summary")
+    lines.append("")
+    for bullet in act_block["stakeholder"]:
+        lines.append(f"- {bullet}")
+    lines.append("")
     lines.append("## Next step (PEAK Analyze)")
     lines.append("")
     lines.append("Feed a lead into a PoC hunt or the LLM judge, e.g.:")

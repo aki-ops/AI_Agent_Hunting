@@ -8,7 +8,28 @@ from __future__ import annotations
 from hunting.poc.agent import PocHuntResult
 
 
+def build_poc_act_block(result: PocHuntResult, poc_render: dict) -> dict[str, object]:
+    """Assemble the PEAK Act block for a PoC run (pure function, no I/O)."""
+    from hunting.act import (
+        backlog_from_poc,
+        spl_from_poc_steps,
+        stakeholder_summary,
+    )
+
+    spl = spl_from_poc_steps(poc_render.get("steps", []))
+    all_ids = [s.get("step_id", "") for s in poc_render.get("steps", [])]
+    backlog = backlog_from_poc(poc_render, list(result.matched_step_ids), all_ids)
+    judge = f"Judge: {result.judgment.verdict} ({result.judgment.confidence:.2f})." if result.judgment else "No judge."
+    stakeholder = stakeholder_summary(
+        "poc",
+        f"PoC `{result.poc_id}` verdict {result.verdict} over {result.total_observations} observations. {judge}",
+        [f"Matched steps: {', '.join(result.matched_step_ids) or '(none)'}."],
+    )
+    return {"detection_spl": spl, "backlog": backlog, "stakeholder": stakeholder}
+
+
 def render_poc_report(result: PocHuntResult, poc_render: dict) -> str:
+    act_block = build_poc_act_block(result, poc_render)
     lines: list[str] = []
     lines.append(f"# PoC Hunt Report — `{result.poc_id}`")
     lines.append("")
@@ -106,6 +127,25 @@ def render_poc_report(result: PocHuntResult, poc_render: dict) -> str:
         lines.append("")
         lines.append(result.escalation_summary or "(no summary)")
     lines.append("")
+    lines.append("## PEAK Act")
+    lines.append("")
+    lines.append("### Detection Draft (SPL — analyst review required)")
+    lines.append("")
+    lines.append("```spl")
+    lines.append(act_block["detection_spl"])
+    lines.append("```")
+    lines.append("")
+    if act_block["backlog"]:
+        lines.append("### Backlog")
+        lines.append("")
+        for item in act_block["backlog"]:
+            lines.append(f"- {item}")
+        lines.append("")
+    lines.append("### Stakeholder Summary")
+    lines.append("")
+    for bullet in act_block["stakeholder"]:
+        lines.append(f"- {bullet}")
+    lines.append("")
     lines.append("## Ledger")
     lines.append("")
     lines.append(f"`{result.ledger_path}`")
@@ -113,4 +153,4 @@ def render_poc_report(result: PocHuntResult, poc_render: dict) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["render_poc_report"]
+__all__ = ["build_poc_act_block", "render_poc_report"]
