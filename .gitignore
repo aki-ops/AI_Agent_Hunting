@@ -16,6 +16,7 @@ data/*.gz
 data/*.csv
 data/raw/
 baselines/
+models/math_runs/
 .env
 .env.*
 !.env.example

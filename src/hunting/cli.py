@@ -556,6 +556,15 @@ def build_parser() -> argparse.ArgumentParser:
     baseline_group.add_argument("--baseline-rare", type=int, default=2, help="Stack-counting threshold: values seen <= N times are outliers [default: 2].")
     baseline_group.add_argument("--baseline-report", type=str, default=None, help="Path to write the baseline Markdown report.")
 
+    # M-ATH lite (stdlib model-assisted hunting, no LLM, no numpy)
+    math_group = parser.add_argument_group("M-ATH Lite (model-assisted)")
+    math_group.add_argument("--math", type=str, default=None, metavar="DATA_SOURCE", help="Run M-ATH lite detectors over a CDB source, e.g. --math cdb:events. Writes models/math_runs/<id>.json + report.")
+    math_group.add_argument("--math-detectors", type=str, default=None, help="Comma-separated subset of rare_value,lexical,rare_sequence,dga [default: all].")
+    math_group.add_argument("--math-limit", type=int, default=5000, help="Max rows to pull for the run window [default: 5000].")
+    math_group.add_argument("--math-rare", type=int, default=2, help="Rarity threshold for frequency detectors [default: 2].")
+    math_group.add_argument("--math-min-score", type=float, default=2.0, help="Minimum lead score to keep [default: 2.0].")
+    math_group.add_argument("--math-report", type=str, default=None, help="Path to write the M-ATH Markdown report.")
+
     # Forensic Audit & Replay Flags
     forensic_group = parser.add_argument_group("Forensic Audit & Replay")
     forensic_group.add_argument("--hunt-id", type=str, default=None, help="Target hunt ID for artifact inspection or query replay")
@@ -648,6 +657,57 @@ def run_cli(args: argparse.Namespace) -> int:
         report_path = Path(getattr(args, "baseline_report", None) or (Path("baselines") / f"{result.baseline_id}.md"))
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(render_baseline_report(result), encoding="utf-8")
+        print(f"  Report: {report_path}")
+        return 0
+
+    # 0c. M-ATH lite dispatch — stdlib detectors, no LLM.
+    if getattr(args, "math", None):
+        from hunting.mathunt import render_math_report, run_math
+
+        data_source = str(args.math)
+        window = getattr(args, "time_window", None) or "NOW-14d/NOW"
+        detectors = None
+        if getattr(args, "math_detectors", None):
+            detectors = [d.strip() for d in str(args.math_detectors).split(",") if d.strip()]
+        limit = int(getattr(args, "math_limit", 5000) or 5000)
+        rare = int(getattr(args, "math_rare", 2) or 2)
+        min_score = float(getattr(args, "math_min_score", 2.0) or 2.0)
+        db_path = Path(getattr(args, "db", "data/cdb_sample.sqlite"))
+        adapter = CdbAdapter(str(db_path) if db_path.exists() else ":memory:")
+        print(f"[*] M-ATH backend: Local CDB ({db_path if db_path.exists() else ':memory:'})")
+        try:
+            from hunting.m5_adapter.allowlist import validate_time_window_format
+            start_dt, end_dt = validate_time_window_format(window)
+            start_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            end_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            cur = adapter._conn.execute(
+                "SELECT * FROM events WHERE timestamp >= ? AND timestamp <= ? "
+                "ORDER BY timestamp ASC LIMIT ?",
+                [start_iso, end_iso, limit + 1],
+            )
+            fetched = [dict(r) for r in cur.fetchall()]
+            complete = len(fetched) <= limit
+            rows = fetched[:limit]
+        except Exception as e:
+            print(f"[-] [MATH] Gather failed: {e}", file=sys.stderr)
+            return 1
+        result = run_math(
+            rows, data_source=data_source, time_window=window,
+            detectors=detectors, rare_threshold=rare, min_score=min_score,
+        )
+        print("\n" + "=" * 72)
+        print(
+            f"M-ATH {result.run_id} — {result.row_count} rows, "
+            f"{len(result.leads)} leads [{','.join(result.detectors)}] "
+            f"({result.runtime_seconds:.4f}s)"
+            + (" [TRUNCATED: window has more rows than --math-limit]" if not complete else "")
+        )
+        for lead in result.leads[:10]:
+            print(f"  [+] {lead.lead_id} {lead.kind} score={lead.score:.2f} `{lead.field}={lead.value}`")
+        print(f"  Ledger: {result.ledger_path}")
+        report_path = Path(getattr(args, "math_report", None) or (Path("models") / "math_runs" / f"{result.run_id}.md"))
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(render_math_report(result), encoding="utf-8")
         print(f"  Report: {report_path}")
         return 0
 

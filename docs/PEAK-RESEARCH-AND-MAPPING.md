@@ -106,7 +106,7 @@ Dùng algorithm tìm lead khi phương pháp đơn giản không đủ. Output: 
 | Hypothesis + ABLE + scope + plan | PoC schema đã có `topic`, `able{actor,behavior,location,evidence}`, `research_refs`, `scope`, `max_duration`, `plan` — 4 PoC built-in + 3 PoC JSON BOTS v1 đều điền đủ; compiler đưa ABLE vào graph assumptions; report có mục "PEAK Prepare (ABLE)" | **Đạt ~90%.** ABLE actor được phép trống (unknown actor hợp lệ theo PEAK) |
 | Execute: gather → preprocess → analyze → refine → escalate | `PocAgent`: `search_text` qua adapter → MATCHED/EMPTY → LLM judge | **Đạt 60%.** Thiếu preprocess/normalize, vòng refine, escalate-to-IR |
 | Baseline hunts | ✅ `--baseline cdb:events`: Gather (bounded SQL, limit+1 truncation flag) → Data Dictionary (kind, null/distinct/top) → Distributions (mean/median/stdev) → Outliers (stack counting + z-score) → Gap Analysis → Relationships (co-occurrence) → Preserve (`baselines/*.json`) + Document (report `.md`). Không LLM | **Đạt ~85%.** Còn thiếu baseline window dài ngày (30–90d) trên data thật và known-benign outlier list |
-| M-ATH | Judge hiện tại là LLM-as-judge TP/FP (advisory), không phải hunting model | **Chưa có M-ATH thật.** Chưa có clustering/anomaly sinh lead |
+| M-ATH | ✅ M-ATH lite (`--math cdb:events`): stdlib detectors — rare_value (frequency), lexical (encoded/hidden/cradle/persistence/cred-tool + entropy), rare_sequence (parent→child, user::image), dga (consonant-heavy labels). Ranked leads → `models/math_runs/`. Không numpy/sklearn, không LLM. Judge TP/FP giữ vai trò advisory phía sau | **Đạt ~75%.** Còn thiếu supervised classifier + model store versioned |
 | Act: preserve → document → create detections → backlog → communicate | Ledger JSON + report `.md` trong `artifacts/poc_hunts/` (nay kèm ABLE + judge cost tách riêng) | **Đạt ~60%.** Thiếu sinh SPL draft, backlog, stakeholder summary |
 | Knowledge thấm mọi phase | MITRE refs + research_refs + PoC library + ledger (graph assumptions giữ ABLE) | **Đạt ~65%.** Thiếu intel ingest, org context, baseline/model store versioned |
 
@@ -116,7 +116,7 @@ Dùng algorithm tìm lead khi phương pháp đơn giản không đủ. Output: 
 
 1. ✅ **PoC schema += ABLE (đã xong, tương thích ngược):** `topic`, `able{actor,behavior,location,evidence}`, `research_refs`, `scope`, `max_duration`, `plan` — optional; PoC JSON cũ không có các field này vẫn load bình thường. ABLE đi vào graph assumptions + mục "PEAK Prepare (ABLE)" trong report. Test: 494 passed.
 2. ✅ **Baseline mode (đã xong):** `--baseline cdb:events [--baseline-fields ...] [--baseline-limit N] [--baseline-rare N]` — deterministic, không LLM; lưu `baselines/<id>.json` (gitignored) + report `.md`. Test: 500 passed.
-3. **M-ATH lite:** clustering/cardinality trên CDB rows (rare cmdline, rare parent→child) để sinh lead; LLM vẫn chỉ classify TP/FP.
+3. ✅ **M-ATH lite (đã xong):** `--math cdb:events [--math-detectors ...] [--math-min-score X]` — 4 stdlib detectors, ranked leads, không thêm dependency, không LLM; lưu `models/math_runs/`. Test: 506 passed.
 4. **Hoàn thiện Act:** report thêm detection draft (SPL), backlog suggestions, stakeholder summary.
 5. **Knowledge store:** `pocs/` + `baselines/` + `models/` versioned, ledger trỏ tới đúng phiên bản dùng.
 
