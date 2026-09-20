@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from hunting.contracts.cells import ProviderScope
+from hunting.contracts.agenda import AgendaItem, BoundedAgenda
 from hunting.contracts.entities import Account, Domain, File, Host, IPAddress, Process
 from hunting.contracts.observations import EpistemicType, Observation
 from hunting.contracts.ontology import roles_are_compatible
@@ -87,6 +88,7 @@ class SemanticExecutionResult:
     # steps so a valid downstream search is not silently skipped.
     candidate_input_warnings: dict[str, str] = field(default_factory=dict)
     ambiguous_candidates: dict[str, list[str]] = field(default_factory=dict)
+    agenda: dict[str, Any] = field(default_factory=dict)
 
 
 class SemanticPlanExecutor:
@@ -190,7 +192,22 @@ class SemanticPlanExecutor:
         route_assessments: dict[str, SemanticRouteAssessment] = {}
         route_exhausted: set[str] = set()
         no_progress_signatures: set[str] = set()
-        remaining = list(plan.steps)
+        agenda = BoundedAgenda()
+        agenda.extend(
+            AgendaItem(
+                goal_id=(step.advances_goal_ids[0] if step.advances_goal_ids else step.id),
+                step_id=step.id,
+                operation_id=step.operation_id,
+                mode=step.mode,
+                depends_on=tuple(step.depends_on),
+                cost=float(step.expected_cost or 1),
+            )
+            for step in plan.steps
+        )
+        remaining = [
+            next(step for step in plan.steps if step.id == item.step_id)
+            for item in agenda.ordered()
+        ]
         unresolved_reasons: dict[str, str] = {}
         candidate_input_warnings: dict[str, str] = {}
         ambiguous_candidates: dict[str, list[str]] = {}
@@ -263,6 +280,7 @@ class SemanticPlanExecutor:
                         status="USER_SELECTED",
                         proof_result=pr,
                     ))
+                    agenda.dispatch(step.id)
                     remaining.remove(step)
                     progress = True
                     continue
@@ -336,6 +354,7 @@ class SemanticPlanExecutor:
                             continue
                 primary_operation = self.operations.get(step.operation_id)
                 if primary_operation is None:
+                    agenda.dispatch(step.id)
                     remaining.remove(step)
                     unresolved_reasons[step.id] = f"operation '{step.operation_id}' is not declared by the provider"
                     continue
@@ -379,6 +398,7 @@ class SemanticPlanExecutor:
                     )
                     continue
 
+                agenda.dispatch(step.id)
                 operation_ids = (primary_operation.id, *step.alternative_operation_ids)
                 for operation_index, operation_id in enumerate(operation_ids):
                     operation = self.operations.get(operation_id)
@@ -1097,6 +1117,7 @@ class SemanticPlanExecutor:
             continuations=continuations,
             candidate_input_warnings=candidate_input_warnings,
             ambiguous_candidates=ambiguous_candidates,
+            agenda=agenda.to_dict(),
         )
 
 

@@ -83,6 +83,8 @@ This document records gates and current status; detailed production evidence rem
 
 | Item ID | Status | Production evidence | Test/replay evidence | Run artifact | Owner | Blocker/notes |
 |---|---|---|---|---|---|---|
+| M3.1 agenda contract | `[~]` | `src/hunting/contracts/agenda.py`, `src/hunting/planner/semantic_executor.py` | `tests/unit/test_candidate_routes.py`, 43-test targeted suite | CDB smoke flow: agenda dispatched `step-1`, `step-2`; pending/resume integration remains open | engineering | contract and scheduler projection integrated; controller-wide agenda migration not complete |
+| M4.3 EvidenceGraph | `[~]` | `src/hunting/evidence/evidence_graph.py`, `src/hunting/engine.py` | `tests/unit/test_evidence_graph.py`, 43-test targeted suite | CDB smoke flow: 1 observation, 5 graph edges, all `NOT_PROOF` | engineering | immutable run-account reconstruction and multi-provider graph remain open |
 | Example | `[ ]` | — | — | — | unassigned | not started |
 
 ---
@@ -281,10 +283,10 @@ These entries reconcile current documentation and inspected production code. The
 
 ### M3.1 Agenda contract
 
-- `[ ]` Define one agenda item: goal, proof method, route, mode, bindings, envelope, cursor and priority.
-- `[ ]` Priority uses mandatory status, outcome utility, information gain and bounded cost.
-- `[ ]` Ranking changes order only; it cannot create authority.
-- `[ ]` Agenda state is serializable and resumable.
+- `[~]` Define one agenda item: goal, proof method, route, mode, bindings, envelope, cursor and priority. `AgendaItem` covers goal/route/mode/cursor/priority; binding and envelope integration remain open.
+- `[~]` Priority uses mandatory status, outcome utility, information gain and bounded cost. The deterministic comparator exists and is tested; production utility/cost population is still incomplete.
+- `[~]` Ranking changes order only; it cannot create authority. The agenda is a scheduler projection and proof/stop authority remains outside it; full controller integration is open.
+- `[~]` Agenda state is serializable and resumable at the contract level; semantic execution records dispatched and pending items, but resume of a production hunt from that snapshot is not yet wired.
 
 ### M3.2 Controller integration
 
@@ -337,11 +339,11 @@ These entries reconcile current documentation and inspected production code. The
 
 ### M4.3 Evidence graph
 
-- `[ ]` Define append-only EvidenceGraph nodes/edges from Observation and FieldFact.
-- `[ ]` Preserve native field/value, query, provider, timestamp and transformation provenance.
+- `[~]` Define append-only EvidenceGraph nodes/edges from Observation and FieldFact. The provider-neutral projection is integrated into semantic run analysis; immutable run-account reconstruction remains open.
+- `[~]` Preserve native field/value, query, provider, timestamp and transformation provenance. Native observation payload, query/provider scope and field-fact provenance are retained; all transformation classes are not yet complete.
 - `[ ]` Distinguish observed transition, provenance dependency and causal attribution.
-- `[ ]` Preserve contradictory facts and identity alternatives.
-- `[ ]` Prevent graph proximity/co-occurrence from granting semantic proof.
+- `[~]` Preserve contradictory facts and identity alternatives. Observation and fact nodes are append-only and collision-checked; explicit identity-reconciliation alternatives remain open.
+- `[x]` Prevent graph proximity/co-occurrence from granting semantic proof. Every graph edge is `NOT_PROOF`, and `tests/unit/test_evidence_graph.py` asserts this invariant.
 - `[ ]` Support multi-provider evidence routes under one goal.
 
 ### Gate M4

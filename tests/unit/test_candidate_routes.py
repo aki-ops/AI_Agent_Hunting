@@ -8,6 +8,7 @@ from dataclasses import replace
 from hunting.m5_adapter.cdb_adapter import CdbAdapter
 from hunting.planner.semantic_executor import SemanticPlanExecutor
 from hunting.planner.semantic_query_compiler import query_plan_from_step
+from hunting.contracts.agenda import AgendaItem, BoundedAgenda
 
 
 def _graph(relation: str = "novel relation") -> SemanticGoalGraph:
@@ -150,6 +151,7 @@ def test_goal_bound_route_reaches_provider_query_without_c2() -> None:
     assert result.executions[0].result.executed_ok is True
     assert len(result.executions[0].result.rows or []) == 1
     assert result.binding_provenance["process"][0]["status"] == "CANDIDATE"
+    assert result.agenda["dispatched"] == ["step-1"]
 
 
 def test_admitted_route_mode_reaches_query_intent() -> None:
@@ -223,3 +225,18 @@ def test_prove_route_requires_an_approved_proof_contract_id() -> None:
     assert routes["unapproved-proof"].proof_contract_id is None
     assert routes["approved-proof"].mode.value == "PROVE"
     assert routes["approved-proof"].proof_contract_id == "pc-typed-action-v1"
+
+
+def test_bounded_agenda_is_deterministic_and_resumable() -> None:
+    agenda = BoundedAgenda()
+    agenda.extend([
+        AgendaItem("g2", "s2", "op2", utility=1.0, cost=2),
+        AgendaItem("g1", "s1", "op1", utility=1.0, cost=1),
+    ])
+    first = agenda.pop_next()
+    assert first is not None and first.step_id == "s1"
+    snapshot = agenda.to_dict()
+    resumed = BoundedAgenda.from_dict(snapshot)
+    second = resumed.pop_next()
+    assert second is not None and second.step_id == "s2"
+    assert resumed.to_dict()["dispatched"] == ["s1", "s2"]

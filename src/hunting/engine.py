@@ -105,6 +105,7 @@ from hunting.controller.reasoning import HypothesisReasoningEngine
 from hunting.controller.recovery_controller import RecoveryController
 from hunting.evidence.adjudicator import InvestigationAdjudicator
 from hunting.evidence.evaluator import EvidenceEvaluator
+from hunting.evidence.evidence_graph import EvidenceGraph
 from hunting.evidence.grouping import EvidenceGroupBuilder
 from hunting.evidence.proof_engine import ProofEngine
 from hunting.evidence.relation_verifier import RelationVerifier
@@ -663,6 +664,15 @@ class HypothesisHuntEngine:
             "route_assessments": [
                 assessment.to_dict() for assessment in execution.route_assessments
             ],
+            # The evidence graph is a read-only projection of immutable native
+            # observations.  It is deliberately separate from the semantic
+            # goal graph and never upgrades proof status by proximity.
+            "evidence_graph": EvidenceGraph.from_observations(
+                list(getattr(state, "observations", []) or [])
+            ).to_dict(),
+            # Preserve the bounded scheduler decision in the run account; the
+            # controller still owns action and terminal-state authority.
+            "agenda": dict(getattr(execution, "agenda", {}) or {}),
         })
 
         state.proof_results = [item.proof_result for item in execution.executions if getattr(item, "proof_result", None)]

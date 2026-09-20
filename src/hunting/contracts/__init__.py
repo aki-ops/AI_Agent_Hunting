@@ -402,4 +402,7 @@ __all__ = [
     "SemanticTransform",
     "evaluate_constraint_against_row",
     "get_transform_for_constraint",
+    "AgendaItem",
+    "BoundedAgenda",
 ]
+from hunting.contracts.agenda import AgendaItem, BoundedAgenda
