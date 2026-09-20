@@ -92,7 +92,7 @@ class QueryIntentSpec:
     expected_cost: int | None = None
     binding_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
     retrieval_stage: str = "narrow"
-    mode: str = QueryIntentMode.PROVE.value
+    mode: str = QueryIntentMode.EXPLORE.value
 
     def __post_init__(self) -> None:
         for name in ("goal_id", "operation_id", "source_id", "relation"):
@@ -102,9 +102,9 @@ class QueryIntentSpec:
             raise ValueError("max_rows must be between 1 and 10000")
         if not str(self.retrieval_stage).strip():
             raise ValueError("retrieval_stage must not be empty")
-        mode_val = str(self.mode or QueryIntentMode.PROVE.value).upper()
+        mode_val = str(self.mode or QueryIntentMode.EXPLORE.value).upper()
         if mode_val not in {"EXPLORE", "DISCRIMINATE", "PROVE"}:
-            mode_val = QueryIntentMode.PROVE.value
+            mode_val = QueryIntentMode.EXPLORE.value
         object.__setattr__(self, "mode", mode_val)
         object.__setattr__(self, "bindings", dict(self.bindings))
         object.__setattr__(self, "predicates", tuple(QueryPredicateSpec.from_raw(p) for p in self.predicates))

@@ -213,6 +213,7 @@ def test_scenario_02_multihop_prerequisite_gates() -> None:
         input_bindings={"subject": "person"},
         output_bindings={"object": "endpoint"},
         advances_goal_ids=("goal-1",),
+        mode="PROVE",
     )
     step_2 = PlanStep(
         id="step-lookup-domain",
@@ -223,6 +224,7 @@ def test_scenario_02_multihop_prerequisite_gates() -> None:
         depends_on=("step-lookup-endpoint",),
         dependency_operator="GATE",
         gate_condition="goal-1:verified",
+        mode="PROVE",
     )
 
     plan = LogicalPlan(

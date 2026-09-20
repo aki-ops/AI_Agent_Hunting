@@ -888,10 +888,10 @@ class PlanStep:
     requires_complete_inputs: bool = True
     dependency_operator: str = "AND"
     gate_condition: str | None = None
-    # Execution authority is carried by the admitted route.  Keep PROVE as
-    # the compatibility default for hand-authored legacy plans; production
-    # route resolution must set this explicitly (normally EXPLORE).
-    mode: str = "PROVE"
+    # Execution authority is carried by the admitted route.  An unannotated
+    # hand-authored step is discovery-only; PROVE must be explicit and backed
+    # by an admitted proof contract.
+    mode: str = "EXPLORE"
 
     def __post_init__(self) -> None:
         for name in ("id", "operation_id"):
@@ -928,7 +928,7 @@ class PlanStep:
         if op not in {"AND", "OR", "GATE"}:
             op = "AND"
         object.__setattr__(self, "dependency_operator", op)
-        mode = str(getattr(self, "mode", "PROVE") or "PROVE").upper()
+        mode = str(getattr(self, "mode", "EXPLORE") or "EXPLORE").upper()
         if mode not in {"EXPLORE", "DISCRIMINATE", "PROVE"}:
             raise ValueError("PlanStep.mode must be EXPLORE, DISCRIMINATE or PROVE")
         object.__setattr__(self, "mode", mode)

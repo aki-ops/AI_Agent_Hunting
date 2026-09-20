@@ -114,7 +114,7 @@ These entries reconcile current documentation and inspected production code. The
 
 **Current P0 gate:** `08` Workstream L / M1 remains the immediate code-migration priority. Before changing it, perform only the minimum M0 truth repair needed to capture current candidate behavior and one executable baseline; continue the broader M0 corpus/evaluation work in parallel. Do not begin query optimization, UI expansion, additional providers or autonomy work before M1 passes.
 
-**Documentation discrepancy:** `04` Phase 10 currently marks B0/B1 execution complete, but `eval/runner.py` still raises `NotImplementedError` for `B0_BASELINE` and `B1_DIRECT_QUERY`. Until this is reconciled with executable evidence, this tracker keeps those baseline items open.
+**Documentation status:** B1 and the executable portions of B0 are covered by `eval/runner.py` and `tests/unit/test_baseline_runner.py`; B0 analyst review and the independent evaluation gate remain open.
 
 ---
 
@@ -140,13 +140,13 @@ These entries reconcile current documentation and inspected production code. The
 
 ### M0.3 Executable baselines
 
-- `[ ]` Implement B0 approved curated query/package plus analyst review.
-- `[ ]` Implement B1 simple guarded typed-intent/direct-query path.
+- `[~]` Implement B0 approved curated query/package plus analyst review. The reviewed CDB baseline spec executes and serializes a run account; independent analyst-review workflow is still open.
+- `[x]` Implement B1 simple guarded typed-intent/direct-query path. Evidence: `eval/runner.py`, `eval/corpus/baseline_specs.jsonl`, `tests/unit/test_baseline_runner.py`.
 - `[~]` Candidate path invokes the live engine when an adapter is supplied.
 - `[ ]` Implement oracle graph replay as a diagnostic ablation.
 - `[ ]` Implement oracle mapping replay as a diagnostic ablation.
 - `[ ]` Ensure candidate and baselines receive the same request, permissions, data, time range and budget.
-- `[ ]` Preserve exceptions, timeouts and failed runs in results instead of collapsing them into silent zeros.
+- `[x]` Preserve baseline exceptions, timeouts and failed runs in results instead of collapsing them into silent zeros. Evidence: `tests/unit/test_baseline_runner.py::test_baseline_provider_failure_is_not_collapsed_to_zero_score`.
 
 ### M0.4 Metric correctness
 
@@ -247,7 +247,7 @@ These entries reconcile current documentation and inspected production code. The
 
 ### M2.1 Mode authority
 
-- `[ ]` Every QueryIntent mode is explicit; unsafe defaults do not silently become PROVE.
+- `[x]` Every QueryIntent mode is explicit; unsafe defaults now resolve to `EXPLORE`, and `PROVE` must be explicitly declared and admitted. Evidence: `src/hunting/contracts/query_intent.py`, `src/hunting/contracts/semantic_graph.py`, `src/hunting/planner/semantic_goal_planner.py`, `tests/unit/test_phase5_typed_query_and_quarantine.py`.
 - `[x]` Route admission, not an LLM narrative, selects allowed mode. Evidence: `CapabilityRouteResolver` derives mode from admitted operation metadata.
 - `[x]` PROVE requires an approved compatible ProofContract/evaluator. Evidence: routes without `proof_contract_id` are downgraded to `EXPLORE`; `tests/unit/test_candidate_routes.py::test_prove_route_requires_an_approved_proof_contract_id`.
 - `[x]` EXPLORE cannot create verified bindings or negative licences. Evidence: `SemanticPlanExecutor` gates binding promotion on `PlanStep.mode == PROVE`; `tests/unit/test_candidate_routes.py::test_goal_bound_route_reaches_provider_query_without_c2`.

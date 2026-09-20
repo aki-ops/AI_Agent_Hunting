@@ -23,8 +23,8 @@ def test_executor_passes_declared_output_to_dependent_step() -> None:
         ProviderOperation("lookup-domain", "p", ("scope",), input_entity_kinds=("host",), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain_value",)}),
     ]
     plan = LogicalPlan("p1", "g1", "p", [
-        PlanStep("s1", "lookup-host", {"subject": "person"}, {"object": "host"}),
-        PlanStep("s2", "lookup-domain", {"subject": "host"}, {"object": "domain"}, depends_on=("s1",)),
+            PlanStep("s1", "lookup-host", {"subject": "person"}, {"object": "host"}, mode="PROVE"),
+            PlanStep("s2", "lookup-domain", {"subject": "host"}, {"object": "domain"}, depends_on=("s1",), mode="PROVE"),
     ])
     result = SemanticPlanExecutor(adapter, operations).execute(plan, ProviderScope("p", "scope", {}), "2026-01-01T00:00:00Z/P1D", {"person": "Amber"})
     assert len(adapter.calls) == 2

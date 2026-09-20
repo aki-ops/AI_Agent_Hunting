@@ -49,7 +49,7 @@ class SemanticGoalPlanner:
             mode = getattr(getattr(route, "mode", None), "value", getattr(route, "mode", None))
             if mode:
                 return str(mode).upper()
-        return str(getattr(operation, "route_mode", "PROVE") or "PROVE").upper()
+        return str(getattr(operation, "route_mode", "EXPLORE") or "EXPLORE").upper()
 
     @staticmethod
     def _answer_compatible(

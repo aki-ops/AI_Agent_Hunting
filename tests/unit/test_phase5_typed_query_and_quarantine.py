@@ -29,8 +29,8 @@ def test_query_intent_modes_and_epistemic_authority() -> None:
     assert QueryIntentMode.DISCRIMINATE.value == "DISCRIMINATE"
     assert QueryIntentMode.PROVE.value == "PROVE"
 
-    # Default mode is PROVE
-    intent_prove = QueryIntentSpec(
+    # The safe default is EXPLORE; PROVE must be explicit.
+    intent_default = QueryIntentSpec(
         goal_id="g-01",
         operation_id="op-auth",
         source_id="src-ad",
@@ -38,8 +38,18 @@ def test_query_intent_modes_and_epistemic_authority() -> None:
         predicates=(QueryPredicateSpec(key="user", operator="equals", value="Alice"),),
         time_window="2026-08-18T00:00:00Z/2026-08-19T00:00:00Z",
     )
+    assert intent_default.mode == QueryIntentMode.EXPLORE.value
+    assert intent_default.to_dict()["mode"] == "EXPLORE"
+
+    intent_prove = QueryIntentSpec(
+        goal_id="g-01",
+        operation_id="op-auth",
+        source_id="src-ad",
+        relation="authenticates",
+        mode=QueryIntentMode.PROVE.value,
+        time_window="2026-08-18T00:00:00Z/2026-08-19T00:00:00Z",
+    )
     assert intent_prove.mode == QueryIntentMode.PROVE.value
-    assert intent_prove.to_dict()["mode"] == "PROVE"
 
     # Explicit EXPLORE mode
     intent_explore = QueryIntentSpec(

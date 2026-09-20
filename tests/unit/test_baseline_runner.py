@@ -26,6 +26,21 @@ def test_b1_executes_reviewed_direct_query_and_serializes_run_account() -> None:
     assert result.run_account["complete"] is True
 
 
+def test_b0_executes_the_reviewed_curated_baseline_and_serializes_run_account() -> None:
+    adapter = CdbAdapter(":memory:")
+    adapter.insert_events([{
+        "timestamp": "2026-02-01T10:00:00Z",
+        "native_type": "software",
+        "raw_ref": "Tor Browser version 7.0.4",
+    }])
+    result = EvaluationRunner().evaluate_scenario(_scenario(), mode="B0_BASELINE", adapter=adapter)
+    assert result.predicted_stopping_state == "EXECUTED"
+    assert result.run_account is not None
+    assert result.run_account["mode"] == "B0_BASELINE"
+    assert result.run_account["row_count"] == 1
+    assert result.run_account["complete"] is True
+
+
 def test_baseline_without_spec_is_truthfully_not_configured() -> None:
     scenario = dict(_scenario(), scenario_id="S99_unconfigured")
     result = EvaluationRunner().evaluate_scenario(scenario, mode="B1_DIRECT_QUERY", adapter=CdbAdapter(":memory:"))
