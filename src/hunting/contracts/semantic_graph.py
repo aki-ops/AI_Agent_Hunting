@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 
@@ -91,6 +92,237 @@ class SemanticConstraint:
         return payload
 
 
+class ClarificationPredicateKind(str, Enum):
+    """Reviewed deterministic predicates that may request clarification."""
+
+    CONFLICTING_EQUALS = "CONFLICTING_EQUALS"
+
+
+class ClarificationPredicateOperator(str, Enum):
+    """Allowlisted operators for clarification predicates."""
+
+    HAS_CONFLICT = "HAS_CONFLICT"
+
+
+class ClarificationEvaluationResult(str, Enum):
+    """Four-valued result of deterministic clarification evaluation."""
+
+    TRUE = "TRUE"
+    FALSE = "FALSE"
+    UNKNOWN = "UNKNOWN"
+    INVALID = "INVALID"
+
+
+@dataclass(frozen=True)
+class ClarificationPredicate:
+    """Typed, versioned condition proposed for deterministic evaluation."""
+
+    id: str
+    kind: ClarificationPredicateKind | str
+    operator: ClarificationPredicateOperator | str
+    variable_id: str | None = None
+    constraint_key: str | None = None
+    expected_cardinality: str | None = None
+    quantifier: str | None = None
+    operands: tuple[Any, ...] = ()
+    provenance_span: str = ""
+    schema_version: str = "1.0"
+    rule_version: str = "1.0"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "id", _clean(self.id, "ClarificationPredicate.id"))
+        try:
+            kind = (
+                self.kind
+                if isinstance(self.kind, ClarificationPredicateKind)
+                else ClarificationPredicateKind(str(self.kind).strip().upper())
+            )
+        except ValueError:
+            kind = str(self.kind or "").strip().upper()
+        try:
+            operator = (
+                self.operator
+                if isinstance(self.operator, ClarificationPredicateOperator)
+                else ClarificationPredicateOperator(str(self.operator).strip().upper())
+            )
+        except ValueError:
+            operator = str(self.operator or "").strip().upper()
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(self, "operator", operator)
+        if self.variable_id is not None:
+            object.__setattr__(self, "variable_id", str(self.variable_id).strip() or None)
+        if self.constraint_key is not None:
+            key = str(self.constraint_key).strip().casefold()
+            object.__setattr__(self, "constraint_key", key or None)
+        operands = self.operands or ()
+        if not isinstance(operands, tuple):
+            operands = tuple(operands) if isinstance(operands, (list, set)) else (operands,)
+        object.__setattr__(self, "operands", operands)
+        object.__setattr__(self, "schema_version", _clean(self.schema_version, "ClarificationPredicate.schema_version"))
+        object.__setattr__(self, "rule_version", _clean(self.rule_version, "ClarificationPredicate.rule_version"))
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ClarificationPredicate":
+        return cls(
+            id=str(data.get("id", "")),
+            kind=str(data.get("kind", "")),
+            operator=str(data.get("operator", "")),
+            variable_id=data.get("variable_id"),
+            constraint_key=data.get("constraint_key"),
+            expected_cardinality=data.get("expected_cardinality"),
+            quantifier=data.get("quantifier"),
+            operands=tuple(data.get("operands", ()) or ()),
+            provenance_span=str(data.get("provenance_span", "")),
+            schema_version=str(data.get("schema_version", "1.0")),
+            rule_version=str(data.get("rule_version", "1.0")),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "kind": self.kind.value if isinstance(self.kind, Enum) else str(self.kind),
+            "operator": self.operator.value if isinstance(self.operator, Enum) else str(self.operator),
+            "variable_id": self.variable_id,
+            "constraint_key": self.constraint_key,
+            "expected_cardinality": self.expected_cardinality,
+            "quantifier": self.quantifier,
+            "operands": list(self.operands),
+            "provenance_span": self.provenance_span,
+            "schema_version": self.schema_version,
+            "rule_version": self.rule_version,
+        }
+
+
+@dataclass(frozen=True)
+class ClarificationEvaluation:
+    """Auditable result produced by a deterministic clarification evaluator."""
+
+    predicate_id: str
+    result: ClarificationEvaluationResult | str
+    deterministic_inputs: dict[str, Any] = field(default_factory=dict)
+    reason_codes: tuple[str, ...] = ()
+    state_version: str = "G0"
+    evaluated_at_step_id: str = "SEMANTIC_ACCEPTANCE_STAGE_6"
+    schema_version: str = "1.0"
+    rule_version: str = "1.0"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "predicate_id", _clean(self.predicate_id, "ClarificationEvaluation.predicate_id"))
+        result = (
+            self.result
+            if isinstance(self.result, ClarificationEvaluationResult)
+            else ClarificationEvaluationResult(str(self.result).strip().upper())
+        )
+        object.__setattr__(self, "result", result)
+        object.__setattr__(self, "deterministic_inputs", dict(self.deterministic_inputs or {}))
+        object.__setattr__(self, "reason_codes", tuple(str(code) for code in (self.reason_codes or ())))
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ClarificationEvaluation":
+        return cls(
+            predicate_id=str(data.get("predicate_id", "")),
+            result=str(data.get("result", "INVALID")),
+            deterministic_inputs=dict(data.get("deterministic_inputs", {}) or {}),
+            reason_codes=tuple(data.get("reason_codes", ()) or ()),
+            state_version=str(data.get("state_version", "G0")),
+            evaluated_at_step_id=str(data.get("evaluated_at_step_id", "SEMANTIC_ACCEPTANCE_STAGE_6")),
+            schema_version=str(data.get("schema_version", "1.0")),
+            rule_version=str(data.get("rule_version", "1.0")),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "predicate_id": self.predicate_id,
+            "result": self.result.value,
+            "deterministic_inputs": dict(self.deterministic_inputs),
+            "reason_codes": list(self.reason_codes),
+            "state_version": self.state_version,
+            "evaluated_at_step_id": self.evaluated_at_step_id,
+            "schema_version": self.schema_version,
+            "rule_version": self.rule_version,
+        }
+
+
+def evaluate_clarification_predicate(
+    predicate: ClarificationPredicate,
+    variables: list["SemanticVariable"],
+    *,
+    state_version: str = "G0",
+    evaluated_at_step_id: str = "SEMANTIC_ACCEPTANCE_STAGE_6",
+) -> ClarificationEvaluation:
+    """Evaluate one reviewed clarification predicate without model judgment."""
+    base = {
+        "predicate_id": predicate.id,
+        "state_version": state_version,
+        "evaluated_at_step_id": evaluated_at_step_id,
+        "schema_version": predicate.schema_version,
+        "rule_version": predicate.rule_version,
+    }
+    if (
+        predicate.kind != ClarificationPredicateKind.CONFLICTING_EQUALS
+        or predicate.operator != ClarificationPredicateOperator.HAS_CONFLICT
+    ):
+        return ClarificationEvaluation(
+            result=ClarificationEvaluationResult.INVALID,
+            deterministic_inputs={
+                "kind": predicate.kind.value if isinstance(predicate.kind, Enum) else str(predicate.kind),
+                "operator": predicate.operator.value if isinstance(predicate.operator, Enum) else str(predicate.operator),
+            },
+            reason_codes=("UNSUPPORTED_PREDICATE_KIND_OR_OPERATOR",),
+            **base,
+        )
+    if not predicate.variable_id or not predicate.constraint_key:
+        return ClarificationEvaluation(
+            result=ClarificationEvaluationResult.INVALID,
+            deterministic_inputs={
+                "variable_id": predicate.variable_id,
+                "constraint_key": predicate.constraint_key,
+            },
+            reason_codes=("MISSING_REQUIRED_REFERENCE",),
+            **base,
+        )
+
+    variable = next((item for item in variables if item.id == predicate.variable_id), None)
+    if variable is None:
+        return ClarificationEvaluation(
+            result=ClarificationEvaluationResult.INVALID,
+            deterministic_inputs={
+                "variable_id": predicate.variable_id,
+                "constraint_key": predicate.constraint_key,
+            },
+            reason_codes=("UNKNOWN_VARIABLE_REFERENCE",),
+            **base,
+        )
+
+    values = sorted({
+        str(constraint.value).strip().casefold()
+        for constraint in variable.constraints
+        if constraint.operator == "equals"
+        and constraint.key == predicate.constraint_key
+        and constraint.value is not None
+    })
+    has_conflict = len(values) > 1
+    return ClarificationEvaluation(
+        result=(
+            ClarificationEvaluationResult.TRUE
+            if has_conflict
+            else ClarificationEvaluationResult.FALSE
+        ),
+        deterministic_inputs={
+            "variable_id": variable.id,
+            "constraint_key": predicate.constraint_key,
+            "normalized_values": values,
+            "distinct_value_count": len(values),
+        },
+        reason_codes=(
+            "CONFLICTING_EQUALITY_VALUES"
+            if has_conflict
+            else "NO_CONFLICTING_EQUALITY_VALUES",
+        ),
+        **base,
+    )
+
+
 @dataclass(frozen=True)
 class SemanticVariable:
     """A typed value in the user's goal graph, never a provider field."""
@@ -114,7 +346,7 @@ class SemanticVariable:
             for index, item in enumerate(self.constraints or ())
         ))
         origin = _clean(self.value_origin, f"{self.id}.value_origin").casefold()
-        if origin not in {"request", "llm_proposal", "provider_observation"}:
+        if origin not in {"request", "llm_proposal", "provider_observation", "user_selection"}:
             raise ValueError(f"{self.id}.value_origin is invalid")
         object.__setattr__(self, "value_origin", origin)
         status = _clean(self.verification_status, f"{self.id}.verification_status").upper()
@@ -229,18 +461,31 @@ class SemanticRelationGoal:
 
 @dataclass(frozen=True)
 class SemanticQualifierGoal:
-    """A qualifier on a relation/value; it is never silently inferred."""
+    """A qualifier on a relation/value; it is never silently inferred.
+
+    ``retrieval_terms`` are provider-neutral data aliases proposed by the
+    semantic compiler.  They are deliberately separate from ``expected_value``:
+    the latter is the claim that must be proved, while the former only helps a
+    provider locate candidate rows.  A provider must never invent these terms.
+    """
     id: str
     target_goal_id: str
     qualifier: str
     expected_value: Any = None
     required: bool = True
+    retrieval_terms: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("id", "target_goal_id", "qualifier"):
             object.__setattr__(self, name, _clean(getattr(self, name), f"SemanticQualifierGoal.{name}"))
         if isinstance(self.expected_value, str):
             object.__setattr__(self, "expected_value", self.expected_value.strip())
+        terms = self.retrieval_terms or ()
+        if isinstance(terms, str):
+            terms = (terms,)
+        object.__setattr__(self, "retrieval_terms", tuple(
+            str(term).strip() for term in terms if str(term).strip()
+        ))
 
     def value_text(self) -> str:
         if isinstance(self.expected_value, (dict, list)):
@@ -248,7 +493,16 @@ class SemanticQualifierGoal:
         return str(self.expected_value)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "target_goal_id": self.target_goal_id, "qualifier": self.qualifier, "expected_value": self.expected_value, "required": self.required}
+        payload = {
+            "id": self.id,
+            "target_goal_id": self.target_goal_id,
+            "qualifier": self.qualifier,
+            "expected_value": self.expected_value,
+            "required": self.required,
+        }
+        if self.retrieval_terms:
+            payload["retrieval_terms"] = list(self.retrieval_terms)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -319,7 +573,11 @@ class SemanticGoalGraph:
     assumptions: list[str] = field(default_factory=list)
     uncertainties: list[str] = field(default_factory=list)
     forbidden_inferences: list[str] = field(default_factory=list)
+    # Legacy prose is retained for audit/compatibility only. It is never
+    # evaluated and can never authorize a clarification stop.
     clarification_triggers: list[str] = field(default_factory=list)
+    clarification_predicates: list[ClarificationPredicate] = field(default_factory=list)
+    clarification_evaluations: list[ClarificationEvaluation] = field(default_factory=list)
     raw_llm_proposal: dict[str, Any] | None = None
     validation_diagnostics: list[str] = field(default_factory=list)
     graph_revision: str = "G0"
@@ -381,6 +639,56 @@ class SemanticGoalGraph:
                 if dep not in goal_ids:
                     raise ValueError(f"Goal '{goal_id}' depends on unknown relation goal '{dep}'")
 
+        self.clarification_triggers = [
+            str(value).strip()
+            for value in (self.clarification_triggers or [])
+            if str(value).strip()
+        ]
+        self.clarification_predicates = [
+            item
+            if isinstance(item, ClarificationPredicate)
+            else ClarificationPredicate.from_dict(item)
+            for item in (self.clarification_predicates or [])
+            if isinstance(item, (ClarificationPredicate, dict))
+        ]
+        predicate_ids = [item.id for item in self.clarification_predicates]
+        if len(set(predicate_ids)) != len(predicate_ids):
+            raise ValueError("SemanticGoalGraph contains duplicate clarification predicate ids")
+
+        provided_evaluations = [
+            item
+            if isinstance(item, ClarificationEvaluation)
+            else ClarificationEvaluation.from_dict(item)
+            for item in (self.clarification_evaluations or [])
+            if isinstance(item, (ClarificationEvaluation, dict))
+        ]
+        provided_by_id = {item.predicate_id: item for item in provided_evaluations}
+        if len(provided_by_id) != len(provided_evaluations):
+            raise ValueError("SemanticGoalGraph contains duplicate clarification evaluation ids")
+        unknown_evaluation_ids = set(provided_by_id) - set(predicate_ids)
+        if unknown_evaluation_ids:
+            raise ValueError(
+                "Clarification evaluations reference unknown predicate ids: "
+                f"{sorted(unknown_evaluation_ids)}"
+            )
+
+        self.clarification_evaluations = [
+            evaluate_clarification_predicate(
+                predicate,
+                self.variables,
+                state_version=self.graph_revision,
+            )
+            for predicate in self.clarification_predicates
+        ]
+
+    @property
+    def needs_clarification(self) -> bool:
+        """Only a deterministic TRUE evaluation may authorize clarification."""
+        return any(
+            evaluation.result == ClarificationEvaluationResult.TRUE
+            for evaluation in self.clarification_evaluations
+        )
+
     def propose_expansion(
         self,
         intermediate_variables: list[SemanticVariable],
@@ -415,6 +723,8 @@ class SemanticGoalGraph:
             uncertainties=list(self.uncertainties),
             forbidden_inferences=list(self.forbidden_inferences),
             clarification_triggers=list(self.clarification_triggers),
+            clarification_predicates=list(self.clarification_predicates),
+            clarification_evaluations=list(self.clarification_evaluations),
             raw_llm_proposal=self.raw_llm_proposal,
             validation_diagnostics=list(self.validation_diagnostics),
             graph_revision=new_rev,
@@ -438,6 +748,12 @@ class SemanticGoalGraph:
             "uncertainties": list(self.uncertainties),
             "forbidden_inferences": list(self.forbidden_inferences),
             "clarification_triggers": list(self.clarification_triggers),
+            "clarification_predicates": [
+                predicate.to_dict() for predicate in self.clarification_predicates
+            ],
+            "clarification_evaluations": [
+                evaluation.to_dict() for evaluation in self.clarification_evaluations
+            ],
             "validation_diagnostics": list(self.validation_diagnostics),
             "graph_revision": self.graph_revision,
             "revision_history": [dict(item) for item in self.revision_history],
@@ -484,6 +800,7 @@ class SemanticGoalGraph:
                 qualifier=str(item.get("qualifier", "")),
                 expected_value=item.get("expected_value"),
                 required=bool(item.get("required", True)),
+                retrieval_terms=tuple(item.get("retrieval_terms", item.get("search_terms", ())) or ()),
             )
             for item in data.get("qualifiers", [])
             if isinstance(item, dict)
@@ -529,6 +846,16 @@ class SemanticGoalGraph:
             uncertainties=[str(value) for value in data.get("uncertainties", [])],
             forbidden_inferences=[str(value) for value in data.get("forbidden_inferences", [])],
             clarification_triggers=[str(value) for value in data.get("clarification_triggers", [])],
+            clarification_predicates=[
+                ClarificationPredicate.from_dict(item)
+                for item in data.get("clarification_predicates", [])
+                if isinstance(item, dict)
+            ],
+            clarification_evaluations=[
+                ClarificationEvaluation.from_dict(item)
+                for item in data.get("clarification_evaluations", [])
+                if isinstance(item, dict)
+            ],
             raw_llm_proposal=data.get("raw_llm_proposal"),
             validation_diagnostics=[str(value) for value in data.get("validation_diagnostics", [])],
             graph_revision=str(data.get("graph_revision", "G0")),
@@ -561,6 +888,10 @@ class PlanStep:
     requires_complete_inputs: bool = True
     dependency_operator: str = "AND"
     gate_condition: str | None = None
+    # Execution authority is carried by the admitted route.  Keep PROVE as
+    # the compatibility default for hand-authored legacy plans; production
+    # route resolution must set this explicitly (normally EXPLORE).
+    mode: str = "PROVE"
 
     def __post_init__(self) -> None:
         for name in ("id", "operation_id"):
@@ -597,6 +928,10 @@ class PlanStep:
         if op not in {"AND", "OR", "GATE"}:
             op = "AND"
         object.__setattr__(self, "dependency_operator", op)
+        mode = str(getattr(self, "mode", "PROVE") or "PROVE").upper()
+        if mode not in {"EXPLORE", "DISCRIMINATE", "PROVE"}:
+            raise ValueError("PlanStep.mode must be EXPLORE, DISCRIMINATE or PROVE")
+        object.__setattr__(self, "mode", mode)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -615,6 +950,7 @@ class PlanStep:
             "requires_complete_inputs": self.requires_complete_inputs,
             "dependency_operator": self.dependency_operator,
             "gate_condition": self.gate_condition,
+            "mode": self.mode,
         }
 
 
@@ -691,4 +1027,22 @@ def goal_graph_from_claim_graph(claim_graph: Any) -> SemanticGoalGraph:
     )
 
 
-__all__ = ["AnswerContract", "SemanticConstraint", "SemanticVariable", "SemanticRelationGoal", "SemanticQualifierGoal", "SemanticAnswerGoal", "ProofMethod", "SemanticGoalGraph", "PlanStep", "LogicalPlan", "goal_graph_from_claim_graph"]
+__all__ = [
+    "AnswerContract",
+    "ClarificationEvaluation",
+    "ClarificationEvaluationResult",
+    "ClarificationPredicate",
+    "ClarificationPredicateKind",
+    "ClarificationPredicateOperator",
+    "evaluate_clarification_predicate",
+    "SemanticConstraint",
+    "SemanticVariable",
+    "SemanticRelationGoal",
+    "SemanticQualifierGoal",
+    "SemanticAnswerGoal",
+    "ProofMethod",
+    "SemanticGoalGraph",
+    "PlanStep",
+    "LogicalPlan",
+    "goal_graph_from_claim_graph",
+]

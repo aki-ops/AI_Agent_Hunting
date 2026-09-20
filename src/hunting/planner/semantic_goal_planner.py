@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+import re
+from typing import Any, Iterable
 
+from hunting.contracts.ontology import canonicalize_relation
 from hunting.contracts.queries import ProviderOperation
 from hunting.contracts.semantic_graph import LogicalPlan, PlanStep, ProofMethod, SemanticGoalGraph
+from hunting.contracts.transforms import get_transform_for_constraint
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,82 @@ class SemanticGoalPlanner:
         self.provider_id = provider_id
 
     @staticmethod
+    def _route_mode(
+        operation: ProviderOperation,
+        goal_id: str,
+        candidate_routes: dict[str, tuple[Any, ...]] | None,
+    ) -> str:
+        """Return mode from the admitted route, never from relation prose.
+
+        A route is the authority for production plans.  The operation's
+        declaration is retained as a compatibility fallback for typed plans
+        that predate CandidateRoute.
+        """
+        for route in (candidate_routes or {}).get(goal_id, ()):
+            if getattr(route, "operation_id", None) != operation.id:
+                continue
+            if not bool(getattr(route, "executable", False)):
+                continue
+            mode = getattr(getattr(route, "mode", None), "value", getattr(route, "mode", None))
+            if mode:
+                return str(mode).upper()
+        return str(getattr(operation, "route_mode", "PROVE") or "PROVE").upper()
+
+    @staticmethod
+    def _answer_compatible(
+        operation: ProviderOperation,
+        answer_role: str,
+        object_type: str = "",
+    ) -> bool:
+        """Require an operation to expose a field/role related to the answer.
+
+        This is deliberately lexical and provider-neutral.  It prevents a
+        metadata-only operation from being selected for an artifact-name
+        answer while avoiding scenario-specific aliases.
+        """
+        target = {token for token in re.findall(r"[A-Za-z0-9]+", str(answer_role).casefold()) if len(token) > 1}
+        if not target:
+            return True
+        # Entity answers (process/file/domain/...) are satisfied by the
+        # declared output entity kind.  They do not require a native field
+        # literally named after the entity type.
+        endpoint_types = {"device", "endpoint", "host", "workstation", "computer"}
+        artifact_types = {"file", "artifact", "document", "file_artifact"}
+        for kind in operation.output_entity_kinds:
+            left, right = str(object_type).casefold(), str(kind).casefold()
+            compatible = (
+                left == "any" or right == "any" or left == right
+                or (left in endpoint_types and right in endpoint_types)
+                or (left in artifact_types and right in artifact_types)
+            )
+            if compatible and any(
+                token == right or token in right or right in token
+                for token in target
+            ):
+                return True
+        declared: set[str] = set()
+        declared.update(str(value).casefold() for value in operation.output_roles)
+        declared.update(str(value).casefold() for value in operation.output_fields)
+        for binding in getattr(operation, "nested_field_bindings", {}).values():
+            if isinstance(binding, dict):
+                declared.add(str(binding.get("key", "")).casefold())
+        # Older descriptors may omit output field metadata altogether.  Keep
+        # them usable for compatibility; an explicitly declared but unrelated
+        # projection is the unsafe case this gate rejects.
+        if not declared:
+            return True
+        words = {
+            token for value in declared
+            for token in re.findall(r"[A-Za-z0-9]+", value)
+            if len(token) > 1
+        }
+        return any(
+            left == right or left in right or right in left
+            for left in target
+            for right in words
+        )
+
+    @staticmethod
     def _type_compatible(actual: str, declared: str) -> bool:
         """Apply the small provider-neutral endpoint type ontology.
 
@@ -38,6 +117,8 @@ class SemanticGoalPlanner:
         """
         left = str(actual or "").casefold()
         right = str(declared or "").casefold()
+        if left == "any" or right == "any":
+            return True
         if left == right:
             return True
         endpoint_types = {"device", "endpoint", "host", "workstation", "computer"}
@@ -51,8 +132,22 @@ class SemanticGoalPlanner:
         artifact_types = {"file", "artifact", "document", "file_artifact"}
         return left in artifact_types and right in artifact_types
 
-    def compose(self, graph: SemanticGoalGraph, *, plan_id: str = "logical-plan") -> LogicalPlan:
-        known = {variable.id for variable in graph.variables if variable.value is not None}
+    def compose(
+        self,
+        graph: SemanticGoalGraph,
+        *,
+        plan_id: str = "logical-plan",
+        candidate_routes: dict[str, tuple[Any, ...]] | None = None,
+        legacy_relation_matching: bool = True,
+    ) -> LogicalPlan:
+        """Compose a plan from goal-scoped routes when supplied.
+
+        The route map is the production authority for capability matching.
+        The relation-equality branch is retained only for callers that have
+        not migrated to route resolution yet; this makes the migration
+        observable instead of silently changing old fixture semantics.
+        """
+        known = {variable.id for variable in graph.variables if variable.value is not None or bool(variable.constraints)}
         variable_types = {variable.id: variable.entity_type for variable in graph.variables}
         remaining = list(graph.relations)
         steps: list[PlanStep] = []
@@ -61,6 +156,12 @@ class SemanticGoalPlanner:
         step_for_goal: dict[str, str] = {}
         proof_methods: list[ProofMethod] = []
         selected_method_ids: dict[str, str] = {}
+        answer_roles = {
+            item.variable_id: str(item.answer_type).strip().casefold()
+            for item in getattr(graph, "answers", ()) or ()
+            if getattr(item, "variable_id", None) and getattr(item, "answer_type", None)
+        }
+        route_map = candidate_routes or {}
 
         progress = True
         while remaining and progress:
@@ -83,26 +184,36 @@ class SemanticGoalPlanner:
                 # turns an otherwise valid graph into a false capability
                 # failure and couples unrelated steps.  Relation qualifiers
                 # remain scoped to this relation.
-                goal_constraints = [item.text() for item in target.constraints]
-                goal_retrieval_terms = tuple(
-                    (item.key, term)
-                    for item in target.constraints
-                    for term in item.retrieval_terms
-                )
-                goal_constraint_metadata = [
-                    {
-                        "key": item.key,
-                        "operator": item.operator,
-                        "value": item.value,
-                        "provenance": "semantic_graph",
-                        "trust_class": (
-                            "request_grounded"
-                            if target.value_origin == "request"
-                            else "compiler_proposed"
-                        ),
-                    }
-                    for item in target.constraints
-                ]
+                relevant_constraint_vars = [target]
+                if subject.id not in step_for_variable and (subject.value is None or bool(subject.constraints)):
+                    relevant_constraint_vars.append(subject)
+
+                goal_constraints: list[str] = []
+                retrieval_terms_list: list[tuple[str, str]] = []
+                goal_constraint_metadata: list[dict[str, Any]] = []
+
+                for c_var in relevant_constraint_vars:
+                    goal_constraints.extend([item.text() for item in c_var.constraints])
+                    for item in c_var.constraints:
+                        for term in item.retrieval_terms:
+                            retrieval_terms_list.append((item.key, term))
+                        if not item.retrieval_terms:
+                            transform = get_transform_for_constraint(item.key, item.value)
+                            if transform is not None and hasattr(transform, "get_retrieval_terms"):
+                                for term in transform.get_retrieval_terms(item.key, item.value):
+                                    retrieval_terms_list.append((item.key, term))
+                        goal_constraint_metadata.append({
+                            "key": item.key,
+                            "operator": item.operator,
+                            "value": item.value,
+                            "variable_id": c_var.id,
+                            "provenance": "semantic_graph",
+                            "trust_class": (
+                                "request_grounded"
+                                if c_var.value_origin == "request"
+                                else "compiler_proposed"
+                            ),
+                        })
                 for qualifier in graph.qualifiers:
                     if qualifier.target_goal_id != goal.id or not qualifier.required:
                         continue
@@ -117,6 +228,22 @@ class SemanticGoalPlanner:
                         "provenance": f"semantic_qualifier:{qualifier.id}",
                         "trust_class": "request_grounded",
                     })
+                    if qualifier.retrieval_terms:
+                        for term in qualifier.retrieval_terms:
+                            retrieval_terms_list.append((qualifier.qualifier, term))
+                    else:
+                        transform = get_transform_for_constraint(qualifier.qualifier, qualifier.expected_value)
+                        if transform is not None and hasattr(transform, "get_retrieval_terms"):
+                            for term in transform.get_retrieval_terms(qualifier.qualifier, qualifier.expected_value):
+                                retrieval_terms_list.append((qualifier.qualifier, term))
+
+                seen_terms: set[tuple[str, str]] = set()
+                deduped_retrieval: list[tuple[str, str]] = []
+                for entry in retrieval_terms_list:
+                    if entry not in seen_terms:
+                        seen_terms.add(entry)
+                        deduped_retrieval.append(entry)
+                goal_retrieval_terms = tuple(deduped_retrieval)
                 execution_subject_id = subject.id
                 prerequisite_goal_ids = tuple(
                     relation.id for relation in graph.relations
@@ -124,14 +251,36 @@ class SemanticGoalPlanner:
                 )
                 if goal.dependencies and goal.dependency_operator in {"AND", "GATE"}:
                     prerequisite_goal_ids = tuple(dict.fromkeys(prerequisite_goal_ids + goal.dependencies))
-                candidates = list({operation.id: operation for operation in self.operations
-                    if goal.relation.casefold() in {value.casefold() for value in operation.guaranteed_relations}
-                    and operation.provider_id == self.provider_id
-                    and (not operation.output_entity_kinds or any(
-                        self._type_compatible(target.entity_type, kind)
-                        for kind in operation.output_entity_kinds
-                    ))
-                }.values())
+                if goal.id in route_map:
+                    route_operation_ids = {
+                        str(getattr(route, "operation_id", ""))
+                        for route in route_map.get(goal.id, ())
+                        if bool(getattr(route, "executable", False))
+                    }
+                    candidates = list({operation.id: operation for operation in self.operations
+                        if operation.id in route_operation_ids
+                        and operation.provider_id == self.provider_id
+                        and (not operation.output_entity_kinds or any(
+                            self._type_compatible(target.entity_type, kind)
+                            for kind in operation.output_entity_kinds
+                        ))
+                        and self._answer_compatible(operation, answer_roles.get(target.id, ""), target.entity_type)
+                    }.values())
+                elif legacy_relation_matching:
+                    candidates = list({operation.id: operation for operation in self.operations
+                        if (
+                            goal.relation.casefold() in {value.casefold() for value in operation.guaranteed_relations}
+                            or canonicalize_relation(goal.relation) in {canonicalize_relation(value) for value in operation.guaranteed_relations}
+                        )
+                        and operation.provider_id == self.provider_id
+                        and (not operation.output_entity_kinds or any(
+                            self._type_compatible(target.entity_type, kind)
+                            for kind in operation.output_entity_kinds
+                        ))
+                        and self._answer_compatible(operation, answer_roles.get(target.id, ""), target.entity_type)
+                    }.values())
+                else:
+                    candidates = []
                 canonical_candidates = [
                     operation for operation in candidates
                     if not getattr(operation, "legacy_alias", False)
@@ -217,6 +366,7 @@ class SemanticGoalPlanner:
                             constraints=(),
                             constraint_retrieval_terms=(),
                             relation=(operation.guaranteed_relations[0] if operation.guaranteed_relations else "observed"),
+                            mode=self._route_mode(operation, goal.id, route_map),
                         ))
                         variable_types[intermediate] = output_type
                         known.add(intermediate)
@@ -322,6 +472,7 @@ class SemanticGoalPlanner:
                         ),
                         dependency_operator=goal.dependency_operator,
                         gate_condition=goal.gate_condition,
+                        mode=self._route_mode(operation, goal.id, route_map),
                     )
                 )
                 step_for_goal[goal.id] = step_id

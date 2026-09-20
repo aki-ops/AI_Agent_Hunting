@@ -53,15 +53,17 @@ Select actions by mandatory status, answer utility, information gain and bounded
 
 ### Step E — Discover capabilities progressively
 
-For the current unresolved goal only:
+For the current unresolved goal only, build a `CapabilityQuery` from types, constraint keys, relation text and answer role. Do not require `goal.relation == operation.guaranteed_relations`. Do not add scenario aliases.
 
-1. F0: approved proof-capable operations;
-2. F1: catalog metadata and semantic index;
-3. F2: adjacent sources through declared joins/field relations;
-4. F3: bounded dynamic profiling;
+1. F0: exact approved proof-capable operations when labels already coincide.
+2. F1: retrieve top-k operations/sources/fields from the provider semantic index (no LLM). Record unretrieved items as unexamined.
+3. F2: at most one C2 call over that shortlist to propose mappings. Compact cards only. A deferred or failed C2 is a coverage gap, not `STOP_UNSUPPORTED`.
+4. F3: adjacent sources through declared joins/field relations on admitted candidates.
 5. F4: approved exhaustive discovery.
 
-Unexamined sources remain explicit coverage gaps. Retrieval scores cannot create proof authority or license a negative conclusion.
+Admission gate before `QueryIntent`: reachable input types, census-backed fields, declared native mapping. Admitted routes may `EXPLORE`. `PROVE` still requires an approved ProofContract.
+
+Unexamined sources remain explicit coverage gaps. Retrieval scores cannot create proof authority or license a negative conclusion. Enumerating 100 sources without F1/F2 admission must not set `examined=100`.
 
 ### Step F — Manage candidate bindings
 
@@ -201,6 +203,20 @@ CVE/TTP/IOC/CTI records may contain cited behavior knowledge, but adapters conve
 8. Remove production legacy routes and scenario branches.
 9. Replace simulated evaluation with executable evaluation.
 10. Run mock-provider, API and BOTS v2 live acceptance suites.
+
+### 6.1 Goal-scoped route formation
+
+Before semantic planning, the runtime resolves each `CapabilityQuery` into a
+goal-scoped `CandidateRoute`. F1/F2 may rank typed operation/source/field
+documents, but only an admitted `EXECUTABLE` route is passed to the planner.
+The route carries provider/source/schema provenance and an explicit execution
+mode. A missing or deferred route remains an unexamined capability gap; it is
+not converted into `STOP_UNSUPPORTED`.
+
+The planner therefore receives `candidate_routes[goal_id]` and does not infer
+that a relation is supported merely because its text equals an operation
+label. Compatibility matching remains only for callers that have not yet
+migrated to route formation and is covered by the removal gate in `09`/`10`.
 
 ## 7. Definition of done
 

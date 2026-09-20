@@ -95,6 +95,7 @@ class ScenarioEvaluationResult:
     answer: AnswerMetrics = field(default_factory=AnswerMetrics)
     operations: OperationalMetrics = field(default_factory=OperationalMetrics)
     cost_usd: float = 0.0
+    run_account: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -112,6 +113,7 @@ class ScenarioEvaluationResult:
             "answer": self.answer.to_dict(),
             "operations": self.operations.to_dict(),
             "cost_usd": self.cost_usd,
+            "run_account": self.run_account,
         }
 
 

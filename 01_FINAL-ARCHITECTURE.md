@@ -45,7 +45,12 @@ Input
   -> Obligation Planner
        explicit AND / OR / GATE semantics
   -> Progressive Capability Frontier
-       certified -> metadata -> adjacent -> bounded profiling -> approved exhaustive
+        CapabilityQuery from the accepted graph
+        F0 exact contract -> F1 semantic retrieve (no LLM)
+        -> F2 budgeted C2 rerank of the shortlist
+        -> F3 adjacent/probe -> F4 approved exhaustive
+        admission gate before any query
+        deferred/unexamined is not unsupported
   -> Controlled Candidate Binding
        unique proof -> bind
        ambiguous -> discriminate or ask the user
@@ -182,6 +187,35 @@ select ready obligation
 
 Every action has an `ActionSignature`. Repetition without material delta exhausts or blocks the route. LLM calls occur only at declared transition points and cannot form an open-ended loop.
 
+### 4.10 Open-vocabulary capability matching
+
+Exact string equality between a C1 relation name and `ProviderOperation.guaranteed_relations` is not the production matcher. Vocabulary mismatch between a proposed goal and a provider catalog is expected (schema linking / tool retrieval). The kernel must not close that gap with case aliases, scenario keywords or provider-native names.
+
+A ready unresolved goal yields one `CapabilityQuery`:
+
+```text
+subject_type, object_type or answer_role
+constraint keys (not vendor fields)
+relation text + canonical name if registered
+PROPOSED_UNREGISTERED flag
+```
+
+Matching is retrieve-then-admit:
+
+1. F0: exact approved contract / operation identity when labels already coincide.
+2. F1: dense retrieval over operation, source and field documents built from provider descriptors. No LLM. Top-k only.
+3. F2: at most one C2 call over that shortlist. C2 proposes mappings; it cannot execute, prove or mark coverage complete.
+4. F3/F4: adjacent joins then approved exhaustive discovery, still budgeted.
+
+Admission (deterministic, after any LLM proposal): input types are reachable, cited fields exist in census, a native mapping is declared, and the intent mode is `EXPLORE` until a ProofContract exists. Failed admission does not run a query.
+
+Coverage rules:
+
+- Listing sources is not examining them.
+- C2 deferred, F1 empty, or admission failure leaves `CoverageStatus.PARTIAL` / unexamined routes.
+- `STOP_UNSUPPORTED` requires completed F1 and, if budget allowed, F2, with zero admitted candidates. It is forbidden while C2 is deferred or while F1 was skipped.
+- Retrieval rank never proves a relation and never licenses `STOP_NOT_FOUND_BOUNDED`.
+
 ## 5. Canonical contracts
 
 ### 5.1 RequestContract
@@ -258,7 +292,7 @@ Canonical terminal decisions:
 
 Aliases from older versions must be mapped only at serialization boundaries. The runtime uses one enum.
 
-`STOP_ANSWERED` requires the `OutcomeContract` verifier to pass before termination. `STOP_NOT_FOUND_BOUNDED` additionally requires complete coverage of every mandatory admissible route and an explicit negative-evidence licence.
+`STOP_ANSWERED` requires the `OutcomeContract` verifier to pass before termination. `STOP_NOT_FOUND_BOUNDED` additionally requires complete coverage of every mandatory admissible route and an explicit negative-evidence licence. `STOP_UNSUPPORTED` requires a completed capability census in the sense of §4.10, not a deferred profiler or an exact-name miss. Incomplete matching stops `STOP_INCONCLUSIVE` or `STOP_BUDGET`.
 
 ## 8. Threat-hunting semantics
 
@@ -288,3 +322,22 @@ The machine run account stores complete contracts, observations, query results, 
 ## 10. Scientific claim boundary
 
 Prior work supports graph-based investigation, typed query layers, progressive schema discovery, evidence-driven hunting and selective abstention. No cited work proves this exact composition, its budgets, relation registry, prompts, stopping taxonomy or cross-provider generality. Those are thesis hypotheses and require independent labelled evaluation.
+
+## 11. Accepted architecture decision — goal-scoped candidate routes (ADR-20260920-01)
+
+The capability boundary uses a provider-neutral `CandidateRoute` between a
+semantic goal and a provider operation. The route is keyed by `goal_id`,
+provider, source and operation identity; relation wording is retrieval context,
+not the production identity or proof authority.
+
+Route classes are explicit: `EXECUTABLE`, `MAPPING_REQUIRED` and
+`DISCOVERY_ONLY`. Only an admitted executable route may emit an `EXPLORE`
+`QueryIntent`. Routes default to `EXPLORE`; `PROVE` requires compatibility
+with an approved `ProofContract`. A route or LLM proposal never creates proof
+authority. The planner consumes admitted routes by `goal_id`; the old relation
+matching path is only a migration compatibility boundary and is not the
+authority path.
+
+This decision solves goal identity collision and open-vocabulary route
+formation. It does not claim retrieval or provider coverage is complete;
+frontier, execution, proof and unexamined state remain separately measured.

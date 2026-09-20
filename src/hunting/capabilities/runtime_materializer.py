@@ -15,8 +15,10 @@ def _native_names(profile: TelemetrySourceProfile, field_ids: Any) -> tuple[str,
     names: list[str] = []
     for field_id in field_ids or ():
         field = profile.field(str(field_id))
-        if field is not None and field.name not in names:
-            names.append(field.name)
+        if field is not None:
+            native_name = field.parent_field if field.origin == "nested_payload" and field.parent_field else field.name
+            if native_name not in names:
+                names.append(native_name)
     return tuple(names)
 
 
@@ -56,8 +58,20 @@ def materialize_runtime_operation(
         object_fields = tuple(dict.fromkeys(
             field for values in output_bindings.values() for field in values
         ))
-    if not input_bindings or not output_bindings or not object_fields:
+    allow_scope_explore = bool(requirement.get("allow_scope_explore"))
+    if (not input_bindings and not allow_scope_explore) or not output_bindings or not object_fields:
         return None
+
+    nested_field_bindings: dict[str, dict[str, str]] = {}
+    for role, field_id in {**proposal.input_roles, **proposal.output_roles}.items():
+        field = profile.field(field_id)
+        if field is not None and field.origin == "nested_payload":
+            nested_field_bindings[role] = {
+                "field_id": field_id,
+                "field": field.parent_field or "_raw",
+                "key": field.nested_key or field.name,
+                "transform": proposal.field_transforms.get(field_id, "extract_nested_key"),
+            }
 
     retrieval_policy = None
     if capability.relaxable_constraint_keys:
@@ -88,7 +102,7 @@ def materialize_runtime_operation(
         },
         pagination="offset",
         limit_semantics="complete only on EOF",
-        input_entity_kinds=(subject_type,),
+        input_entity_kinds=("ANY",) if allow_scope_explore and not input_bindings else (subject_type,),
         output_entity_kinds=(object_type,),
         output_fields=output_fields,
         guaranteed_relations=(proposal.relation,),
@@ -99,6 +113,7 @@ def materialize_runtime_operation(
         output_binding_entity_kinds={"object": object_type},
         supported_constraints=capability.supported_constraints,
         searchable_constraints=capability.searchable_constraints,
+        constraint_mappings=tuple(mapping.to_dict() for mapping in capability.constraint_mappings),
         retrieval_policy=retrieval_policy,
         allow_constraint_relaxation=False,
         proof_mode=capability.proof_mode,
@@ -112,6 +127,12 @@ def materialize_runtime_operation(
         completeness="limit+1 EOF proof",
         expected_cost=1,
         runtime_source_id=profile.source_id,
+        nested_field_bindings=nested_field_bindings,
+        route_goal_ids=(str(requirement.get("goal_id", "")).strip(),)
+        if str(requirement.get("goal_id", "")).strip() else (),
+        route_class="EXECUTABLE",
+        route_mode="EXPLORE",
+        discovery_provenance=("F2_C2_PROBED_CAPABILITY",),
     )
 
 

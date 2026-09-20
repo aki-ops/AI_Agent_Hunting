@@ -17,7 +17,8 @@ The plan fixes six root causes:
 3. recovery/stopping classes exist but do not own the production loop;
 4. several incompatible graph architectures remain active;
 5. candidate ambiguity and LLM budgets do not follow the documented policy;
-6. the evaluation runner assigns ideal results instead of running the agent.
+6. the evaluation runner assigns ideal results instead of running the agent;
+7. the planner treats exact `guaranteed_relations` equality as a completed census, so a vocabulary mismatch plus deferred C2 yields zero queries and false `STOP_UNSUPPORTED`.
 
 ## 2. Rules for implementation
 
@@ -382,6 +383,95 @@ Run BOTS v2 through the actual CLI/API/provider path. A skipped test is not a pa
 
 Acceptance gate K: metrics derive from serialized actual run accounts and can be recomputed independently.
 
+## 13b. Workstream L — open-vocabulary capability matching
+
+Normative refs: `01` §4.10, `02` Step E, `03` Progressive Capability Frontier.
+
+**Defect to fix:** production compose matches `goal.relation` to `guaranteed_relations` by string. A C1 name miss plus deferred C2 yields 0 steps, `examined=100`, `STOP_UNSUPPORTED`. That is a false census, not a missing SMTP alias.
+
+**Forbidden:** relation/scenario/vendor aliases; branches for email, SMTP, zip, attachment, Taedonggang, Frothly, Mallory, Amber, BOTS; SPL ranking; treating F1 rank as proof.
+
+**Complete runtime (one unresolved goal):**
+
+```text
+accepted goal
+  -> CapabilityQuery (types, answer role, constraint keys, relation text)
+  -> F0 exact contract if labels already coincide
+  -> F1 retrieve top-k ops/sources/fields from provider index (no LLM)
+       remainder := unexamined
+  -> if budget: F2 one C2 call on that shortlist only
+       else: record C2 deferred coverage gap
+  -> admission gate (reachable inputs, census fields, declared native mapping)
+  -> admitted -> QueryIntent EXPLORE (PROVE only with ProofContract)
+  -> execute -> Observation -> ProofEngine
+  -> stop:
+       admitted/explored, still open     -> continue agenda
+       F1 done, F2 done or not budgeted,
+         0 admitted                      -> STOP_UNSUPPORTED
+       F1 skipped or C2 deferred         -> STOP_INCONCLUSIVE / STOP_BUDGET
+```
+
+### L1. CapabilityQuery
+
+File: `src/hunting/contracts/capability_query.py` + builder in planner.
+
+Fields: `goal_id`, `subject_type`, `object_type`, `answer_role`, `constraint_keys`, `relation_text`, `canonical_relation` (optional), `proposed_unregistered`.
+
+Tests (`tests/unit/test_v9_capability_query.py`):
+
+- two graphs with different relation strings and the same types/roles produce equal query keys except `relation_text`;
+- grep kernel has no scenario tokens.
+
+### L2. F1 retrieve (no LLM)
+
+Files: `src/hunting/capabilities/semantic_index.py`, wire before `SemanticGoalPlanner.compose`.
+
+Index documents from provider descriptors only (operation id, input/output kinds, roles, field names, fact kinds, relation strings if present). k is config (start 8). Return `hits` + `unexamined_ids`.
+
+Tests:
+
+- exact-name miss still returns k>0 when types/fields overlap;
+- k bounded;
+- unexamined IDs persist on `GoalRuntimeState.coverage`.
+
+### L3. F2 one C2 call
+
+Files: `src/hunting/engine.py` C2 loop, `CapabilityBatcher`, `SourceProfiler`.
+
+One goal → one shortlist card set → at most one C2 call. Deferred/fail writes `RELATION_DEFERRED_BY_BUDGET` without flipping census to complete.
+
+Tests:
+
+- 100 sources do not create 100+ C2 batches;
+- deferred C2 cannot set `examined=100`;
+- C2 cannot run if F1 shortlist is empty (gap, not unsupported).
+
+### L4. Admission gate
+
+File: `src/hunting/capabilities/admission.py`. Called after F0/F1/F2 before `QueryIntent`.
+
+Admit iff: input types reachable in the graph/catalog, cited fields exist in census, native mapping declared on the operation/source card. Mode `EXPLORE` until ProofContract exists.
+
+Tests:
+
+- admitted → ≥1 `QueryIntent` and ≥1 recorded query on a mock adapter;
+- rejected → 0 queries, proof stays `NOT_ASSESSED`;
+- LLM mapping that cites a missing field is rejected.
+
+### L5. Planner + stop
+
+Files: `semantic_goal_planner.py` (F1 hits as candidates, not equality-only), `engine.py` unresolved-goal stop, `recovery_controller.py`.
+
+`STOP_UNSUPPORTED` only after F1 completed and F2 ran or was explicitly not budgeted, with zero admitted candidates. Else `STOP_INCONCLUSIVE` or `STOP_BUDGET`.
+
+Tests (`tests/unit/test_v9_capability_matching.py`):
+
+- exact-name miss + deferred C2 is not `STOP_UNSUPPORTED`;
+- 0 queries with unexamined routes is not `COVERAGE_EXHAUSTED`;
+- F1 hit + admission → mock query runs without C2.
+
+Acceptance gate L: production matcher is not exact relation equality; C2 cannot replace F1; unknown-relation live hunts explore an admitted route or abstain with unexamined coverage; no new scenario/vendor string in the kernel.
+
 ## 14. Pull-request sequence
 
 Keep changes reviewable in this order:
@@ -396,7 +486,8 @@ Keep changes reviewable in this order:
 8. PR8 — LLM scheduler and budget policy;
 9. PR9 — legacy/provider cleanup;
 10. PR10 — report and executable evaluation;
-11. PR11 — non-skipped BOTS v2 acceptance run.
+11. PR11 — non-skipped BOTS v2 acceptance run;
+12. PR12 — Workstream L capability matching (F0–F2 + admission + stop).
 
 Each PR updates `04` only after its acceptance tests pass.
 
@@ -418,8 +509,18 @@ At minimum, the finished reasoning kernel must pass:
 12. hypothesis support/refutation with competing obligations;
 13. population hunt with prevalence and explicit coverage;
 14. API timeout/budget exhaustion with resumable state;
-15. live BOTS v2 run with auditable graph, evidence, proof and cost.
+15. live BOTS v2 run with auditable graph, evidence, proof and cost;
+16. vocabulary-mismatch goal (relation string absent from `guaranteed_relations`) either explores via F1/F2 admission or stops inconclusive with unexamined routes, never silent zero-query `STOP_UNSUPPORTED`.
 
 ## 16. Completion statement
 
 The migration is complete only when the default production path—not a standalone class or simulated evaluator—implements the v9 flow. Until then, documentation must describe the repository as an evidence-informed architecture under implementation.
+
+### Route migration decision
+
+Workstream L now introduces an accepted, provider-neutral `CandidateRoute`
+keyed by `goal_id`. F1/F2 output is route metadata; only an admitted
+executable route reaches `SemanticGoalPlanner`, and it starts in `EXPLORE`
+unless an approved proof contract permits `PROVE`. Relation-string matching
+remains only at an explicit compatibility boundary while remaining callers
+migrate; it is not evidence of route support and remains tracked for removal.

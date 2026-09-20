@@ -6,9 +6,11 @@ from typing import Any
 
 from hunting.capabilities.source_mapping_validator import SourceMappingValidator
 from hunting.contracts.source_profile import (
+    ConstraintMapping,
     SourceCapabilityProposal,
     TelemetrySourceProfile,
 )
+from hunting.contracts.transforms import canonical_transform_name, list_transform_specs
 
 
 class SourceProfiler:
@@ -31,32 +33,51 @@ class SourceProfiler:
             "component": "source_profiler",
             "instructions": (
                 "Map available telemetry sources to the requested relations. "
+                "Each role in input_roles and output_roles MUST map to the exact 'field_id' from the source's fields list. "
                 "Output MUST be valid JSON conforming to: "
-                "{\"proposals\": [{\"source_id\": \"<source_id>\", \"relation\": \"<relation>\", "
-                "\"input_roles\": {\"<role>\": \"<field_name>\"}, \"output_roles\": {\"<role>\": \"<field_name>\"}, "
-                "\"proof_mode\": \"retrieval_only\" | \"relation_observable\", \"probe_kind\": \"cooccurrence\" | \"filter\"}]}. "
-                "Output ONLY the JSON object. Do not include explanatory text."
+                "{\"proposals\": [{\"goal_id\": \"<goal_id>\", \"source_id\": \"<source_id>\", \"relation\": \"<relation>\", "
+                "\"input_roles\": {\"<role>\": \"<field_id>\"}, \"output_roles\": {\"<role>\": \"<field_id>\"}, "
+                "\"field_transforms\": {\"<field_id>\": \"extract_nested_key\"}, "
+                "\"proof_mode\": \"retrieval_only\" | \"relation_observable\", \"probe_kind\": \"cooccurrence\", "
+                "\"constraint_mappings\": [{\"semantic_constraint\": \"<key>\", \"native_field\": \"<field_id>\", \"operator\": \"equals\"|\"contains\", \"transform\": \"<transform>\"}]}]}. "
+                "The transform value MUST be empty for direct field matching or one of the registered transform IDs in transform_catalog. "
+                "Nested census fields require field_transforms[<field_id>]=extract_nested_key and must retain their parent/key metadata. "
+                "For every required constraint and required qualifier in capability_query, either emit a validated constraint_mappings entry using the exact field_id (including nested fields) or return no proposal; never silently omit a required semantic restriction. "
+                "A mapping is a retrieval/proof capability claim, not a guess: use only a field whose native name and census provenance support the restriction. "
+                "Never invent a transform name. Output ONLY the JSON object. Do not include explanatory text."
             ),
-            "requirements": [dict(item) for item in requirements],
-            # The profiler needs schema metadata, not representative values.
-            # Values are intentionally omitted to keep the call bounded and
-            # prevent sensitive telemetry from entering the LLM context.
+            "transform_catalog": list_transform_specs(),
+            "requirements": [
+                {
+                    "goal_id": item.get("goal_id"),
+                    "relation": item.get("relation"),
+                    "relation_text": item.get("relation_text", item.get("relation")),
+                    "subject_type": item.get("subject_type"),
+                    "object_type": item.get("object_type"),
+                    "answer_role": item.get("answer_role"),
+                    "constraint_keys": list(item.get("constraint_keys") or ()),
+                    "constraint_hints": list(item.get("constraint_hints") or ()),
+                    "qualifier_hints": list(item.get("qualifier_hints") or ()),
+                    "capability_query": dict(item.get("capability_query") or {}),
+                    "roles": list(item.get("roles") or ())[:4],
+                }
+                for item in requirements
+            ],
             "sources": [
                 {
                     "source_id": profile.source_id,
-                    "provider_id": profile.provider_id,
-                    "partition_id": profile.partition_id,
                     "native_type": profile.native_type,
-                    "event_count": profile.event_count,
-                    "schema_fingerprint": profile.schema_fingerprint,
                     "fields": [
                         {
                             "field_id": field.field_id,
                             "name": field.name,
                             "primitive_type": field.primitive_type,
-                            "coverage": field.coverage,
+                            "origin": field.origin,
+                            "parent_field": field.parent_field,
+                            "nested_key": field.nested_key,
+                            "evidence_query_id": field.evidence_query_id,
                         }
-                        for field in profile.fields
+                        for field in profile.fields[:12]
                     ],
                 }
                 for profile in profiles
@@ -127,17 +148,51 @@ class SourceProfiler:
             try:
                 if not isinstance(item, dict):
                     raise ValueError("proposal must be an object")
+                source_id_str = str(item["source_id"])
+                prof = next((p for p in authoritative_profiles if p.source_id == source_id_str), None)
+                name_to_fid = {f.name.lower(): f.field_id for f in prof.fields} if prof else {}
+
+                def _norm_role_map(raw_map: Any) -> dict[str, str]:
+                    res = {}
+                    for k, v in dict(raw_map or {}).items():
+                        v_str = str(v)
+                        res[str(k)] = name_to_fid.get(v_str.lower(), v_str)
+                    return res
+
+                raw_probe_kind = str(
+                    item.get("probe_kind")
+                    or (item.get("probe", {}).get("kind") if isinstance(item.get("probe"), dict) else None)
+                    or "cooccurrence"
+                )
+                if raw_probe_kind == "filter":
+                    raw_probe_kind = "cooccurrence"
+
+                raw_cms = []
+                for cm in item.get("constraint_mappings", []):
+                    if isinstance(cm, dict):
+                        f_id = str(cm.get("native_field", cm.get("field", "")))
+                        semantic_key = str(cm.get("semantic_constraint", cm.get("key", "")))
+                        transform_name = canonical_transform_name(
+                            str(cm.get("transform", "")),
+                            semantic_key,
+                            cm.get("value"),
+                        )
+                        raw_cms.append(ConstraintMapping(
+                            semantic_constraint=semantic_key,
+                            native_field=name_to_fid.get(f_id.lower(), f_id),
+                            operator=str(cm.get("operator", "equals")),
+                            transform=transform_name or str(cm.get("transform", "")),
+                            proof_method=str(cm.get("proof_method", "field_match")),
+                        ))
+
                 proposal = SourceCapabilityProposal(
-                    source_id=str(item["source_id"]),
+                    source_id=source_id_str,
                     relation=str(item["relation"]),
-                    input_roles={str(k): str(v) for k, v in dict(item.get("input_roles", {})).items()},
-                    output_roles={str(k): str(v) for k, v in dict(item.get("output_roles", {})).items()},
+                    goal_id=str(item.get("goal_id", "")).strip(),
+                    input_roles=_norm_role_map(item.get("input_roles")),
+                    output_roles=_norm_role_map(item.get("output_roles")),
                     proof_mode=str(item.get("proof_mode", "retrieval_only")),
-                    probe_kind=str(
-                        item.get("probe_kind")
-                        or (item.get("probe", {}).get("kind") if isinstance(item.get("probe"), dict) else None)
-                        or "cooccurrence"
-                    ),
+                    probe_kind=raw_probe_kind,
                     projection_roles=tuple(
                         str(v) for v in (
                             item.get("projection_roles")
@@ -147,14 +202,19 @@ class SourceProfiler:
                     ),
                     supported_constraints=tuple(str(v) for v in item.get("supported_constraints", [])),
                     searchable_constraints=tuple(str(v) for v in item.get("searchable_constraints", [])),
-                    temporal_roles={str(k): str(v) for k, v in dict(item.get("temporal_roles", {})).items()},
-                    action_roles={str(k): str(v) for k, v in dict(item.get("action_roles", {})).items()},
-                    state_roles={str(k): str(v) for k, v in dict(item.get("state_roles", {})).items()},
-                    artifact_identity_roles={str(k): str(v) for k, v in dict(item.get("artifact_identity_roles", {})).items()},
-                    correlation_roles={str(k): str(v) for k, v in dict(item.get("correlation_roles", {})).items()},
+                    constraint_mappings=tuple(raw_cms),
+                    temporal_roles=_norm_role_map(item.get("temporal_roles")),
+                    action_roles=_norm_role_map(item.get("action_roles")),
+                    state_roles=_norm_role_map(item.get("state_roles")),
+                    artifact_identity_roles=_norm_role_map(item.get("artifact_identity_roles")),
+                    correlation_roles=_norm_role_map(item.get("correlation_roles")),
                     relaxable_constraint_keys=tuple(str(v) for v in item.get("relaxable_constraint_keys", [])),
                     rationale_refs=tuple(str(v) for v in item.get("rationale_refs", [])),
                     confidence=float(item["confidence"]) if item.get("confidence") is not None else None,
+                    field_transforms={
+                        name_to_fid.get(str(key).lower(), str(key)): str(value)
+                        for key, value in dict(item.get("field_transforms") or {}).items()
+                    },
                 )
                 valid, reasons, _ = self.validator.validate(proposal, authoritative_profiles)
                 if not valid:

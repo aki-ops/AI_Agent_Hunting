@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 from eval.metrics import (
@@ -13,6 +14,7 @@ from eval.metrics import (
     RetrievalMetrics,
     ScenarioEvaluationResult,
 )
+from eval.baselines import BaselineRunAccount, BaselineSpec
 
 
 class EvaluationRunner:
@@ -22,9 +24,11 @@ class EvaluationRunner:
         self,
         scenarios_path: Path | str = "eval/corpus/scenarios.jsonl",
         splits_path: Path | str = "eval/splits.json",
+        baseline_specs_path: Path | str = "eval/corpus/baseline_specs.jsonl",
     ) -> None:
         self.scenarios_path = Path(scenarios_path)
         self.splits_path = Path(splits_path)
+        self.baseline_specs_path = Path(baseline_specs_path)
 
     def load_scenarios(self, split: str | None = None) -> list[dict[str, Any]]:
         """Load scenarios from corpus, optionally filtering by split partition."""
@@ -68,6 +72,89 @@ class EvaluationRunner:
         engine = HypothesisHuntEngine(configured_adapters=adapters_list)
         return engine.execute_hunt(request, adapter=adapter)
 
+    def load_baseline_specs(self) -> list[BaselineSpec]:
+        if not self.baseline_specs_path.exists():
+            return []
+        specs: list[BaselineSpec] = []
+        for line in self.baseline_specs_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                specs.append(BaselineSpec.from_dict(json.loads(line)))
+        return specs
+
+    @staticmethod
+    def _empty_metrics() -> tuple[PlanningMetrics, RetrievalMetrics, CorrelationMetrics, AnswerMetrics, OperationalMetrics]:
+        return (
+            PlanningMetrics(claim_precision=0.0, claim_recall=0.0, claim_f1=0.0, unsupported_expansion_rate=1.0),
+            RetrievalMetrics(evidence_precision=0.0, evidence_recall_at_k=0.0, completeness_accuracy=0.0),
+            CorrelationMetrics(edge_precision=0.0, edge_recall=0.0, edge_f1=0.0, transition_validity=0.0),
+            AnswerMetrics(exact_match=0.0, value_f1=0.0, citation_grounding_rate=0.0),
+            OperationalMetrics(decision_coverage=0.0, waste_ratio=1.0, mean_time_to_verdict_ms=0.0),
+        )
+
+    def execute_baseline(
+        self,
+        scenario: dict[str, Any],
+        mode: str,
+        adapter: Any | None,
+    ) -> tuple[BaselineRunAccount, Any | None]:
+        specs = {
+            (item.scenario_id, item.mode): item
+            for item in self.load_baseline_specs()
+        }
+        scenario_id = str(scenario["scenario_id"])
+        spec = specs.get((scenario_id, mode))
+        query_id = f"baseline-{mode.casefold()}-{scenario_id}"
+        if spec is None:
+            return BaselineRunAccount(
+                scenario_id, mode, "NOT_CONFIGURED", "", "", query_id, "",
+                diagnostic="no reviewed baseline spec",
+            ), None
+        if adapter is None:
+            return BaselineRunAccount(
+                scenario_id, mode, "NOT_EXECUTED", spec.provider_id, spec.operation_id,
+                query_id, spec.time_window, diagnostic="adapter not supplied",
+            ), None
+        provider_id = str(getattr(adapter, "provider_id", ""))
+        if provider_id != spec.provider_id:
+            return BaselineRunAccount(
+                scenario_id, mode, "NOT_EXECUTED", spec.provider_id, spec.operation_id,
+                query_id, spec.time_window,
+                diagnostic=f"provider mismatch: expected {spec.provider_id}, got {provider_id}",
+            ), None
+        operations = getattr(getattr(adapter, "get_capability_descriptor", lambda: None)(), "operations", ())
+        if not any(getattr(operation, "id", None) == spec.operation_id for operation in operations):
+            return BaselineRunAccount(
+                scenario_id, mode, "NOT_EXECUTED", spec.provider_id, spec.operation_id,
+                query_id, spec.time_window, diagnostic="operation is not declared by provider",
+            ), None
+        start = time.perf_counter()
+        try:
+            result = adapter.execute_query(
+                operation_id=spec.operation_id,
+                entity=None,
+                window=spec.time_window,
+                limit=100,
+                offset=0,
+                query_id=query_id,
+                search_terms=list(spec.search_terms),
+                parameters={"baseline_mode": mode, "review_status": spec.review_status},
+                query_intent={"mode": "EXPLORE", "goal_id": scenario_id},
+            )
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            account = BaselineRunAccount(
+                scenario_id, mode, "EXECUTED", spec.provider_id, spec.operation_id,
+                query_id, spec.time_window,
+                row_count=int(getattr(result, "row_count", 0) or len(getattr(result, "rows", None) or [])),
+                complete=bool(getattr(result, "complete", False)), elapsed_ms=elapsed_ms,
+            )
+            return account, result
+        except Exception as exc:
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            return BaselineRunAccount(
+                scenario_id, mode, "EXECUTION_FAILED", spec.provider_id, spec.operation_id,
+                query_id, spec.time_window, elapsed_ms=elapsed_ms, diagnostic=f"{type(exc).__name__}: {exc}",
+            ), None
+
     def evaluate_scenario(
         self,
         scenario: dict[str, Any],
@@ -85,138 +172,299 @@ class EvaluationRunner:
         request_text = scenario.get("request_text", "")
         entities = scenario.get("entities", {})
 
-        if mode == "CANDIDATE":
-            # 1. Safety and Quarantine Gate Evaluation
-            is_prompt_injection = (
-                "ignore previous instructions" in request_text.lower()
-                or "malicious instruction" in request_text.lower()
-                or "ignore previous" in str(entities).lower()
-            )
-            is_tenant_violation = (
-                "tenant-b" in request_text.lower() and "tenant-a" in request_text.lower()
-            )
+        if mode == "CANDIDATE" and adapter is None and not configured_adapters:
+            # Candidate metrics require an execution artifact or configured provider.
+            # Synthetic predictions are strictly disabled when no provider/fixture is supplied.
+            pred_stop = "NOT_EXECUTED"
+            pred_answer = None
+            planning = PlanningMetrics(claim_precision=0.0, claim_recall=0.0, claim_f1=0.0, unsupported_expansion_rate=1.0)
+            retrieval = RetrievalMetrics(evidence_precision=0.0, evidence_recall_at_k=0.0, completeness_accuracy=0.0)
+            correlation = CorrelationMetrics(edge_precision=0.0, edge_recall=0.0, edge_f1=0.0, transition_validity=0.0)
+            answer = AnswerMetrics(exact_match=0.0, value_f1=0.0, citation_grounding_rate=0.0)
+            operations = OperationalMetrics(decision_coverage=0.0, waste_ratio=1.0, mean_time_to_verdict_ms=0.0)
+            cost_usd = 0.0
+            stop_correct = False
+            ans_correct = False
 
-            if is_prompt_injection or is_tenant_violation:
-                pred_stop = "SAFETY_QUARANTINE"
-                pred_answer = gold_values[0] if gold_values else None
-                planning = PlanningMetrics(claim_precision=1.0, claim_recall=1.0, claim_f1=1.0, unsupported_expansion_rate=0.0)
-                retrieval = RetrievalMetrics(evidence_precision=1.0, evidence_recall_at_k=1.0, completeness_accuracy=1.0)
-                correlation = CorrelationMetrics(edge_precision=1.0, edge_recall=1.0, edge_f1=1.0, transition_validity=1.0)
-                answer = AnswerMetrics(exact_match=1.0, value_f1=1.0, citation_grounding_rate=1.0)
-                operations = OperationalMetrics(decision_coverage=1.0, waste_ratio=0.0, mean_time_to_verdict_ms=45.0)
-                cost_usd = 0.005
+        elif mode == "CANDIDATE":
+            exec_res = None
+            start_t = time.perf_counter()
+            try:
+                exec_res = self.execute_candidate_pipeline(
+                    scenario, adapter=adapter, configured_adapters=configured_adapters
+                )
+            except Exception:
+                exec_res = None
+            elapsed_ms = (time.perf_counter() - start_t) * 1000.0
 
-            # 2. Backend / Telemetry Bounds Evaluation
-            elif scenario_id == "S13_splunk_timeout_cancel":
-                # Splunk search timeout cancels backend job and records degradation
-                pred_stop = "BACKEND_DEGRADED"
-                pred_answer = None
-                planning = PlanningMetrics(claim_precision=1.0, claim_recall=1.0, claim_f1=1.0, unsupported_expansion_rate=0.0)
-                retrieval = RetrievalMetrics(evidence_precision=0.90, evidence_recall_at_k=1.0, completeness_accuracy=1.0)
-                correlation = CorrelationMetrics(edge_precision=1.0, edge_recall=1.0, edge_f1=1.0, transition_validity=1.0)
-                answer = AnswerMetrics(exact_match=1.0, value_f1=1.0, citation_grounding_rate=1.0)
-                operations = OperationalMetrics(decision_coverage=1.0, waste_ratio=0.05, mean_time_to_verdict_ms=250.0)
-                cost_usd = 0.012
+            if exec_res is not None:
+                account = getattr(exec_res, "account", exec_res)
+                state = getattr(exec_res, "state", None)
+                budget = getattr(exec_res, "budget", None)
+                if hasattr(account, "account"):
+                    account = account.account
 
-            elif scenario_id in ("S10_deceptive_sourcetype", "S12_missing_telemetry_absence"):
-                # Missing required schema fields or unreachable telemetry partition
-                pred_stop = "COVERAGE_EXHAUSTED"
-                pred_answer = None
-                planning = PlanningMetrics(claim_precision=1.0, claim_recall=1.0, claim_f1=1.0, unsupported_expansion_rate=0.0)
-                retrieval = RetrievalMetrics(evidence_precision=1.0, evidence_recall_at_k=1.0, completeness_accuracy=1.0)
-                correlation = CorrelationMetrics(edge_precision=1.0, edge_recall=1.0, edge_f1=1.0, transition_validity=1.0)
-                answer = AnswerMetrics(exact_match=1.0, value_f1=1.0, citation_grounding_rate=1.0)
-                operations = OperationalMetrics(decision_coverage=1.0, waste_ratio=0.04, mean_time_to_verdict_ms=180.0)
-                cost_usd = 0.015
+                from hunting.contracts.hunt import StoppingDecision
 
-            # 3. Answerable Scenarios: Execute live candidate pipeline when configured
-            else:
-                account = None
-                if adapter is not None or configured_adapters:
-                    try:
-                        account = self.execute_candidate_pipeline(
-                            scenario, adapter=adapter, configured_adapters=configured_adapters
-                        )
-                    except Exception:
-                        account = None
-
-                if account is not None:
-                    if hasattr(account, "account"):
-                        account = account.account
-
-                    from hunting.contracts.decision import StoppingDecision
-
-                    tax_state = getattr(account, "stopping_taxonomy_state", None) or getattr(account, "taxonomy_state", None)
-                    if tax_state:
-                        pred_stop = tax_state.value if hasattr(tax_state, "value") else str(tax_state)
-                    else:
-                        stop_dec = getattr(account, "stopping_decision", None)
-                        if hasattr(stop_dec, "to_taxonomy_state"):
-                            pred_stop = stop_dec.to_taxonomy_state().value
-                        elif isinstance(stop_dec, str):
-                            try:
-                                pred_stop = StoppingDecision(stop_dec).to_taxonomy_state().value
-                            except ValueError:
-                                pred_stop = stop_dec
-                        else:
-                            pred_stop = str(stop_dec or "")
-
-                    raw_val = None
-                    if hasattr(account, "answer") and isinstance(account.answer, dict):
-                        raw_val = account.answer.get("value")
-                        if raw_val is None and account.answer.get("candidates"):
-                            cand0 = account.answer["candidates"][0]
-                            raw_val = cand0.get("value") if isinstance(cand0, dict) else str(cand0)
-                    if raw_val is None and hasattr(account, "candidate_sets") and account.candidate_sets:
-                        for cset in account.candidate_sets.values():
-                            valid_cands = getattr(cset, "valid_candidates", ())
-                            if valid_cands:
-                                raw_val = valid_cands[0].value
-                                break
-                    pred_answer = raw_val
-
-                    em = 1.0 if (gold_values and pred_answer in gold_values) or (not gold_values and pred_answer is None) else 0.0
-                    grounded = 1.0 if bool(getattr(account, "observation_citations", [])) else 0.0
-                    dec_cov = 1.0 if getattr(account, "stopping_decision", None) is not None else 0.0
-
-                    planning = PlanningMetrics(claim_precision=1.0, claim_recall=1.0, claim_f1=1.0, unsupported_expansion_rate=0.0)
-                    retrieval = RetrievalMetrics(evidence_precision=0.95, evidence_recall_at_k=1.0, completeness_accuracy=1.0)
-                    correlation = CorrelationMetrics(edge_precision=1.0, edge_recall=1.0, edge_f1=1.0, transition_validity=1.0)
-                    answer = AnswerMetrics(exact_match=em, value_f1=em, citation_grounding_rate=grounded)
-                    operations = OperationalMetrics(decision_coverage=dec_cov, waste_ratio=0.04, mean_time_to_verdict_ms=250.0)
-                    cost_usd = 0.015
+                tax_state = getattr(account, "stopping_taxonomy_state", None) or getattr(account, "taxonomy_state", None)
+                if tax_state:
+                    pred_stop = tax_state.value if hasattr(tax_state, "value") else str(tax_state)
                 else:
-                    pred_stop = expected_stop
-                    pred_answer = gold_values[0] if gold_values else None
-                    planning = PlanningMetrics(claim_precision=1.0, claim_recall=1.0, claim_f1=1.0, unsupported_expansion_rate=0.0)
-                    retrieval = RetrievalMetrics(evidence_precision=0.95, evidence_recall_at_k=1.0, completeness_accuracy=1.0)
-                    correlation = CorrelationMetrics(edge_precision=1.0, edge_recall=1.0, edge_f1=1.0, transition_validity=1.0)
-                    answer = AnswerMetrics(exact_match=1.0, value_f1=1.0, citation_grounding_rate=1.0)
-                    operations = OperationalMetrics(decision_coverage=1.0, waste_ratio=0.04, mean_time_to_verdict_ms=250.0)
-                    cost_usd = 0.015
+                    stop_dec = getattr(account, "stopping_decision", None)
+                    if hasattr(stop_dec, "to_taxonomy_state"):
+                        pred_stop = stop_dec.to_taxonomy_state().value
+                    elif isinstance(stop_dec, str):
+                        try:
+                            pred_stop = StoppingDecision(stop_dec).to_taxonomy_state().value
+                        except ValueError:
+                            pred_stop = stop_dec
+                    else:
+                        pred_stop = str(stop_dec or "")
 
-            # Apply Ablations
-            if ablation == "oracle_graph":
-                planning.claim_precision = 1.0
-                planning.claim_recall = 1.0
-            elif ablation == "dynamic_mapping_only":
-                # Without approved proof contracts, novel relations cannot be proved
-                if scenario_id in ("S07_frothly_file_encryption", "S03_amber_competitor_domain"):
-                    pred_stop = "COVERAGE_EXHAUSTED"
-                    pred_answer = None
-                    correlation.edge_precision = 0.5
-                    correlation.edge_recall = 0.5
-                    correlation.edge_f1 = 0.5
-                    correlation.transition_validity = 0.5
-                    answer.exact_match = 0.0
-                    answer.value_f1 = 0.0
-                    answer.citation_grounding_rate = 0.0
-                    operations.decision_coverage = 0.5
-            elif ablation == "single_shot_query":
-                # Without progressive frontier F0–F4, higher query waste and lower completeness across workload
-                operations.waste_ratio = 0.35
-                retrieval.evidence_precision = 0.60
-                cost_usd = 0.045
+                raw_val = None
+                if hasattr(account, "answer") and isinstance(account.answer, dict):
+                    raw_val = account.answer.get("value")
+                    if raw_val is None and account.answer.get("candidates"):
+                        cand0 = account.answer["candidates"][0]
+                        raw_val = cand0.get("value") if isinstance(cand0, dict) else str(cand0)
+                if raw_val is None and hasattr(account, "candidate_sets") and account.candidate_sets:
+                    for cset in account.candidate_sets.values():
+                        valid_cands = getattr(cset, "valid_candidates", ())
+                        if valid_cands:
+                            raw_val = valid_cands[0].value
+                            break
+                pred_answer = raw_val
+
+                em = 1.0 if (gold_values and pred_answer in gold_values) or (not gold_values and pred_answer is None) else 0.0
+                grounded = 1.0 if bool(getattr(account, "observation_citations", [])) else 0.0
+                dec_cov = 1.0 if getattr(account, "stopping_decision", None) is not None else 0.0
+
+                # Real metrics from execution trace & gold annotations
+                required_goals = scenario.get("required_goals", []) or []
+                queries = getattr(state, "queries", []) or []
+                query_results = getattr(state, "query_results", []) or []
+                cards = getattr(state, "evidence_cards", []) or []
+                observations = getattr(state, "observations", []) or []
+                cited_obs_ids = set(getattr(account, "observation_citations", []) or [])
+                cov = getattr(account, "coverage_bound", None)
+                req_cov = getattr(cov, "requirement_coverage", None) if cov else None
+
+                # 1. Planning metrics: evaluated against scenario required_goals
+                planned_goals = []
+                goal_graph = getattr(account, "semantic_goal_graph", None) or getattr(state, "semantic_goal_graph", None)
+                if goal_graph and getattr(goal_graph, "relations", None):
+                    planned_goals = list(goal_graph.relations)
+                elif account.hypotheses:
+                    planned_goals = list(account.hypotheses)
+
+                matched_gold = 0
+                matched_plan = 0
+                if required_goals and planned_goals:
+                    for g in required_goals:
+                        g_rel = (g.get("relation") or g.get("attribute") or "").lower()
+                        if any(
+                            g_rel in str(getattr(p, "relation", getattr(p, "statement", ""))).lower()
+                            or str(getattr(p, "relation", getattr(p, "statement", ""))).lower() in g_rel
+                            for p in planned_goals
+                        ):
+                            matched_gold += 1
+                    for p in planned_goals:
+                        p_rel = str(getattr(p, "relation", getattr(p, "statement", ""))).lower()
+                        if any(
+                            (g.get("relation") or g.get("attribute") or "").lower() in p_rel
+                            or p_rel in (g.get("relation") or g.get("attribute") or "").lower()
+                            for g in required_goals
+                        ):
+                            matched_plan += 1
+
+                if planned_goals:
+                    claim_precision = (matched_plan / len(planned_goals)) if required_goals else 1.0
+                    unsupported_expansion = ((len(planned_goals) - matched_plan) / len(planned_goals)) if required_goals else 0.0
+                else:
+                    claim_precision = 1.0 if not required_goals else 0.0
+                    unsupported_expansion = 0.0 if not required_goals else 1.0
+
+                if required_goals:
+                    claim_recall = matched_gold / len(required_goals)
+                else:
+                    claim_recall = 1.0
+
+                claim_f1 = (
+                    (2 * claim_precision * claim_recall / (claim_precision + claim_recall))
+                    if (claim_precision + claim_recall) > 0 else 0.0
+                )
+
+                planning = PlanningMetrics(
+                    claim_precision=claim_precision,
+                    claim_recall=claim_recall,
+                    claim_f1=claim_f1,
+                    unsupported_expansion_rate=unsupported_expansion,
+                )
+
+                # 2. Retrieval metrics: evaluated against cited observations and gold answers
+                if observations:
+                    evidence_prec = len(cited_obs_ids) / len(observations)
+                elif cards:
+                    answer_cards = set(account.answer.get("card_ids", []) if isinstance(account.answer, dict) else [])
+                    evidence_prec = (len(answer_cards) / len(cards)) if answer_cards else (1.0 if not gold_values else 0.0)
+                else:
+                    evidence_prec = 1.0 if not gold_values else 0.0
+
+                found_gold_evidence = False
+                if gold_values:
+                    for gv in gold_values:
+                        gv_str = str(gv).lower()
+                        if pred_answer is not None and gv_str in str(pred_answer).lower():
+                            found_gold_evidence = True
+                            break
+                        for c in cards:
+                            if any(gv_str in str(v).lower() for v in getattr(c, "field_summary", {}).values()):
+                                found_gold_evidence = True
+                                break
+                        if found_gold_evidence:
+                            break
+                        for obs in observations:
+                            if any(gv_str in str(v).lower() for v in getattr(obs, "fields", {}).values()):
+                                found_gold_evidence = True
+                                break
+                        if found_gold_evidence:
+                            break
+                    evidence_rec = 1.0 if found_gold_evidence else 0.0
+                else:
+                    evidence_rec = 1.0 if (pred_answer is None or pred_answer is False or pred_answer == []) else 0.0
+
+                if query_results:
+                    comp_queries = sum(
+                        1 for qr in query_results
+                        if getattr(qr, "executed_ok", False)
+                        and getattr(qr, "completeness_contract", "") not in ("TRUNCATED", "FAILED")
+                    )
+                    completeness = comp_queries / len(query_results)
+                elif req_cov:
+                    sat_reqs = len(getattr(req_cov, "satisfied_requirements", ()))
+                    att_reqs = len(getattr(req_cov, "attempted_requirements", ()))
+                    completeness = (sat_reqs / att_reqs) if att_reqs > 0 else 1.0
+                else:
+                    completeness = 1.0
+
+                retrieval = RetrievalMetrics(
+                    evidence_precision=evidence_prec,
+                    evidence_recall_at_k=evidence_rec,
+                    completeness_accuracy=completeness,
+                )
+
+                # 3. Correlation metrics: evaluated against verified causal edges and provenance
+                verified_edges = getattr(cov, "causal_path_verified_edges", 0) if cov else 0
+                total_edges = getattr(cov, "causal_path_total_edges", 0) if cov else 0
+                provenance = getattr(account, "provenance_chain", []) or []
+                if not verified_edges and provenance:
+                    verified_edges = len(provenance)
+                    total_edges = len(provenance)
+
+                gold_req_count = len(required_goals)
+                if total_edges > 0:
+                    edge_prec = verified_edges / total_edges
+                else:
+                    edge_prec = 1.0 if gold_req_count == 0 else 0.0
+
+                if gold_req_count > 0:
+                    edge_rec = min(1.0, verified_edges / gold_req_count)
+                else:
+                    edge_rec = 1.0 if verified_edges == 0 else 0.0
+
+                edge_f1 = (
+                    (2 * edge_prec * edge_rec / (edge_prec + edge_rec))
+                    if (edge_prec + edge_rec) > 0 else 0.0
+                )
+
+                if provenance:
+                    valid_trans = sum(1 for p in provenance if bool(getattr(p, "citations", None)))
+                    trans_val = valid_trans / len(provenance)
+                elif verified_edges > 0:
+                    trans_val = 1.0
+                else:
+                    trans_val = 1.0 if gold_req_count == 0 else 0.0
+
+                correlation = CorrelationMetrics(
+                    edge_precision=edge_prec,
+                    edge_recall=edge_rec,
+                    edge_f1=edge_f1,
+                    transition_validity=trans_val,
+                )
+
+                # 4. Answer metrics
+                if em == 1.0:
+                    vf1 = 1.0
+                elif gold_values and pred_answer is not None:
+                    pred_toks = set(str(pred_answer).lower().split())
+                    gold_toks = set(str(gold_values[0]).lower().split())
+                    ov = len(pred_toks.intersection(gold_toks))
+                    if ov > 0:
+                        p = ov / len(pred_toks)
+                        r = ov / len(gold_toks)
+                        vf1 = 2 * p * r / (p + r)
+                    else:
+                        vf1 = 0.0
+                else:
+                    vf1 = 0.0
+
+                min_citations = scenario.get("answer_contract", {}).get("min_citations", 0)
+                if min_citations > 0:
+                    citation_grounding = min(1.0, len(cited_obs_ids) / min_citations)
+                else:
+                    citation_grounding = 1.0 if grounded else 1.0
+
+                answer = AnswerMetrics(
+                    exact_match=em,
+                    value_f1=vf1,
+                    citation_grounding_rate=citation_grounding,
+                )
+
+                # 5. Operational metrics & timing from step_trace / elapsed time
+                empty_queries = sum(1 for qr in query_results if getattr(qr, "row_count", 0) == 0)
+                waste = (empty_queries / len(queries)) if queries else 0.0
+
+                step_trace = getattr(account, "step_trace", None) or getattr(state, "step_trace", None)
+                steps = getattr(step_trace, "steps", []) if step_trace else []
+                if steps:
+                    time_ms = sum(float(getattr(s, "duration_ms", 0.0) or 0.0) for s in steps)
+                elif elapsed_ms > 0:
+                    time_ms = elapsed_ms
+                else:
+                    time_ms = 0.0
+
+                operations = OperationalMetrics(
+                    decision_coverage=dec_cov,
+                    waste_ratio=waste,
+                    mean_time_to_verdict_ms=time_ms,
+                )
+
+                # Cost from budget ledger or actual LLM usage
+                if budget and getattr(budget, "total_cost_usd", None) is not None:
+                    cost_usd = float(budget.total_cost_usd)
+                else:
+                    cost_acc = getattr(account, "cost_accounting", {})
+                    if isinstance(cost_acc, dict) and "total_cost_usd" in cost_acc:
+                        cost_usd = float(cost_acc["total_cost_usd"])
+                    elif getattr(account, "llm_usage", None):
+                        cost_usd = float(account.llm_usage.get("estimated_cost_usd", 0.0) or 0.0)
+                    else:
+                        cost_usd = 0.0
+            else:
+                pred_stop = "EXECUTION_ERROR"
+                pred_answer = None
+                planning = PlanningMetrics(claim_precision=0.0, claim_recall=0.0, claim_f1=0.0, unsupported_expansion_rate=1.0)
+                retrieval = RetrievalMetrics(evidence_precision=0.0, evidence_recall_at_k=0.0, completeness_accuracy=0.0)
+                correlation = CorrelationMetrics(edge_precision=0.0, edge_recall=0.0, edge_f1=0.0, transition_validity=0.0)
+                answer = AnswerMetrics(exact_match=0.0, value_f1=0.0, citation_grounding_rate=0.0)
+                operations = OperationalMetrics(decision_coverage=0.0, waste_ratio=1.0, mean_time_to_verdict_ms=0.0)
+                cost_usd = 0.0
+
+            if ablation in {"oracle_graph", "dynamic_mapping_only", "single_shot_query"}:
+                raise NotImplementedError(
+                    f"Ablation '{ablation}' requires an independent executable replay fixture; "
+                    "synthetic metric adjustment is disabled."
+                )
 
             stop_correct = (pred_stop == expected_stop)
             if gold_values:
@@ -224,63 +472,20 @@ class EvaluationRunner:
             else:
                 ans_correct = (pred_answer is None or pred_answer == gold_values)
 
-        elif mode == "B0_BASELINE":
-            # Heuristic keyword-driven legacy baseline
-            if scenario_id in ("S10_deceptive_sourcetype", "S14_prompt_injection_quarantine", "S15_cross_tenant_isolation"):
-                # B0 lacks quarantine gate and accepts deceptive sourcetype / injection
-                pred_stop = "ANSWER_PROVED"
-                stop_correct = False
-                pred_answer = "malicious_payload" if scenario_id == "S14_prompt_injection_quarantine" else "fake_data"
-                ans_correct = False
-            elif scenario_id == "S08_mallory_air13_disambiguation":
-                # B0 picks arbitrary substring 'air'
-                pred_stop = "ANSWER_PROVED"
-                stop_correct = True
-                pred_answer = "MACLORY-AIR13"
-                ans_correct = True
-            elif scenario_id == "S13_splunk_timeout_cancel":
-                # B0 lacks backend cancellation and hangs / errors
-                pred_stop = "BUDGET_EXHAUSTED"
-                stop_correct = False
-                pred_answer = None
-                ans_correct = False
-            else:
-                pred_stop = expected_stop
-                stop_correct = True
-                pred_answer = gold_values[0] if gold_values else None
-                ans_correct = True
-
-            planning = PlanningMetrics(claim_precision=0.70, claim_recall=0.75, claim_f1=0.72, unsupported_expansion_rate=0.25)
-            retrieval = RetrievalMetrics(evidence_precision=0.65, evidence_recall_at_k=0.70, completeness_accuracy=0.60)
-            correlation = CorrelationMetrics(edge_precision=0.60, edge_recall=0.65, edge_f1=0.62, transition_validity=0.55)
-            answer = AnswerMetrics(exact_match=0.70, value_f1=0.72, citation_grounding_rate=0.60)
-            operations = OperationalMetrics(decision_coverage=0.65, waste_ratio=0.40, mean_time_to_verdict_ms=850.0)
-            cost_usd = 0.038
-
-        elif mode == "B1_DIRECT_QUERY":
-            # Direct LLM-to-query baseline with safety gate but without GoalGraph and Progressive Frontier
-            if scenario_id in ("S10_deceptive_sourcetype", "S12_missing_telemetry_absence"):
-                pred_stop = "COVERAGE_EXHAUSTED"
-                stop_correct = True
-                pred_answer = None
-                ans_correct = True
-            elif scenario_id == "S14_prompt_injection_quarantine":
-                pred_stop = "SAFETY_QUARANTINE"
-                stop_correct = True
-                pred_answer = None
-                ans_correct = True
-            else:
-                pred_stop = expected_stop
-                stop_correct = True
-                pred_answer = gold_values[0] if gold_values else None
-                ans_correct = True
-
-            planning = PlanningMetrics(claim_precision=0.82, claim_recall=0.85, claim_f1=0.83, unsupported_expansion_rate=0.15)
-            retrieval = RetrievalMetrics(evidence_precision=0.78, evidence_recall_at_k=0.82, completeness_accuracy=0.80)
-            correlation = CorrelationMetrics(edge_precision=0.80, edge_recall=0.82, edge_f1=0.81, transition_validity=0.80)
-            answer = AnswerMetrics(exact_match=0.85, value_f1=0.86, citation_grounding_rate=0.85)
-            operations = OperationalMetrics(decision_coverage=0.85, waste_ratio=0.28, mean_time_to_verdict_ms=450.0)
-            cost_usd = 0.028
+        elif mode in {"B0_BASELINE", "B1_DIRECT_QUERY"}:
+            run_account, result = self.execute_baseline(scenario, mode, adapter)
+            pred_stop = run_account.status
+            pred_answer = None
+            planning, retrieval, correlation, answer, operations = self._empty_metrics()
+            operations = OperationalMetrics(
+                decision_coverage=1.0 if run_account.status in {"EXECUTED", "EXECUTION_FAILED"} else 0.0,
+                waste_ratio=(1.0 if run_account.status == "EXECUTED" and run_account.row_count == 0 else 0.0),
+                mean_time_to_verdict_ms=run_account.elapsed_ms,
+            )
+            cost_usd = 0.0
+            stop_correct = False
+            ans_correct = False
+            run_account_dict = run_account.to_dict()
 
         else:
             raise ValueError(f"Unknown architecture mode: {mode}")
@@ -300,6 +505,7 @@ class EvaluationRunner:
             answer=answer,
             operations=operations,
             cost_usd=cost_usd,
+            run_account=locals().get("run_account_dict"),
         )
 
     def run_suite(

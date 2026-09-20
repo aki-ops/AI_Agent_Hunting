@@ -1,0 +1,2 @@
+{"scenario_id":"S01_tor_version","mode":"B0_BASELINE","provider_id":"cdb","operation_id":"search_text","time_window":"2026-02-01T00:00:00Z/P1D","search_terms":["Tor Browser"],"review_status":"APPROVED"}
+{"scenario_id":"S01_tor_version","mode":"B1_DIRECT_QUERY","provider_id":"cdb","operation_id":"search_text","time_window":"2026-02-01T00:00:00Z/P1D","search_terms":["Tor Browser"],"review_status":"APPROVED"}

@@ -108,12 +108,17 @@ def query_plan_from_step(
         max_rows=limit,
         expected_cost=step.expected_cost,
         retrieval_stage=retrieval_stage,
+        mode=step.mode,
     )
     if operation is not None and operation.query_builder == "runtime.source_profile.v1":
         parameters["runtime_capability"] = {
             "source_id": operation.runtime_source_id,
             "schema_fingerprint": operation.schema_fingerprint,
             "proof_mode": operation.proof_mode,
+            "constraint_mappings": [dict(item) for item in getattr(operation, "constraint_mappings", ())],
+            "constraint_metadata": [dict(item) for item in step.constraint_metadata],
+            "input_variable_ids": list(step.input_bindings.values()),
+            "removed_retrieval_keys": sorted(removed_retrieval_keys or set()),
             "native_field_bindings": {
                 key: list(values)
                 for key, values in operation.native_field_bindings.items()
@@ -121,6 +126,10 @@ def query_plan_from_step(
             "output_value_bindings": {
                 key: list(values)
                 for key, values in operation.output_value_bindings.items()
+            },
+            "nested_field_bindings": {
+                key: dict(value)
+                for key, value in getattr(operation, "nested_field_bindings", {}).items()
             },
         }
     parameters["query_intent"] = intent.to_dict()

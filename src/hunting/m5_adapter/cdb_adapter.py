@@ -36,6 +36,7 @@ from hunting.contracts.queries import (
     QueryResult,
 )
 from hunting.contracts.source_profile import ProbeSpec, TelemetrySourceProfile
+from hunting.contracts.transforms import get_transform_for_constraint
 from hunting.m5_adapter.allowlist import validate_query_params, validate_time_window_format
 from hunting.m5_adapter.controls import (
     execute_any_record_in_scope,
@@ -384,7 +385,14 @@ class CdbAdapter:
 
         if operation_id.startswith("runtime:") and isinstance(parameters.get("runtime_capability"), dict):
             return self._execute_runtime_capability(
-                parameters["runtime_capability"], entity, window, limit, offset, query_id
+                parameters["runtime_capability"],
+                entity,
+                window,
+                limit,
+                offset,
+                query_id,
+                parameters=parameters,
+                query_intent=query_intent,
             )
 
         start_dt, end_dt = validate_time_window_format(window)
@@ -422,8 +430,12 @@ class CdbAdapter:
                 conditions.append("user = ?")
                 sql_params.append(u)
             elif isinstance(entity, Process):
-                conditions.append("host = ? AND pid = ?")
-                sql_params.extend([entity.host, entity.pid])
+                if entity.host:
+                    conditions.append("host = ?")
+                    sql_params.append(entity.host)
+                if entity.pid is not None:
+                    conditions.append("pid = ?")
+                    sql_params.append(entity.pid)
             elif isinstance(entity, IPAddress):
                 ip_val = entity.address or (str(entity.kind) if str(entity.kind) != "ip" else "")
                 conditions.append("ip = ?")
@@ -433,8 +445,12 @@ class CdbAdapter:
                 conditions.append("domain = ?")
                 sql_params.append(domain_val)
             elif isinstance(entity, File):
-                conditions.append("host = ? AND file_path = ?")
-                sql_params.extend([entity.host, entity.path])
+                if entity.host:
+                    conditions.append("host = ?")
+                    sql_params.append(entity.host)
+                if entity.path:
+                    conditions.append("file_path = ?")
+                    sql_params.append(entity.path)
 
         # Predicate and constraint filtering
         field_map = {
@@ -445,6 +461,14 @@ class CdbAdapter:
             "command_line": "cmdline",
             "process_id": "pid",
             "parent_process_id": "ppid",
+            "command_type": "cmdline",
+            "command": "cmdline",
+            "command_interpreter": "cmdline",
+            "interpreter": "cmdline",
+            "process_name": "image",
+            "process": "image",
+            "encoding_state": "cmdline",
+            "encoding": "cmdline",
         }
         valid_cols = {
             "id", "timestamp", "event_id", "native_type", "host", "user",
@@ -495,7 +519,14 @@ class CdbAdapter:
             fn = field_map.get(raw_field, raw_field)
             op = str(item.get("op", "equals")).strip().lower()
             val = item.get("value")
-            if fn in valid_cols:
+            transform = get_transform_for_constraint(raw_field, val)
+            if transform is not None:
+                target_col = fn if fn in valid_cols else ("cmdline" if "cmdline" in valid_cols else "cmdline")
+                sql_pred, params = transform.to_sql_predicate(target_col, raw_field, val, op)
+                if sql_pred:
+                    conditions.append(sql_pred)
+                    sql_params.extend(params)
+            elif fn in valid_cols:
                 if op in ("equals", "eq", FieldOp.EQUALS):
                     conditions.append(f"{fn} = ?")
                     sql_params.append(val)
@@ -594,6 +625,7 @@ class CdbAdapter:
             native_query=sql,
             provider=self.provider_id,
             index=self.db_path,
+            row_count=len(return_rows),
         )
 
     def _execute_runtime_capability(
@@ -604,6 +636,8 @@ class CdbAdapter:
         limit: int,
         offset: int,
         query_id: str,
+        parameters: dict[str, Any] | None = None,
+        query_intent: dict[str, Any] | None = None,
     ) -> QueryResult:
         """Execute a probed source mapping without semantic name heuristics."""
         if runtime_capability.get("source_id") != "cdb:source:events":
@@ -668,6 +702,82 @@ class CdbAdapter:
             if value and input_fields:
                 conditions.append("(" + " OR ".join(f"{name} = ?" for name in input_fields) + ")")
                 values.extend([str(value)] * len(input_fields))
+
+        # Constraint filtering
+        params = dict(parameters or {})
+        removed_keys = {
+            str(k).strip().casefold()
+            for k in params.get("removed_retrieval_keys", [])
+            if str(k).strip()
+        }
+        raw_constraints: list[dict[str, Any]] = []
+        if isinstance(params.get("constraint_metadata"), (list, tuple)):
+            for cm in params["constraint_metadata"]:
+                if isinstance(cm, dict) and cm.get("key"):
+                    raw_constraints.append({
+                        "field": cm["key"],
+                        "op": cm.get("operator", "equals"),
+                        "value": cm.get("value"),
+                    })
+        elif isinstance(params.get("constraints"), (list, tuple)):
+            for c_str in params["constraints"]:
+                if isinstance(c_str, str):
+                    if ":exists" in c_str or "=exists" in c_str:
+                        k = c_str.replace(":exists", "").replace("=exists", "").strip()
+                        raw_constraints.append({"field": k, "op": "exists", "value": None})
+                    elif "=" in c_str:
+                        k, v = c_str.split("=", 1)
+                        raw_constraints.append({"field": k.strip(), "op": "equals", "value": v.strip()})
+        if query_intent and isinstance(query_intent.get("predicates"), (list, tuple)):
+            for p in query_intent["predicates"]:
+                p_key = getattr(p, "key", None) or (p.get("key") if isinstance(p, dict) else None)
+                p_op = getattr(p, "operator", None) or (p.get("operator") if isinstance(p, dict) else "equals")
+                p_val = getattr(p, "value", None) or (p.get("value") if isinstance(p, dict) else None)
+                if p_key and not any(rc["field"] == p_key for rc in raw_constraints):
+                    raw_constraints.append({"field": p_key, "op": p_op, "value": p_val})
+
+        field_map = {
+            "destination_port": "port",
+            "source_port": "port",
+            "destination_ip": "ip",
+            "source_ip": "ip",
+            "command_line": "cmdline",
+            "process_id": "pid",
+            "parent_process_id": "ppid",
+            "command_type": "cmdline",
+            "command": "cmdline",
+            "command_interpreter": "cmdline",
+            "interpreter": "cmdline",
+            "process_name": "image",
+            "process": "image",
+            "encoding_state": "cmdline",
+            "encoding": "cmdline",
+        }
+        for item in raw_constraints:
+            raw_field = str(item.get("field", "")).strip().lower()
+            if raw_field in removed_keys:
+                continue
+            fn = field_map.get(raw_field, raw_field)
+            op = str(item.get("op", "equals")).strip().lower()
+            val = item.get("value")
+            transform = get_transform_for_constraint(raw_field, val)
+            if transform is not None:
+                target_col = fn if fn in columns else ("cmdline" if "cmdline" in columns else "cmdline")
+                sql_pred, params = transform.to_sql_predicate(target_col, raw_field, val, op)
+                if sql_pred:
+                    conditions.append(sql_pred)
+                    values.extend(params)
+            elif fn in columns:
+                if op in ("equals", "eq", FieldOp.EQUALS):
+                    conditions.append(f"{fn} = ?")
+                    values.append(val)
+                elif op in ("contains", "like", FieldOp.CONTAINS):
+                    conditions.append(f"{fn} LIKE ?")
+                    values.append(f"%{val}%")
+                elif op in ("exists", FieldOp.EXISTS):
+                    conditions.append(f"({fn} IS NOT NULL AND {fn} != '')")
+                elif op in ("absent", FieldOp.ABSENT):
+                    conditions.append(f"({fn} IS NULL OR {fn} = '')")
         sql = (
             f"SELECT {', '.join(selected)} FROM events WHERE {' AND '.join(conditions)} "
             f"ORDER BY timestamp ASC LIMIT ? OFFSET ?"

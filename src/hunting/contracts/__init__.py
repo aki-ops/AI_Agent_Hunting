@@ -14,6 +14,8 @@ from hunting.contracts.capabilities import (
     ProviderCapabilityCatalog,
     ProviderSelectionAudit,
 )
+from hunting.contracts.capability_query import CapabilityQuery, build_capability_queries
+from hunting.contracts.candidate_route import CandidateRoute, RouteAdmission, RouteClass, RouteMode
 from hunting.contracts.case_graph import (
     ActionCandidate,
     EvidenceGoal,
@@ -131,6 +133,16 @@ from hunting.contracts.observations import (
     SemanticType,
     TaintLabel,
 )
+from hunting.contracts.ontology import (
+    CANONICAL_RELATION_VOCABULARY,
+    CANONICAL_RELATIONS,
+    CANONICAL_ROLE_SYNONYMS,
+    CanonicalRelationDef,
+    canonicalize_role,
+    get_canonical_relation,
+    get_inverse_relation,
+    roles_are_compatible,
+)
 from hunting.contracts.queries import (
     Diagnostic,
     DiagnosticClass,
@@ -149,6 +161,11 @@ from hunting.contracts.search_envelope import (
     SearchEnvelope,
 )
 from hunting.contracts.semantic_graph import (
+    ClarificationEvaluation,
+    ClarificationEvaluationResult,
+    ClarificationPredicate,
+    ClarificationPredicateKind,
+    ClarificationPredicateOperator,
     LogicalPlan,
     PlanStep,
     ProofMethod,
@@ -184,11 +201,26 @@ from hunting.contracts.state import (
     TerminalState,
     TimeWindow,
 )
+from hunting.contracts.transforms import (
+    BashInterpreterTransform,
+    PowerShellEncodedTransform,
+    PowerShellInterpreterTransform,
+    NestedKeyExtractionTransform,
+    SemanticTransform,
+    evaluate_constraint_against_row,
+    get_transform_for_constraint,
+)
 from hunting.controller.cost import LLMBudgetPolicy, LLMPhase
 
 __all__ = [
     # v5 Investigation Case Graph Contracts
     "InvestigationCase",
+    "CapabilityQuery",
+    "build_capability_queries",
+    "CandidateRoute",
+    "RouteAdmission",
+    "RouteClass",
+    "RouteMode",
     "InvestigationGraph",
     "GraphNode",
     "GraphEdge",
@@ -320,6 +352,11 @@ __all__ = [
     "RequestedObject",
     "SemanticEvidenceRequirement",
     "SemanticHuntIntent",
+    "ClarificationEvaluation",
+    "ClarificationEvaluationResult",
+    "ClarificationPredicate",
+    "ClarificationPredicateKind",
+    "ClarificationPredicateOperator",
     "SemanticVariable",
     "SemanticConstraint",
     "SemanticRelationGoal",
@@ -348,4 +385,21 @@ __all__ = [
     "RouteStatus",
     "TriStatus",
     "ActionSignature",
+    # Canonical Ontology Contracts
+    "CANONICAL_RELATIONS",
+    "CANONICAL_RELATION_VOCABULARY",
+    "CANONICAL_ROLE_SYNONYMS",
+    "CanonicalRelationDef",
+    "canonicalize_role",
+    "get_canonical_relation",
+    "get_inverse_relation",
+    "roles_are_compatible",
+    # Modular Semantic Transforms
+    "BashInterpreterTransform",
+    "PowerShellEncodedTransform",
+    "PowerShellInterpreterTransform",
+    "NestedKeyExtractionTransform",
+    "SemanticTransform",
+    "evaluate_constraint_against_row",
+    "get_transform_for_constraint",
 ]

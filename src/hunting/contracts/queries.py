@@ -173,7 +173,20 @@ class ProviderOperation:
     # proof of the restriction.  The report must keep these epistemically
     # separate from ``supported_constraints``.
     searchable_constraints: tuple[str, ...] = ()
+    # Audited semantic-to-native mappings carried into the provider compiler.
+    # These are declarative capability evidence, never source-name heuristics.
+    constraint_mappings: tuple[dict[str, Any], ...] = ()
     query_builder: str = ""
+    # Provider-declared identity of the native query implementation. Two
+    # semantic operations may have different input/output types while still
+    # compiling to the same native query template.
+    native_signature: str = ""
+    # Native fields that a provider can expose for a discriminator query.
+    discriminator_fields: tuple[str, ...] = ()
+    # Explicit, provider-approved mapping from semantic constraint keys to
+    # native discriminator fields. A discriminator must never infer this
+    # mapping from an operation name or from a candidate value.
+    discriminator_constraint_bindings: dict[str, str] = field(default_factory=dict)
     completeness: str = ""
     expected_cost: int | None = None
     # Compatibility aliases may remain executable for old callers, but the
@@ -203,6 +216,17 @@ class ProviderOperation:
     # Explicit source reference for a probed runtime mapping. This is kept
     # separate from the opaque operation ID and is never parsed heuristically.
     runtime_source_id: str = ""
+    # Runtime mappings for fields discovered inside an opaque payload.  Each
+    # role identifies the native parent field and the census-backed nested
+    # key; providers compile this declaratively.
+    nested_field_bindings: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Goal-scoped route identity.  Runtime capabilities populated from a
+    # CapabilityQuery carry this value so the planner does not rematch an
+    # unregistered relation by string equality.
+    route_goal_ids: tuple[str, ...] = ()
+    route_class: str = "EXECUTABLE"
+    route_mode: str = "EXPLORE"
+    discovery_provenance: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.proof_mode not in {"retrieval_only", "relation_observable"}:
@@ -216,6 +240,36 @@ class ProviderOperation:
                 for role, fields in dict(getattr(self, name)).items()
             }
             object.__setattr__(self, name, value)
+        object.__setattr__(
+            self,
+            "discriminator_fields",
+            tuple(dict.fromkeys(str(value).strip() for value in self.discriminator_fields if str(value).strip())),
+        )
+        object.__setattr__(
+            self,
+            "discriminator_constraint_bindings",
+            {
+                str(key).strip().casefold(): str(value).strip()
+                for key, value in dict(self.discriminator_constraint_bindings).items()
+                if str(key).strip() and str(value).strip()
+            },
+        )
+        object.__setattr__(self, "nested_field_bindings", {
+            str(role): {str(k): str(v) for k, v in dict(binding).items()}
+            for role, binding in dict(self.nested_field_bindings).items()
+        })
+        object.__setattr__(self, "route_goal_ids", tuple(dict.fromkeys(
+            str(value).strip() for value in self.route_goal_ids if str(value).strip()
+        )))
+        if self.route_class not in {"EXECUTABLE", "MAPPING_REQUIRED", "DISCOVERY_ONLY"}:
+            raise ValueError("invalid ProviderOperation.route_class")
+        if self.route_mode not in {"EXPLORE", "DISCRIMINATE", "PROVE"}:
+            raise ValueError("invalid ProviderOperation.route_mode")
+        object.__setattr__(self, "discovery_provenance", tuple(self.discovery_provenance))
+        object.__setattr__(self, "constraint_mappings", tuple(
+            dict(item) for item in self.constraint_mappings
+            if isinstance(item, dict)
+        ))
         policy = self.retrieval_policy
         if policy is None and self.allow_constraint_relaxation and self.searchable_constraints:
             policy = RetrievalPolicy(

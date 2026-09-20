@@ -30,7 +30,7 @@ Status legend:
 ## Phase 2 — Semantic compilation and acceptance
 
 - [x] API free text can produce a `SemanticGoalGraph` with validation.
-- [x] Route question, hypothesis, alert, PoC, CVE, TTP, IOC, CTI and scheduled requests into the same graph contract.
+- [ ] Route question, hypothesis, alert, PoC, CVE, TTP, IOC, CTI and scheduled requests into the same graph contract. CTI/scheduled semantic fallback is implemented; alert/PoC and legacy isolation still require integration tests.
 - [x] Remove default production fallback to `ClaimGraph`, `InvestigationModel` and `InvestigationCase`.
 - [x] Remove scenario/entity examples from the C1 production prompt.
 - [x] Preserve explicit literals and provenance spans.
@@ -49,6 +49,9 @@ Status legend:
 - [x] Ensure a simple lookup may remain one atomic goal.
 - [x] Prevent operation IDs, source names, field names and scenario keywords from defining graph shape.
 - [x] Add tests where changing AND/OR/GATE changes the executed plan.
+- [ ] Match unresolved goals with a `CapabilityQuery` (types, constraint keys, relation text), not exact `guaranteed_relations` equality.
+- [ ] F1 dense retrieve of operations/sources/fields with no LLM; C2 at most one call on that shortlist.
+- [ ] Admission gate before execute; C2 deferred must not set `examined=100` or `STOP_UNSUPPORTED`.
 
 ## Phase 4 — Candidate binding and human control
 
@@ -78,10 +81,10 @@ Status legend:
 - [x] `RecoveryController`, observation classes and `LoopGuard` exist and pass isolated tests.
 - [x] Normalize `QueryResult.complete` across the controller; remove `completed` mismatch.
 - [x] Integrate `classify()` into every production query attempt.
-- [x] Integrate `choose_next_action()` as the only recovery authority.
-- [x] Integrate `evaluate_stop()` as the only stopping authority.
+- [x] Integrate `choose_next_action()` as the only recovery authority across the default runtime and legacy boundary.
+- [x] Integrate `evaluate_stop()` as the only stopping authority across the default runtime and legacy boundary.
 - [x] Remove direct stopping assignments from engine branches.
-- [x] Replace multiple legacy while-loops with one bounded agenda loop.
+- [ ] Replace multiple legacy while-loops with one bounded agenda loop.
 - [x] Run the OutcomeContract verifier before `STOP_ANSWERED`.
 - [x] Prove `PARTIAL + 0 rows != STOP_NOT_FOUND_BOUNDED` end to end.
 - [x] Prove action repetition without material delta cannot loop indefinitely.
@@ -98,7 +101,7 @@ Status legend:
 
 ## Phase 8 — Legacy and hard-code removal
 
-- [x] Disable legacy graph execution by default.
+- [x] Disable legacy graph execution by default and prove the boundary with a live route test.
 - [x] Remove production person-to-endpoint-to-IP-to-domain route injection.
 - [x] Remove case-specific email, Tor, PowerPoint, ransomware, Mallory, Amber and BOTS decision branches/prompts.
 - [x] Replace fixed device-word handling with typed semantic role plus uncertainty/clarification.
@@ -113,23 +116,33 @@ Status legend:
 - [x] Show every action's bindings, returned summary, candidate delta and next-action reason.
 - [x] Show ProofContract/evaluator decision and missing obligations per goal.
 - [x] Show OutcomeContract verification before final answer.
-- [x] Show unexamined sources/routes and coverage limitations.
+- [x] Show unexamined sources/routes and coverage limitations. The human report now renders compact per-relation coverage counts; the full source/stage audit remains in `source_profile_audit.json`.
 - [x] Ensure every report assertion cites query and observation IDs.
 - [x] Do not expose hidden chain-of-thought; persist structured proposals and decisions only.
 
 ## Phase 10 — Executable evaluation
 
-- [x] Replace `eval/runner.py` simulated predictions and metrics with actual pipeline execution.
+- [x] Candidate prediction comes from actual pipeline execution when a provider/fixture is supplied, but some layer metrics still need independent replay-derived labels; synthetic ablations are now rejected instead of scored.
 - [x] Keep expected graphs, answers, forbidden inferences and evidence labels independent of candidate code.
-- [x] Execute B0, B1 and v9 candidate baselines rather than assign fixed scores.
+- [~] Execute B0, B1 and v9 candidate baselines with independent replay fixtures rather than assign fixed scores. A reviewed S01 CDB B0/B1 slice is executable; the full corpus is not yet configured in the current runner.
 - [x] Evaluate factual, hypothesis and population OutcomeContracts.
-- [x] Evaluate semantic graph accuracy separately from evidence/proof accuracy.
+- [x] Evaluate semantic graph accuracy separately from evidence/proof accuracy using execution artifacts.
 - [x] Run mock-provider tests without provider/query optimization confounds.
-- [x] Run non-skipped BOTS v2 Splunk acceptance tests.
+- [ ] Run non-skipped BOTS v2 Splunk acceptance tests when the live provider is reachable.
 - [x] Remove or archive the stale BOTS v1 live test.
 - [x] Measure answer quality, abstention risk/coverage, wrong-binding rate, query/runtime cost and LLM cost from real run accounts.
+
+Current implementation gate: reasoning contracts and the semantic default path exist, but open-vocabulary capability matching (Phase 3 F0–F2) is not done. Exact relation-name misses plus deferred C2 still emit `STOP_UNSUPPORTED` with zero queries. That is not a completed capability census.
+
+## Status correction — 2026-09-20
+
+The broad completion claims in this legacy checklist are superseded by
+`10-THREAT-HUNTING-EVOLUTION-CHECKLIST.md`. The current implementation has a
+goal-scoped route/mode slice and one executable reviewed S01 CDB baseline, but
+does not yet have full B0/B1 corpus coverage or non-skipped live BOTS v2
+evidence. The remaining M2–M8 gates therefore stay open until execution
+artifacts exist.
 
 ## Definition of done
 
 v9 is complete with all P0 items in Phases 1–6 and Phase 10 passing through the default production path. A green unit suite and non-skipped BOTS v2 live acceptance tests confirm end-to-end correctness.
-
