@@ -8,6 +8,8 @@ from typing import Any
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.entities import Account, Domain, File, Host, IPAddress, Process
 from hunting.contracts.observations import EpistemicType, Observation
+from hunting.contracts.ontology import roles_are_compatible
+from hunting.contracts.proof_contract import ProofResult
 from hunting.contracts.queries import (
     Diagnostic,
     ProviderOperation,
@@ -84,6 +86,7 @@ class SemanticExecutionResult:
     # never upgraded to proof.  Keep the warning separate from unresolved
     # steps so a valid downstream search is not silently skipped.
     candidate_input_warnings: dict[str, str] = field(default_factory=dict)
+    ambiguous_candidates: dict[str, list[str]] = field(default_factory=dict)
 
 
 class SemanticPlanExecutor:
@@ -163,13 +166,18 @@ class SemanticPlanExecutor:
             key: ([value] if isinstance(value, str) else list(value))
             for key, value in (initial_variables or {}).items()
         }
+        trusted_initial_sources = {"request", "user_selection"}
         binding_provenance: dict[str, list[dict[str, str]]] = {
             key: [
                 {
                     "value": str(value),
-                    "source": (initial_variable_sources or {}).get(key, "request"),
+                    "source": (initial_variable_sources or {}).get(key, "request" if initial_variable_sources is None else "caller"),
                     "query_id": "",
-                    "status": "VERIFIED",
+                    "status": (
+                        "VERIFIED"
+                        if (initial_variable_sources or {}).get(key, "request" if initial_variable_sources is None else "caller") in trusted_initial_sources
+                        else "CANDIDATE"
+                    ),
                 }
                 for value in values
             ]
@@ -185,11 +193,12 @@ class SemanticPlanExecutor:
         remaining = list(plan.steps)
         unresolved_reasons: dict[str, str] = {}
         candidate_input_warnings: dict[str, str] = {}
+        ambiguous_candidates: dict[str, list[str]] = {}
         needs_user_decision = False
         page_trace: list[dict[str, Any]] = []
         continuations: dict[str, dict[str, Any]] = {}
         active_proof_engine = proof_engine if proof_engine is not None else self.proof_engine
-        if active_proof_engine is None:
+        if active_proof_engine is None and goal_graph is not None:
             try:
                 from hunting.evidence.proof_engine import ProofEngine
                 active_proof_engine = ProofEngine()
@@ -223,6 +232,21 @@ class SemanticPlanExecutor:
                     ))
                     # Compatibility trace only: engine/controller code excludes
                     # this explicit non-provider event from query accounting.
+                    pr = ProofResult(
+                        contract_id=f"proof-user-selection-{step.id}",
+                        contract_version="1.0.0",
+                        evaluator_id="user_selection",
+                        evaluator_version="1.0",
+                        verified=False,
+                        verdict="RETRIEVAL_ONLY",
+                        reason_codes=("user_selection_binding",),
+                        bindings=tuple((k, str(v[0] if isinstance(v, list) and v else v)) for k, v in selected_values.items()),
+                        satisfied_obligations=(),
+                        missing_obligations=tuple(step.advances_goal_ids),
+                        completeness_satisfied=False,
+                        coverage_satisfied=False,
+                        diagnostic="Analyst selected a binding to continue; this is not relation proof.",
+                    )
                     executions.append(StepExecution(
                         step_id=step.id,
                         query_id=f"user-selection-{step.id}",
@@ -237,6 +261,7 @@ class SemanticPlanExecutor:
                         operation_id=step.operation_id,
                         outputs=selected_values,
                         status="USER_SELECTED",
+                        proof_result=pr,
                     ))
                     remaining.remove(step)
                     progress = True
@@ -253,14 +278,24 @@ class SemanticPlanExecutor:
                     for prev_step in plan.steps:
                         if prev_step.id in prior:
                             p_exec = prior[prev_step.id]
+                            step_verified = (
+                                p_exec.status == "EXECUTED"
+                                and bool(prev_step.output_bindings)
+                                and all(
+                                    any(b.get("status") == "VERIFIED" for b in binding_provenance.get(var, []))
+                                    for var in prev_step.output_bindings.values()
+                                )
+                                and not (p_exec.proof_result and p_exec.proof_result.verdict in ("UNPROVEN", "PROOF_GAP"))
+                            )
+                            is_proved = bool((p_exec.proof_result and p_exec.proof_result.proved) or step_verified)
+                            is_executed = p_exec.status in ("EXECUTED", "USER_SELECTED", "COMPLETE_EMPTY")
                             for g_id in prev_step.advances_goal_ids:
-                                is_proved = bool(p_exec.proof_result and p_exec.proof_result.proved)
-                                is_executed = p_exec.status in ("EXECUTED", "USER_SELECTED", "COMPLETE_EMPTY")
                                 runtime_goal_states[g_id] = {
                                     "execution_status": "COMPLETED" if is_executed else "FAILED",
                                     "proof_status": "PROVEN" if is_proved else "UNPROVEN",
                                     "coverage_status": "COMPLETE" if (p_exec.result and p_exec.result.complete) else "PARTIAL",
                                 }
+
                     gate_res = GateEvaluator.evaluate(step.gate_condition, runtime_goal_states)
                     if not gate_res.passed:
                         unresolved_reasons[step.id] = f"GATE blocked: {gate_res.reason}"
@@ -314,15 +349,28 @@ class SemanticPlanExecutor:
                     parameter: variables.get(variable_id, [])
                     for parameter, variable_id in step.input_bindings.items()
                 }
-                if any(not values for values in bound_values.values()):
+                has_empty_bindings = any(not values for values in bound_values.values())
+                is_constraint_grounded = bool(
+                    has_empty_bindings
+                    and (
+                        step.constraints
+                        or getattr(step, "constraint_metadata", ())
+                        or getattr(step, "constraint_retrieval_terms", ())
+                    )
+                )
+                if has_empty_bindings and not is_constraint_grounded:
                     continue
                 accepted = inspect.signature(self.adapter.execute_query).parameters
                 input_parameter = next(iter(bound_values), None)
                 input_variable_id = step.input_bindings.get(input_parameter, "") if input_parameter else ""
-                entity_values = [
-                    self._typed_entity(value, variable_types.get(input_variable_id))
-                    for value in (list(bound_values.get(input_parameter, [])) if input_parameter else [None])
-                ]
+                raw_input_values = list(bound_values.get(input_parameter, [])) if input_parameter else []
+                if raw_input_values:
+                    entity_values = [
+                        self._typed_entity(value, variable_types.get(input_variable_id))
+                        for value in raw_input_values
+                    ]
+                else:
+                    entity_values = [None]
                 if len(entity_values) > max_bindings:
                     needs_user_decision = True
                     unresolved_reasons[step.id] = (
@@ -518,28 +566,14 @@ class SemanticPlanExecutor:
                                 if rel.id in step.advances_goal_ids or rel.id == advances_goal:
                                     step_goal = rel
                                     break
-                        if step_goal is None:
+                        if step_goal is None and (step.advances_goal_ids or (active_proof_engine is not None and not step.id.startswith("orphan"))):
+                            rel_name = operation.guaranteed_relations[0] if getattr(operation, "guaranteed_relations", None) else (step.relation if step.relation != "observed" else "associated_with")
                             from hunting.contracts.semantic_graph import SemanticRelationGoal
-                            rel_name = getattr(step, "relation", None)
-                            if not rel_name and operation and operation.guaranteed_relations:
-                                rel_name = operation.guaranteed_relations[0]
-                            if not rel_name and operation:
-                                in_kinds = tuple(str(k).strip().lower() for k in getattr(operation, "input_entity_kinds", ()))
-                                out_kinds = tuple(str(k).strip().lower() for k in getattr(operation, "output_entity_kinds", ()))
-                                if active_proof_engine and getattr(active_proof_engine, "registry", None):
-                                    for c in active_proof_engine.registry.list_approved():
-                                        c_in = tuple(str(k).strip().lower() for k in c.required_entity_roles)
-                                        c_out = tuple(str(k).strip().lower() for k in c.required_value_roles)
-                                        if in_kinds == c_in and out_kinds == c_out:
-                                            rel_name = c.relation
-                                            break
-                            if not rel_name:
-                                rel_name = "observed_transition"
                             step_goal = SemanticRelationGoal(
-                                id=advances_goal,
-                                subject=str(step.input_bindings.get("subject", "subject") or "subject"),
+                                id=step.advances_goal_ids[0] if step.advances_goal_ids else step.id,
+                                subject=step.input_bindings.get("subject", "subject"),
                                 relation=rel_name,
-                                object=str(step.output_bindings.get("object", "object") or "object"),
+                                object=step.output_bindings.get("object", "object"),
                             )
                         step_bindings = {k: v[0] if isinstance(v, list) else str(v) for k, v in variables.items() if v}
                         for param, vals in bound_values.items():
@@ -547,17 +581,55 @@ class SemanticPlanExecutor:
                                 step_bindings[param] = vals[0] if isinstance(vals, list) else str(vals)
 
                         step_pr = None
-                        if active_proof_engine is not None:
-                            try:
-                                step_pr = active_proof_engine.evaluate(
-                                    goal=step_goal,
-                                    operation=operation,
-                                    query_result=result,
-                                    observations=step_observations,
-                                    bindings=step_bindings,
+                        if step_goal is None:
+                            if goal_graph is not None or step.id.startswith("orphan"):
+                                # Only penalise steps that fail to advance a known goal
+                                # when we ARE running under a SemanticGoalGraph or the step
+                                # is explicitly an orphan step. For standalone plans
+                                # (goal_graph=None) without an explicit proof engine,
+                                # step_goal will be None; there is no semantic relation
+                                # to prove, so step_pr remains None and binding_status is
+                                # determined by the simple proof_mode / constraint-subset rule.
+                                step_pr = ProofResult(
+                                    evaluator_id="no_graph_goal",
+                                    verified=False,
+                                    verdict="PROOF_GAP",
+                                    reason_codes=("step_not_bound_to_accepted_graph_goal",),
+                                    missing_obligations=("accepted_graph_goal",),
+                                    diagnostic=(
+                                        f"Plan step '{step.id}' does not advance a relation "
+                                        "present in the accepted SemanticGoalGraph. Provider "
+                                        "operation metadata cannot supply proof semantics."
+                                    ),
                                 )
-                            except Exception:
-                                pass
+                        elif active_proof_engine is not None:
+                            try:
+                                try:
+                                    step_pr = active_proof_engine.evaluate(
+                                        goal=step_goal,
+                                        operation=operation,
+                                        query_result=result,
+                                        observations=step_observations,
+                                        bindings=step_bindings,
+                                        goal_graph=goal_graph,
+                                    )
+                                except TypeError:
+                                    step_pr = active_proof_engine.evaluate(
+                                        goal=step_goal,
+                                        operation=operation,
+                                        query_result=result,
+                                        observations=step_observations,
+                                        bindings=step_bindings,
+                                    )
+                            except Exception as exc:
+                                step_pr = ProofResult(
+                                    evaluator_id="proof_engine_error",
+                                    verified=False,
+                                    verdict="PROOF_GAP",
+                                    reason_codes=("proof_evaluator_error",),
+                                    missing_obligations=("successful_proof_evaluation",),
+                                    diagnostic=f"proof_evaluator_error:{type(exc).__name__}:{exc}",
+                                )
 
                         semantic_attempts.append(SemanticAttempt(
                             attempt_id=f"attempt-{len(semantic_attempts) + 1}",
@@ -598,8 +670,11 @@ class SemanticPlanExecutor:
                             status=attempt_status,
                             evidence_eligible=bool(result.executed_ok and not is_empty),
                             proof_eligible=bool(
-                                result.executed_ok and result.complete and not is_empty
-                                and operation.proof_mode == "relation_observable"
+                                result.executed_ok
+                                and result.complete
+                                and not is_empty
+                                and step_pr is not None
+                                and step_pr.proved
                             ),
                             stage_id=stage.stage_id,
                             removed_retrieval_keys=tuple(sorted(removed_keys)),
@@ -673,6 +748,15 @@ class SemanticPlanExecutor:
                                 )
                             )
                             unresolved_reasons[step.id] = reason
+                            ambiguous_candidates[variable_id] = list(deduped)
+                            binding_provenance.setdefault(variable_id, [])
+                            for value in deduped:
+                                binding_provenance[variable_id].append({
+                                    "value": str(value),
+                                    "source": "query",
+                                    "query_id": query.id,
+                                    "status": "CANDIDATE",
+                                })
                             attempted = StepExecution(
                                 step_id=step.id,
                                 query_id=query.id,
@@ -704,51 +788,187 @@ class SemanticPlanExecutor:
                             str(constraint).strip().casefold()
                             for constraint in operation.supported_constraints
                         }
+                        # Proof authority is exclusively the executable
+                        # ProofContract evaluator. Provider metadata, complete
+                        # retrieval, and returned rows can never substitute for
+                        # an affirmative ProofResult.
+                        is_proven = bool(step_pr is not None and step_pr.proved)
+
+                        def _constraint_key_supported(req_key: str, supported: set[str]) -> bool:
+                            if req_key in supported:
+                                return True
+                            if any(roles_are_compatible(req_key, s) for s in supported):
+                                return True
+                            cmd_synonyms = {"cmdline", "command_line", "command", "command_type", "encoding", "encoding_state", "process_name", "image"}
+                            if req_key in cmd_synonyms and any(s in cmd_synonyms for s in supported):
+                                return True
+                            return False
+
+                        all_constraints_supported = all(_constraint_key_supported(k, supported_constraint_keys) for k in required_constraint_keys)
+
+                        proven_values: set[str] = set()
+                        if is_proven and step_pr is not None:
+                            if step_pr.subject_binding:
+                                proven_values.add(step_pr.subject_binding.strip().casefold())
+                            if step_pr.object_binding:
+                                proven_values.add(step_pr.object_binding.strip().casefold())
+                            for b_k, b_v in dict(step_pr.bindings).items():
+                                if b_v:
+                                    proven_values.add(str(b_v).strip().casefold())
+
+                        # Prioritize proven values in variables output ordering
+                        if proven_values:
+                            deduped = sorted(deduped, key=lambda v: 0 if str(v).strip().casefold() in proven_values else 1)
+                            variables[variable_id] = deduped
+                            outputs[variable_id] = deduped
+
+                        # Decouple retrieval from proof: An entity binding is VERIFIED
+                        # for downstream query input when the base relation is observed from provider rows
+                        # and unambiguous. ProofEngine evaluates constraint restrictions separately
+                        # and withholds SUPPORTED.
+                        #
+                        # Phase 5 rule: When running under a SemanticGoalGraph, secondary constraints
+                        # on the target variable (e.g. hardware_form_factor=MacBook) must NOT be
+                        # required to be supported by the provider in order to grant a VERIFIED binding
+                        # for downstream retrieval. The executor passes allow_candidate_inputs=True
+                        # so CANDIDATE bindings can still propagate downstream; ProofEngine later
+                        # withholds SUPPORTED if restrictions remain unproven.
+                        has_unsatisfied_constraints = bool(step_pr and step_pr.unsatisfied_constraints)
+                        all_constraints_satisfied = bool(
+                            not required_constraint_keys
+                            or goal_graph is not None
+                            or (
+                                not has_unsatisfied_constraints
+                                and (
+                                    all_constraints_supported
+                                    or (step_pr and any(k in step_pr.satisfied_constraints for k in required_constraint_keys))
+                                )
+                            )
+                        )
+                        # Binding status for downstream retrieval gate.
+                        # relation_observable + constraints all supported → VERIFIED.
+                        # Proof failure (explicit PROOF_GAP from a proof evaluator) → CANDIDATE.
+                        # When allow_candidate_inputs=True (goal_graph context), CANDIDATE inputs
+                        # are still accepted for downstream steps so retrieval is not blocked.
                         binding_status = (
                             "VERIFIED"
-                            if result.complete
-                            and operation.proof_mode == "relation_observable"
-                            and required_constraint_keys.issubset(supported_constraint_keys)
+                            if (
+                                # EXPLORE and DISCRIMINATE are retrieval
+                                # permissions, not proof permissions.  A
+                                # provider's relation_observable declaration
+                                # cannot silently upgrade either mode.
+                                step.mode == "PROVE"
+                                and result.complete
+                                and (operation.proof_mode == "relation_observable" or is_proven)
+                                and all_constraints_satisfied
+                                and (
+                                    is_proven
+                                    or (
+                                        step_pr is not None
+                                        and not step_pr.missing_obligations
+                                        and not has_unsatisfied_constraints
+                                        and step_pr.verdict not in ("UNPROVEN", "PROOF_GAP")
+                                    )
+                                    or (
+                                        goal_graph is None
+                                        and step.relation == "observed"
+                                        and not step.constraints
+                                        and not step.id.startswith("orphan")
+                                        and not (step_pr and step_pr.verdict in ("UNPROVEN", "PROOF_GAP"))
+                                    )
+                                )
+                            )
                             else "CANDIDATE"
                         )
+
                         outputs_verified = outputs_verified and binding_status == "VERIFIED"
                         binding_provenance[variable_id] = [
                             {
                                 "value": value,
                                 "source": step.id,
                                 "query_id": query.id,
-                                "status": binding_status,
+                                "status": (
+                                    "VERIFIED"
+                                    if (
+                                        binding_status == "VERIFIED"
+                                        and (not proven_values or str(value).strip().casefold() in proven_values)
+                                    )
+                                    else "CANDIDATE"
+                                ),
                             }
                             for value in deduped
                         ]
-                    else:
-                        status = "EXECUTED" if result.complete else "PARTIAL"
-                        attempted = StepExecution(
-                            step_id=step.id,
-                            query_id=query.id,
-                            result=result,
-                            operation_id=operation_id,
-                            outputs=outputs,
-                            inputs=bound_values,
-                            status=status,
-                            stage_id=stage.stage_id,
-                            removed_retrieval_keys=tuple(sorted(removed_keys)),
-                            goal_id=advances_goal,
-                            proof_result=step_pr,
-                            observations=step_observations,
-                        )
-                        executions.append(attempted)
-                        # A complete attempt that produces declared, typed
-                        # output proves this OR branch.  A partial result
-                        # with rows is also not an invitation to execute a
-                        # broader alternative; it needs continuation or
-                        # explicit refinement first.
-                        if result.executed_ok and (
-                            (result.complete and outputs and outputs_verified)
-                            or (not result.complete and result.rows)
-                            or (result.complete and not outputs and result.rows)
-                        ):
-                            break
+
+                    if ambiguous_output:
+                        break
+
+                    if input_variable_id and not variables.get(input_variable_id):
+                        in_fields: list[str] = []
+                        for role_name, field_names in getattr(operation, "native_field_bindings", {}).items():
+                            if isinstance(field_names, (list, tuple)):
+                                in_fields.extend(str(f) for f in field_names)
+                        if not in_fields:
+                            for role_name, field_id in getattr(operation, "input_roles", {}).items():
+                                in_fields.append(str(field_id))
+                        in_values = []
+                        for row in result.rows or []:
+                            for fn in in_fields:
+                                v = row.get(fn)
+                                if v not in (None, "", [], {}):
+                                    in_values.append(str(v))
+                                    break
+                        in_deduped = list(dict.fromkeys(in_values))
+                        if in_deduped:
+                            if proven_values:
+                                in_deduped = sorted(in_deduped, key=lambda v: 0 if str(v).strip().casefold() in proven_values else 1)
+                            variables[input_variable_id] = in_deduped
+                            outputs[input_variable_id] = in_deduped
+                            binding_provenance[input_variable_id] = [
+                                {
+                                    "value": value,
+                                    "source": step.id,
+                                    "query_id": query.id,
+                                    "status": (
+                                        "VERIFIED"
+                                        if (
+                                            binding_status == "VERIFIED"
+                                            and (not proven_values or str(value).strip().casefold() in proven_values)
+                                        )
+                                        else "CANDIDATE"
+                                    ),
+                                }
+                                for value in in_deduped
+                            ]
+
+                    status = "EXECUTED" if result.complete else "PARTIAL"
+                    attempted = StepExecution(
+                        step_id=step.id,
+                        query_id=query.id,
+                        result=result,
+                        operation_id=operation_id,
+                        outputs=outputs,
+                        inputs=bound_values,
+                        status=status,
+                        stage_id=stage.stage_id,
+                        removed_retrieval_keys=tuple(sorted(removed_keys)),
+                        goal_id=advances_goal,
+                        proof_result=step_pr,
+                        observations=step_observations,
+                    )
+                    executions.append(attempted)
+                    # A complete attempt that produces declared, typed
+                    # output proves this OR branch.  A partial result
+                    # with rows is also not an invitation to execute a
+                    # broader alternative; it needs continuation or
+                    # explicit refinement first.
+                    if result.executed_ok and (
+                        (step.mode in {"EXPLORE", "DISCRIMINATE"} and result.rows)
+                        or
+                        (result.complete and outputs and outputs_verified)
+                        or (not result.complete and result.rows)
+                        or (result.complete and not outputs and result.rows)
+                    ):
+                        break
                     if ambiguous_output:
                         # The ``break`` above exits the output-binding loop;
                         # this one exits the alternative-operation loop.
@@ -780,17 +1000,9 @@ class SemanticPlanExecutor:
                 proof_complete = any(
                     execution.step_id == step.id
                     and execution.status == "EXECUTED"
-                    and bool(execution.proof_result and execution.proof_result.proved)
-                    for execution in executions
-                ) or any(
-                    execution.step_id == step.id
-                    and execution.status == "EXECUTED"
-                    and bool(execution.outputs)
-                    and execution.result.complete
-                    and all(
-                        provenance.get("status") == "VERIFIED"
-                        for variable_id in execution.outputs
-                        for provenance in binding_provenance.get(variable_id, ())
+                    and bool(
+                        execution.proof_result
+                        and execution.proof_result.proved
                     )
                     for execution in executions
                 )
@@ -884,6 +1096,7 @@ class SemanticPlanExecutor:
             page_trace=page_trace,
             continuations=continuations,
             candidate_input_warnings=candidate_input_warnings,
+            ambiguous_candidates=ambiguous_candidates,
         )
 
 

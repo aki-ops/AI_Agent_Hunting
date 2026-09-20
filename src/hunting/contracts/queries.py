@@ -226,6 +226,7 @@ class ProviderOperation:
     route_goal_ids: tuple[str, ...] = ()
     route_class: str = "EXECUTABLE"
     route_mode: str = "EXPLORE"
+    proof_contract_id: str | None = None
     discovery_provenance: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:

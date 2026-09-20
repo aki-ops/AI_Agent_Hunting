@@ -131,7 +131,25 @@ def materialize_runtime_operation(
         route_goal_ids=(str(requirement.get("goal_id", "")).strip(),)
         if str(requirement.get("goal_id", "")).strip() else (),
         route_class="EXECUTABLE",
-        route_mode="EXPLORE",
+        # Only the deterministic admission result can grant PROVE.  A
+        # proposal's requested proof mode, provider relation name, or LLM
+        # narrative is not sufficient authority.
+        route_mode=(
+            "PROVE"
+            if (
+                str(getattr(capability, "capability_level", "")).upper() == "PROOF_CAPABLE"
+                and bool(getattr(capability, "proof_contract_id", None))
+            )
+            else "EXPLORE"
+        ),
+        proof_contract_id=(
+            capability.proof_contract_id
+            if (
+                str(getattr(capability, "capability_level", "")).upper() == "PROOF_CAPABLE"
+                and bool(getattr(capability, "proof_contract_id", None))
+            )
+            else None
+        ),
         discovery_provenance=("F2_C2_PROBED_CAPABILITY",),
     )
 

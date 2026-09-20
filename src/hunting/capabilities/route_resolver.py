@@ -138,6 +138,9 @@ class CapabilityRouteResolver:
                 mode = RouteMode(str(getattr(operation, "route_mode", "EXPLORE")))
                 if route_class != RouteClass.EXECUTABLE:
                     mode = RouteMode.EXPLORE
+                proof_contract_id = getattr(operation, "proof_contract_id", None)
+                if mode == RouteMode.PROVE and not proof_contract_id:
+                    mode = RouteMode.EXPLORE
                 candidates.append(CandidateRoute(
                     route_id=f"route:{goal.id}:{operation.id}",
                     goal_id=goal.id,
@@ -153,7 +156,7 @@ class CapabilityRouteResolver:
                     route_class=route_class,
                     discovery_provenance=tuple(getattr(operation, "discovery_provenance", ())) or ("F1_TYPED_OPERATION",),
                     admission_status=RouteAdmission.ADMITTED if route_class == RouteClass.EXECUTABLE else RouteAdmission.PROPOSED,
-                    proof_contract_id=None,
+                    proof_contract_id=proof_contract_id if mode == RouteMode.PROVE else None,
                     schema_fingerprint=operation.schema_fingerprint,
                     score=score,
                 ))

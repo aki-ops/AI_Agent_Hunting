@@ -149,6 +149,7 @@ def test_goal_bound_route_reaches_provider_query_without_c2() -> None:
     assert len(result.executions) == 1
     assert result.executions[0].result.executed_ok is True
     assert len(result.executions[0].result.rows or []) == 1
+    assert result.binding_provenance["process"][0]["status"] == "CANDIDATE"
 
 
 def test_admitted_route_mode_reaches_query_intent() -> None:
@@ -193,3 +194,32 @@ def test_production_planner_does_not_fallback_to_relation_string_matching() -> N
     )
     assert plan.steps == []
     assert plan.unresolved_goal_ids == ["goal-1"]
+
+
+def test_prove_route_requires_an_approved_proof_contract_id() -> None:
+    graph = _graph("typed action")
+    unapproved = ProviderOperation(
+        id="unapproved-proof",
+        provider_id="mock",
+        scope_ids=("scope",),
+        input_entity_kinds=("person",),
+        output_entity_kinds=("artifact",),
+        route_goal_ids=("goal-1",),
+        route_mode="PROVE",
+    )
+    approved = ProviderOperation(
+        id="approved-proof",
+        provider_id="mock",
+        scope_ids=("scope",),
+        input_entity_kinds=("person",),
+        output_entity_kinds=("artifact",),
+        route_goal_ids=("goal-1",),
+        route_mode="PROVE",
+        proof_contract_id="pc-typed-action-v1",
+    )
+    resolution = CapabilityRouteResolver().resolve(graph, (unapproved, approved), "mock")
+    routes = {route.operation_id: route for route in resolution.routes_by_goal["goal-1"]}
+    assert routes["unapproved-proof"].mode.value == "EXPLORE"
+    assert routes["unapproved-proof"].proof_contract_id is None
+    assert routes["approved-proof"].mode.value == "PROVE"
+    assert routes["approved-proof"].proof_contract_id == "pc-typed-action-v1"

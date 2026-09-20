@@ -246,14 +246,14 @@ These entries reconcile current documentation and inspected production code. The
 ### M2.1 Mode authority
 
 - `[ ]` Every QueryIntent mode is explicit; unsafe defaults do not silently become PROVE.
-- `[ ]` Route admission, not an LLM narrative, selects allowed mode.
-- `[ ]` PROVE requires an approved compatible ProofContract/evaluator.
-- `[ ]` EXPLORE cannot create verified bindings or negative licences.
+- `[x]` Route admission, not an LLM narrative, selects allowed mode. Evidence: `CapabilityRouteResolver` derives mode from admitted operation metadata.
+- `[x]` PROVE requires an approved compatible ProofContract/evaluator. Evidence: routes without `proof_contract_id` are downgraded to `EXPLORE`; `tests/unit/test_candidate_routes.py::test_prove_route_requires_an_approved_proof_contract_id`.
+- `[x]` EXPLORE cannot create verified bindings or negative licences. Evidence: `SemanticPlanExecutor` gates binding promotion on `PlanStep.mode == PROVE`; `tests/unit/test_candidate_routes.py::test_goal_bound_route_reaches_provider_query_without_c2`.
 - `[ ]` DISCRIMINATE can only evaluate declared differentiating evidence.
 
 ### M2.2 Controller actions
 
-- `[ ]` Candidate + EXPLORE yields record/expand/enrich action, not default SEEK_PROOF.
+- `[~]` Candidate + EXPLORE is preserved as candidate evidence and stops alternative fan-out after a non-empty exploratory result; full controller action taxonomy remains open.
 - `[ ]` Singular ambiguity uses discriminator budget then user clarification.
 - `[ ]` Plural candidate outcomes preserve valid candidates within budget.
 - `[ ]` Candidate + PROVE seeks an approved proof-capable route.
