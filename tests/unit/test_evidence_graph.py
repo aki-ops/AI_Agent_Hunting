@@ -42,3 +42,13 @@ def test_evidence_graph_merges_provenance_for_same_entity() -> None:
     entity_nodes = [node for node in graph.nodes.values() if node.node_type == "entity"]
     assert entity_nodes
     assert {"o-1", "o-2"}.issubset(set(entity_nodes[0].provenance_ids))
+
+
+def test_evidence_graph_round_trips_serialized_run_account_projection() -> None:
+    original = EvidenceGraph.from_observations([_observation("o-1", "HOST-1", "powershell -enc x")])
+    restored = EvidenceGraph.from_dict(original.to_dict())
+    assert restored.observation_ids == original.observation_ids
+    assert restored.nodes == original.nodes
+    assert restored.edges == original.edges
+    assert restored.field_facts == original.field_facts
+    assert restored.to_dict()["proof_note"] == original.to_dict()["proof_note"]

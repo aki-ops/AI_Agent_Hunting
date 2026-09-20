@@ -180,6 +180,52 @@ class EvidenceGraph:
             graph.append_observation(observation)
         return graph
 
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "EvidenceGraph":
+        """Rehydrate the audit projection without inventing observations."""
+        graph = cls(
+            observation_ids=[str(value) for value in raw.get("observation_ids", [])],
+        )
+        for item in raw.get("nodes", []):
+            if not isinstance(item, dict):
+                continue
+            node = EvidenceNode(
+                id=str(item.get("id", "")),
+                node_type=str(item.get("node_type", "")),
+                payload=dict(item.get("payload", {}) or {}),
+                provenance_ids=tuple(str(value) for value in item.get("provenance_ids", [])),
+            )
+            if node.id:
+                graph.add_node(node)
+        for item in raw.get("edges", []):
+            if not isinstance(item, dict):
+                continue
+            edge = EvidenceEdge(
+                id=str(item.get("id", "")),
+                source_id=str(item.get("source_id", "")),
+                target_id=str(item.get("target_id", "")),
+                edge_type=str(item.get("edge_type", "")),
+                observation_ids=tuple(str(value) for value in item.get("observation_ids", [])),
+                proof_status=str(item.get("proof_status", "NOT_PROOF")),
+                attributes=dict(item.get("attributes", {}) or {}),
+            )
+            if edge.id:
+                graph.add_edge(edge)
+        for item in raw.get("field_facts", []):
+            if not isinstance(item, dict):
+                continue
+            field_fact = FieldFact(
+                id=str(item.get("id", "")),
+                fact_node_id=str(item.get("fact_node_id", "")),
+                field_name=str(item.get("field_name", "")),
+                value=item.get("value"),
+                native_field_name=str(item.get("native_field_name", "")),
+                observation_id=str(item.get("observation_id", "")),
+            )
+            if field_fact.id:
+                graph.field_facts[field_fact.id] = field_fact
+        return graph
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "nodes": [node.to_dict() for node in self.nodes.values()],
