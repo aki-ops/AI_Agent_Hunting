@@ -142,6 +142,53 @@ def _seed_cdb(adapter: CdbAdapter) -> None:
     ])
 
 
+def test_operator_helpers_exact_equals():
+    from hunting.poc.agent import _apply_op
+    assert _apply_op("powershell.exe", "EQUALS", "powershell.exe")
+    assert _apply_op("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "EQUALS", "powershell.exe")
+    assert not _apply_op("splunk-powershell.exe", "EQUALS", "powershell.exe")
+    assert not _apply_op(None, "EQUALS", "powershell.exe")
+    assert _apply_op("abc -Enc xyz", "CONTAINS", "-enc")
+    assert not _apply_op("abc", "CONTAINS", "-enc")
+
+
+def test_exists_empty_value_matches_nothing(tmp_path: Path):
+    """EXISTS with an empty value must not match arbitrary rows (eval FP fix)."""
+    from hunting.poc.models import FieldOp, PocKind, PoC, TestStep
+    from hunting.poc.library import POC_LIBRARY
+
+    adapter = CdbAdapter(":memory:")
+    _seed_cdb(adapter)
+    poc = PoC(
+        poc_id="poc-exists-empty-test", name="x", kind=PocKind.BEHAVIOR,
+        summary="x",
+        steps=[TestStep(step_id="s1", description="x", target_field="image",
+                        op=FieldOp.EXISTS, value="", source_kind="process")],
+    )
+    POC_LIBRARY[poc.poc_id] = poc
+    try:
+        agent = PocAgent(adapter=adapter, ledger_dir=tmp_path)
+        result = agent.run(poc.poc_id, time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z")
+        assert result.verdict == "EMPTY"
+        assert result.total_observations == 0
+    finally:
+        del POC_LIBRARY[poc.poc_id]
+
+
+def test_exact_equals_rejects_splunk_prefix(tmp_path: Path):
+    """splunk-powershell.exe must not match EQUALS powershell.exe."""
+    adapter = CdbAdapter(":memory:")
+    adapter.insert_events([{
+        "timestamp": "2026-09-01T10:14:30Z", "host": "H", "user": "u",
+        "image": "splunk-powershell.exe",
+        "cmdline": '"C:\\Program Files\\SplunkUniversalForwarder\\bin\\splunk-powershell.exe"',
+        "raw_ref": "e1", "native_type": "process",
+    }])
+    agent = PocAgent(adapter=adapter, ledger_dir=tmp_path)
+    result = agent.run("poc-phishing-powershell-enc", time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z")
+    assert result.verdict == "EMPTY"
+
+
 def test_poc_agent_runs_against_cdb(tmp_path: Path):
     adapter = CdbAdapter(":memory:")
     _seed_cdb(adapter)
@@ -413,7 +460,7 @@ def test_analytic_poc_runs_against_botsv1_sample(tmp_path: Path):
             "kind": "behavior",
             "summary": "BOTS v1 brute force",
             "steps": [{"step_id": "s1-failed", "description": "Failed logon",
-                       "target_field": "action", "op": "EQUALS",
+                       "target_field": "cmdline", "op": "CONTAINS",
                        "value": "Logon Failed", "source_kind": "authentication"}],
             "references": ["MITRE T1110"]
         }""",

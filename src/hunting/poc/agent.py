@@ -46,6 +46,47 @@ def _row_text(row: dict[str, Any]) -> str:
     )
 
 
+def _cell_equals(value: Any, want: str) -> bool:
+    """Exact match with basename fallback for image-like fields.
+
+    ``EQUALS powershell.exe`` must match ``powershell.exe`` and
+    ``C:\\...\\powershell.exe`` but NOT ``splunk-powershell.exe``
+    (eval 2026-09-21: LIKE-based EQUALS produced 100 FPs on 4.38M rows).
+    """
+    if value is None:
+        return False
+    text = str(value).strip()
+    if text.lower() == want.lower():
+        return True
+    base = text.replace("/", "\\").rsplit("\\", 1)[-1]
+    return base.lower() == want.lower()
+
+
+def _cell_contains(value: Any, want: str) -> bool:
+    return want.lower() in str(value or "").lower()
+
+
+def _apply_op(cell: Any, op: str, want: str) -> bool:
+    op = op.upper()
+    if op == "EQUALS":
+        return _cell_equals(cell, want)
+    if op == "CONTAINS":
+        return _cell_contains(cell, want)
+    if op == "STARTS_WITH":
+        return str(cell or "").lower().startswith(want.lower())
+    if op == "ENDS_WITH":
+        return str(cell or "").lower().endswith(want.lower())
+    if op == "MATCHES":
+        try:
+            import re
+            return re.search(want, str(cell or "")) is not None
+        except Exception:
+            return _cell_contains(cell, want)
+    if op == "EXISTS":
+        return cell not in (None, "")
+    return _cell_contains(cell, want)
+
+
 def _compile_terms(step: TestStep) -> list[str]:
     """Turn a TestStep's predicate into a list of literal CDB search terms.
 
@@ -184,6 +225,13 @@ class PocAgent:
             search_terms=terms,
         )
         rows = [dict(row) for row in (result.rows or [])]
+        # Post-filter: the adapter is a coarse LIKE retriever; enforce the
+        # step's real operator on the target field here so EQUALS is exact
+        # and EXISTS with an empty value does not match arbitrary rows.
+        if step.op.value == "EXISTS" and not (step.value or "").strip():
+            rows = []
+        else:
+            rows = [r for r in rows if _apply_op(r.get(step.target_field), step.op.value, step.value)]
         return StepResult(
             step_id=step.step_id,
             description=step.description,
