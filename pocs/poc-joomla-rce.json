@@ -1,0 +1,45 @@
+{
+  "poc_id": "poc-joomla-rce",
+  "name": "Joomla RCE web compromise (BOTS v1 real attack)",
+  "kind": "ttp",
+  "summary": "Attacker scans and exploits Joomla search/mailto components on imreallynotbatman.com.",
+  "topic": "web application exploitation",
+  "able": {
+    "actor": "",
+    "behavior": "Exploit public-facing application (T1190) via Joomla search component",
+    "location": "web traffic to imreallynotbatman.com",
+    "evidence": "web_request telemetry; hit = site imreallynotbatman.com with /joomla/ uri"
+  },
+  "research_refs": [
+    "BOTS v1 walkthrough - web compromise phase",
+    "MITRE ATT&CK T1190"
+  ],
+  "scope": "stream:http 2016-08-10 window",
+  "max_duration": "3d",
+  "plan": "search_text over web telemetry for the victim site + joomla path",
+  "steps": [
+    {
+      "step_id": "s1-victim-site",
+      "description": "Request to compromised site",
+      "target_field": "domain",
+      "op": "EQUALS",
+      "value": "imreallynotbatman.com",
+      "source_kind": "web"
+    },
+    {
+      "step_id": "s2-joomla-path",
+      "description": "Joomla component path",
+      "target_field": "cmdline",
+      "op": "CONTAINS",
+      "value": "/joomla/",
+      "source_kind": "web"
+    }
+  ],
+  "references": [
+    "MITRE ATT&CK T1190"
+  ],
+  "expected_chain": [
+    "web_request",
+    "exploitation"
+  ]
+}
