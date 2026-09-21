@@ -1,4 +1,4 @@
-"""Unit tests for PEAK Baseline hunting (EDA)."""
+"""Unit tests for baseline survey (EDA)."""
 from __future__ import annotations
 
 from pathlib import Path

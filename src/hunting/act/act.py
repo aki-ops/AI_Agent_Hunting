@@ -1,6 +1,6 @@
 """PEAK Act — deterministic post-hunt artifacts, no LLM.
 
-Shared by all three PEAK hunt types (hypothesis PoC, baseline EDA, M-ATH lite).
+Shared by the PoC, baseline-survey and heuristic-scoring runs.
 For every finished run the Act layer derives:
 
 - detection draft: a Splunk SPL search the analyst can paste into
@@ -10,7 +10,7 @@ For every finished run the Act layer derives:
 
 All builders are pure functions over the run's own rows/fields so the
 output is reproducible and auditable. Nothing here claims a detection is
-production-ready — PEAK Act says "propose, analyst disposes".
+production-ready — the analyst reviews before anything ships.
 """
 from __future__ import annotations
 

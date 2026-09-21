@@ -1,4 +1,4 @@
-"""Unit tests for M-ATH lite (stdlib detectors)."""
+"""Unit tests for heuristic lead scoring (stdlib detectors)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -96,7 +96,7 @@ def test_math_report_renders(tmp_path: Path):
         ledger_dir=tmp_path,
     )
     report = render_math_report(result)
-    assert "# M-ATH Lite Report" in report
+    assert "# Heuristic Lead Report" in report
     assert "## Leads (ranked)" in report
     assert "## Ledger" in report
 

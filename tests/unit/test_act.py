@@ -1,4 +1,4 @@
-"""Unit tests for PEAK Act (detection drafts, backlog, stakeholder)."""
+"""Unit tests for post-hunt Act artifacts (detection drafts, backlog, stakeholder)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -77,7 +77,7 @@ def test_poc_report_has_act_section(tmp_path: Path):
     agent = PocAgent(adapter=adapter, ledger_dir=tmp_path)
     result = agent.run("poc-phishing-powershell-enc", time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z")
     report = render_poc_report(result, get_poc(result.poc_id).render())
-    assert "## PEAK Act" in report
+    assert "## Act (Detection Draft + Backlog)" in report
     assert "Detection Draft" in report
     assert "Stakeholder Summary" in report
     assert "```spl" in report
@@ -94,10 +94,10 @@ def test_baseline_and_math_reports_have_act(tmp_path: Path):
     brep = render_baseline_report(run_baseline(
         rows, data_source="cdb:events",
         time_window="2016-08-21T00:00:00Z/2016-08-22T00:00:00Z", ledger_dir=tmp_path))
-    assert "## PEAK Act" in brep
+    assert "## Act (Detection Drafts + Backlog)" in brep
     mrep = render_math_report(run_math(
         rows + [{"timestamp": "2016-08-21T03:00:00Z", "host": "h1", "user": "u1",
                  "image": "powershell.exe", "cmdline": "powershell -enc AAA"}],
         data_source="cdb:events",
         time_window="2016-08-21T00:00:00Z/2016-08-22T00:00:00Z", ledger_dir=tmp_path))
-    assert "## PEAK Act" in mrep
+    assert "## Act (Detection Drafts + Backlog)" in mrep

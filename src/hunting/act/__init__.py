@@ -1,4 +1,4 @@
-"""PEAK Act — deterministic post-hunt artifacts."""
+"""Post-hunt artifacts (detection drafts, backlog, stakeholder summary)."""
 from hunting.act.act import (
     backlog_from_baseline,
     backlog_from_math,

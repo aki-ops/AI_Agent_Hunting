@@ -21,11 +21,12 @@ Each PoC declares:
 - A list of MITRE references for traceability.
 - An optional LLM escalation hint that is only consulted if local CDB
   queries do not produce sufficient evidence.
-- PEAK Prepare context (ABLE + scope), all optional for backward
+- PEAK Prepare context (hunt plan: ABLE + scope), all optional for backward
   compatibility: ``topic``, ``actor``, ``behavior``, ``location``,
   ``evidence``, ``research_refs``, ``scope``, ``max_duration``, ``plan``.
-  See Splunk SURGe PEAK hypothesis-driven flow: ABLE turns a hypothesis
-  into an actionable hunt plan.
+  ABLE (Actor/Behavior/Location/Evidence, after Splunk SURGe's hunting
+  writeups) is reporting metadata here: it documents the hunt plan in the
+  report but does not drive query decisions — matching stays literal.
 """
 from __future__ import annotations
 
@@ -104,7 +105,7 @@ class PoC:
     references: list[str] = field(default_factory=list)
     escalation_hint: EscalationHint | None = None
     expected_chain: list[str] = field(default_factory=list)
-    # --- PEAK Prepare context (all optional, backward compatible) ---
+    # --- Hunt-plan context (reporting metadata; does not drive matching) ---
     topic: str = ""               # hunt topic, not yet a hypothesis
     actor: str = ""               # ABLE Actor; may be empty (unknown actor)
     behavior: str = ""            # ABLE Behavior (1-2 TTPs)

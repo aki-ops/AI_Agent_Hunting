@@ -1,18 +1,19 @@
-"""M-ATH lite — Model-Assisted Threat Hunting without ML dependencies.
+"""Heuristic lead scoring — stdlib only, no ML dependencies, no LLM.
 
-PEAK position (Splunk SURGe): use a model only when simpler methods are not
-accurate enough. This module is the stdlib-only "model" layer:
+Position: use scoring only to rank leads for analyst review; the detectors
+below are frequency/lexical heuristics, not trained models. This module
+ranks:
 
 - frequency anomaly: rare categorical values via stack counting with a
   lead score (rarer + security-relevant field = higher score);
 - lexical scoring: suspicious tokens in cmdline/domain/uri
   (encoded flags, download cradles, DGA-ish randomness);
 - sequence rarity: rare ordered pairs (parent -> child process,
-  user -> image, host -> domain) as behaviour leads.
+  user -> image) as behaviour leads.
 
 No numpy / sklearn / pandas. Deterministic: same rows in, same leads out.
 No LLM inside — the caller may pass leads to ``--poc-judge`` afterwards,
-which keeps the analyst-in-the-loop separation PEAK requires.
+which keeps the analyst-in-the-loop separation.
 """
 from __future__ import annotations
 
@@ -294,7 +295,7 @@ def render_math_report(result: MathResult) -> str:
     )
     act_block = {"detection_spls": spls, "backlog": backlog, "stakeholder": stakeholder}
     lines: list[str] = []
-    lines.append(f"# M-ATH Lite Report — `{result.data_source}`")
+    lines.append(f"# Heuristic Lead Report — `{result.data_source}`")
     lines.append("")
     lines.append(f"**Run ID:** `{result.run_id}`")
     lines.append(f"**Window:** {result.time_window}")
@@ -316,7 +317,7 @@ def render_math_report(result: MathResult) -> str:
     else:
         lines.append("No leads above threshold. Tune `--math-min-score` or `--math-rare`.")
         lines.append("")
-    lines.append("## PEAK Act")
+    lines.append("## Act (Detection Drafts + Backlog)")
     lines.append("")
     lines.append("### Detection Drafts (SPL — analyst review required)")
     lines.append("")
@@ -336,7 +337,7 @@ def render_math_report(result: MathResult) -> str:
     for bullet in act_block["stakeholder"]:
         lines.append(f"- {bullet}")
     lines.append("")
-    lines.append("## Next step (PEAK Analyze)")
+    lines.append("## Next step (Analyze)")
     lines.append("")
     lines.append("Feed a lead into a PoC hunt or the LLM judge, e.g.:")
     lines.append("")

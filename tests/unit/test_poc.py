@@ -30,7 +30,7 @@ def test_poc_steps_have_required_fields():
         assert poc.name
         assert poc.summary
         assert poc.steps, f"{poc.poc_id} has no steps"
-        # PEAK Prepare: built-in PoCs must carry ABLE context
+        # Hunt plan: built-in PoCs must carry ABLE context (reporting metadata)
         assert poc.topic, f"{poc.poc_id} missing topic"
         assert poc.behavior, f"{poc.poc_id} missing ABLE behavior"
         assert poc.location, f"{poc.poc_id} missing ABLE location"
@@ -60,14 +60,14 @@ def test_poc_renders_to_dict():
 
 
 def test_poc_file_accepts_peak_prepare_fields(tmp_path: Path):
-    """Analyst JSON PoCs may carry PEAK Prepare (topic/ABLE/scope/plan)."""
+    """Analyst JSON PoCs may carry hunt-plan fields (topic/ABLE/scope/plan)."""
     from hunting.poc import poc_from_file
 
     spec = tmp_path / "peak-poc.json"
     spec.write_text(
         """{
             "poc_id": "poc-peak-test",
-            "name": "PEAK test",
+            "name": "Hunt-plan test",
             "kind": "ttp",
             "summary": "demo",
             "topic": "phishing payload execution",
@@ -101,7 +101,7 @@ def test_poc_file_accepts_peak_prepare_fields(tmp_path: Path):
 
 
 def test_poc_file_prepare_fields_default_empty(tmp_path: Path):
-    """Old JSON PoCs without PEAK fields still load (backward compatible)."""
+    """Old JSON PoCs without hunt-plan fields still load (backward compatible)."""
     from hunting.poc import poc_from_file
 
     spec = tmp_path / "legacy.json"

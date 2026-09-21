@@ -1,16 +1,12 @@
-"""PEAK Baseline hunting (EDA) — deterministic, no LLM.
+"""Baseline survey (EDA) — deterministic, no LLM.
 
-Implements the PEAK Baseline flow (Splunk SURGe):
-
-    Prepare: Select Data Source -> Research -> Scope -> Plan
-    Execute: Gather -> Data Dictionary -> Review Distributions
-             -> Investigate Outliers -> Gap Analysis -> Identify Relationships
-    Act:     Preserve -> Document Baseline -> (detections/backlog suggestions)
+Flow: Select Data Source -> Scope -> Gather -> Data Dictionary
+-> Review Distributions -> Investigate Outliers -> Gap Analysis
+-> Identify Relationships -> Preserve + Document.
 
 No model, no LLM. Statistics only: counts, cardinality, stack counting
 (least-frequency-first), numeric mean/median/std with z-score outliers.
-Results persist to ``baselines/<name>.json`` (Knowledge store) plus a
-Markdown report.
+Results persist to ``baselines/<name>.json`` plus a Markdown report.
 """
 from __future__ import annotations
 
@@ -319,7 +315,7 @@ def render_baseline_report(result: BaselineResult) -> str:
     else:
         lines.append("No outliers under current thresholds.")
     lines.append("")
-    lines.append("## PEAK Act")
+    lines.append("## Act (Detection Drafts + Backlog)")
     lines.append("")
     lines.append("### Detection Drafts (SPL — analyst review required)")
     lines.append("")

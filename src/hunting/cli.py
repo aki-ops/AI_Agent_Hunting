@@ -548,22 +548,22 @@ def build_parser() -> argparse.ArgumentParser:
     poc_group.add_argument("--poc-judge-max-tokens", type=int, default=2000, help="Max tokens for the post-hoc judge LLM call.")
     poc_group.add_argument("--poc-file", type=str, default=None, help="Load one PoC from a JSON file (overrides --poc).")
 
-    # PEAK Baseline hunting / EDA (no LLM)
-    baseline_group = parser.add_argument_group("PEAK Baseline Hunting (EDA)")
-    baseline_group.add_argument("--baseline", type=str, default=None, metavar="DATA_SOURCE", help="Run a PEAK Baseline (EDA) over a CDB source, e.g. --baseline cdb:events. Writes baselines/<id>.json + report.")
+    # Baseline survey / EDA (no LLM)
+    baseline_group = parser.add_argument_group("Baseline Survey (EDA)")
+    baseline_group.add_argument("--baseline", type=str, default=None, metavar="DATA_SOURCE", help="Run a baseline survey (EDA) over a CDB source, e.g. --baseline cdb:events. Writes baselines/<id>.json + report.")
     baseline_group.add_argument("--baseline-fields", type=str, default=None, help="Comma-separated CDB columns to profile (default: security-relevant fields).")
     baseline_group.add_argument("--baseline-limit", type=int, default=5000, help="Max rows to pull for the baseline window [default: 5000].")
     baseline_group.add_argument("--baseline-rare", type=int, default=2, help="Stack-counting threshold: values seen <= N times are outliers [default: 2].")
     baseline_group.add_argument("--baseline-report", type=str, default=None, help="Path to write the baseline Markdown report.")
 
-    # M-ATH lite (stdlib model-assisted hunting, no LLM, no numpy)
-    math_group = parser.add_argument_group("M-ATH Lite (model-assisted)")
-    math_group.add_argument("--math", type=str, default=None, metavar="DATA_SOURCE", help="Run M-ATH lite detectors over a CDB source, e.g. --math cdb:events. Writes models/math_runs/<id>.json + report.")
+    # Heuristic lead scoring (stdlib, no LLM, no numpy)
+    math_group = parser.add_argument_group("Heuristic Lead Scoring")
+    math_group.add_argument("--math", type=str, default=None, metavar="DATA_SOURCE", help="Run heuristic lead-scoring detectors over a CDB source, e.g. --math cdb:events. Writes models/math_runs/<id>.json + report.")
     math_group.add_argument("--math-detectors", type=str, default=None, help="Comma-separated subset of rare_value,lexical,rare_sequence,dga [default: all].")
     math_group.add_argument("--math-limit", type=int, default=5000, help="Max rows to pull for the run window [default: 5000].")
     math_group.add_argument("--math-rare", type=int, default=2, help="Rarity threshold for frequency detectors [default: 2].")
     math_group.add_argument("--math-min-score", type=float, default=2.0, help="Minimum lead score to keep [default: 2.0].")
-    math_group.add_argument("--math-report", type=str, default=None, help="Path to write the M-ATH Markdown report.")
+    math_group.add_argument("--math-report", type=str, default=None, help="Path to write the lead-scoring Markdown report.")
 
     # Forensic Audit & Replay Flags
     forensic_group = parser.add_argument_group("Forensic Audit & Replay")
@@ -604,7 +604,7 @@ def run_cli(args: argparse.Namespace) -> int:
             print(f"[+] {poc.poc_id}\t{poc.kind.value}\t{poc.name}")
         return 0
 
-    # 0b. PEAK Baseline dispatch — needs only the CDB adapter, no LLM.
+    # 0b. Baseline dispatch — needs only the CDB adapter, no LLM.
     # Runs before provider setup so --baseline works with just --db + --time-window.
     if getattr(args, "baseline", None):
         from hunting.baseline import render_baseline_report, run_baseline
@@ -660,7 +660,7 @@ def run_cli(args: argparse.Namespace) -> int:
         print(f"  Report: {report_path}")
         return 0
 
-    # 0c. M-ATH lite dispatch — stdlib detectors, no LLM.
+    # 0c. Heuristic lead-scoring dispatch — stdlib detectors, no LLM.
     if getattr(args, "math", None):
         from hunting.mathunt import render_math_report, run_math
 

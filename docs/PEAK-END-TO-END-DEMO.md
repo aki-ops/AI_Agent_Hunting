@@ -1,7 +1,10 @@
-# Demo end-to-end: Baseline → M-ATH → PoC + Judge (BOTS v1 sample)
+# Demo end-to-end: Baseline survey → Lead scoring → PoC + Judge (BOTS v1 sample)
 
 > Chạy ngày 2026-09-19 trên `data/cdb_sample.sqlite` (16 events BOTS v1 thu gọn).
-> Mục đích: chứng minh 3 flow PEAK chạy nối nhau trên cùng dữ liệu, không LLM ở 2 bước đầu.
+> Mục đích: chứng minh 3 tầng tooling chạy nối nhau trên cùng dữ liệu, không LLM ở 2 bước đầu.
+> Cách gọi tên trung thực (xem `PEAK-RESEARCH-AND-MAPPING.md` Mục 7): baseline survey (EDA),
+> heuristic lead scoring (không phải ML/M-ATH), PoC hypothesis + LLM judge (advisory).
+> Trình bày với SOC có thể mượn ngôn ngữ PEAK, nhưng không claim PEAK-compliant.
 
 ## 0. Chuẩn bị dữ liệu
 
@@ -14,7 +17,7 @@
 1 email SMTP, 1 web beacon `ad.networkfilter.co`, 2 PowerShell `-enc` ác tính,
 1 PowerShell `-enc` benign (SCCM `foobar`), SMB lateral, scheduled task + Run key.
 
-## 1. Baseline (PEAK Baseline / EDA — không LLM)
+## 1. Baseline survey (EDA — không LLM)
 
 ```bash
 .venv/Scripts/python.exe main.py --provider cdb --db data/cdb_sample.sqlite \
@@ -32,7 +35,7 @@ Kết quả: **16 rows, 11 fields, 23 outliers, 4 gaps (0.0002s)**
 Ledger: `baselines/baseline-cdb:events-<ts>.json` + report `.md` (kèm `## PEAK Act`:
 SPL draft cho outlier, backlog coverage tasks, stakeholder summary).
 
-## 2. M-ATH lite (sinh lead — không LLM)
+## 2. Heuristic lead scoring (xếp lead — không LLM, không ML)
 
 ```bash
 .venv/Scripts/python.exe main.py --provider cdb --db data/cdb_sample.sqlite \
@@ -49,7 +52,7 @@ Kết quả: **16 rows → 25 leads (0.0013s)**
 Lead đúng thứ tự ưu tiên: encoded PowerShell lên trước brute-force rời rạc.
 Ledger: `models/math_runs/math-<ts>.json` + report `.md` (kèm `## PEAK Act`).
 
-## 3. PoC + Judge (PEAK Hypothesis-Driven — có LLM)
+## 3. PoC + Judge (hypothesis có cấu trúc — LLM chỉ advisory)
 
 ```bash
 .venv/Scripts/python.exe main.py --provider cdb --db data/cdb_sample.sqlite \
@@ -66,20 +69,20 @@ Kết quả: **MATCHED — 9 obs, 3 steps | JUDGE: INCONCLUSIVE (0.88)**
   - 2 cmdline alice còn suspicious nhưng thiếu parent image, network, persistence → không dám kết TP.
   - Kết luận INCONCLUSIVE 0.88: đúng chuẩn "absence of evidence ≠ evidence of absence".
 
-Report `artifacts/poc_hunts/*.md` có đủ: `## PEAK Prepare (ABLE)`, verdict,
-`## LLM Judge`, `## PEAK Act` (SPL draft bên dưới + backlog + stakeholder).
+Report `artifacts/poc_hunts/*.md` có đủ: `## Hunt Plan (ABLE)` (metadata trình bày — không lái query), verdict,
+`## LLM Judge`, `## Act (Detection Draft + Backlog)` (SPL draft bên dưới + backlog + stakeholder).
 
 ```spl
 search index="botsv1" image="powershell.exe" match(cmdline, "(?i)-enc") match(cmdline, "(?i)-w hidden") earliest=-14d latest=now
 | table _time, host, user, image, cmdline, domain, file_path, action
 ```
 
-## 4. Đọc kết quả theo ngôn ngữ PEAK
+## 4. Đọc kết quả (dùng ngôn ngữ PEAK khi trình bày, giữ bản chất khi làm kỹ thuật)
 
-1. **Prepare:** PoC mang ABLE (behavior T1566.001→T1059.001, location workstations, evidence process_creation) — không còn hypothesis free-text.
-2. **Execute:** Baseline vẽ normal (auth burst ×10 ở `we1149srv` là bất thường số lượng nhưng chưa rõ ác tính) → M-ATH xếp encoded PowerShell lên top → PoC confirm 9 obs → Judge giữ ở INCONCLUSIVE vì thiếu parent/network corroboration.
+1. **Hunt plan:** PoC mang ABLE (behavior T1566.001→T1059.001, location workstations, evidence process_creation) — là metadata trình bày, match vẫn literal.
+2. **Chạy:** Baseline survey vẽ normal (auth burst ×10 ở `we1149srv` là bất thường số lượng nhưng chưa rõ ác tính) → lead scoring xếp encoded PowerShell lên top → PoC confirm 9 obs → Judge giữ ở INCONCLUSIVE vì thiếu parent/network corroboration.
 3. **Act:** mỗi bước đều sinh SPL draft (DRAFT, analyst review), backlog (sibling TTP, coverage tasks, lead follow-up), stakeholder summary.
-4. **Knowledge:** ledger 3 tầng (`baselines/`, `models/math_runs/`, `artifacts/poc_hunts/`) tái chạy được.
+4. **Tích lũy:** ledger 3 tầng (`baselines/`, `models/math_runs/`, `artifacts/poc_hunts/`) tái chạy được.
 
 ## 5. Giới hạn đã biết (nói trước với sếp)
 

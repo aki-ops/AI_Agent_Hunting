@@ -1,14 +1,14 @@
-# PEAK Threat Hunting Framework — Nghiên cứu & Đối chiếu hệ thống hiện tại
+# PEAK Threat Hunting Framework — Nghiên cứu & Đối chiếu trung thực
 
 > Tài liệu nghiên cứu phục vụ báo cáo. Nguồn chính: Splunk SURGe (David Bianco, Ryan Fetterman) — series 7 bài PEAK 2023 + repo content `Cisco-Talos/PEAK`.
-> Trạng thái: nghiên cứu đối chiếu, chưa triển khai code.
+> **Lập trường của tài liệu này (quan trọng khi báo cáo): PEAK là framework quy trình cho analyst con người, không phải kiến trúc phần mềm. Hệ thống này KHÔNG claim PEAK-compliant — chỉ mượn ngôn ngữ PEAK (ABLE, baseline survey, Act) để trình bày cho SOC/manager dễ hiểu. Giá trị kỹ thuật thật nằm ở tính deterministic, bounded-LLM và reproducibility (Mục 10).**
 
 ## 1. Tóm tắt điều hành (Executive Summary)
 
-- **PEAK = Prepare, Execute, and Act with Knowledge.** Framework săn tìm mối đe dọa hiện đại của Splunk SURGe, thay thế các framework cũ Sqrrl (2015) và TaHiTI (2018).
+- **PEAK = Prepare, Execute, and Act with Knowledge.** Framework săn tìm mối đe dọa hiện đại của Splunk SURGe, thay thế các framework cũ Sqrrl (2015) và TaHiTI (2018). **Bản chất: quy trình cho analyst con người** (mở Splunk, đọc log, viết detection) — không phải spec kiến trúc phần mềm.
 - PEAK định nghĩa **3 loại hunt**: (1) Hypothesis-Driven, (2) Baseline / EDA, (3) Model-Assisted (M-ATH) — tất cả chạy chung 3 phase **Prepare → Execute → Act**, với **Knowledge (K)** thấm vào mọi phase.
-- Hệ thống hiện tại của nhóm đã đi đúng hướng PEAK ở mảng **Hypothesis-Driven**: PoC có cấu trúc + match deterministic + LLM chỉ làm judge (advisory). Còn thiếu 2 mảng: **Baseline hunts** và **M-ATH**, và thiếu khâu **Act** (sinh detection, backlog).
-- Đề xuất: bổ sung ABLE vào PoC schema, thêm Baseline mode, thêm M-ATH lite, hoàn thiện khâu Act — chi tiết ở Mục 6.
+- Hệ thống này là **engine tự động** (contracts, verification, cost bound, completeness proof) — những thứ PEAK không quy định. Vì vậy mapping dưới đây là **tham khảo ngôn ngữ trình bày, không phải tuân thủ framework**.
+- Những gì đã làm theo ngôn ngữ PEAK: PoC mang hunt-plan ABLE (metadata báo cáo, không lái query), baseline survey EDA, heuristic lead scoring, Act (SPL draft + backlog + stakeholder) — chi tiết ở Mục 7.
 
 ## 2. Nguồn tham khảo
 
@@ -99,27 +99,47 @@ Dùng algorithm tìm lead khi phương pháp đơn giản không đủ. Output: 
 - **Execute:** Gather → Pre-Process (+encode, label) → **Develop Model** → **Refine** (tune hyperparameter) → **Apply** → **Analyze** (filter/stack trên output + enrich reputation; FP thì label lại ném về train) → Escalate.
 - **Act:** Preserve (**cả trained model** + notebook) → Document → Create Detections/**Notables**/**Playbooks** (best-case thành detection định kỳ; thường model đi 80%, 20% còn lại đóng thành analyst-in-the-loop playbook) → Backlog → Communicate.
 
-## 7. Đối chiếu với hệ thống hiện tại (cập nhật sau refactor ABLE)
+## 7. Đối chiếu trung thực: ngôn ngữ PEAK vs bản chất kỹ thuật
 
-| PEAK yêu cầu | Hệ thống hiện tại | Đánh giá |
+> Cách đọc bảng: cột "Ngôn ngữ PEAK" là cách nói với SOC/manager; cột "Bản chất" là sự thật kỹ thuật để báo cáo không quá đà.
+
+| Ngôn ngữ PEAK | Bản chất trong hệ thống này | Đánh giá |
 |---|---|---|
-| Hypothesis + ABLE + scope + plan | PoC schema đã có `topic`, `able{actor,behavior,location,evidence}`, `research_refs`, `scope`, `max_duration`, `plan` — 4 PoC built-in + 3 PoC JSON BOTS v1 đều điền đủ; compiler đưa ABLE vào graph assumptions; report có mục "PEAK Prepare (ABLE)" | **Đạt ~90%.** ABLE actor được phép trống (unknown actor hợp lệ theo PEAK) |
-| Execute: gather → preprocess → analyze → refine → escalate | `PocAgent`: `search_text` qua adapter → MATCHED/EMPTY → LLM judge | **Đạt 60%.** Thiếu preprocess/normalize, vòng refine, escalate-to-IR |
-| Baseline hunts | ✅ `--baseline cdb:events`: Gather (bounded SQL, limit+1 truncation flag) → Data Dictionary (kind, null/distinct/top) → Distributions (mean/median/stdev) → Outliers (stack counting + z-score) → Gap Analysis → Relationships (co-occurrence) → Preserve (`baselines/*.json`) + Document (report `.md`). Không LLM | **Đạt ~85%.** Còn thiếu baseline window dài ngày (30–90d) trên data thật và known-benign outlier list |
-| M-ATH | ✅ M-ATH lite (`--math cdb:events`): stdlib detectors — rare_value (frequency), lexical (encoded/hidden/cradle/persistence/cred-tool + entropy), rare_sequence (parent→child, user::image), dga (consonant-heavy labels). Ranked leads → `models/math_runs/`. Không numpy/sklearn, không LLM. Judge TP/FP giữ vai trò advisory phía sau | **Đạt ~75%.** Còn thiếu supervised classifier + model store versioned |
-| Act: preserve → document → create detections → backlog → communicate | ✅ Shared `hunting.act` (pure functions, không LLM): SPL draft từ PoC steps / M-ATH lead / baseline outlier (đánh dấu DRAFT, analyst review), backlog (missed steps → Refine, sibling TTP, coverage tasks, lead follow-up), stakeholder summary (headline + facts + next). Cả 3 report (PoC, Baseline, M-ATH) đều có mục `## PEAK Act` | **Đạt ~85%.** Còn thiếu auto-preserve vào wiki và gửi stakeholder |
-| Knowledge thấm mọi phase | MITRE refs + research_refs + PoC library + ledger (graph assumptions giữ ABLE) | **Đạt ~65%.** Thiếu intel ingest, org context, baseline/model store versioned |
+| Hypothesis + ABLE + scope + plan | PoC schema có `topic`, `able{actor,behavior,location,evidence}`, `research_refs`, `scope`, `max_duration`, `plan`; compiler đưa ABLE vào graph assumptions; report có mục "Hunt Plan (ABLE)". **ABLE là metadata báo cáo — không tham gia quyết định query (match vẫn literal LIKE).** | Dùng được để trình bày; không claim "Prepare automation" |
+| Execute: gather → analyze → refine → escalate | `PocAgent`: `search_text` qua adapter → MATCHED/EMPTY → LLM judge (advisory). Không có preprocess/normalize, không vòng refine tự động, không escalate-to-IR | Engine检索 + judge, không phải Execute loop của PEAK |
+| Baseline survey (EDA) | `--baseline cdb:events`: Gather (bounded SQL, limit+1 truncation flag) → Data Dictionary → Distributions → Outliers (stack counting + z-score) → Gap Analysis → Relationships → Preserve (`baselines/*.json`) + Document. Không LLM. **Window demo chỉ 1 ngày (PEAK khuyến nghị 30–90d), chưa có known-benign list** | Công cụ EDA đúng nghĩa nhưng ở quy mô demo |
+| Heuristic lead scoring (đừng gọi là M-ATH) | `--math cdb:events`: rare_value (frequency), lexical (encoded/hidden/cradle/persistence/cred-tool + entropy), rare_sequence (parent→child, user::image), dga heuristic. Ranked leads → `models/math_runs/`. **Không numpy/sklearn, không train/tune/apply model — là heuristics, không phải ML.** Judge TP/FP giữ vai trò advisory phía sau | Gọi là "heuristic lead scoring", **không claim M-ATH/ML** |
+| Act: preserve → document → detection draft → backlog → communicate | Shared `hunting.act` (pure functions, không LLM): SPL draft từ PoC steps / lead / outlier (**đánh dấu DRAFT, chưa validate trên Splunk thật**), backlog, stakeholder summary. Cả 3 report đều có mục `## Act (...)` | Draft để analyst review, không phải detection engineering |
+| Knowledge | MITRE refs + research_refs + PoC library + ledger 3 tầng (`baselines/`, `models/math_runs/`, `artifacts/poc_hunts/`) | Tích lũy artifact tốt; chưa phải intel/org-context store |
 
-**Điểm khớp triết lý (mạnh):** PEAK nhấn mạnh analyst-in-the-loop và "model đi 80%, người đóng 20%" — đúng dual-layer của hệ thống: rules bắt signal (deterministic, reproducible), LLM chỉ giải thích/adjudicate, match không phụ thuộc LLM.
+**Điểm khớp thật (giữ lại khi báo cáo):** hypothesis testable, preserve/document bằng ledger + report, knowledge tích lũy qua PoC library, analyst-in-the-loop (rules bắt signal, LLM chỉ advisory).
 
-## 8. Lộ trình align PEAK (không phá code cũ)
+**Điểm gượng ép (đã gỡ claim trong code — chi tiết giữ ở đây để trung thực):**
 
-1. ✅ **PoC schema += ABLE (đã xong, tương thích ngược):** `topic`, `able{actor,behavior,location,evidence}`, `research_refs`, `scope`, `max_duration`, `plan` — optional; PoC JSON cũ không có các field này vẫn load bình thường. ABLE đi vào graph assumptions + mục "PEAK Prepare (ABLE)" trong report. Test: 494 passed.
-2. ✅ **Baseline mode (đã xong):** `--baseline cdb:events [--baseline-fields ...] [--baseline-limit N] [--baseline-rare N]` — deterministic, không LLM; lưu `baselines/<id>.json` (gitignored) + report `.md`. Test: 500 passed.
-3. ✅ **M-ATH lite (đã xong):** `--math cdb:events [--math-detectors ...] [--math-min-score X]` — 4 stdlib detectors, ranked leads, không thêm dependency, không LLM; lưu `models/math_runs/`. Test: 506 passed.
-4. ✅ **Hoàn thiện Act (đã xong):** shared `src/hunting/act/` — SPL draft + backlog + stakeholder summary cho cả 3 loại hunt, pure functions không LLM, đánh dấu DRAFT cần analyst review. Test: 514 passed.
-5. **Knowledge store:** `pocs/` + `baselines/` + `models/` versioned, ledger trỏ tới đúng phiên bản dùng.
+1. ABLE chỉ là metadata trình bày, engine không dùng để ra quyết định.
+2. Baseline demo 16 rows/1 ngày, chưa phải baseline 30–90 ngày.
+3. Module scoring là heuristics stdlib — đã đổi tên CLI/docstring, không gọi là M-ATH/ML.
+4. SPL draft nối chuỗi, chưa validate trên Splunk thật.
+
+## 8. Trạng thái triển khai (không phá code cũ)
+
+1. ✅ **PoC schema += hunt-plan ABLE (tương thích ngược).**
+2. ✅ **Baseline survey:** `--baseline cdb:events [--baseline-fields ...] [--baseline-limit N] [--baseline-rare N]` — deterministic, không LLM; lưu `baselines/<id>.json` (gitignored) + report `.md`.
+3. ✅ **Heuristic lead scoring:** `--math cdb:events [--math-detectors ...] [--math-min-score X]` — 4 stdlib heuristics, ranked leads, không thêm dependency, không LLM; lưu `models/math_runs/`.
+4. ✅ **Act:** shared `src/hunting/act/` — SPL draft + backlog + stakeholder summary cho cả 3 loại run, pure functions không LLM, đánh dấu DRAFT cần analyst review.
+5. **Knowledge store versioned:** `pocs/` + `baselines/` + `models/` — ledger đã trỏ đúng phiên bản dùng; còn thiếu intel ingest và org context.
 
 ## 9. Kết luận
 
-PEAK cho ta khung chuẩn công nghiệp để đặt hệ thống hiện tại vào: ta đã làm tốt trụ **Hypothesis-Driven**, cần bổ sung **Baseline** và **M-ATH**, và đóng vòng **Act**. Lộ trình trên giữ nguyên tính deterministic + đo chi phí đang có, đồng thời đưa sản phẩm lên ngang ngôn ngữ mà SOC/SOC-manager dùng khi đánh giá hunting capability.
+PEAK là khung ngôn ngữ tốt để nói chuyện với SOC/manager (hypothesis testable, baseline, act có đầu ra), nhưng không phải kiến trúc cho engine tự động. Hệ thống này dùng ngôn ngữ PEAK để trình bày, và giữ giá trị kỹ thuật thật ở chỗ khác (Mục 10).
+
+## 10. Giá trị kỹ thuật thật của hệ thống (dùng khi báo cáo sếp)
+
+Những thứ PEAK không quy định nhưng SOC nào cũng cần — và repo này có:
+
+1. **Deterministic matching:** cùng PoC + cùng dữ liệu = cùng output, tái chạy/audit được. LLM không tham gia match.
+2. **Bounded LLM:** LLM chỉ fire ở 2 điểm có trần (escalation khi EMPTY, judge TP/FP khi MATCHED), có đếm call/token/USD tách riêng match vs judge.
+3. **Verification & completeness:** limit+1 EOF proof, typed contracts, observation append-only có citation — không phát biểu vượt evidence.
+4. **Chi phí & reproducibility đo được:** mỗi run ghi ledger JSON + report, full suite hiện tại 514 passed.
+
+Roadmap kỹ thuật nên quay về core: contracts, verification, Splunk live adapter, dataset thật dài ngày — PEAK giữ lại làm chương "mapping truyền thông" (tài liệu này), không làm blueprint refactor.

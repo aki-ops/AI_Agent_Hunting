@@ -9,7 +9,7 @@ from hunting.poc.agent import PocHuntResult
 
 
 def build_poc_act_block(result: PocHuntResult, poc_render: dict) -> dict[str, object]:
-    """Assemble the PEAK Act block for a PoC run (pure function, no I/O)."""
+    """Assemble the Act block (detection draft + backlog + stakeholder) for a PoC run (pure function, no I/O)."""
     from hunting.act import (
         backlog_from_poc,
         spl_from_poc_steps,
@@ -40,7 +40,7 @@ def render_poc_report(result: PocHuntResult, poc_render: dict) -> str:
     lines.append(f"**Finished:** {result.finished_at}")
     lines.append(f"**Runtime:** {result.runtime_seconds:.4f} s")
     lines.append("")
-    lines.append("## PEAK Prepare (ABLE)")
+    lines.append("## Hunt Plan (ABLE)")
     lines.append("")
     if poc_render.get("topic"):
         lines.append(f"- Topic: {poc_render.get('topic')}")
@@ -127,7 +127,7 @@ def render_poc_report(result: PocHuntResult, poc_render: dict) -> str:
         lines.append("")
         lines.append(result.escalation_summary or "(no summary)")
     lines.append("")
-    lines.append("## PEAK Act")
+    lines.append("## Act (Detection Draft + Backlog)")
     lines.append("")
     lines.append("### Detection Draft (SPL — analyst review required)")
     lines.append("")
