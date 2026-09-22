@@ -526,6 +526,7 @@ def build_parser() -> argparse.ArgumentParser:
     env_group.add_argument("--splunk-manifest", type=str, default=None, help="Path to declarative YAML mapping manifest [default: configs/splunk_botsv2.yaml]")
     env_group.add_argument("--manifest", "-m", type=str, default="tests/fixtures/registry_cdb.yaml", help="Path to ProviderScope registry YAML")
     env_group.add_argument("--db", type=str, default="data/cdb_sample.sqlite", help="Path to SQLite CDB database")
+    env_group.add_argument("--query-limit", type=int, default=100, help="Max rows per engine query (completeness proof needs rows <= limit) [default: 100]")
     env_group.add_argument("--output", "-o", type=str, default="report.md", help="Path to output Markdown report file")
 
     # LLM & Human Loop
@@ -960,22 +961,22 @@ def run_cli(args: argparse.Namespace) -> int:
         if (getattr(args, "poc_allow_escalation", False) or getattr(args, "poc_judge", False)) and args.llm == "api":
             try:
                 from hunting.m2_abduction.provider import (
-                    ApiLLMConfig,
-                    ApiLLMProvider,
-                    create_llm_caller,
+                    ApiLLMProvider as _PocApiLLMProvider,
+                    create_llm_caller as _poc_create_llm_caller,
                 )
-                config = ApiLLMConfig.from_env()
+                from hunting.m2_abduction.provider import ApiLLMConfig as _PocApiLLMConfig
+                config = _PocApiLLMConfig.from_env()
                 if args.llm_endpoint or args.llm_model or args.api_key:
-                    config = ApiLLMConfig(
+                    config = _PocApiLLMConfig(
                         endpoint=args.llm_endpoint or config.endpoint,
                         model=args.llm_model or config.model,
                         timeout_seconds=config.timeout_seconds,
                         max_tokens=config.max_tokens,
                         api_key=args.api_key or config.api_key,
                     )
-                provider = ApiLLMProvider(config)
+                provider = _PocApiLLMProvider(config)
                 llm_tracker = LLMUsageTracker(model_name=config.model)
-                caller = create_llm_caller(provider, llm_tracker, "poc_escalation")
+                caller = _poc_create_llm_caller(provider, llm_tracker, "poc_escalation")
 
                 def _question_only(question: str, max_tokens: int) -> str:
                     return provider.call_raw(question)
@@ -1106,7 +1107,14 @@ def run_cli(args: argparse.Namespace) -> int:
                     api_key=args.api_key or config.api_key,
                 )
             llm_provider = ApiLLMProvider(config)
-            llm_tracker = LLMUsageTracker(max_calls=4, model_name=config.model)
+            # Scale the hunt token budget with the model's completion budget:
+            # preflight reserves max_tokens per call, so the tracker must fit
+            # at least max_calls full-size calls.
+            llm_tracker = LLMUsageTracker(
+                max_calls=4,
+                max_total_tokens=max(12000, 4 * (config.max_tokens + 2000)),
+                model_name=config.model,
+            )
             compiler_caller = create_llm_caller(llm_provider, llm_tracker, "compiler")
             source_profiler_caller = create_llm_caller(llm_provider, llm_tracker, "source_profiler")
             planner_caller = create_llm_caller(llm_provider, llm_tracker, "planner")
@@ -1272,6 +1280,7 @@ def run_cli(args: argparse.Namespace) -> int:
                 time_window=time_win,
                 step_callback=cli_step_logger,
                 analyst_confirm_callback=cli_analyst_confirm,
+                query_limit=int(getattr(args, "query_limit", 100) or 100),
             )
         except (LLMTimeoutError, TimeoutError) as te:
             print(f"\n[-] Error: LLM API request timed out: {te}", file=sys.stderr)

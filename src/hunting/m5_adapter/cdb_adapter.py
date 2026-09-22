@@ -234,6 +234,7 @@ class CdbAdapter:
             supported_constraints: tuple[str, ...] = (),
             searchable_constraints: tuple[str, ...] = (),
             query_builder: str = "",
+            proof_mode: str = "retrieval_only",
         ) -> ProviderOperation:
             relation_by_fact = {
                 "identity_binding": "associated_with",
@@ -292,20 +293,21 @@ class CdbAdapter:
                 supported_constraints=supported_constraints,
                 searchable_constraints=searchable_constraints,
                 query_builder=query_builder,
+                proof_mode=proof_mode,
                 completeness="limit+1 EOF proof",
             )
 
         operations = (
-            operation("cdb_scope_scan", ("scope_records", "operational_baseline"), ("ANY",), ("native_type", "timestamp")),
-            operation("search_text", ("scope_records", "operational_baseline"), ("ANY",), ("raw_ref", "native_type"), {"terms": "list[string]", "window": "interval"}),
-            operation("cdb_process_search", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), ("host", "user", "pid", "ppid", "cmdline", "image")),
-            operation("cdb_auth_search", ("authentication_activity", "remote_authentication"), ("host", "account"), ("host", "user", "event_id", "status")),
-            operation("cdb_net_search", ("network_connection",), ("host", "ip", "process"), ("host", "ip", "port")),
-            operation("cdb_persistence_search", ("persistence_change",), ("host", "account"), ("host", "action", "file_path")),
-            operation("cdb_file_search", ("file_modification", "file_artifact"), ("host", "process", "file"), ("host", "image", "file_path", "action")),
-            operation("cdb_dns_search", ("dns_activity",), ("host", "ip", "domain"), ("host", "ip", "domain")),
-            operation("cdb_web_requests", ("web_request", "web_request_activity", "web_navigation"), ("host", "ip", "domain"), ("host", "ip", "domain", "native_type")),
-            operation("cdb_web_search", ("web_request", "web_request_activity", "web_navigation"), ("host", "ip", "domain"), ("host", "ip", "domain", "native_type")),
+            operation("cdb_scope_scan", ("scope_records", "operational_baseline"), ("ANY",), ("native_type", "timestamp"), proof_mode="relation_observable"),
+            operation("search_text", ("scope_records", "operational_baseline"), ("ANY",), ("raw_ref", "native_type"), {"terms": "list[string]", "window": "interval"}, proof_mode="relation_observable"),
+            operation("cdb_process_search", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), ("host", "user", "pid", "ppid", "cmdline", "image"), guaranteed_relations=("executed", "process_ancestry"), proof_mode="relation_observable"),
+            operation("cdb_auth_search", ("authentication_activity", "remote_authentication"), ("host", "account"), ("host", "user", "event_id", "status"), guaranteed_relations=("authenticated", "authentication_activity"), proof_mode="relation_observable"),
+            operation("cdb_net_search", ("network_connection",), ("host", "ip", "process"), ("host", "ip", "port"), guaranteed_relations=("communicated_with", "network_connection"), proof_mode="relation_observable"),
+            operation("cdb_persistence_search", ("persistence_change",), ("host", "account"), ("host", "action", "file_path"), guaranteed_relations=("persisted", "persistence_change"), proof_mode="relation_observable"),
+            operation("cdb_file_search", ("file_modification", "file_artifact"), ("host", "process", "file"), ("host", "image", "file_path", "action"), guaranteed_relations=("modified", "file_modification", "file_artifact"), proof_mode="relation_observable"),
+            operation("cdb_dns_search", ("dns_activity",), ("host", "ip", "domain"), ("host", "ip", "domain"), guaranteed_relations=("resolved", "dns_activity", "dns_query"), proof_mode="relation_observable"),
+            operation("cdb_web_requests", ("web_request", "web_request_activity", "web_navigation"), ("host", "ip", "domain"), ("host", "ip", "domain", "native_type"), guaranteed_relations=("visited", "web_request", "web_request_activity"), proof_mode="relation_observable", supported_constraints=("domain", "host", "ip", "native_type", "component"), searchable_constraints=("domain", "host", "ip", "native_type", "component")),
+            operation("cdb_web_search", ("web_request", "web_request_activity", "web_navigation"), ("host", "ip", "domain"), ("host", "ip", "domain", "native_type"), guaranteed_relations=("visited", "web_request", "web_request_activity"), proof_mode="relation_observable", supported_constraints=("domain", "host", "ip", "native_type", "component"), searchable_constraints=("domain", "host", "ip", "native_type", "component")),
             operation("resolve_person_to_account", ("identity_binding",), ("person",), ("user",), output_roles=("subject_identity", "account_identity"), native_field_bindings={"subject_identity": ("user",), "account_identity": ("user",)}, query_builder="cdb.identity.person_to_account.v1"),
             operation(
                 "resolve_account_to_endpoint", ("identity_binding",), ("account",),
@@ -319,12 +321,12 @@ class CdbAdapter:
                 guaranteed_relations=("associated_with",),
             ),
             operation("resolve_endpoint_to_client_ip", ("identity_binding",), ("host",), ("host", "ip")),
-            operation("find_web_activity_from_client_ip", ("web_request", "web_request_activity", "web_navigation"), ("ip",), ("ip", "domain", "native_type")),
-            operation("find_dns_activity_from_client_ip", ("dns_activity",), ("ip",), ("ip", "domain")),
-            operation("find_web_activity_from_endpoint", ("web_request", "web_request_activity", "web_navigation"), ("host",), ("host", "domain", "native_type")),
-            operation("find_process_from_endpoint", ("process_ancestry", "server_side_execution"), ("host",), ("host", "pid", "ppid", "image", "cmdline")),
-            operation("find_file_change_from_endpoint", ("file_modification", "file_artifact"), ("host",), ("host", "file_path", "action")),
-            operation("find_file_change_from_process", ("file_modification", "file_artifact"), ("process",), ("host", "image", "file_path", "action")),
+            operation("find_web_activity_from_client_ip", ("web_request", "web_request_activity", "web_navigation"), ("ip",), ("ip", "domain", "native_type"), guaranteed_relations=("visited", "web_request", "web_request_activity"), proof_mode="relation_observable"),
+            operation("find_dns_activity_from_client_ip", ("dns_activity",), ("ip",), ("ip", "domain"), guaranteed_relations=("resolved", "dns_activity", "dns_query"), proof_mode="relation_observable"),
+            operation("find_web_activity_from_endpoint", ("web_request", "web_request_activity", "web_navigation"), ("host",), ("host", "domain", "native_type"), guaranteed_relations=("visited", "web_request", "web_request_activity"), proof_mode="relation_observable"),
+            operation("find_process_from_endpoint", ("process_ancestry", "server_side_execution"), ("host",), ("host", "pid", "ppid", "image", "cmdline"), guaranteed_relations=("executed", "process_ancestry"), proof_mode="relation_observable"),
+            operation("find_file_change_from_endpoint", ("file_modification", "file_artifact"), ("host",), ("host", "file_path", "action"), guaranteed_relations=("modified", "file_modification", "file_artifact"), proof_mode="relation_observable"),
+            operation("find_file_change_from_process", ("file_modification", "file_artifact"), ("process",), ("host", "image", "file_path", "action"), guaranteed_relations=("modified", "file_modification", "file_artifact"), proof_mode="relation_observable"),
         )
 
         bindings = (
@@ -429,6 +431,14 @@ class CdbAdapter:
                 "command_line": "cmdline",
                 "process_id": "pid",
                 "parent_process_id": "ppid",
+                # Semantic qualifiers without a dedicated column are proven
+                # through the free-text evidence column: a web component
+                # (for example "Joomla search") appears in the request
+                # line (cmdline carries "site=... uri=..." for http rows).
+                "component": "cmdline",
+                "site": "domain",
+                "uri": "cmdline",
+                "url": "cmdline",
             }
             fn = field_map.get(fn, fn)
             valid_cols = {

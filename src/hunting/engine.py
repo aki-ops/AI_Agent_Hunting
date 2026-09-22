@@ -942,6 +942,7 @@ class HypothesisHuntEngine:
         step_callback: Callable[[str, dict[str, Any]], None] | None = None,
         analyst_confirm_callback: Callable[[str, dict[str, Any]], bool] | None = None,
         initial_bindings: dict[str, str | list[str]] | None = None,
+        query_limit: int = 100,
     ) -> HuntExecutionResult:
         """Execute complete hypothesis-only hunt vertical slice without alert or PoC."""
         explicit_adapter = adapter is not None
@@ -1547,6 +1548,7 @@ class HypothesisHuntEngine:
                 scope,
                 ledger,
                 initial_bindings=initial_bindings,
+                limit=query_limit,
             )
 
         if (

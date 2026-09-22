@@ -384,6 +384,10 @@ class ApiLLMProvider(LLMProvider):
                         end_idx = content.rfind("}") + 1
                         content = content[start_idx:end_idx].strip()
 
+                    if os.getenv("HUNT_DEBUG_LLM") == "1":
+                        print(f"[LLM DEBUG] usage={self.last_usage} resp_chars={len(content)}", flush=True)
+                        print("[LLM DEBUG] response:", content[:3000], flush=True)
+
                     return content
 
             except urllib.error.HTTPError as http_err:
@@ -451,6 +455,12 @@ class ApiLLMProvider(LLMProvider):
             "anthropic-version": "2023-06-01",
             "User-Agent": "AI-Agent-Hunting/1.0",
         }
+
+        if os.getenv("HUNT_DEBUG_LLM") == "1":
+            safe = dict(payload)
+            print(f"[LLM DEBUG] POST {self.config.endpoint}", flush=True)
+            print(f"[LLM DEBUG] model={self.config.model} max_tokens={self.config.max_tokens}", flush=True)
+            print("[LLM DEBUG] payload:", json.dumps(safe, indent=2)[:3000], flush=True)
 
         req = urllib.request.Request(
             self.config.endpoint,

@@ -290,6 +290,22 @@ def parse_and_validate_semantic_goal_graph(
     graph = SemanticGoalGraph.from_dict(normalized, request_id=request_id)
     if not graph.variables or not graph.relations:
         raise ValueError("SemanticGoalGraph must contain variables and relations")
+    # An answer variable carries the question, not the answer.  Models often
+    # fill the object of the relation with a descriptive value (for example
+    # "Joomla search component"); the executor then treats it as already
+    # known (USER_SELECTED) and skips every query.  Clear answer-variable
+    # values so the hunt actually searches; constraints/qualifiers keep the
+    # descriptive terms as retrieval hints.
+    answer_ids = {str(item.get("variable_id")) for item in normalized.get("answers", [])
+                  if isinstance(item, dict) and item.get("variable_id")}
+    if answer_ids:
+        cleared = []
+        for variable in graph.variables:
+            if variable.id in answer_ids and variable.value not in (None, ""):
+                cleared.append(replace(variable, value=None, value_origin="request"))
+            else:
+                cleared.append(variable)
+        graph = replace(graph, variables=cleared)
     return graph
 
 
@@ -347,6 +363,23 @@ def _validate_semantic_graph_shape(data: dict[str, Any]) -> None:
                 raise ValueError(f"answers[{index}] requires '{key}'")
 
 
+def _constraint_seed(variable: Any, request_folded: str) -> str | None:
+    """Return the constraint literal to promote to variable value, if any.
+
+    Only promotes when exactly one distinct non-empty constraint value exists
+    and its text appears in the request (request-grounded).  Never invents.
+    """
+    values = [str(item.value).strip() for item in (variable.constraints or [])
+              if item.value not in (None, "")]
+    unique = list(dict.fromkeys(values))
+    if len(unique) != 1:
+        return None
+    candidate = unique[0]
+    if candidate.casefold() in request_folded:
+        return candidate
+    return None
+
+
 def _mark_request_grounded_values(
     graph: SemanticGoalGraph,
     request_content: str,
@@ -375,6 +408,18 @@ def _mark_request_grounded_values(
             explicit_entities.setdefault(kind, set()).add(str(raw_value).casefold().strip())
     rewritten = []
     for variable in graph.variables:
+        # Promote a lone request-grounded constraint literal to the variable
+        # value so the planner can seed queries.  Models often put the seed
+        # (for example a domain) in constraints with value=None on the
+        # variable itself; without promotion the variable looks unvalued and
+        # every typed operation is rejected as unseeded.
+        if variable.value in (None, ""):
+            seed = _constraint_seed(variable, request_folded)
+            if seed is not None:
+                rewritten.append(replace(
+                    variable, value=seed, value_origin="request",
+                ))
+                continue
         if variable.value is None or variable.value_origin != "llm_proposal":
             rewritten.append(variable)
             continue
@@ -1052,6 +1097,12 @@ class KnowledgeBehaviorCompiler:
             "do not emit device -> person or artifact -> person just because natural-language possessive grammar mentions ownership. "
             "Treat associated_with as semantically symmetric, but choose the direction that lets a declared operation consume the known value and "
             "produce the unknown value.\n"
+            "CRITICAL DIRECTION RULE: the subject of every required relation MUST be the variable that carries "
+            "the request's concrete value (site, domain, host, IP, URL). NEVER put an unnamed attacker/person "
+            "as the subject of a required relation — an unvalued subject cannot seed any provider query and "
+            "the hunt will stop as unsupported. If the request is 'attacker does X to SITE', emit "
+            "SITE --relation--> artifact (SITE is the subject, the artifact/request-outcome is the object), "
+            "never attacker --relation--> SITE.\n"
             "When the question asks for an attribute of an artifact (such as a file name, hash, version, address, or timestamp), the artifact is "
             "the answer variable with an answer_type describing that attribute. Do not create a separate has_attribute relation unless the request "
             "explicitly asks for a separately observable value and the graph needs a declared capability to resolve it.\n"
@@ -1086,6 +1137,24 @@ class KnowledgeBehaviorCompiler:
             '  "answers": [{"variable_id": "target", "answer_type": "value", "required": true}],\n'
             '  "assumptions": [], "uncertainties": []\n'
             "}"
+            "\n\nALLOWED RELATIONS (use ONLY these; any other relation stops the hunt as unsupported):\n"
+            "process_ancestry (process ran on host), authentication_activity (logon), "
+            "network_connection (IP connection), persistence_change (scheduled task/Run key), "
+            "file_modification (file written), dns_activity or dns_query (DNS lookup), "
+            "web_request (HTTP request), scope_records (broad sweep).\n"
+            "Do NOT use associated_with, has_attribute, identity_binding, recipient_identity, "
+            "outbound_message_metadata, or any relation not in the allowed list.\n"
+            "Map request verbs to allowed relations: 'exploit/access/compromise a website' -> web_request; "
+            "'execute/run/launch' -> process_ancestry; 'log in/brute-force' -> authentication_activity; "
+            "'persist/schedule' -> persistence_change; 'download/write/drop file' -> file_modification; "
+            "'resolve/query domain' -> dns_activity; 'connect/beacon' -> network_connection.\n"
+            "The FIRST (anchor) variable MUST have a concrete request value or a constraint "
+            "with retrieval_terms (site, domain, host, IP, URL path from the request). "
+            "A person/attacker with no name and no retrieval_terms cannot seed any query "
+            "and stops the hunt as unsupported — instead anchor on the artifact named in "
+            "the request (for example the site or URL being exploited).\n"
+            "Put site/domain/URL literals from the request into constraints with retrieval_terms "
+            "(for example retrieval_terms: [\"imreallynotbatman.com\", \"/joomla/\"]) so the query stage can locate them."
         )
 
         self.llm_calls_made += 1

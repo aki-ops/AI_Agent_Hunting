@@ -40,8 +40,34 @@ class SemanticGoalPlanner:
         right = str(declared or "").casefold()
         if left == right:
             return True
-        endpoint_types = {"device", "endpoint", "host", "workstation", "computer"}
+        endpoint_types = {"device", "endpoint", "host", "workstation", "computer", "any", "entity"}
         if left in endpoint_types and right in endpoint_types:
+            return True
+        # Web vocabulary: a hunt compiler may call the target a website/site/url
+        # while the provider contract calls it a domain (or vice versa).  In the
+        # CDB the domain column carries exactly these values, so planning must
+        # not reject the graph over the label.  This does not prove the site
+        # satisfies any content/state qualifier — that still needs evidence.
+        web_types = {"domain", "website", "site", "url", "hostname", "fqdn", "any", "entity"}
+        if left in web_types and right in web_types:
+            return True
+        # Generic compiler labels (artifact/value/entity) carry the real
+        # constraint on the relation itself; they must not block a typed
+        # operation whose inputs accept any scoped entity.
+        generic_types = {"artifact", "value", "event", "entity", "any"}
+        if left in generic_types and right in generic_types:
+            return True
+        # A valued subject (it carries the request's seed: a site, host, IP,
+        # URL...) satisfies a wildcard ANY/entity input slot.  The executor
+        # still binds the concrete seed value; this only unblocks planning.
+        if left in web_types | endpoint_types and right in generic_types:
+            return True
+        # A domain/site seed satisfies host/ip/domain inputs of retrieval
+        # operations (cdb_web_requests, cdb_dns_search, ...): the executor
+        # binds the seed into the native query's LIKE predicate.  Without this,
+        # any hunt anchored on a domain literal stops as unsupported even
+        # though the provider demonstrably holds matching rows.
+        if left in web_types and right in {"host", "ip", "domain"}:
             return True
         # Artifact vocabulary is likewise not uniform across compilers and
         # telemetry products.  The provider contract may call the output a
@@ -50,6 +76,20 @@ class SemanticGoalPlanner:
         # that the artifact satisfies its content/state qualifiers.
         artifact_types = {"file", "artifact", "document", "file_artifact"}
         return left in artifact_types and right in artifact_types
+
+    @staticmethod
+    def _output_is_open_artifact(entity_type: str) -> bool:
+        """Open-ended compiler labels accept any retrieval output.
+
+        When the model names the object ``value``/``artifact``/``event`` it
+        means 'whatever the relation returns' — not a typed file.  Blocking
+        on output kind here turns every such graph unsupported even though
+        the executor binds real rows downstream.
+        """
+        return str(entity_type or "").casefold() in {
+            "value", "artifact", "event", "entity", "any",
+            "http_request", "url",
+        }
 
     def compose(self, graph: SemanticGoalGraph, *, plan_id: str = "logical-plan") -> LogicalPlan:
         known = {variable.id for variable in graph.variables if variable.value is not None}
@@ -118,7 +158,7 @@ class SemanticGoalPlanner:
                     and (not operation.output_entity_kinds or any(
                         self._type_compatible(target.entity_type, kind)
                         for kind in operation.output_entity_kinds
-                    ))
+                    ) or self._output_is_open_artifact(target.entity_type))
                 }.values())
                 canonical_candidates = [
                     operation for operation in candidates
@@ -208,9 +248,18 @@ class SemanticGoalPlanner:
                 # file scan accepting host/account/process/file must not win
                 # over a declared host-to-file operation merely because it
                 # appears first in a provider descriptor.
+                # Prefer the operation whose input directly accepts the
+                # subject's own type (a domain seed binds a domain input;
+                # otherwise the executor must coerce and may return rows that
+                # never promote to evidence).
+                subject_type = subject.entity_type.casefold()
                 operation = min(
                     ready,
                     key=lambda item: (
+                        0 if any(
+                            subject_type == str(kind).casefold()
+                            for kind in item.input_entity_kinds
+                        ) else 1,
                         -sum(
                             1 for constraint in goal_constraints
                             if self._constraint_key(constraint) in {

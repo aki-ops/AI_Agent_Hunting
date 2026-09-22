@@ -111,7 +111,7 @@ class SemanticPlanExecutor:
             return Host(name=str(value))
         if kind in {"ip", "ip_address"}:
             return IPAddress(address=str(value))
-        if kind == "domain":
+        if kind in {"domain", "website", "site", "url", "hostname", "fqdn"}:
             return Domain(name=str(value))
         if kind == "file":
             return File(path=str(value))
