@@ -1,8 +1,0 @@
-{
-  "id": "hunt-botsv1-web-01",
-  "kind": "HYPOTHESIS",
-  "content": "Attacker compromised web www.imreallynotbatman.com",
-  "entities": [],
-  "time_policy": null,
-  "provider_hints": []
-}

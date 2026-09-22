@@ -1,0 +1,67 @@
+[
+  {
+    "id": "card-73033f3f5713",
+    "summary": "Process execution observed on splunk-02",
+    "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
+    "fact_type": "process_execution",
+    "count": 12019,
+    "confidence": "MEDIUM",
+    "hypotheses": [],
+    "requirements": [],
+    "query_ids": [
+      "logical-goal-graph-hunt-req-20260922-031710-step-1"
+    ],
+    "replay": {
+      "artifact": "observations.jsonl",
+      "query_ids": [
+        "logical-goal-graph-hunt-req-20260922-031710-step-1"
+      ],
+      "command": "python -m hunting.cli show-observation --observation-id obs-logical-goal-graph-hunt-req-20260922-031710-step-1-0"
+    },
+    "entity_summary": {
+      "hosts": [
+        "splunk-02"
+      ],
+      "domains": [
+        "imreallynotbatman.com"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2016-08-10T21:36:45Z",
+      "latest": "2016-08-10T22:00:00Z",
+      "span_events": 12019
+    },
+    "field_summary": {
+      "cmdlines": [
+        "site=imreallynotbatman.com uri=/acunetix-wvs-test-for-some-inexistent-file",
+        "site=imreallynotbatman.com uri=/",
+        "site=imreallynotbatman.com uri=/PdgdyH6M",
+        "site=imreallynotbatman.com uri=/OD6xDhbF",
+        "site=imreallynotbatman.com uri=/FJl9pMoX",
+        "site=imreallynotbatman.com uri=/cgi-bin/le_check_v3.exe",
+        "site=imreallynotbatman.com uri=/server-status",
+        "site=imreallynotbatman.com uri=/sitemap.xml",
+        "site=imreallynotbatman.com uri=/sitemap.xml.gz",
+        "site=imreallynotbatman.com uri=/robots.txt",
+        "site=imreallynotbatman.com uri=/axis2/services/listServices",
+        "site=imreallynotbatman.com uri=/favicon.ico",
+        "site=imreallynotbatman.com uri=/roller-ui/login.rol",
+        "site=imreallynotbatman.com uri=/index",
+        "site=imreallynotbatman.com uri=None",
+        "site=imreallynotbatman.com uri=/console/j_security_check",
+        "site=imreallynotbatman.com uri=www.acunetix.wvs",
+        "site=imreallynotbatman.com uri=/server-info",
+        "site=imreallynotbatman.com uri=/axis1/services/listServices",
+        "site=imreallynotbatman.com uri=/|~.aspx"
+      ],
+      "domains": [
+        "imreallynotbatman.com"
+      ]
+    },
+    "representative_observation_ids": [
+      "obs-logical-goal-graph-hunt-req-20260922-031710-step-1-0",
+      "obs-logical-goal-graph-hunt-req-20260922-031710-step-1-1",
+      "obs-logical-goal-graph-hunt-req-20260922-031710-step-1-2"
+    ]
+  }
+]

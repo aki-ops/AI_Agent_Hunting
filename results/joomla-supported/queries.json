@@ -1,0 +1,143 @@
+[
+  {
+    "query_id": "logical-goal-graph-hunt-req-20260922-031710-step-1",
+    "requirement_id": "goal-1",
+    "hypothesis_ids": [
+      "hypo-hunt-req-20260922-031710"
+    ],
+    "semantic_intent": "web_request",
+    "purpose": "Establish web requests to imreallynotbatman.com exploiting Joomla search component to gain access",
+    "entity_binding": "subject=imreallynotbatman.com",
+    "binding_provenance": {
+      "subject": {
+        "variable_id": "site",
+        "provenance": "logical_plan",
+        "trust_class": "runtime_binding_required"
+      }
+    },
+    "expected_fields": [
+      "host",
+      "ip",
+      "domain",
+      "native_type"
+    ],
+    "retrieval_stage": "narrow",
+    "removed_retrieval_keys": [],
+    "provider": "cdb",
+    "provider_id": "cdb",
+    "native_language": "sql",
+    "native_query": "SELECT * FROM events WHERE timestamp >= ? AND timestamp <= ? AND domain = ? AND (domain IS NOT NULL OR native_type LIKE '%http%' OR native_type LIKE '%web%') ORDER BY timestamp ASC LIMIT ? OFFSET ?",
+    "rows_count": 12019,
+    "raw_count": null,
+    "observed_fields": [
+      "id",
+      "event_id",
+      "file_path",
+      "ppid",
+      "action",
+      "cmdline",
+      "status",
+      "native_type",
+      "domain",
+      "raw_ref",
+      "ip",
+      "timestamp",
+      "pid",
+      "image",
+      "user",
+      "port",
+      "host"
+    ],
+    "sample_rows": [
+      {
+        "host": "splunk-02",
+        "ip": "40.80.148.42",
+        "domain": "imreallynotbatman.com",
+        "native_type": "web_request",
+        "timestamp": "2016-08-10T21:36:45Z",
+        "cmdline": "site=imreallynotbatman.com uri=/acunetix-wvs-test-for-some-inexistent-file",
+        "id": "4412203"
+      },
+      {
+        "host": "splunk-02",
+        "ip": "40.80.148.42",
+        "domain": "imreallynotbatman.com",
+        "native_type": "web_request",
+        "timestamp": "2016-08-10T21:36:45Z",
+        "cmdline": "site=imreallynotbatman.com uri=/",
+        "id": "4412204"
+      },
+      {
+        "host": "splunk-02",
+        "ip": "40.80.148.42",
+        "domain": "imreallynotbatman.com",
+        "native_type": "web_request",
+        "timestamp": "2016-08-10T21:36:48Z",
+        "cmdline": "site=imreallynotbatman.com uri=/PdgdyH6M",
+        "id": "4412196"
+      },
+      {
+        "host": "splunk-02",
+        "ip": "40.80.148.42",
+        "domain": "imreallynotbatman.com",
+        "native_type": "web_request",
+        "timestamp": "2016-08-10T21:36:48Z",
+        "cmdline": "site=imreallynotbatman.com uri=/OD6xDhbF",
+        "id": "4412197"
+      },
+      {
+        "host": "splunk-02",
+        "ip": "40.80.148.42",
+        "domain": "imreallynotbatman.com",
+        "native_type": "web_request",
+        "timestamp": "2016-08-10T21:36:48Z",
+        "cmdline": "site=imreallynotbatman.com uri=/",
+        "id": "4412198"
+      }
+    ],
+    "complete": true,
+    "executed_ok": true,
+    "diagnostic": null,
+    "truncation_reason": null,
+    "result_summary": "12019 rows returned; complete=True",
+    "completeness_contract": "provider-declared",
+    "is_targeted": true,
+    "operation_id": "cdb_web_requests",
+    "scope_id": "cdb_security",
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "cdb_web_requests",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-hunt-req-20260922-031710-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 10000,
+        "complete": false,
+        "cursor": "10000",
+        "executed_ok": true,
+        "diagnostic": null
+      },
+      {
+        "step_id": "step-1",
+        "operation_id": "cdb_web_requests",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-hunt-req-20260922-031710-step-1-binding-1-page-2",
+        "candidate_index": 0,
+        "page": 2,
+        "offset": 10000,
+        "rows": 2019,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuation": {}
+  }
+]

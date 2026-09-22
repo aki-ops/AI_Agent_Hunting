@@ -1,0 +1,308 @@
+{
+  "hunt_id": "hunt-req-20260922-031710",
+  "outcome": "SUPPORTED",
+  "stopping_decision": "STOP_RESOLVED",
+  "answer": {
+    "status": "INCONCLUSIVE",
+    "reason": "NO_VERIFIED_ANSWER_CANDIDATE",
+    "explanation": "No verified answer candidate was found, but semantic absence is not licensed by the current execution, proof, and route state.",
+    "answer_type": "value",
+    "card_ids": [],
+    "required_fields": [],
+    "available_fields": [
+      "cmdline",
+      "command_line",
+      "domain",
+      "host",
+      "id",
+      "ip",
+      "native_type",
+      "raw_ref",
+      "timestamp"
+    ],
+    "missing_fields": [],
+    "artifact_detected": true,
+    "claim": "No verified answer candidate was found, but semantic absence is not licensed until every required route is exhausted with complete-empty results under an explicit provider contract.",
+    "citations": [
+      {
+        "claim": "Target Artifact executed on splunk-02",
+        "observation_ids": [
+          "obs-logical-goal-graph-hunt-req-20260922-031710-step-1-0",
+          "obs-logical-goal-graph-hunt-req-20260922-031710-step-1-1",
+          "obs-logical-goal-graph-hunt-req-20260922-031710-step-1-2"
+        ],
+        "query_ids": [
+          "logical-goal-graph-hunt-req-20260922-031710-step-1"
+        ],
+        "fields": [
+          "Path",
+          "raw_event"
+        ]
+      }
+    ],
+    "citation_text": "Target Artifact executed on splunk-02 Evidence: obs-logical-goal-graph-hunt-req-20260922-031710-step-1-0, obs-logical-goal-graph-hunt-req-20260922-031710-step-1-1, obs-logical-goal-graph-hunt-req-20260922-031710-step-1-2 Query: logical-goal-graph-hunt-req-20260922-031710-step-1 Fields: Path, raw_event"
+  },
+  "llm_usage": {
+    "model": "meta/muse-spark-1.3-contributor",
+    "max_calls_budget": 4,
+    "calls_made": 1,
+    "is_exhausted": false,
+    "total_prompt_tokens": 1032,
+    "total_completion_tokens": 2158,
+    "total_tokens": 3190,
+    "estimated_cost_usd": 0.003753,
+    "calls": [
+      {
+        "component": "evaluator",
+        "model": "meta/muse-spark-1.3-contributor",
+        "prompt_hash": "1d50bc7c2a794a44",
+        "prompt_len": 3233,
+        "response_len": 1590,
+        "estimated_prompt_tokens": 1032,
+        "estimated_completion_tokens": 2158,
+        "cost_usd": 0.003753,
+        "timestamp": "2026-09-22T03:17:44Z",
+        "duration_ms": 28459.19,
+        "validation_result": "",
+        "selected_operation": "",
+        "search_terms": [],
+        "status": "SUCCESS",
+        "physical_attempts": 1,
+        "error": ""
+      }
+    ]
+  },
+  "total_observations": 12019,
+  "total_cards": 1,
+  "total_queries": 1,
+  "semantic_graph_id": "goal-graph-hunt-req-20260922-031710",
+  "proof_plan_id": "logical-goal-graph-hunt-req-20260922-031710",
+  "semantic_analysis": {
+    "compiler_trace": {
+      "output_kind": "semantic_goal_graph",
+      "validation_result": "VALID",
+      "frozen_template": "tpl-joomla-web-compromise",
+      "llm_calls": 0
+    },
+    "goal_verdicts": [
+      {
+        "goal_id": "goal-1",
+        "relation": "web_request",
+        "status": "SUPPORTED",
+        "query_ids": [
+          "logical-goal-graph-hunt-req-20260922-031710-step-1"
+        ],
+        "proof_method_id": "method-goal-1-1",
+        "unverified_restrictions": []
+      }
+    ],
+    "proof_state": {
+      "goal-1": "SUPPORTED"
+    },
+    "executed_steps": [
+      "step-1"
+    ],
+    "unresolved_steps": [],
+    "unresolved_goals": [],
+    "unresolved_reasons": {},
+    "candidate_input_warnings": {},
+    "needs_user_decision": false,
+    "binding_provenance": {
+      "site": [
+        {
+          "value": "imreallynotbatman.com",
+          "source": "request",
+          "query_id": "",
+          "status": "VERIFIED"
+        }
+      ],
+      "exploit_activity": [
+        {
+          "value": "40.80.148.42",
+          "source": "step-1",
+          "query_id": "logical-goal-graph-hunt-req-20260922-031710-step-1",
+          "status": "VERIFIED"
+        },
+        {
+          "value": "23.22.63.114",
+          "source": "step-1",
+          "query_id": "logical-goal-graph-hunt-req-20260922-031710-step-1",
+          "status": "VERIFIED"
+        }
+      ]
+    },
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "cdb_web_requests",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-hunt-req-20260922-031710-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 10000,
+        "complete": false,
+        "cursor": "10000",
+        "executed_ok": true,
+        "diagnostic": null
+      },
+      {
+        "step_id": "step-1",
+        "operation_id": "cdb_web_requests",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-hunt-req-20260922-031710-step-1-binding-1-page-2",
+        "candidate_index": 0,
+        "page": 2,
+        "offset": 10000,
+        "rows": 2019,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuations": {},
+    "unverified_restrictions": {},
+    "binding_events": [],
+    "route_assessments": [
+      {
+        "goal_id": "goal-1",
+        "relation": "web_request",
+        "status": "VERIFIED",
+        "execution_complete": true,
+        "proof_complete": true,
+        "route_exhausted": false,
+        "readiness": "PROOF_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-1",
+            "goal_id": "goal-1",
+            "operation_id": "cdb_web_requests",
+            "source_id": "cdb_security",
+            "schema_fingerprint": "",
+            "stage_id": "narrow",
+            "query_id": "logical-goal-graph-hunt-req-20260922-031710-step-1",
+            "result_complete": true,
+            "row_count": 12019,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('cdb_web_requests', 'cdb_security', (('subject', ('imreallynotbatman.com',)),), '2016-08-10T21:36:00Z/2016-08-10T22:00:00Z', 'narrow')",
+            "alternatives_considered": [
+              "cdb_web_search",
+              "find_web_activity_from_client_ip",
+              "find_web_activity_from_endpoint"
+            ],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [],
+        "capability_gaps": [],
+        "terminal_cause": null
+      }
+    ],
+    "parse_status": "SUCCESS",
+    "prompt_hash": "1d50bc7c2a794a44",
+    "response_hash": "1f9748ecdba669fb",
+    "latency_ms": 28459.43,
+    "error_message": "",
+    "answer": {
+      "status": "NOT_FOUND",
+      "value": null,
+      "explanation": "No card shows Joomla search component exploitation on imreallynotbatman.com. The sole card shows generic URIs to imreallynotbatman.com with no mention of Joomla, com_search, search component, exploit payload, or gained access.",
+      "card_ids": [],
+      "observation_ids": []
+    },
+    "evaluations": [
+      {
+        "card_id": "card-73033f3f5713",
+        "interpretation": "Card records 12019 process_execution events on splunk-02 referencing imreallynotbatman.com from 2016-08-10T21:36:45Z to 2016-08-10T22:00:00Z with URIs including /, /robots.txt, /sitemap.xml, /server-status, /acunetix-wvs-test-for-some-inexistent-file and others. No URI or field references Joomla, search component, or exploitation/access.",
+        "supporting_hypotheses": [],
+        "contradicting_hypotheses": [],
+        "confidence": 0.0,
+        "answer_candidates": [],
+        "missing_evidence": [
+          "URI or parameter showing Joomla search component exploitation",
+          "Exploit payload or post-exploitation access evidence tied to imreallynotbatman.com"
+        ],
+        "observation_ids": [
+          "obs-logical-goal-graph-hunt-req-20260922-031710-step-1-0",
+          "obs-logical-goal-graph-hunt-req-20260922-031710-step-1-1",
+          "obs-logical-goal-graph-hunt-req-20260922-031710-step-1-2"
+        ]
+      }
+    ],
+    "missing_evidence": [
+      "Web request/log showing Joomla search component access on imreallynotbatman.com",
+      "Exploit payload or indicator of successful access via Joomla search"
+    ],
+    "next_action": "EXPAND",
+    "compatibility": {},
+    "cards_truncated": false,
+    "explanation_unavailable": false
+  },
+  "source_profile_audit": {
+    "status": "STATIC_TYPED_CAPABILITIES",
+    "readiness": [
+      {
+        "goal_id": "goal-1",
+        "relation": "web_request",
+        "status": "PLANNED",
+        "execution_complete": false,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "PROOF_CAPABLE",
+        "attempts": [],
+        "proof_gaps": [],
+        "capability_gaps": [],
+        "terminal_cause": null
+      }
+    ],
+    "profiling_goal_ids": [],
+    "retrieval": [],
+    "census_profile_discovery": {},
+    "proposals": [],
+    "rejected": [],
+    "relation_calls": [],
+    "runtime_capabilities": [],
+    "runtime_operation_ids": []
+  },
+  "runtime_capabilities": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "goal-1",
+      "relation": "web_request",
+      "status": "VERIFIED",
+      "execution_complete": true,
+      "proof_complete": true,
+      "route_exhausted": false,
+      "readiness": "PROOF_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-1",
+          "goal_id": "goal-1",
+          "operation_id": "cdb_web_requests",
+          "source_id": "cdb_security",
+          "schema_fingerprint": "",
+          "stage_id": "narrow",
+          "query_id": "logical-goal-graph-hunt-req-20260922-031710-step-1",
+          "result_complete": true,
+          "row_count": 12019,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('cdb_web_requests', 'cdb_security', (('subject', ('imreallynotbatman.com',)),), '2016-08-10T21:36:00Z/2016-08-10T22:00:00Z', 'narrow')",
+          "alternatives_considered": [
+            "cdb_web_search",
+            "find_web_activity_from_client_ip",
+            "find_web_activity_from_endpoint"
+          ],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [],
+      "capability_gaps": [],
+      "terminal_cause": null
+    }
+  ]
+}
