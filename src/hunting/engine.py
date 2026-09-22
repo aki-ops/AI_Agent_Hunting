@@ -986,7 +986,9 @@ class HypothesisHuntEngine:
         ):
             _, objective, hypotheses, requirements = cached_compilation
         else:
-            objective, hypotheses, requirements = self.compiler.compile(request)
+            objective, hypotheses, requirements = self.compiler.compile(
+                request, graph_template=getattr(self, "graph_template", None),
+            )
             self._semantic_compilation_cache[request.id] = (
                 request.content,
                 objective,

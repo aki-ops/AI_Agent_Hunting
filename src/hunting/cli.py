@@ -495,6 +495,7 @@ def build_parser() -> argparse.ArgumentParser:
     hunt_group = parser.add_argument_group("Hypothesis & Threat Hunting Inputs (v4)")
     hunt_group.add_argument("--hypothesis", "-H", type=str, help="Explicit hypothesis statement to test and verify (e.g. 'Attacker used webshell to execute cmd.exe')")
     hunt_group.add_argument("--hypothesis-file", type=str, help="Path to YAML/JSON file declaring custom hypothesis, requirements, and falsification conditions")
+    hunt_group.add_argument("--graph-template", type=str, default=None, help="Replay a frozen SemanticGoalGraph template (e.g. templates/joomla-web-compromise.graph.json) instead of calling the LLM compiler. Deterministic: same template = same plan.")
     hunt_group.add_argument("--plan-only", "--dry-run", dest="plan_only", action="store_true", help="Compile hypothesis into a structured Threat Hunt Playbook and query plans without executing queries on any backend")
     hunt_group.add_argument("--cve", type=str, help="Hunt for known CVE identifier (e.g. CVE-2024-21887)")
     hunt_group.add_argument("--ttp", type=str, help="Hunt for MITRE ATT&CK technique (e.g. T1059.001)")
@@ -1167,6 +1168,24 @@ def run_cli(args: argparse.Namespace) -> int:
             source_profiler_caller=source_profiler_caller,
             cdb_adapter=adapter if isinstance(adapter, CdbAdapter) else None,
         )
+        # Frozen graph replay: match the hypothesis against known templates.
+        # When matched, the compiler skips the LLM entirely (0 calls) and
+        # replays the validated graph deterministically.
+        graph_template = None
+        if getattr(args, "graph_template", None):
+            try:
+                tpath = Path(args.graph_template)
+                tdata = json.loads(tpath.read_text(encoding="utf-8"))
+                need = [k.casefold() for k in tdata.get("match", {}).get("hypothesis_contains", [])]
+                hay = (args.hypothesis or "").casefold()
+                if all(k in hay for k in need):
+                    graph_template = tdata
+                    print(f"[+] [GRAPH TEMPLATE] Replaying '{tdata.get('template_id')}' (0 LLM calls for compile)")
+                else:
+                    print(f"[-] [GRAPH TEMPLATE] Hypothesis does not match template keywords {need}; using LLM compile", file=sys.stderr)
+            except Exception as e:
+                print(f"[-] [GRAPH TEMPLATE] Failed to load {args.graph_template}: {e}", file=sys.stderr)
+        engine.graph_template = graph_template
         default_window = "NOW-14d/NOW"
         if selected_provider == "splunk":
             is_botsv2 = "botsv2" in str(selected_index).lower()

@@ -750,8 +750,13 @@ class KnowledgeBehaviorCompiler:
         request: HuntRequest,
         time_window: str | None = None,
         capability_context: dict[str, Any] | None = None,
+        graph_template: dict[str, Any] | None = None,
     ) -> tuple[HuntObjective, list[Hypothesis], list[EvidenceRequirementV4]]:
         """Compile a HuntRequest into a HuntObjective, competing Hypotheses, and EvidenceRequirements."""
+        # 0. Frozen template replay: skip the LLM entirely when the request
+        # matches a previously validated graph.  Deterministic by construction.
+        if graph_template is not None:
+            return self._compile_from_template(request, time_window, graph_template)
         # 1. Prompt injection guard on input content
         if self._detect_prompt_injection(request.content):
             raise ValueError(f"Security boundary: Prompt injection pattern detected in HuntRequest '{request.id}'")
@@ -1381,6 +1386,69 @@ class KnowledgeBehaviorCompiler:
             statement=request.content,
         )
         return objective, [hypo_insufficient], []
+
+    def _compile_from_template(
+        self,
+        request: HuntRequest,
+        time_window: str | None,
+        template: dict[str, Any],
+    ) -> tuple[HuntObjective, list[Hypothesis], list[EvidenceRequirementV4]]:
+        """Replay a frozen graph without calling the LLM.
+
+        The template's variables/relations/qualifiers are reused verbatim;
+        only run-specific IDs and the time window are refreshed.  The objective
+        text is preserved from the live request so reports stay accurate.
+        """
+        from hunting.contracts.semantic_graph import SemanticGoalGraph
+
+        effective_window = time_window or self._derive_time_window(request)
+        tgraph = template.get("graph", template)
+        graph = SemanticGoalGraph.from_dict({
+            "id": f"goal-graph-{request.id}",
+            "request_id": request.id,
+            "objective": request.content,
+            "variables": tgraph.get("variables", []),
+            "relations": [
+                {**r, "id": r.get("id", f"goal-{i + 1}")}
+                for i, r in enumerate(tgraph.get("relations", []))
+            ],
+            "qualifiers": list(tgraph.get("qualifiers", [])),
+            "answers": list(tgraph.get("answers", [])),
+            "assumptions": [f"frozen template {template.get('template_id', '?')} "
+                             f"from {template.get('frozen_from', '?')}"],
+            "uncertainties": list(tgraph.get("uncertainties", [])),
+        }, request_id=request.id)
+        graph = _mark_request_grounded_values(graph, request.content, request.entities)
+        hypothesis = Hypothesis(
+            id=f"hypo-{request.id}",
+            statement=request.content,
+            origin=HypothesisOrigin.INPUT,
+            status=HypothesisStatus.LIVE,
+            requirements=[r.id for r in graph.relations if r.required],
+        )
+        requirements = [EvidenceRequirementV4(
+            id=r.id,
+            description=r.description or r.relation,
+            evidence_type=r.relation,
+            semantic_intent=r.relation,
+            necessity="CRITICAL" if r.required else "SUPPORTING",
+        ) for r in graph.relations]
+        objective = HuntObjective(
+            request_id=request.id,
+            target_hypotheses=[hypothesis.id],
+            time_window=effective_window,
+            target_scopes=request.provider_hints or ["cdb_native_scope"],
+            kind=request.kind,
+            statement=request.content,
+            semantic_goal_graph=graph,
+        )
+        self.last_compile_trace = {
+            "output_kind": "semantic_goal_graph",
+            "validation_result": "VALID",
+            "frozen_template": template.get("template_id"),
+            "llm_calls": 0,
+        }
+        return objective, [hypothesis], requirements
 
     def _detect_prompt_injection(self, text: str) -> bool:
         """Scan input for prompt injection signatures."""

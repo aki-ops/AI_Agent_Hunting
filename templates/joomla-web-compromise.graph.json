@@ -1,0 +1,71 @@
+{
+  "template_id": "tpl-joomla-web-compromise",
+  "frozen_from": "hunt-req-20260922-022524",
+  "frozen_outcome": "SUPPORTED",
+  "match": {
+    "hypothesis_contains": [
+      "joomla",
+      "imreallynotbatman.com"
+    ]
+  },
+  "graph": {
+    "objective": "Attacker exploits Joomla search component on imreallynotbatman.com to gain access",
+    "variables": [
+      {
+        "id": "site",
+        "entity_type": "domain",
+        "value": "imreallynotbatman.com",
+        "constraints": [
+          {
+            "key": "domain",
+            "operator": "equals",
+            "value": "imreallynotbatman.com",
+            "retrieval_terms": [
+              "imreallynotbatman.com"
+            ]
+          }
+        ],
+        "value_origin": "request",
+        "verification_status": "UNVERIFIED"
+      },
+      {
+        "id": "exploit_activity",
+        "entity_type": "value",
+        "value": null,
+        "constraints": [],
+        "value_origin": "llm_proposal",
+        "verification_status": "UNVERIFIED"
+      }
+    ],
+    "relations": [
+      {
+        "id": "goal-1",
+        "subject": "site",
+        "relation": "web_request",
+        "object": "exploit_activity",
+        "required": true,
+        "description": "Establish web requests to imreallynotbatman.com exploiting Joomla search component to gain access"
+      }
+    ],
+    "qualifiers": [
+      {
+        "id": "qualifier-1",
+        "target_goal_id": "goal-1",
+        "qualifier": "component",
+        "expected_value": "Joomla search component",
+        "required": true
+      }
+    ],
+    "answers": [
+      {
+        "variable_id": "exploit_activity",
+        "answer_type": "value",
+        "required": true
+      }
+    ],
+    "assumptions": [],
+    "uncertainties": []
+  },
+  "recommended_window": "2016-08-10T21:36:00Z/2016-08-10T22:00:00Z",
+  "recommended_query_limit": 10000
+}
