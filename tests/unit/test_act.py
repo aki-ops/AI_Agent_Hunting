@@ -57,6 +57,41 @@ def test_backlog_from_baseline_and_math():
     )
 
 
+def test_spl_static_rejects_a_write_and_commit_stores_backlog(tmp_path: Path):
+    from hunting.act import commit_act, validate_spl
+
+    bad = validate_spl('search index="botsv1" | delete')
+    assert bad.status == "INVALID"
+    good = validate_spl(
+        'search index="botsv1" image="powershell.exe"',
+        live_checker=lambda spl: {"ok": True, "messages": []},
+    )
+    assert good.status == "VALIDATED"
+    def _down(spl: str) -> dict:
+        raise ConnectionError("down")
+
+    unreachable = validate_spl(
+        'search index="botsv1" image="powershell.exe"',
+        live_checker=_down,
+    )
+    assert unreachable.live_status == "unreachable"
+    assert unreachable.status == "DRAFT"
+    committed = commit_act(
+        kind="poc",
+        source="poc-test",
+        spls=['search index="botsv1" image="powershell.exe"'],
+        backlog=["follow the sibling TTP"],
+        stakeholder=["One finding.", "Review the draft."],
+        export_dir=tmp_path / "act",
+        backlog_path=tmp_path / "backlog.jsonl",
+        live_checker=lambda spl: {"ok": True, "messages": ["parsed"]},
+    )
+    assert committed["validations"][0]["status"] == "VALIDATED"
+    stored = (tmp_path / "backlog.jsonl").read_text(encoding="utf-8")
+    assert "sibling TTP" in stored
+    assert (tmp_path / "act" / "stakeholder.md").exists()
+
+
 def test_stakeholder_summary_next_step_per_kind():
     assert any("detection draft" in b for b in stakeholder_summary("poc", "h", []))
     assert any("playbook" in b for b in stakeholder_summary("baseline", "h", []))

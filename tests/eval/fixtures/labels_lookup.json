@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "description": "Labelled factual-lookup questions. Each entry: id, request, expected_answer, accepted_answer_substrings, expected_evidence_observation_ids (optional).",
+  "cases": [
+    {
+      "id": "lookup-amber-domain",
+      "request": "Amber Turing visited a website. What domain did she visit?",
+      "expected_answer": "store.froth.ly",
+      "accepted_answer_substrings": ["froth.ly"],
+      "expected_evidence_observation_ids": [],
+      "tags": ["factual_lookup", "person", "web"]
+    },
+    {
+      "id": "lookup-amanda-tor",
+      "request": "Did user amanda.garcia use Tor during the incident?",
+      "expected_answer": "no",
+      "accepted_answer_substrings": ["no", "absent", "not detected"],
+      "expected_evidence_observation_ids": [],
+      "tags": ["factual_lookup", "absent"]
+    },
+    {
+      "id": "lookup-amber-web-host",
+      "request": "Which workstation did Amber Turing use to browse the web?",
+      "expected_answer": "Amber-Mac",
+      "accepted_answer_substrings": ["amber", "mac"],
+      "expected_evidence_observation_ids": [],
+      "tags": ["factual_lookup", "person", "endpoint"]
+    }
+  ]
+}

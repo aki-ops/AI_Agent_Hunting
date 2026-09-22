@@ -3,6 +3,10 @@
 > Chạy trên eval DB thật (`data/botsv1_eval.sqlite`, 4.42M rows BOTS v1).
 > Model: `meta/muse-spark-1.3-contributor` qua OpenRouter (config từ `.env`).
 > Câu hỏi: với các PoC mình đưa, LLM judge có phát hiện đúng attack không?
+>
+> Phần số liệu bên dưới là lần chạy judge ngày 2026-09-22, trước khi gắn vòng Prepare/Refine.
+> Từ bản PEAK này, `--math` không train model nữa: nó gọi cùng API trong `.env`.
+> Judge và escalation vẫn advisory. Match và refine không gọi LLM.
 
 ## 1. Kết quả tổng (5 PoC + 1 hypothesis tự do)
 

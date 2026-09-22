@@ -1,4 +1,4 @@
-"""M-ATH lite — stdlib model-assisted hunting."""
+"""LLM-assisted lead ranking. The API model replaces local M-ATH training."""
 from hunting.mathunt.mathunt import (
     FIELD_WEIGHTS,
     LEXICAL_SIGNALS,

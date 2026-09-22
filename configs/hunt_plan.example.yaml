@@ -1,0 +1,14 @@
+# PEAK Prepare plan. Apply with:
+#   python main.py --provider cdb --poc poc-phishing-powershell-enc --hunt-plan configs/hunt_plan.example.yaml
+topic: phishing payload execution
+research_refs:
+  - Splunk SURGe PEAK hypothesis-driven hunting
+  - MITRE ATT&CK T1566 / T1059.001
+able:
+  actor: ""
+  behavior: Spear-phishing attachment leading to encoded PowerShell
+  location: end-user workstations
+  evidence: process_creation telemetry; hit = powershell.exe with -Enc
+scope: workstation fleet in the investigation window
+max_duration: 3d
+plan: search process telemetry for powershell.exe and the encoded-command flag

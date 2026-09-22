@@ -32,7 +32,7 @@ budgets, stopping enums and F1 thresholds remain local decisions until tested.
 | REF-SAFE-TOOLS | [Verifiably Safe Tool Use for LLM Agents](https://doi.org/10.1145/3786582.3786839) | Separation of intent/planning from verified tool execution. | Hunting-specific metrics. |
 | REF-RPG | [Retrieve-Plan-Generation, EMNLP 2024](https://aclanthology.org/2024.emnlp-main.270/) | Iterative planning and retrieval conditioned on evidence. | Our controller's optimality. |
 | REF-TAHITI | [FI-ISAC TaHiTI](https://www.nvb.nl/themas/veilig-bankieren/fi-isac/tahiti/) | Practitioner hypothesis-driven hunting lifecycle. | A universal industrial standard. |
-| REF-PEAK | [Cisco PEAK](https://blogs.cisco.com/security/introducing-peak-threat-hunting-assistant) | Practical hunting archetypes/playbook thinking. | Scientific validity of our architecture. |
+| REF-PEAK | [Splunk SURGe PEAK](https://www.splunk.com/en_us/blog/security/peak-threat-hunting-framework.html) (Bianco, 2023) | Prepare, Execute, Act and the three hunt types, including M-ATH. | A software certification, or proof that an API LLM replaces a trained detector's measured error rate. |
 | REF-DARPA-TC | [DARPA Transparent Computing](https://github.com/darpa-i2o/Transparent-Computing/blob/master/README.md) | Provenance data and attack engagements for evaluation. | Dataset completeness/perfection. |
 
 ## 2. Traceability matrix
@@ -53,6 +53,7 @@ budgets, stopping enums and F1 thresholds remain local decisions until tested.
 | Declarative progressive retrieval | REF-RPG, REF-CHESS, REF-TOOLSHED | Ordered bounded predicate stages with invariant scope/time/binding/projection limits and no-progress detection | False-miss reduction; query/scan/latency cost; repeated-query count |
 | Contract-driven transition verification | REF-SLEUTH, REF-HOLMES, REF-OMEGALOG | Cited ledger observations from one provider/scope and compatible typed entity; exact validated-operation `temporal_roles`, `action_roles`, `state_roles`, `artifact_identity_roles`/`correlation_roles`; parseable ordered timestamps within a declared bound; causality remains a separate obligation | Transition edge precision/recall/F1; uncited/cross-scope/cross-entity/time-bound/suffix/source-name counterfactuals |
 | Coverage and cost are outputs | REF-EXCYTIN, REF-DARPA-TC | Metrics/artifact format | Reproducible labelled benchmark |
+| PoC path runs Prepare, one refine, IR handoff and Act | REF-PEAK | Required plan fields, concrete ABLE predicates, one refine pass, parser check, backlog and stakeholder files | That the whole engine is a PEAK implementation, or that parser acceptance equals a tuned detection |
 
 ## 3. Claims that remain thesis hypotheses
 

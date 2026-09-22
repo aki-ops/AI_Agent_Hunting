@@ -1,0 +1,28 @@
+{
+  "operation": "find_process_version",
+  "operation_id": "find_process_version",
+  "reason": "selected from provider semantic capability",
+  "required_fields": [
+    "ProductVersion"
+  ],
+  "ready_for_answer": false,
+  "search_terms": [
+    "wrk-amber"
+  ],
+  "prompt_hash": "",
+  "validation_result": "DETERMINISTIC_CAPABILITY_MATCH",
+  "iteration": 2,
+  "available_schema_fields": [],
+  "peak_execute": [
+    {
+      "phase": "analyze",
+      "observations": 3
+    },
+    {
+      "phase": "stop",
+      "action": "escalate_ir",
+      "reason": "observations are a finding; hand them to IR",
+      "ir_escalate": true
+    }
+  ]
+}

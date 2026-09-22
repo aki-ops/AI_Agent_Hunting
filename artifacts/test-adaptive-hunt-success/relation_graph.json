@@ -1,0 +1,40 @@
+{
+  "nodes": {
+    "node-subj-host": {
+      "id": "node-subj-host",
+      "type": "host",
+      "value": "wrk-amber",
+      "status": "KNOWN",
+      "confidence": 1.0,
+      "source": "input",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {}
+    },
+    "node-target-object": {
+      "id": "node-target-object",
+      "type": "software_version",
+      "value": "UNKNOWN_TARGET",
+      "status": "UNKNOWN",
+      "confidence": 1.0,
+      "source": "inference",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {}
+    }
+  },
+  "edges": {
+    "edge-host-target": {
+      "id": "edge-host-target",
+      "source_id": "node-subj-host",
+      "target_id": "node-target-object",
+      "relation_type": "connected_to",
+      "status": "UNKNOWN",
+      "confidence": 1.0,
+      "source": "inference",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {}
+    }
+  }
+}

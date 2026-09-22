@@ -1,0 +1,14 @@
+{
+  "id": "test-adaptive-hunt-success",
+  "kind": "NL_QUESTION",
+  "content": "What version of Tor was installed on wrk-amber?",
+  "entities": [],
+  "time_window": "2026-09-01T00:00:00Z/2026-09-08T00:00:00Z",
+  "answer_spec": {
+    "mode": "lookup",
+    "answer_type": "software_version",
+    "required_fields": [
+      "ProductVersion"
+    ]
+  }
+}

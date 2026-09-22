@@ -245,6 +245,10 @@ observation, value, relation or final verdict.
 | Claim Verifier | Check citations, roles, time, completeness and acceptance rules. State-transition claims consume the validated operation's exact `temporal_roles`, `action_roles`, `state_roles`, `artifact_identity_roles` and `correlation_roles`; supplied observations must be cited members of the ledger and share provider/scope plus a compatible typed entity. | None. |
 | Grounded Explainer | Explain verified evidence and limitations. | At most one bounded call; citations are checked and no new values allowed. |
 | Final Reporter | Render answer, evidence, queries, coverage, stopping decision and cost. | LLM text is advisory only. |
+| PEAK Prepare gate | Require topic, research, ABLE, scope, max duration and plan before a PoC run. Concrete ABLE tokens become query predicates. | None. The wizard only collects fields. |
+| PEAK Execute loop | One analyze pass and at most one refine pass on the PoC agent. The hypothesis engine records the same decision. | None for match and refine. IR filing does not create evidence. |
+| PEAK Act | Static SPL check, optional Splunk parser check, append-only backlog, stakeholder export. | None. |
+| API lead ranker | `--math` sends a bounded row sample to the configured API model and drops values absent from those rows. | One bounded call. No local training. Offline prefilter is not a model. |
 
 ## 5. Coverage coordinate
 

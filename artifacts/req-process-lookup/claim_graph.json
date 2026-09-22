@@ -1,0 +1,55 @@
+{
+  "id": "graph-process-lookup",
+  "request_id": "req-process-lookup",
+  "objective": "Find the process observed on SRV-01",
+  "claims": [
+    {
+      "id": "claim-process",
+      "claim_type": "attribute",
+      "subject": "host:SRV-01",
+      "predicate": "observed_process",
+      "object_or_value": null,
+      "value_type": "process",
+      "provenance": "request",
+      "source_request_id": "req-process-lookup",
+      "dependencies": [],
+      "evidence_requirements": [],
+      "observation_requirements": [
+        {
+          "id": "req-process",
+          "fact_kind": "process_ancestry",
+          "required_fields": [
+            "image"
+          ],
+          "field_roles": [
+            "endpoint_host",
+            "process_name"
+          ],
+          "required_roles": [],
+          "completeness_required": true
+        }
+      ],
+      "acceptance_rule": {
+        "min_observations": 1,
+        "required_fields": [
+          "image"
+        ],
+        "required_roles": [],
+        "requires_query_complete": true,
+        "value_must_match": null
+      },
+      "refutation_rule": null,
+      "optional": false,
+      "is_prerequisite": false,
+      "reason": "The request asks for the observed process",
+      "status": "SUPPORTED",
+      "cited_observation_ids": [
+        "obs-1"
+      ]
+    }
+  ],
+  "metadata": {
+    "request_content": "Which process was observed on SRV-01?",
+    "question": "Which process was observed on SRV-01?"
+  }
+}

@@ -8,15 +8,21 @@ from __future__ import annotations
 from hunting.poc.agent import PocHuntResult
 
 
-def build_poc_act_block(result: PocHuntResult, poc_render: dict) -> dict[str, object]:
-    """Assemble the Act block (detection draft + backlog + stakeholder) for a PoC run (pure function, no I/O)."""
+def build_poc_act_block(
+    result: PocHuntResult,
+    poc_render: dict,
+    live_checker=None,
+) -> dict[str, object]:
+    """Assemble the Act block. The live checker is optional and performs no write."""
     from hunting.act import (
         backlog_from_poc,
         spl_from_poc_steps,
         stakeholder_summary,
+        validate_spl,
     )
 
     spl = spl_from_poc_steps(poc_render.get("steps", []))
+    validation = validate_spl(spl, live_checker)
     all_ids = [s.get("step_id", "") for s in poc_render.get("steps", [])]
     backlog = backlog_from_poc(poc_render, list(result.matched_step_ids), all_ids)
     judge = f"Judge: {result.judgment.verdict} ({result.judgment.confidence:.2f})." if result.judgment else "No judge."
@@ -25,11 +31,16 @@ def build_poc_act_block(result: PocHuntResult, poc_render: dict) -> dict[str, ob
         f"PoC `{result.poc_id}` verdict {result.verdict} over {result.total_observations} observations. {judge}",
         [f"Matched steps: {', '.join(result.matched_step_ids) or '(none)'}."],
     )
-    return {"detection_spl": spl, "backlog": backlog, "stakeholder": stakeholder}
+    return {
+        "detection_spl": spl,
+        "backlog": backlog,
+        "stakeholder": stakeholder,
+        "validation": validation.to_dict(),
+    }
 
 
-def render_poc_report(result: PocHuntResult, poc_render: dict) -> str:
-    act_block = build_poc_act_block(result, poc_render)
+def render_poc_report(result: PocHuntResult, poc_render: dict, live_checker=None) -> str:
+    act_block = build_poc_act_block(result, poc_render, live_checker=live_checker)
     lines: list[str] = []
     lines.append(f"# PoC Hunt Report — `{result.poc_id}`")
     lines.append("")
@@ -64,6 +75,24 @@ def render_poc_report(result: PocHuntResult, poc_render: dict) -> str:
     lines.append(f"## Verdict: **{result.verdict}**")
     lines.append("")
     lines.append(result.rationale)
+    lines.append("")
+    if getattr(result, "scope_note", ""):
+        lines.append(f"Scope enforcement: {result.scope_note}")
+        lines.append("")
+    lines.append("## Execute (Analyze → Refine)")
+    lines.append("")
+    for entry in getattr(result, "refine_log", []) or []:
+        detail = entry.get("reason")
+        if not detail:
+            detail = f"matched={entry.get('matched', [])} missed={entry.get('missed', [])}"
+        lines.append(f"- pass {entry.get('pass', '-')}: {entry.get('phase')} — {detail}")
+    lines.append("")
+    lines.append("## IR Escalation")
+    lines.append("")
+    if getattr(result, "ir_escalated", False):
+        lines.append(f"- Filed for IR: `{result.ir_escalation_path}`")
+    else:
+        lines.append("- Not filed. The pass produced no critical finding.")
     lines.append("")
     if result.judgment is not None:
         lines.append(f"## LLM Judge: **{result.judgment.verdict}** (confidence {result.judgment.confidence:.2f})")
@@ -129,7 +158,13 @@ def render_poc_report(result: PocHuntResult, poc_render: dict) -> str:
     lines.append("")
     lines.append("## Act (Detection Draft + Backlog)")
     lines.append("")
-    lines.append("### Detection Draft (SPL — analyst review required)")
+    validation = act_block.get("validation") or {}
+    lines.append("### Detection Draft (SPL)")
+    lines.append("")
+    lines.append(
+        f"Validation: **{validation.get('status', 'DRAFT')}** "
+        f"(static_ok={validation.get('static_ok')}, live={validation.get('live_status', 'skipped')})"
+    )
     lines.append("")
     lines.append("```spl")
     lines.append(act_block["detection_spl"])

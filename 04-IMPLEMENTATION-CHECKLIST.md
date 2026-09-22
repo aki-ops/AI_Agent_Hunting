@@ -104,6 +104,14 @@ provider and labelled evaluation are not yet production evidence.
 - [x] Progressive retrieval removes only declared retrieval predicates while retaining identity, scope, time, projection, row/page and proof bounds.
 - [x] Generic state-transition verification accepts only ledger-backed cited observations in one provider/scope with compatible typed entities, parseable ordered timestamps inside the declared bound, exact validated-operation `action_roles`/`state_roles`/`temporal_roles`, and a stable `artifact_identity_roles` or `correlation_roles` value; suffixes and source names prove neither transition nor ransomware causality.
 
+## PEAK process gate
+
+- [x] A PoC run stops before queries when topic, research, behavior, location, evidence, scope, max duration or plan is missing. Actor may be empty.
+- [x] `--prepare` and `--hunt-plan` supply that plan. Concrete ABLE tokens are query predicates. `max_duration` clamps the trailing window.
+- [x] The PoC agent analyzes, refines at most once without widening operators, and writes an IR handoff for a match or an LLM narrative.
+- [x] Act validates SPL locally and, on a Splunk provider, with the search parser. Backlog and stakeholder notes are stored.
+- [x] `--math` calls the API LLM from `.env` and drops ungrounded leads. The stdlib prefilter is not described as a trained model.
+
 ## Phase 7 — Reporting and cost
 
 - [x] Report contains request, semantic decomposition, proof plan/state, runtime bindings, evidence/explanation, queries, answer/limits and cost.

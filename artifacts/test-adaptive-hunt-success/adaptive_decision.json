@@ -1,0 +1,28 @@
+{
+  "operation": null,
+  "operation_id": null,
+  "reason": "answer fields already observed",
+  "required_fields": [
+    "ProductVersion"
+  ],
+  "ready_for_answer": true,
+  "search_terms": [
+    "wrk-amber"
+  ],
+  "prompt_hash": "",
+  "validation_result": "FIELDS_SATISFIED",
+  "iteration": 2,
+  "available_schema_fields": [],
+  "peak_execute": [
+    {
+      "phase": "analyze",
+      "observations": 2
+    },
+    {
+      "phase": "stop",
+      "action": "escalate_ir",
+      "reason": "observations are a finding; hand them to IR",
+      "ir_escalate": true
+    }
+  ]
+}

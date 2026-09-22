@@ -101,6 +101,29 @@ def test_math_report_renders(tmp_path: Path):
     assert "## Ledger" in report
 
 
+def test_math_api_llm_replaces_prefilter_when_grounded(tmp_path: Path):
+    def caller(prompt: str, max_tokens: int) -> str:
+        return (
+            '{"leads": ['
+            '{"field": "cmdline", "value": "powershell.exe -nop -w hidden -enc QUJD", "score": 9, "reasons": ["encoded"]},'
+            '{"field": "domain", "value": "not-in-the-rows.example", "score": 8, "reasons": ["invented"]}'
+            ']}'
+        )
+
+    result = run_math(
+        _rows(), data_source="cdb:events",
+        time_window="2016-08-21T00:00:00Z/2016-08-22T00:00:00Z",
+        ledger_dir=tmp_path, llm_caller=caller,
+    )
+    assert result.model_source == "api_llm"
+    assert result.leads
+    assert all(lead.kind == "api_llm" for lead in result.leads)
+    assert all("not-in-the-rows" not in str(lead.value) for lead in result.leads)
+    report = render_math_report(result)
+    assert "LLM-Assisted Hunt Report" in report
+    assert "api_llm" in report
+
+
 def test_math_on_botsv1_sample(tmp_path: Path):
     from hunting.m5_adapter import CdbAdapter
     from scripts.seed_botsv1_sample import BOTS_SAMPLE

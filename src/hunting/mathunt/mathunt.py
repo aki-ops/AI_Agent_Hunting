@@ -1,19 +1,22 @@
-"""Heuristic lead scoring — stdlib only, no ML dependencies, no LLM.
+"""LLM-assisted lead ranking. The model is the API LLM, not a locally trained model.
 
-Position: use scoring only to rank leads for analyst review; the detectors
-below are frequency/lexical heuristics, not trained models. This module
-ranks:
+PEAK M-ATH asks for a model when simple methods are not enough. Training
+a local model costs data, GPU time and a maintenance loop. The endpoint
+configured in ``.env`` is already a pretrained model, so this module sends
+a bounded row sample to that API and keeps only leads whose value occurs
+in the supplied rows.
 
-- frequency anomaly: rare categorical values via stack counting with a
-  lead score (rarer + security-relevant field = higher score);
-- lexical scoring: suspicious tokens in cmdline/domain/uri
-  (encoded flags, download cradles, DGA-ish randomness);
-- sequence rarity: rare ordered pairs (parent -> child process,
-  user -> image) as behaviour leads.
+The stdlib detectors below remain an offline prefilter. They run when no
+API caller is attached (tests, ``--llm stub``) or when the API reply cannot
+be grounded. They are not a trained model and are not called M-ATH.
 
-No numpy / sklearn / pandas. Deterministic: same rows in, same leads out.
-No LLM inside — the caller may pass leads to ``--poc-judge`` afterwards,
-which keeps the analyst-in-the-loop separation.
+Offline prefilter, stdlib only:
+
+- frequency anomaly: rare categorical values via stack counting;
+- lexical scoring: suspicious tokens in cmdline/domain/uri;
+- sequence rarity: rare ordered pairs (parent -> child, user -> image).
+
+No numpy / sklearn / pandas. Same rows in, same prefilter leads out.
 """
 from __future__ import annotations
 
@@ -131,6 +134,7 @@ class MathResult:
     finished_at: str
     runtime_seconds: float
     ledger_path: str | None = None
+    model_source: str = "heuristic_prefilter"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -144,6 +148,7 @@ class MathResult:
             "finished_at": self.finished_at,
             "runtime_seconds": self.runtime_seconds,
             "ledger_path": self.ledger_path,
+            "model_source": self.model_source,
         }
 
 
@@ -157,6 +162,74 @@ def _short_row(row: dict[str, Any]) -> dict[str, Any]:
     return {k: row.get(k) for k in keep if row.get(k) not in (None, "")}
 
 
+def _parse_llm_leads(response: str) -> list[dict[str, Any]]:
+    text = str(response or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return []
+    try:
+        payload = json.loads(text[start:end + 1])
+    except json.JSONDecodeError:
+        return []
+    leads = payload.get("leads") if isinstance(payload, dict) else None
+    if not isinstance(leads, list):
+        return []
+    return [item for item in leads if isinstance(item, dict)]
+
+
+def _ground_llm_leads(parsed: list[dict[str, Any]], rows: list[dict[str, Any]]) -> list[Lead]:
+    """Keep an API lead only when its value occurs in a supplied row."""
+    grounded: list[Lead] = []
+    for index, item in enumerate(parsed, start=1):
+        value = str(item.get("value", "")).strip()
+        field_name = str(item.get("field", "")).strip() or "cmdline"
+        if not value:
+            continue
+        evidence = [
+            _short_row(row) for row in rows
+            if value.lower() in json.dumps(row, ensure_ascii=False).lower()
+        ]
+        if not evidence:
+            continue
+        try:
+            score = float(item.get("score", 1.0))
+        except (TypeError, ValueError):
+            score = 1.0
+        reasons = [str(reason) for reason in (item.get("reasons") or []) if str(reason).strip()]
+        reasons.append("api_llm")
+        grounded.append(Lead(
+            lead_id=f"llm-{index:03d}",
+            kind="api_llm",
+            score=score,
+            field=field_name,
+            value=value,
+            count=len(evidence),
+            evidence_rows=evidence[:3],
+            reasons=reasons,
+        ))
+    grounded.sort(key=lambda lead: lead.score, reverse=True)
+    return grounded
+
+
+def _llm_prompt(rows: list[dict[str, Any]], prefilter: list[Lead]) -> str:
+    sample = [_short_row(row) for row in rows[:30]]
+    hints = [
+        {"field": lead.field, "value": lead.value, "kind": lead.kind, "score": lead.score}
+        for lead in prefilter[:8]
+    ]
+    return (
+        "You are the pretrained model for a threat hunt. Do not invent indicators. "
+        "Return JSON only: {\"leads\": [{\"field\": str, \"value\": str, \"score\": number, "
+        "\"reasons\": [str]}]}. Every value must be copied from the rows. "
+        f"Rows: {json.dumps(sample, ensure_ascii=False)}. "
+        f"Prefilter hints (not evidence): {json.dumps(hints, ensure_ascii=False)}."
+    )
+
+
 def run_math(
     rows: list[dict[str, Any]],
     *,
@@ -168,8 +241,10 @@ def run_math(
     min_score: float = 2.0,
     max_leads: int = 25,
     ledger_dir: str | Path | None = None,
+    llm_caller: Any | None = None,
+    llm_max_tokens: int = 2000,
 ) -> MathResult:
-    """Run stdlib detectors over rows and return ranked leads."""
+    """Rank leads. An API caller replaces the prefilter when its leads ground."""
     import time
 
     t0 = time.perf_counter()
@@ -267,11 +342,22 @@ def run_math(
 
     leads.sort(key=lambda lead: lead.score, reverse=True)
     leads = leads[:max_leads]
+    model_source = "heuristic_prefilter"
+    if llm_caller is not None:
+        response = llm_caller(_llm_prompt(rows, leads), llm_max_tokens)
+        grounded = _ground_llm_leads(_parse_llm_leads(response), rows)
+        if grounded:
+            leads = grounded[:max_leads]
+            model_source = "api_llm"
+            wanted.add("api_llm")
+        else:
+            model_source = "api_llm_ungrounded_fallback"
     elapsed = round(time.perf_counter() - t0, 4)
     result = MathResult(
         run_id=run_id, data_source=data_source, time_window=time_window,
         row_count=len(rows), detectors=sorted(wanted), leads=leads,
         started_at=started, finished_at=_now(), runtime_seconds=elapsed,
+        model_source=model_source,
     )
     out_dir = Path(ledger_dir) if ledger_dir else Path("models") / "math_runs"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -286,16 +372,30 @@ def render_math_report(result: MathResult) -> str:
 
     spls = [spl_from_lead(lead.to_dict()) for lead in result.leads[:3]]
     backlog = backlog_from_math([lead.to_dict() for lead in result.leads])
+    model_source = getattr(result, "model_source", "heuristic_prefilter")
+    if model_source == "api_llm":
+        headline = (
+            f"API LLM hunt `{result.run_id}` over {result.row_count} rows: "
+            f"{len(result.leads)} grounded leads. No local model was trained."
+        )
+        title = f"# LLM-Assisted Hunt Report — `{result.data_source}`"
+    else:
+        headline = (
+            f"Offline prefilter `{result.run_id}` over {result.row_count} rows: "
+            f"{len(result.leads)} leads. This is not a trained model."
+        )
+        title = f"# Heuristic Lead Report — `{result.data_source}`"
     stakeholder = stakeholder_summary(
         "math",
-        f"M-ATH run `{result.run_id}` over {result.row_count} rows: "
-        f"{len(result.leads)} leads above threshold.",
+        headline,
         [f"Top lead: `{result.leads[0].lead_id}` {result.leads[0].kind} "
          f"score={result.leads[0].score:.2f}."] if result.leads else [],
     )
     act_block = {"detection_spls": spls, "backlog": backlog, "stakeholder": stakeholder}
     lines: list[str] = []
-    lines.append(f"# Heuristic Lead Report — `{result.data_source}`")
+    lines.append(title)
+    lines.append("")
+    lines.append(f"**Model:** `{model_source}`")
     lines.append("")
     lines.append(f"**Run ID:** `{result.run_id}`")
     lines.append(f"**Window:** {result.time_window}")

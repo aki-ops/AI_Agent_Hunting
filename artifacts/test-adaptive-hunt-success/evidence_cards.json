@@ -1,0 +1,46 @@
+[
+  {
+    "id": "card-e5d92fdeb056",
+    "summary": "Process artifact observed on wrk-amber: C:\\Tor\\firefox.exe",
+    "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
+    "fact_type": "process_execution",
+    "count": 1,
+    "confidence": "MEDIUM",
+    "hypotheses": [],
+    "requirements": [],
+    "query_ids": [
+      "qp-adaptive-0-1"
+    ],
+    "replay": {
+      "artifact": "observations.jsonl",
+      "query_ids": [
+        "qp-adaptive-0-1"
+      ],
+      "command": "python -m hunting.cli show-observation --observation-id obs-adaptive-2"
+    },
+    "entity_summary": {
+      "hosts": [
+        "wrk-amber"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2026-09-02T10:05:00Z",
+      "latest": "2026-09-02T10:05:00Z",
+      "span_events": 1
+    },
+    "field_summary": {
+      "file_paths": [
+        "C:\\Tor\\firefox.exe"
+      ],
+      "software_versions": [
+        "13.5.2"
+      ],
+      "software_version": [
+        "13.5.2"
+      ]
+    },
+    "representative_observation_ids": [
+      "obs-adaptive-2"
+    ]
+  }
+]

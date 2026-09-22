@@ -1,0 +1,9 @@
+[
+  {
+    "id": "r1",
+    "description": "Tor version",
+    "evidence_type": "file_modification",
+    "status": "DEFINED",
+    "necessity": "CRITICAL"
+  }
+]

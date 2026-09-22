@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "description": "Labelled hypothesis/claim plans. required_claims: ids that must appear. forbidden_claims: ids that must NOT appear.",
+  "cases": [
+    {
+      "id": "hypothesis-web-compromise",
+      "request": "Attacker compromised web www.imreallynotbatman.com",
+      "expected_outcome": "INCONCLUSIVE",
+      "required_evidence_observation_ids": [],
+      "tags": ["hypothesis", "web"]
+    },
+    {
+      "id": "hypothesis-external-c2",
+      "request": "Process on workstation phaded-workstation contacted an external C2 server",
+      "expected_outcome": "INCONCLUSIVE",
+      "required_evidence_observation_ids": [],
+      "tags": ["hypothesis", "process", "network"]
+    }
+  ]
+}

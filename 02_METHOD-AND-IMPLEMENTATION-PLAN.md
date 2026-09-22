@@ -262,6 +262,18 @@ The report must show:
 5. verified evidence, unresolved gaps and why a stop was selected; and
 6. LLM calls/tokens/latency/cost and provider query/scan cost.
 
+### PEAK process gate
+
+On the PoC path the run does not reach a provider query until Prepare is complete: topic, research references, behavior, location, evidence, scope, max duration and plan. Actor may be empty. The analyst supplies the plan in the PoC, in `--hunt-plan`, or through `--prepare`.
+
+`max_duration` clamps a longer telemetry window to its trailing edge and is the deadline of the refine pass. ABLE adds a predicate only for a concrete token: a digit-bearing host, a `DOMAIN\user` account, a file name, a command flag, an IP, or a quoted literal.
+
+Execute is pass 1, an analysis record, then at most one refine. The refine either restricts later steps to the single host seen on the first matched step, or, when nothing matched, runs declared fallbacks and repeats the original predicates. Operators are not widened. A match, or an explicit LLM narrative after an empty refine, writes an IR package. That package is a handoff, not evidence.
+
+Act checks the detection draft: a local read-only SPL check, then `POST /services/search/parser` when the selected provider is Splunk. The backlog is append-only. The stakeholder note is a separate Markdown file.
+
+The former local model-assisted ranker is not trained here. `--math` calls the API model already configured in `.env` and keeps a lead only when its value occurs in the gathered rows. Without that API the stdlib prefilter still runs and is labeled as a prefilter.
+
 ## 3. Detailed code plan
 
 ### Phase A — Contracts and migration boundary

@@ -21,12 +21,14 @@ Each PoC declares:
 - A list of MITRE references for traceability.
 - An optional LLM escalation hint that is only consulted if local CDB
   queries do not produce sufficient evidence.
-- PEAK Prepare context (hunt plan: ABLE + scope), all optional for backward
-  compatibility: ``topic``, ``actor``, ``behavior``, ``location``,
+- PEAK Prepare fields: ``topic``, ``actor``, ``behavior``, ``location``,
   ``evidence``, ``research_refs``, ``scope``, ``max_duration``, ``plan``.
-  ABLE (Actor/Behavior/Location/Evidence, after Splunk SURGe's hunting
-  writeups) is reporting metadata here: it documents the hunt plan in the
-  report but does not drive query decisions — matching stays literal.
+  JSON without those fields still loads. A hunt run refuses to start until
+  topic, research, behavior, location, evidence, scope, max duration and
+  plan are present (actor may stay empty). Concrete ABLE tokens — a host
+  with a digit, an ``DOMAIN\\user`` account, a file name, a flag, an IP or
+  a quoted literal — are query predicates. Prose that is not one of those
+  tokens stays a hypothesis label.
 """
 from __future__ import annotations
 
@@ -105,7 +107,7 @@ class PoC:
     references: list[str] = field(default_factory=list)
     escalation_hint: EscalationHint | None = None
     expected_chain: list[str] = field(default_factory=list)
-    # --- Hunt-plan context (reporting metadata; does not drive matching) ---
+    # PEAK Prepare. Concrete ABLE tokens drive queries; see hunting.peak.able_drive.
     topic: str = ""               # hunt topic, not yet a hypothesis
     actor: str = ""               # ABLE Actor; may be empty (unknown actor)
     behavior: str = ""            # ABLE Behavior (1-2 TTPs)
@@ -113,7 +115,7 @@ class PoC:
     evidence: str = ""            # ABLE Evidence (data sources + what a hit looks like)
     research_refs: list[str] = field(default_factory=list)
     scope: str = ""               # systems / data / timeframe boundary
-    max_duration: str = ""        # e.g. "3d" — stop hunting after this
+    max_duration: str = ""        # e.g. "3d" — clamp the window and stop the refine loop
     plan: str = ""                # how data is gathered, techniques, owners
 
     def render(self) -> dict[str, Any]:

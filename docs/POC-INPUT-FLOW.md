@@ -35,9 +35,14 @@ Argument mới (thêm trong `build_parser`):
 --poc <id>                  Chạy 1 PoC
 --poc-chain <id,id,...>     Chạy chuỗi PoC
 --list-pocs                 Liệt kê PoC có sẵn, thoát
+--prepare                   Wizard topic → research → ABLE → scope → plan
+--hunt-plan <yaml|json>     Nạp plan trước khi chạy
+--max-refine N              Số pass refine sau lần analyze đầu (mặc định 1)
 --poc-allow-escalation      Cho phép gọi LLM khi adapter rỗng
 --poc-report <path>         Ghi Markdown report vào path cụ thể
 ```
+
+`--prepare` một mình ghi `artifacts/hunt_plans/prepare-<ts>.yaml` rồi thoát. Kèm `--poc`, wizard điền plan rồi mới query. Terminal không tương tác thì dùng `--hunt-plan`. PoC thiếu trường Prepare thì process trả mã 2, không gửi query.
 
 Đoạn dispatch trong `run_cli` (sau khi adapter được setup, trước khi đi
 vào nhánh hypothesis/alert cũ):

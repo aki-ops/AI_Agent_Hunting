@@ -1,0 +1,94 @@
+{
+  "question": "What version of Tor was installed on wrk-amber?",
+  "claims": [
+    {
+      "id": "h1",
+      "statement": "Tor installed",
+      "subject_node_id": "node-subj-host",
+      "target_node_id": "node-target-object",
+      "required_relations": [],
+      "status": "PENDING"
+    }
+  ],
+  "subjects": [
+    {
+      "id": "node-subj-host",
+      "type": "host",
+      "value": "wrk-amber",
+      "status": "KNOWN",
+      "confidence": 1.0,
+      "source": "input",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {}
+    }
+  ],
+  "requested_answer": {
+    "type": "software_version",
+    "role": "answer"
+  },
+  "assumptions": [],
+  "unknowns": [
+    {
+      "id": "unk-host-activity",
+      "entity_type": "software_version",
+      "description": "Activity connecting wrk-amber to software_version",
+      "relation_to_resolve": "host(wrk-amber) -> connected_to -> software_version",
+      "mandatory": true,
+      "status": "UNRESOLVED"
+    }
+  ],
+  "evidence_requirements": [],
+  "required_correlations": [],
+  "acceptance_criteria": [
+    {
+      "id": "crit-host-chain",
+      "description": "Connection between wrk-amber and target object",
+      "required_path": [
+        "host",
+        "software_version"
+      ]
+    }
+  ],
+  "alternative_explanations": [],
+  "graph": {
+    "nodes": {
+      "node-subj-host": {
+        "id": "node-subj-host",
+        "type": "host",
+        "value": "wrk-amber",
+        "status": "KNOWN",
+        "confidence": 1.0,
+        "source": "input",
+        "timestamp": null,
+        "origin_query_id": null,
+        "metadata": {}
+      },
+      "node-target-object": {
+        "id": "node-target-object",
+        "type": "software_version",
+        "value": "UNKNOWN_TARGET",
+        "status": "UNKNOWN",
+        "confidence": 1.0,
+        "source": "inference",
+        "timestamp": null,
+        "origin_query_id": null,
+        "metadata": {}
+      }
+    },
+    "edges": {
+      "edge-host-target": {
+        "id": "edge-host-target",
+        "source_id": "node-subj-host",
+        "target_id": "node-target-object",
+        "relation_type": "connected_to",
+        "status": "UNKNOWN",
+        "confidence": 1.0,
+        "source": "inference",
+        "timestamp": null,
+        "origin_query_id": null,
+        "metadata": {}
+      }
+    }
+  }
+}

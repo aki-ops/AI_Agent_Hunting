@@ -109,6 +109,11 @@ search index="<validated_index>" sourcetype="WinEventLog:Security"
 The concrete query is generated only after logical operation and parameters pass
 validation. Pagination and completeness are returned in `QueryResult`.
 
+Detection drafts from the Act stage are checked with `POST /services/search/parser`
+(`SplunkLiveAdapter.validate_spl`). That call parses the SPL and does not execute
+the search. A non-200 response or a FATAL/ERROR message leaves the draft invalid.
+If Splunk cannot be reached, the draft stays unvalidated.
+
 ## 5. CDB adapter
 
 CDB provides deterministic local replay through the same logical operation and

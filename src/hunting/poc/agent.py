@@ -22,15 +22,21 @@ Design invariants
 from __future__ import annotations
 
 import json
-import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from hunting.contracts.entities import Host
 from hunting.controller.cost import LLMUsageTracker
-from hunting.contracts.entities import EntityRef, Host
+from hunting.peak import (
+    PrepareError,
+    able_drive,
+    enforce_max_duration,
+    missing_prepare_fields,
+    parse_duration,
+)
 from hunting.poc.compiler import compile_poc, graph_summary
 from hunting.poc.library import get_poc, list_pocs
 from hunting.poc.models import PoC, TestStep
@@ -113,6 +119,7 @@ class StepResult:
     rows: list[dict[str, Any]] = field(default_factory=list)
     row_count: int = 0
     used_fallback: bool = False
+    pass_index: int = 1
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -123,6 +130,7 @@ class StepResult:
             "value": self.value,
             "row_count": self.row_count,
             "used_fallback": self.used_fallback,
+            "pass_index": self.pass_index,
             "rows": self.rows,
         }
 
@@ -150,6 +158,10 @@ class PocHuntResult:
     judgment_llm_calls: int = 0
     judgment_llm_tokens: int = 0
     ledger_path: str | None = None
+    refine_log: list[dict[str, Any]] = field(default_factory=list)
+    ir_escalated: bool = False
+    ir_escalation_path: str | None = None
+    scope_note: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -174,6 +186,10 @@ class PocHuntResult:
             "judgment_llm_calls": self.judgment_llm_calls,
             "judgment_llm_tokens": self.judgment_llm_tokens,
             "ledger_path": self.ledger_path,
+            "refine_log": list(self.refine_log),
+            "ir_escalated": self.ir_escalated,
+            "ir_escalation_path": self.ir_escalation_path,
+            "scope_note": self.scope_note,
         }
 
 
@@ -214,11 +230,24 @@ class PocAgent:
         self.judge_caller = judge_caller or llm_caller
         self.enable_judge = enable_judge
 
-    def _run_step(self, step: TestStep, time_window: str, query_id: str) -> StepResult:
-        terms = _compile_terms(step)
+    def _run_step(
+        self,
+        step: TestStep,
+        time_window: str,
+        query_id: str,
+        *,
+        extra_terms: tuple[str, ...] = (),
+        host: str | None = None,
+        actor: str | None = None,
+        pass_index: int = 1,
+    ) -> StepResult:
+        terms = list(_compile_terms(step))
+        for term in extra_terms:
+            if term not in terms:
+                terms.append(term)
         result = self.adapter.execute_query(
             operation_id="search_text",
-            entity=None,
+            entity=Host(name=host) if host else None,
             window=time_window,
             limit=100,
             query_id=query_id,
@@ -232,6 +261,11 @@ class PocAgent:
             rows = []
         else:
             rows = [r for r in rows if _apply_op(r.get(step.target_field), step.op.value, step.value)]
+        if actor:
+            needle = actor.lower()
+            rows = [r for r in rows if needle in str(r.get("user") or "").lower()]
+        if host:
+            rows = [r for r in rows if str(r.get("host") or "") == host]
         return StepResult(
             step_id=step.step_id,
             description=step.description,
@@ -241,7 +275,143 @@ class PocAgent:
             rows=rows,
             row_count=len(rows),
             used_fallback=False,
+            pass_index=pass_index,
         )
+
+    def _run_steps(
+        self,
+        steps: list[TestStep],
+        time_window: str,
+        request_id: str,
+        *,
+        drive: Any,
+        host: str | None,
+        fallback: bool,
+        pass_index: int,
+    ) -> list[StepResult]:
+        results: list[StepResult] = []
+        for step in steps:
+            query_id = f"{request_id}-{step.step_id}"
+            if fallback:
+                query_id += "-fallback"
+            if pass_index > 1:
+                query_id += f"-p{pass_index}"
+            step_result = self._run_step(
+                step,
+                time_window,
+                query_id,
+                extra_terms=drive.observables,
+                host=host,
+                actor=drive.actor,
+                pass_index=pass_index,
+            )
+            step_result.used_fallback = fallback
+            results.append(step_result)
+        return results
+
+    def _execute_loop(
+        self,
+        poc: PoC,
+        time_window: str,
+        request_id: str,
+        *,
+        max_refine: int,
+        deadline: float | None,
+    ) -> tuple[list[StepResult], list[dict[str, Any]]]:
+        """Analyze, refine once, and run again. Operators are never widened."""
+        drive = able_drive(poc.actor, poc.behavior, poc.location, poc.evidence)
+        primary = self._run_steps(
+            list(poc.steps), time_window, request_id,
+            drive=drive, host=drive.host, fallback=False, pass_index=1,
+        )
+        log: list[dict[str, Any]] = [{
+            "pass": 1,
+            "phase": "analyze",
+            "matched": [step.step_id for step in primary if step.row_count],
+            "missed": [step.step_id for step in primary if not step.row_count],
+        }]
+        results = list(primary)
+        matched = [step for step in primary if step.row_count]
+        missed = [step for step in primary if not step.row_count]
+
+        def _over_deadline() -> bool:
+            return deadline is not None and time.perf_counter() >= deadline
+
+        if matched and max_refine > 0 and not _over_deadline():
+            anchor_hosts: list[str] = []
+            for row in matched[0].rows:
+                observed = str(row.get("host") or "").strip()
+                if observed and observed not in anchor_hosts:
+                    anchor_hosts.append(observed)
+            other_steps = [step for step in poc.steps if step.step_id != matched[0].step_id]
+            if len(anchor_hosts) == 1 and anchor_hosts[0] != (drive.host or "") and other_steps:
+                log.append({
+                    "pass": 2,
+                    "phase": "refine",
+                    "reason": f"restrict the remaining steps to observed host {anchor_hosts[0]}",
+                })
+                pivoted = self._run_steps(
+                    other_steps, time_window, request_id,
+                    drive=drive, host=anchor_hosts[0], fallback=False, pass_index=2,
+                )
+                by_id = {step.step_id: step for step in results}
+                for step in pivoted:
+                    by_id[step.step_id] = step
+                order = [step.step_id for step in primary]
+                results = [by_id[step_id] for step_id in order if step_id in by_id]
+                log.append({"pass": 2, "phase": "stop", "reason": "refine pass finished"})
+                return results, log
+
+        if matched and not missed:
+            log.append({"pass": 1, "phase": "stop", "reason": "all primary steps matched"})
+            return results, log
+
+        if matched and missed:
+            log.append({
+                "pass": 1,
+                "phase": "refine",
+                "reason": "partial match; no single new host to pivot onto",
+            })
+
+        if not any(step.row_count for step in results) and poc.fallbacks:
+            results.extend(self._run_steps(
+                list(poc.fallbacks), time_window, request_id,
+                drive=drive, host=drive.host, fallback=True, pass_index=1,
+            ))
+            log.append({"pass": 1, "phase": "refine", "reason": "primary empty; ran declared fallbacks"})
+
+        if not any(step.row_count for step in results) and max_refine > 0:
+            if _over_deadline():
+                log.append({"phase": "stop", "reason": "max_duration elapsed before the refine pass"})
+                return results, log
+            log.append({
+                "pass": 2,
+                "phase": "refine",
+                "reason": "empty analysis; re-run original predicates with operators unchanged",
+            })
+            rerun = self._run_steps(
+                list(poc.steps), time_window, request_id,
+                drive=drive, host=drive.host, fallback=False, pass_index=2,
+            )
+            if any(step.row_count for step in rerun):
+                results = rerun
+            log.append({
+                "pass": 2,
+                "phase": "stop",
+                "reason": "refine pass finished",
+                "rerun_rows": sum(step.row_count for step in rerun),
+            })
+            return results, log
+
+        log.append({"phase": "stop", "reason": "no further safe refinement"})
+        return results, log
+
+    def _write_ir(self, request_id: str, payload: dict[str, Any]) -> str:
+        ir_dir = self.ledger_dir / "ir"
+        ir_dir.mkdir(parents=True, exist_ok=True)
+        path = ir_dir / f"{request_id}.json"
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        return str(path)
 
     def _maybe_escalate(self, poc: PoC, observations: list[dict[str, Any]]) -> tuple[bool, str | None, int, int, float]:
         """Return ``(called, summary, llm_calls, llm_tokens, cost_usd)``.
@@ -277,27 +447,33 @@ class PocAgent:
         poc_id: str,
         time_window: str = "NOW-14d/NOW",
         request_id: str | None = None,
+        *,
+        max_refine: int = 1,
+        enforce_prepare: bool = False,
     ) -> PocHuntResult:
         poc = get_poc(poc_id)
+        if enforce_prepare:
+            missing = missing_prepare_fields(poc)
+            if missing:
+                raise PrepareError(
+                    "PEAK Prepare is incomplete (" + ", ".join(missing) + "). "
+                    "Pass --hunt-plan or --prepare before the hunt."
+                )
+        time_window, scope_note = enforce_max_duration(time_window, poc.max_duration)
         request_id = request_id or f"poc-{poc_id}-{_now()}"
         started_at = _now()
         t0 = time.perf_counter()
+        duration = parse_duration(poc.max_duration)
+        deadline = (t0 + duration.total_seconds()) if duration is not None else None
 
-        graph = compile_poc(poc, request_id=request_id, time_window=time_window)
+        graph = compile_poc(
+            poc, request_id=request_id, time_window=time_window, scope_note=scope_note,
+        )
         summary = graph_summary(graph)
 
-        step_results: list[StepResult] = []
-        for index, step in enumerate(poc.steps):
-            query_id = f"{request_id}-{step.step_id}"
-            step_results.append(self._run_step(step, time_window, query_id))
-
-        primary_empty = all(r.row_count == 0 for r in step_results)
-        if primary_empty and poc.fallbacks:
-            for step in poc.fallbacks:
-                query_id = f"{request_id}-{step.step_id}-fallback"
-                fb = self._run_step(step, time_window, query_id)
-                fb.used_fallback = True
-                step_results.append(fb)
+        step_results, refine_log = self._execute_loop(
+            poc, time_window, request_id, max_refine=max_refine, deadline=deadline,
+        )
 
         all_observations = [row for r in step_results for row in r.rows]
         matched_step_ids = [r.step_id for r in step_results if r.row_count > 0]
@@ -325,6 +501,27 @@ class PocAgent:
             verdict = "EMPTY"
             rationale = "No local adapter hits and no escalation configured."
 
+        ir_escalated = bool(matched_step_ids) or called
+        ir_path = None
+        if ir_escalated:
+            hosts = sorted({str(row.get("host")) for row in all_observations if row.get("host")})
+            ir_path = self._write_ir(request_id, {
+                "request_id": request_id,
+                "poc_id": poc.poc_id,
+                "destination": "IR",
+                "advisory": not bool(matched_step_ids),
+                "verdict": verdict,
+                "reason": (
+                    "Matched observables are a critical finding."
+                    if matched_step_ids
+                    else "Local evidence is empty; the LLM narrative is advisory and is filed for IR review."
+                ),
+                "matched_step_ids": list(matched_step_ids),
+                "hosts": hosts,
+                "refine_log": refine_log,
+                "escalation_summary": summary_text,
+            })
+
         result = PocHuntResult(
             poc_id=poc.poc_id,
             poc_name=poc.name,
@@ -346,6 +543,10 @@ class PocAgent:
             judgment=None,
             judgment_llm_calls=0,
             judgment_llm_tokens=0,
+            refine_log=refine_log,
+            ir_escalated=ir_escalated,
+            ir_escalation_path=ir_path,
+            scope_note=scope_note,
         )
 
         # Optional post-hoc LLM judge. Runs only when --poc-judge is set.
@@ -385,10 +586,21 @@ class PocAgent:
         self,
         poc_ids: list[str],
         time_window: str = "NOW-14d/NOW",
+        *,
+        max_refine: int = 1,
+        enforce_prepare: bool = False,
     ) -> list[PocHuntResult]:
         """Run a sequence of PoCs. Useful when an analyst wants to test a
         chain (phishing → powershell → persistence) end-to-end."""
-        return [self.run(poc_id, time_window=time_window) for poc_id in poc_ids]
+        return [
+            self.run(
+                poc_id,
+                time_window=time_window,
+                max_refine=max_refine,
+                enforce_prepare=enforce_prepare,
+            )
+            for poc_id in poc_ids
+        ]
 
 
 __all__ = [

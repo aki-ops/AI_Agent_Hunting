@@ -1,0 +1,11 @@
+{
+  "id": "logical-semantic-graph-process-lookup",
+  "goal_graph_id": "semantic-graph-process-lookup",
+  "provider_id": "cdb",
+  "steps": [],
+  "unresolved_goal_ids": [
+    "claim-process"
+  ],
+  "proof_methods": [],
+  "selected_method_ids": {}
+}

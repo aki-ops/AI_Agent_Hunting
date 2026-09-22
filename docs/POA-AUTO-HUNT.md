@@ -22,21 +22,29 @@ graph TD
 
 ```mermaid
 graph TD
-    A[Analyst picks PoC<br/>--poc poc-phishing-powershell-enc] --> B[PoC compiler<br/>deterministic]
-    B --> C[SemanticGoalGraph<br/>typed variables + relations + qualifiers]
-    C --> D[PoC Agent<br/>runs TestSteps against adapter]
-    D --> E{All empty?}
-    E -- no --> F[Verdict: MATCHED<br/>+ ledger + report]
-    E -- yes and --poc-allow-escalation --> G[LLM escalation<br/>bounded, optional]
-    E -- yes no LLM --> H[Verdict: EMPTY]
-    G --> F
+    A[Prepare<br/>PoC fields or --hunt-plan or --prepare] --> B[PoC compiler<br/>deterministic + ABLE constraints]
+    B --> C[Pass 1<br/>TestSteps against adapter]
+    C --> D[Analyze]
+    D --> E{Refine once?}
+    E -- single observed host --> F[Pass 2 restricted to that host]
+    E -- all empty --> G[Fallbacks then same predicates again]
+    E -- nothing safe to change --> H[Stop]
+    F --> I{Any hit?}
+    G --> I
+    H --> I
+    I -- yes --> J[MATCHED + IR file]
+    I -- no and escalation on --> K[LLM narrative filed to IR as advisory]
+    I -- no --> L[EMPTY]
+    J --> M[Act: SPL parse check + backlog + stakeholder]
+    K --> M
+    L --> M
 ```
 
 Đặc điểm:
 - Đầu vào là **PoC có cấu trúc**: id, steps với field/op/value cụ thể, fallbacks, MITRE references, escalation hint optional.
 - Compiler **deterministic** — cùng PoC ra cùng graph.
 - Agent chạy steps qua adapter (CDB, Splunk — bất kỳ adapter nào có `execute_query(operation_id="search_text", search_terms=...)`).
-- LLM chỉ được gọi khi **adapter trả về rỗng** và user yêu cầu escalation.
+- LLM judge chỉ chạy khi analyst bật `--poc-judge`. LLM escalation chỉ chạy khi adapter vẫn rỗng sau refine và user bật `--poc-allow-escalation`. `--math` là đường khác: API LLM xếp lead, không train model.
 
 ## 2. Thiết kế PoC
 

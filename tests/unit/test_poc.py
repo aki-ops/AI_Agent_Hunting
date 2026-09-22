@@ -154,8 +154,8 @@ def test_operator_helpers_exact_equals():
 
 def test_exists_empty_value_matches_nothing(tmp_path: Path):
     """EXISTS with an empty value must not match arbitrary rows (eval FP fix)."""
-    from hunting.poc.models import FieldOp, PocKind, PoC, TestStep
     from hunting.poc.library import POC_LIBRARY
+    from hunting.poc.models import FieldOp, PoC, PocKind, TestStep
 
     adapter = CdbAdapter(":memory:")
     _seed_cdb(adapter)
@@ -391,7 +391,7 @@ def test_judge_report_section(tmp_path: Path):
 
 def test_poc_file_loads_and_registers(tmp_path: Path):
     """An analyst-authored PoC in JSON form is registered in the library."""
-    from hunting.poc import poc_from_file, list_pocs
+    from hunting.poc import list_pocs, poc_from_file
 
     spec = tmp_path / "my-poc.json"
     spec.write_text(
@@ -441,6 +441,159 @@ def test_poc_file_rejects_invalid_op(tmp_path: Path):
     )
     with pytest.raises(Exception):
         poc_from_file(spec)
+
+
+def test_able_host_filter_drives_the_query(tmp_path: Path):
+    """A concrete location host is a predicate, not a report label."""
+    from hunting.poc.library import POC_LIBRARY
+    from hunting.poc.models import FieldOp, PoC, PocKind, TestStep
+
+    adapter = CdbAdapter(":memory:")
+    adapter.insert_events([
+        {
+            "timestamp": "2026-09-01T10:00:00Z", "host": "DESKTOP-VICTIM1", "user": "CORP\\alice",
+            "image": "cmd.exe", "cmdline": "cmd.exe /c whoami", "raw_ref": "a", "native_type": "process",
+        },
+        {
+            "timestamp": "2026-09-01T10:05:00Z", "host": "OTHER-HOST", "user": "CORP\\bob",
+            "image": "cmd.exe", "cmdline": "cmd.exe /c whoami", "raw_ref": "b", "native_type": "process",
+        },
+    ])
+    poc = PoC(
+        poc_id="poc-able-host", name="host drive", kind=PocKind.BEHAVIOR, summary="x",
+        topic="lateral tool", behavior="cmd.exe execution", location="DESKTOP-VICTIM1",
+        evidence="process telemetry", research_refs=["PEAK"], scope="one host",
+        max_duration="3d", plan="search cmd.exe on the named host",
+        steps=[TestStep(step_id="s1", description="cmd", target_field="image",
+                        op=FieldOp.EQUALS, value="cmd.exe", source_kind="process")],
+    )
+    POC_LIBRARY[poc.poc_id] = poc
+    try:
+        result = PocAgent(adapter=adapter, ledger_dir=tmp_path).run(
+            poc.poc_id, time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z",
+        )
+        assert result.verdict == "MATCHED"
+        assert result.total_observations == 1
+        assert result.step_results[0].rows[0]["host"] == "DESKTOP-VICTIM1"
+        assert result.ir_escalated is True
+        assert result.ir_escalation_path
+    finally:
+        del POC_LIBRARY[poc.poc_id]
+
+
+def test_refine_pivots_a_partial_match(tmp_path: Path):
+    from hunting.poc.library import POC_LIBRARY
+    from hunting.poc.models import FieldOp, PoC, PocKind, TestStep
+
+    adapter = CdbAdapter(":memory:")
+    adapter.insert_events([
+        {
+            "timestamp": "2026-09-01T10:00:00Z", "host": "WKSTN-1", "user": "alice",
+            "image": "powershell.exe", "cmdline": "powershell.exe -Enc QQ",
+            "raw_ref": "p", "native_type": "process",
+        },
+        {
+            "timestamp": "2026-09-01T10:01:00Z", "host": "WKSTN-1", "user": "alice",
+            "image": "cmd.exe", "cmdline": "cmd.exe /c whoami",
+            "raw_ref": "c", "native_type": "process",
+        },
+        {
+            "timestamp": "2026-09-01T10:02:00Z", "host": "WKSTN-9", "user": "mallory",
+            "image": "cmd.exe", "cmdline": "cmd.exe /c whoami",
+            "raw_ref": "o", "native_type": "process",
+        },
+    ])
+    poc = PoC(
+        poc_id="poc-refine-pivot", name="pivot", kind=PocKind.BEHAVIOR, summary="x",
+        topic="encoded powershell", behavior="encoded powershell then cmd",
+        location="workstations", evidence="process telemetry",
+        research_refs=["PEAK"], scope="fleet", max_duration="3d", plan="two steps",
+        steps=[
+            TestStep(step_id="s1", description="ps", target_field="image",
+                     op=FieldOp.EQUALS, value="powershell.exe", source_kind="process"),
+            TestStep(step_id="s2", description="cmd", target_field="image",
+                     op=FieldOp.EQUALS, value="cmd.exe", source_kind="process"),
+        ],
+    )
+    POC_LIBRARY[poc.poc_id] = poc
+    try:
+        result = PocAgent(adapter=adapter, ledger_dir=tmp_path).run(
+            poc.poc_id, time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z",
+        )
+        cmd = next(step for step in result.step_results if step.step_id == "s2")
+        assert cmd.pass_index == 2
+        assert cmd.row_count == 1
+        assert cmd.rows[0]["host"] == "WKSTN-1"
+        assert any(entry.get("phase") == "refine" for entry in result.refine_log)
+    finally:
+        del POC_LIBRARY[poc.poc_id]
+
+
+def test_prepare_gate_rejects_a_plan_without_able(tmp_path: Path):
+    from hunting.peak import PrepareError
+    from hunting.poc.library import POC_LIBRARY
+    from hunting.poc.models import FieldOp, PoC, PocKind, TestStep
+
+    adapter = CdbAdapter(":memory:")
+    agent = PocAgent(adapter=adapter, ledger_dir=tmp_path)
+    bare = PoC(
+        poc_id="poc-bare-prepare", name="x", kind=PocKind.BEHAVIOR, summary="x",
+        steps=[TestStep(step_id="s1", description="x", target_field="user",
+                        op=FieldOp.EQUALS, value="admin", source_kind="process")],
+    )
+    POC_LIBRARY[bare.poc_id] = bare
+    try:
+        with pytest.raises(PrepareError):
+            agent.run(bare.poc_id, time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z", enforce_prepare=True)
+    finally:
+        del POC_LIBRARY[bare.poc_id]
+
+
+def test_max_duration_clamps_the_trailing_window():
+    from hunting.peak import enforce_max_duration
+
+    window, note = enforce_max_duration(
+        "2026-09-01T00:00:00Z/2026-09-11T00:00:00Z",
+        "3d",
+    )
+    assert window == "2026-09-08T00:00:00Z/2026-09-11T00:00:00Z"
+    assert "clamped" in note
+
+
+def test_hunt_plan_yaml_round_trip(tmp_path: Path):
+    from hunting.peak import dump_hunt_plan, load_hunt_plan
+
+    path = tmp_path / "plan.yaml"
+    dump_hunt_plan({
+        "topic": "exfil",
+        "research_refs": ["PEAK"],
+        "actor": "",
+        "behavior": "DNS tunneling",
+        "location": "finance hosts",
+        "evidence": "dns telemetry",
+        "scope": "finance vlan",
+        "max_duration": "3d",
+        "plan": "stack dns queries",
+    }, path)
+    loaded = load_hunt_plan(path)
+    assert loaded["behavior"] == "DNS tunneling"
+    assert loaded["research_refs"] == ["PEAK"]
+    assert loaded["max_duration"] == "3d"
+
+
+def test_compiler_puts_able_constraints_on_the_anchor():
+    from hunting.poc.compiler import compile_poc
+
+    graph = compile_poc(
+        get_poc("poc-phishing-powershell-enc"),
+        request_id="req-able",
+        time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z",
+    )
+    anchor = graph.variables[0]
+    keys = {item.key for item in anchor.constraints}
+    assert "able_behavior" in keys
+    assert "able_evidence" in keys
+    assert any("powershell.exe" in item for item in graph.assumptions)
 
 
 def test_analytic_poc_runs_against_botsv1_sample(tmp_path: Path):

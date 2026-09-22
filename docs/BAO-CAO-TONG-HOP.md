@@ -16,40 +16,41 @@ Hệ thống không tự nghĩ ra giả thuyết. Mọi lần chạy đều bắ
 2. **Nghi ngờ tự do** — analyst gõ câu hỏi ("Phishing email dẫn tới PowerShell trên máy X?"),
    tool biên dịch thành kế hoạch hunt có cấu trúc.
 
-Mỗi PoC mang kèm hunt-plan (ABLE: actor/behavior/location/evidence, scope, research refs)
-để trình bày — nhưng matching vẫn là literal trên dữ liệu, không phụ thuộc LLM.
+Mỗi PoC phải có hunt plan trước khi chạy: topic, research, ABLE, scope, max duration, plan.
+Actor được để trống. Token cụ thể trong ABLE (host có chữ số, account `DOMAIN\user`, tên file, flag, IP, chuỗi trích dẫn) thành predicate của query. Phần văn xuôi không thêm điều kiện. Matching vẫn literal, không do LLM bịa hàng.
 
 ## 2. Phương pháp: deterministic trước, LLM chỉ advisory
 
 ```
-PoC (giả thuyết có cấu trúc)
-  → compile deterministic thành SemanticGoalGraph (không LLM)
-  → match literal qua adapter (CDB SQLite / Splunk) → MATCHED / EMPTY
-  → nếu MATCHED + analyst yêu cầu: LLM judge chấm TP/FP/INCONCLUSIVE (advisory)
-  → nếu EMPTY + có hint: LLM escalation bounded (advisory)
-  → sinh Act: SPL draft (DRAFT) + backlog + stakeholder summary
-  → ghi ledger JSON + report Markdown (tái chạy/audit được)
+Prepare (wizard hoặc YAML): topic → research → ABLE → scope → plan
+  → từ chối chạy nếu thiếu trường bắt buộc
+  → max_duration cắt cửa sổ về cạnh cuối
+PoC
+  → compile deterministic thành SemanticGoalGraph; ABLE thành constraint (không LLM)
+  → pass 1: match literal qua adapter
+  → analyze → tối đa một pass refine (siết host, hoặc chạy lại predicate gốc)
+  → MATCHED / EMPTY
+  → finding khớp, hoặc narrative LLM khi rỗng: ghi gói IR
+  → nếu MATCHED và analyst yêu cầu: LLM judge TP/FP/INCONCLUSIVE (advisory)
+  → Act: SPL + kiểm tra parser Splunk khi có session, backlog JSONL, stakeholder Markdown
+  → ledger JSON + report
 ```
 
-Hai tầng phụ trợ (không LLM, không ML): **baseline survey** (EDA: data dictionary,
-distributions, stack-counting/z-score outliers, gap analysis) và **heuristic lead
-scoring** (frequency + lexical + sequence rarity + DGA heuristic, stdlib only).
+Baseline survey vẫn là EDA không LLM. Nhánh `--math` không train model: nó gọi API LLM
+đã khai trong `.env`. Lead chỉ sống nếu giá trị nằm trong hàng đã kéo. Khi API không
+có, prefilter stdlib chạy và được ghi rõ là không phải model đã train.
 
-**Lập trường framework (trung thực):** PEAK của Splunk SURGe là quy trình cho analyst
-con người, không phải kiến trúc phần mềm. Hệ thống này KHÔNG claim PEAK-compliant —
-chỉ mượn ngôn ngữ PEAK (ABLE, baseline, Act) để giao tiếp với SOC/manager. Giá trị kỹ
-thuật thật: deterministic matching, bounded-LLM (đếm call/token/USD riêng match vs
-judge), verification (limit+1 EOF proof, typed contracts, append-only observations),
-reproducibility (full suite 517 passed).
+**Lập trường:** PEAK là quy trình Splunk SURGe. Kho này chạy bốn cửa đó trên đường PoC
+và không nhận chứng nhận PEAK. Match vẫn deterministic. LLM không tạo observation.
 
 ## 3. Demo trên sample 16 events (BOTS v1 thu gọn)
 
-Quy trình 3 bước chạy nối nhau, không LLM ở 2 bước đầu:
+Quy trình 3 bước trên cùng sample. Baseline không gọi LLM. `--math` gọi API nếu `.env` sẵn sàng:
 
 | Bước | Lệnh | Kết quả |
 |---|---|---|
 | Baseline survey | `--baseline cdb:events` | 16 rows → 11 fields, 23 outliers (`smtp`, `schtasks.exe`, `svc_admin`...), 4 gaps (`domain`, `file_path`... trống) |
-| Lead scoring | `--math cdb:events` | 25 leads; top lexical 6.50 = 3 cmdline PowerShell `-enc` + hidden |
+| LLM-assisted (`--math`) | `--math cdb:events` | API LLM xếp lead đã có trong hàng; không có API thì prefilter stdlib |
 | PoC + Judge | `--poc-file pocs/poc-pdf-exploit-enc.json --poc-judge --llm api` | MATCHED 9 obs, 3 steps; judge INCONCLUSIVE 0.88 (bóc được SCCM `foobar` là noise, 2 cmdline alice thiếu parent/network nên không kết TP) |
 
 Mỗi bước sinh report có Act (SPL draft + backlog + stakeholder) và ledger tái chạy được.

@@ -1,0 +1,93 @@
+{
+  "hunt_id": "test-adaptive-hunt",
+  "outcome": "PARTIALLY_SUPPORTED",
+  "stopping_decision": "STOP_BOUNDED",
+  "answer": {
+    "status": "PARTIALLY_SUPPORTED",
+    "reason": "VERSION_UNAVAILABLE",
+    "answer_type": "software_version",
+    "question": "What version of Tor was installed on wrk-amber?",
+    "candidates": [],
+    "card_ids": [],
+    "required_fields": [
+      "ProductVersion"
+    ],
+    "available_fields": [
+      "file_path",
+      "host",
+      "image",
+      "path",
+      "process_name",
+      "timestamp",
+      "user"
+    ],
+    "missing_fields": [
+      "ProductVersion"
+    ],
+    "artifact_detected": true,
+    "claim": "wrk-amber was observed on wrk-amber. Requested version: Not available in the retrieved telemetry.",
+    "citations": [
+      {
+        "claim": "wrk-amber executed on wrk-amber",
+        "observation_ids": [
+          "obs-adaptive-2",
+          "obs-adaptive-3"
+        ],
+        "query_ids": [
+          "qp-adaptive-0-1",
+          "qp-adaptive-0-2"
+        ],
+        "fields": [
+          "Path",
+          "Image"
+        ]
+      }
+    ],
+    "citation_text": "wrk-amber executed on wrk-amber Evidence: obs-adaptive-2, obs-adaptive-3 Query: qp-adaptive-0-1, qp-adaptive-0-2 Fields: Path, Image",
+    "explanation": "wrk-amber was observed on wrk-amber. Requested version: Not available in the retrieved telemetry."
+  },
+  "llm_usage": {
+    "model": "stub",
+    "max_calls_budget": 3,
+    "calls_made": 0,
+    "is_exhausted": false,
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "total_tokens": 0,
+    "estimated_cost_usd": 0,
+    "calls": []
+  },
+  "total_observations": 3,
+  "total_cards": 2,
+  "total_queries": 3,
+  "semantic_graph_id": null,
+  "proof_plan_id": null,
+  "semantic_analysis": {
+    "source_profile": {
+      "status": "NO_LLM_CALLER",
+      "readiness": [],
+      "profiling_goal_ids": [],
+      "retrieval": [],
+      "census_profile_discovery": {},
+      "proposals": [],
+      "rejected": [],
+      "relation_calls": [],
+      "runtime_capabilities": [],
+      "runtime_operation_ids": []
+    }
+  },
+  "source_profile_audit": {
+    "status": "NO_LLM_CALLER",
+    "readiness": [],
+    "profiling_goal_ids": [],
+    "retrieval": [],
+    "census_profile_discovery": {},
+    "proposals": [],
+    "rejected": [],
+    "relation_calls": [],
+    "runtime_capabilities": [],
+    "runtime_operation_ids": []
+  },
+  "runtime_capabilities": [],
+  "semantic_route_assessments": []
+}

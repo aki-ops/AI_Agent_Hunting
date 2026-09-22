@@ -3089,6 +3089,20 @@ class HypothesisHuntEngine:
             final_analysis.setdefault("compiler_trace", dict(state.compiler_trace))
             self.controller.set_semantic_analysis(state, final_analysis)
 
+        from hunting.peak import peak_execute_cycle
+
+        cycle = peak_execute_cycle(
+            observation_count=len(getattr(ledger, "observations", []) or []),
+        )
+        self.peak_execute_log = cycle
+        if isinstance(state.adaptive_decision, dict):
+            state.adaptive_decision = {**state.adaptive_decision, "peak_execute": cycle}
+        self.peak_ir_escalation = {
+            "escalate": bool(cycle and cycle[-1].get("ir_escalate")),
+            "reason": str((cycle or [{}])[-1].get("reason", "")),
+            "request_id": getattr(request, "id", ""),
+        }
+
         account = build_final_hunt_account(state, ledger=ledger)
         # The CLI report is intentionally concise. Full observations, raw
         # references and diagnostics remain available in persisted artifacts.

@@ -43,6 +43,36 @@ from hunting.planner.planner import CanonicalQueryPlanner
 from hunting.registry.loader import load_registry
 
 
+def _api_question_caller(args: argparse.Namespace):
+    """Build a ``(question, max_tokens) -> str`` caller from ``.env``.
+
+    Returns ``(caller, tracker, error)``. ``error`` is set when API mode
+    was requested and the client could not be constructed.
+    """
+    if getattr(args, "llm", "api") != "api":
+        return None, None, "LLM mode is not api"
+    try:
+        config = ApiLLMConfig.from_env()
+        if getattr(args, "llm_endpoint", None) or getattr(args, "llm_model", None) or getattr(args, "api_key", None):
+            config = ApiLLMConfig(
+                endpoint=args.llm_endpoint or config.endpoint,
+                model=args.llm_model or config.model,
+                timeout_seconds=config.timeout_seconds,
+                max_tokens=config.max_tokens,
+                api_key=args.api_key or config.api_key,
+            )
+        provider = ApiLLMProvider(config)
+        tracker = LLMUsageTracker(model_name=config.model)
+
+        def _question_only(question: str, max_tokens: int) -> str:
+            del max_tokens
+            return provider.call_raw(question)
+
+        return _question_only, tracker, None
+    except Exception as exc:
+        return None, None, str(exc)
+
+
 def parse_alert_from_file_or_content(content_or_path: str) -> Alert:
     """Parse Alert from file path or JSON/YAML string."""
     data: dict[str, Any]
@@ -549,6 +579,10 @@ def build_parser() -> argparse.ArgumentParser:
     poc_group.add_argument("--poc-report", type=str, default=None, help="Path to write the PoC case-file Markdown report.")
     poc_group.add_argument("--poc-judge-max-tokens", type=int, default=2000, help="Max tokens for the post-hoc judge LLM call.")
     poc_group.add_argument("--poc-file", type=str, default=None, help="Load one PoC from a JSON file (overrides --poc).")
+    poc_group.add_argument("--prepare", action="store_true", help="PEAK Prepare wizard: topic, research, ABLE, scope, max duration, plan. With a PoC, fills the plan before the hunt. Alone, writes a YAML hunt plan and exits.")
+    poc_group.add_argument("--skip-prepare", action="store_true", help="Bypass the mandatory PEAK Prepare gate for hypothesis/baseline/M-ATH runs. Use only for tests or deliberate ad-hoc runs; the hunt then has no recorded Prepare plan.")
+    poc_group.add_argument("--hunt-plan", type=str, default=None, help="YAML or JSON PEAK Prepare plan. Applied to a PoC before execution, or used to satisfy the mandatory Prepare gate on hypothesis/baseline/M-ATH runs.")
+    poc_group.add_argument("--max-refine", type=int, default=1, help="Extra PEAK Execute passes after the first analysis [default: 1].")
 
     # Baseline survey / EDA (no LLM)
     baseline_group = parser.add_argument_group("Baseline Survey (EDA)")
@@ -558,9 +592,9 @@ def build_parser() -> argparse.ArgumentParser:
     baseline_group.add_argument("--baseline-rare", type=int, default=2, help="Stack-counting threshold: values seen <= N times are outliers [default: 2].")
     baseline_group.add_argument("--baseline-report", type=str, default=None, help="Path to write the baseline Markdown report.")
 
-    # Heuristic lead scoring (stdlib, no LLM, no numpy)
-    math_group = parser.add_argument_group("Heuristic Lead Scoring")
-    math_group.add_argument("--math", type=str, default=None, metavar="DATA_SOURCE", help="Run heuristic lead-scoring detectors over a CDB source, e.g. --math cdb:events. Writes models/math_runs/<id>.json + report.")
+    # LLM-assisted ranking. The model is the API in .env, not a trained local model.
+    math_group = parser.add_argument_group("LLM-Assisted Hunt (API)")
+    math_group.add_argument("--math", type=str, default=None, metavar="DATA_SOURCE", help="Rank leads with the API LLM from .env over a CDB source, e.g. --math cdb:events. Offline --llm stub keeps the stdlib prefilter only.")
     math_group.add_argument("--math-detectors", type=str, default=None, help="Comma-separated subset of rare_value,lexical,rare_sequence,dga [default: all].")
     math_group.add_argument("--math-limit", type=int, default=5000, help="Max rows to pull for the run window [default: 5000].")
     math_group.add_argument("--math-rare", type=int, default=2, help="Rarity threshold for frequency detectors [default: 2].")
@@ -590,6 +624,81 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_prepare_gate(
+    args: argparse.Namespace,
+    *,
+    hunt_kind: str,
+    content: str,
+    scope: str = "",
+    time_window: str = "",
+    evidence_hint: str = "",
+    location_hint: str = "",
+) -> tuple[dict | None, int | None]:
+    """Enforce the mandatory PEAK Prepare gate for a non-PoC hunt entrypoint.
+
+    Every hypothesis, baseline and M-ATH run must pass through PEAK Prepare,
+    matching the PoC path. Resolution order:
+
+    1. ``--skip-prepare`` bypasses the gate (returns ``(None, None)``); the run
+       proceeds with no recorded Prepare plan.
+    2. ``--hunt-plan`` loads an explicit plan. An incomplete explicit plan is a
+       hard error (returns ``(None, 2)``) — the analyst asked for a plan and it
+       is not a valid PEAK plan.
+    3. Otherwise a minimal plan is derived from the hunt inputs. If that plan is
+       still incomplete (e.g. no objective), the gate blocks (returns
+       ``(None, 2)``).
+
+    On success prints the resolved Prepare and returns ``(plan, None)``.
+    """
+    from hunting.peak import (
+        PrepareError,
+        derive_prepare_plan,
+        load_hunt_plan,
+        missing_prepare_fields_from_plan,
+    )
+
+    if getattr(args, "skip_prepare", False):
+        print("[!] [PREPARE] PEAK Prepare gate skipped (--skip-prepare); no plan recorded.")
+        return None, None
+
+    plan_path = getattr(args, "hunt_plan", None)
+    explicit = False
+    if plan_path:
+        try:
+            plan = load_hunt_plan(plan_path)
+            explicit = True
+        except (PrepareError, OSError, ValueError) as exc:
+            print(f"[-] [PREPARE] {exc}", file=sys.stderr)
+            return None, 2
+    else:
+        plan = derive_prepare_plan(
+            hunt_kind=hunt_kind,
+            content=content,
+            scope=scope,
+            time_window=time_window,
+            evidence_hint=evidence_hint,
+            location_hint=location_hint,
+        )
+
+    missing = missing_prepare_fields_from_plan(plan)
+    if missing:
+        source = "hunt plan" if explicit else "hunt inputs"
+        print(
+            "[-] [PREPARE] PEAK Prepare is incomplete from the "
+            f"{source} (missing: {', '.join(missing)}). "
+            "Pass a complete --hunt-plan, run --prepare, or --skip-prepare for an ad-hoc run.",
+            file=sys.stderr,
+        )
+        return None, 2
+
+    print(
+        f"[+] [PREPARE] PEAK Prepare ready: topic={plan.get('topic')!r} "
+        f"scope={plan.get('scope')!r} max_duration={plan.get('max_duration')!r} "
+        f"(source={'--hunt-plan' if explicit else 'derived from hunt inputs'})"
+    )
+    return plan, None
+
+
 def run_cli(args: argparse.Namespace) -> int:
     """Execute investigation or hypothesis-driven hunt workflow based on parsed arguments."""
     if hasattr(sys.stdout, "reconfigure"):
@@ -606,6 +715,38 @@ def run_cli(args: argparse.Namespace) -> int:
             print(f"[+] {poc.poc_id}\t{poc.kind.value}\t{poc.name}")
         return 0
 
+    hunt_requested = bool(
+        getattr(args, "poc", None)
+        or getattr(args, "poc_chain", None)
+        or getattr(args, "poc_file", None)
+        or getattr(args, "baseline", None)
+        or getattr(args, "math", None)
+        or getattr(args, "cve", None)
+        or getattr(args, "ttp", None)
+        or getattr(args, "ioc", None)
+        or getattr(args, "threat_actor", None)
+        or getattr(args, "campaign", None)
+        or getattr(args, "query", None)
+        or getattr(args, "hypothesis", None)
+        or getattr(args, "hypothesis_file", None)
+        or getattr(args, "alert", None)
+    )
+    if getattr(args, "prepare", False) and not hunt_requested:
+        from hunting.peak import PrepareError, dump_hunt_plan, interactive_prepare
+
+        if not sys.stdin.isatty():
+            print("[-] [PREPARE] The wizard needs a terminal. Pass --hunt-plan instead.", file=sys.stderr)
+            return 2
+        try:
+            plan = interactive_prepare()
+        except PrepareError as exc:
+            print(f"[-] [PREPARE] {exc}", file=sys.stderr)
+            return 2
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        written = dump_hunt_plan(plan, Path("artifacts") / "hunt_plans" / f"prepare-{stamp}.yaml")
+        print(f"[+] [PREPARE] Wrote {written}")
+        return 0
+
     # 0b. Baseline dispatch — needs only the CDB adapter, no LLM.
     # Runs before provider setup so --baseline works with just --db + --time-window.
     if getattr(args, "baseline", None):
@@ -613,6 +754,17 @@ def run_cli(args: argparse.Namespace) -> int:
 
         data_source = str(args.baseline)
         window = getattr(args, "time_window", None) or "NOW-14d/NOW"
+        _plan, _gate = resolve_prepare_gate(
+            args,
+            hunt_kind="baseline",
+            content=f"baseline survey (EDA) of {data_source}",
+            scope=f"baseline survey of {data_source}",
+            time_window=window,
+            evidence_hint=f"telemetry rows from {data_source} within the window",
+            location_hint=data_source,
+        )
+        if _gate is not None:
+            return _gate
         fields = None
         if getattr(args, "baseline_fields", None):
             fields = [c.strip() for c in str(args.baseline_fields).split(",") if c.strip()]
@@ -660,14 +812,40 @@ def run_cli(args: argparse.Namespace) -> int:
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(render_baseline_report(result), encoding="utf-8")
         print(f"  Report: {report_path}")
+        from hunting.act import backlog_from_baseline, commit_act, spl_from_outlier, stakeholder_summary
+        outlier_rows = [item.to_dict() for item in result.outliers[:3]]
+        committed = commit_act(
+            kind="baseline",
+            source=result.baseline_id,
+            spls=[spl_from_outlier(item) for item in outlier_rows],
+            backlog=backlog_from_baseline(outlier_rows, list(result.gaps)),
+            stakeholder=stakeholder_summary(
+                "baseline",
+                f"Baseline {result.baseline_id}: {len(result.outliers)} outliers, {len(result.gaps)} gaps.",
+                [],
+            ),
+            export_dir=Path("artifacts") / "act" / result.baseline_id.replace(":", "_"),
+        )
+        print(f"  Act: {committed['stakeholder_path']}")
         return 0
 
-    # 0c. Heuristic lead-scoring dispatch — stdlib detectors, no LLM.
+    # 0c. LLM-assisted ranking. The model is the API in .env.
     if getattr(args, "math", None):
         from hunting.mathunt import render_math_report, run_math
 
         data_source = str(args.math)
         window = getattr(args, "time_window", None) or "NOW-14d/NOW"
+        _plan, _gate = resolve_prepare_gate(
+            args,
+            hunt_kind="M-ATH",
+            content=f"model-assisted lead ranking over {data_source}",
+            scope=f"M-ATH lead ranking over {data_source}",
+            time_window=window,
+            evidence_hint=f"ranked leads grounded in {data_source} rows",
+            location_hint=data_source,
+        )
+        if _gate is not None:
+            return _gate
         detectors = None
         if getattr(args, "math_detectors", None):
             detectors = [d.strip() for d in str(args.math_detectors).split(",") if d.strip()]
@@ -676,7 +854,14 @@ def run_cli(args: argparse.Namespace) -> int:
         min_score = float(getattr(args, "math_min_score", 2.0) or 2.0)
         db_path = Path(getattr(args, "db", "data/cdb_sample.sqlite"))
         adapter = CdbAdapter(str(db_path) if db_path.exists() else ":memory:")
-        print(f"[*] M-ATH backend: Local CDB ({db_path if db_path.exists() else ':memory:'})")
+        llm_caller, _math_tracker, math_llm_error = _api_question_caller(args)
+        if llm_caller is not None:
+            print(f"[*] LLM-assisted backend: Local CDB + API model ({db_path if db_path.exists() else ':memory:'})")
+        else:
+            print(
+                f"[*] LLM-assisted backend: API unavailable ({math_llm_error}); "
+                f"stdlib prefilter only ({db_path if db_path.exists() else ':memory:'})"
+            )
         try:
             from hunting.m5_adapter.allowlist import validate_time_window_format
             start_dt, end_dt = validate_time_window_format(window)
@@ -696,10 +881,11 @@ def run_cli(args: argparse.Namespace) -> int:
         result = run_math(
             rows, data_source=data_source, time_window=window,
             detectors=detectors, rare_threshold=rare, min_score=min_score,
+            llm_caller=llm_caller,
         )
         print("\n" + "=" * 72)
         print(
-            f"M-ATH {result.run_id} — {result.row_count} rows, "
+            f"LLM-assisted {result.run_id} [{result.model_source}] — {result.row_count} rows, "
             f"{len(result.leads)} leads [{','.join(result.detectors)}] "
             f"({result.runtime_seconds:.4f}s)"
             + (" [TRUNCATED: window has more rows than --math-limit]" if not complete else "")
@@ -711,6 +897,20 @@ def run_cli(args: argparse.Namespace) -> int:
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(render_math_report(result), encoding="utf-8")
         print(f"  Report: {report_path}")
+        from hunting.act import backlog_from_math, commit_act, spl_from_lead
+        lead_rows = [lead.to_dict() for lead in result.leads[:3]]
+        committed = commit_act(
+            kind="math",
+            source=result.run_id,
+            spls=[spl_from_lead(item) for item in lead_rows],
+            backlog=backlog_from_math(lead_rows),
+            stakeholder=[
+                f"Model source: {result.model_source}.",
+                f"Leads: {len(result.leads)}.",
+            ],
+            export_dir=Path("artifacts") / "act" / result.run_id,
+        )
+        print(f"  Act: {committed['stakeholder_path']}")
         return 0
 
     # Check if hypothesis threat hunting mode is triggered
@@ -852,6 +1052,42 @@ def run_cli(args: argparse.Namespace) -> int:
     # Determine if hypothesis threat hunting mode is triggered
     is_hypothesis_hunt = bool(args.cve or args.ttp or args.ioc or args.threat_actor or args.campaign or args.query or args.hypothesis or args.hypothesis_file)
 
+    # Mandatory PEAK Prepare gate for the hypothesis engine path. Runs before
+    # the environment audit so a hunt with no valid Prepare never contacts a
+    # provider. Alert (legacy) mode is exempt: it has no hypothesis to prepare.
+    if is_hypothesis_hunt:
+        if args.hypothesis:
+            _hk, _content = "hypothesis", str(args.hypothesis)
+        elif args.cve:
+            _hk, _content = "cve", str(args.cve)
+        elif args.ttp:
+            _hk, _content = "ttp", str(args.ttp)
+        elif args.ioc:
+            _hk, _content = "ioc", str(args.ioc)
+        elif args.query:
+            _hk, _content = "query", str(args.query)
+        elif args.hypothesis_file:
+            _hk, _content = "hypothesis", f"hypothesis file {args.hypothesis_file}"
+        else:
+            _hk, _content = "campaign", str(args.threat_actor or args.campaign or "")
+        _entity_hint = ", ".join(
+            str(v) for v in (
+                getattr(args, "host", None),
+                getattr(args, "user", None),
+                getattr(args, "ip", None),
+                getattr(args, "domain", None),
+            ) if v
+        )
+        _plan, _gate = resolve_prepare_gate(
+            args,
+            hunt_kind=_hk,
+            content=_content,
+            time_window=getattr(args, "time_window", None) or "",
+            location_hint=_entity_hint,
+        )
+        if _gate is not None:
+            return _gate
+
     # Initialize Telemetry Provider Adapter with Automated Environment Audit
     selected_provider = getattr(args, "provider", "auto")
     auto_discovered_index_info: dict[str, Any] | None = None
@@ -959,37 +1195,17 @@ def run_cli(args: argparse.Namespace) -> int:
         llm_caller = None
         judge_caller = None
         llm_tracker = None
-        if (getattr(args, "poc_allow_escalation", False) or getattr(args, "poc_judge", False)) and args.llm == "api":
-            try:
-                from hunting.m2_abduction.provider import (
-                    ApiLLMProvider as _PocApiLLMProvider,
-                    create_llm_caller as _poc_create_llm_caller,
-                )
-                from hunting.m2_abduction.provider import ApiLLMConfig as _PocApiLLMConfig
-                config = _PocApiLLMConfig.from_env()
-                if args.llm_endpoint or args.llm_model or args.api_key:
-                    config = _PocApiLLMConfig(
-                        endpoint=args.llm_endpoint or config.endpoint,
-                        model=args.llm_model or config.model,
-                        timeout_seconds=config.timeout_seconds,
-                        max_tokens=config.max_tokens,
-                        api_key=args.api_key or config.api_key,
-                    )
-                provider = _PocApiLLMProvider(config)
-                llm_tracker = LLMUsageTracker(model_name=config.model)
-                caller = _poc_create_llm_caller(provider, llm_tracker, "poc_escalation")
-
-                def _question_only(question: str, max_tokens: int) -> str:
-                    return provider.call_raw(question)
-
-                llm_caller = _question_only
-                judge_caller = _question_only
+        if getattr(args, "poc_allow_escalation", False) or getattr(args, "poc_judge", False):
+            llm_caller, llm_tracker, llm_error = _api_question_caller(args)
+            judge_caller = llm_caller
+            if llm_caller is None:
+                print(f"[-] [POC LLM] Disabled ({llm_error})", file=sys.stderr)
+            else:
+                model_name = getattr(llm_tracker, "model_name", "api")
                 if getattr(args, "poc_allow_escalation", False):
-                    print(f"[+] [POC ESCALATION] Active ApiLLMProvider: model='{config.model}'")
+                    print(f"[+] [POC ESCALATION] Active ApiLLMProvider: model='{model_name}'")
                 if getattr(args, "poc_judge", False):
-                    print(f"[+] [POC JUDGE] Active ApiLLMProvider: model='{config.model}' max_tokens={args.poc_judge_max_tokens}")
-            except Exception as e:
-                print(f"[-] [POC LLM] Disabled (init failed: {e})", file=sys.stderr)
+                    print(f"[+] [POC JUDGE] Active ApiLLMProvider: model='{model_name}' max_tokens={args.poc_judge_max_tokens}")
 
         agent = PocAgent(
             adapter=adapter,
@@ -999,16 +1215,67 @@ def run_cli(args: argparse.Namespace) -> int:
             judge_caller=judge_caller,
             enable_judge=getattr(args, "poc_judge", False),
         )
+        from hunting.peak import PrepareError, apply_plan_to_poc, interactive_prepare, load_hunt_plan
+        from hunting.poc.library import POC_LIBRARY
+
+        plan = None
+        if getattr(args, "hunt_plan", None):
+            plan_path = Path(args.hunt_plan)
+            if not plan_path.exists():
+                print(f"[-] [PREPARE] Hunt plan not found: {plan_path}", file=sys.stderr)
+                return 2
+            try:
+                plan = load_hunt_plan(plan_path)
+            except (PrepareError, OSError, ValueError) as exc:
+                print(f"[-] [PREPARE] {exc}", file=sys.stderr)
+                return 2
+            print(f"[+] [PREPARE] Loaded hunt plan {plan_path}")
+
         ids = [poc_id] if poc_id else [x.strip() for x in poc_chain.split(",") if x.strip()]
         for pid in ids:
             try:
-                get_poc(pid)
+                current = get_poc(pid)
             except KeyError:
                 print(f"[-] Unknown PoC id: {pid}", file=sys.stderr)
-                print(f"    Run 'python main.py --list-pocs' to see available PoCs.", file=sys.stderr)
+                print("    Run 'python main.py --list-pocs' to see available PoCs.", file=sys.stderr)
                 return 1
+            if plan is not None:
+                current = apply_plan_to_poc(current, plan)
+            if getattr(args, "prepare", False):
+                if not sys.stdin.isatty():
+                    print("[-] [PREPARE] The wizard needs a terminal. Pass --hunt-plan instead.", file=sys.stderr)
+                    return 2
+                try:
+                    current = apply_plan_to_poc(current, interactive_prepare({
+                        "topic": current.topic,
+                        "research_refs": list(current.research_refs),
+                        "actor": current.actor,
+                        "behavior": current.behavior,
+                        "location": current.location,
+                        "evidence": current.evidence,
+                        "scope": current.scope,
+                        "max_duration": current.max_duration,
+                        "plan": current.plan,
+                    }))
+                except PrepareError as exc:
+                    print(f"[-] [PREPARE] {exc}", file=sys.stderr)
+                    return 2
+            POC_LIBRARY[current.poc_id] = current
+            print(
+                f"[+] [PREPARE] {current.poc_id} topic={current.topic or '(missing)'} "
+                f"max_duration={current.max_duration or '(missing)'}"
+            )
 
-        chain_results = agent.run_chain(ids, time_window=args.time_window or "NOW-14d/NOW")
+        try:
+            chain_results = agent.run_chain(
+                ids,
+                time_window=args.time_window or "NOW-14d/NOW",
+                max_refine=int(getattr(args, "max_refine", 1) or 0),
+                enforce_prepare=True,
+            )
+        except PrepareError as exc:
+            print(f"[-] [PREPARE] {exc}", file=sys.stderr)
+            return 2
         for r in chain_results:
             poc_render = get_poc(r.poc_id).render()
             print("\n" + "=" * 72)
@@ -1027,14 +1294,35 @@ def run_cli(args: argparse.Namespace) -> int:
             if r.judgment is not None:
                 print(f"  Judge:     {r.judgment.verdict} (conf={r.judgment.confidence:.2f})")
                 print(f"             {r.judgment.rationale}")
+            if r.scope_note:
+                print(f"  Scope:     {r.scope_note}")
+            if r.ir_escalated:
+                print(f"  IR:        {r.ir_escalation_path}")
             if r.ledger_path:
                 print(f"  Ledger:    {r.ledger_path}")
+            live_checker = adapter.validate_spl if hasattr(adapter, "validate_spl") and selected_provider == "splunk" else None
             report_path = Path(args.poc_report) if args.poc_report else (
                 Path("artifacts") / "poc_hunts" / f"{r.request_id}.md"
             )
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(render_poc_report(r, poc_render), encoding="utf-8")
+            report_path.write_text(
+                render_poc_report(r, poc_render, live_checker=live_checker),
+                encoding="utf-8",
+            )
+            from hunting.act import commit_act
+            from hunting.poc.reporter import build_poc_act_block
+            act_block = build_poc_act_block(r, poc_render, live_checker=live_checker)
+            committed = commit_act(
+                kind="poc",
+                source=r.poc_id,
+                spls=[str(act_block["detection_spl"])],
+                backlog=list(act_block["backlog"]),
+                stakeholder=list(act_block["stakeholder"]),
+                live_checker=live_checker,
+                export_dir=Path("artifacts") / "act" / r.request_id,
+            )
             print(f"  Report:    {report_path}")
+            print(f"  Act:       {committed['stakeholder_path']} ({committed['validations'][0]['status']})")
         return 0
 
     if is_hypothesis_hunt:

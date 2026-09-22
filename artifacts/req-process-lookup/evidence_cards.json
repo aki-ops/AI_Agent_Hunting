@@ -1,0 +1,29 @@
+[
+  {
+    "id": "card-edge-claim-process",
+    "summary": "Verified relation SRV-01 -[observed_process]-> powershell.exe -NoProfile",
+    "why_it_matters": "Proves causal provenance step for edge-claim-process",
+    "fact_type": "observed_process",
+    "count": 1,
+    "confidence": "HIGH",
+    "hypotheses": [
+      "claim-process"
+    ],
+    "requirements": [
+      "edge-claim-process",
+      "req-process"
+    ],
+    "query_ids": [
+      "qp-v5-1-cdb_process_search"
+    ],
+    "replay": {},
+    "entity_summary": {},
+    "time_summary": {},
+    "field_summary": {
+      "cmdline": "powershell.exe -NoProfile"
+    },
+    "representative_observation_ids": [
+      "obs-1"
+    ]
+  }
+]

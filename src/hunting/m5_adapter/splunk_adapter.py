@@ -515,6 +515,35 @@ class SplunkLiveAdapter:
             avail = sorted(list(index_names))
             raise ValueError(f"Target index '{self.index}' does not exist on Splunk. Available indexes: {avail}")
 
+    def validate_spl(self, spl: str) -> dict[str, Any]:
+        """Parse a detection draft on the Splunk parser. Does not run the search.
+
+        Uses ``POST /services/search/parser``. A non-200 response or a FATAL
+        message means the draft is not valid SPL.
+        """
+        response = requests.post(
+            f"{self.splunk_url}/services/search/parser",
+            data={"search": spl, "output_mode": "json"},
+            auth=self.auth,
+            verify=self.verify_ssl,
+            timeout=min(self.timeout, 20),
+        )
+        if response.status_code != 200:
+            return {
+                "ok": False,
+                "messages": [f"HTTP {response.status_code}: {response.text[:300]}"],
+            }
+        try:
+            body = response.json()
+        except ValueError:
+            return {"ok": False, "messages": ["Splunk parser returned a non-JSON body"]}
+        messages = [
+            str(item.get("text", "")).strip()
+            for item in body.get("messages", [])
+            if str(item.get("type", "")).upper() in {"FATAL", "ERROR"} and str(item.get("text", "")).strip()
+        ]
+        return {"ok": not messages, "messages": messages}
+
     # -----------------------------------------------------------------------
     # Descriptors for Query Planner and Engine
     # -----------------------------------------------------------------------

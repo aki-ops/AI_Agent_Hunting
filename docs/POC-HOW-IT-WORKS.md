@@ -43,12 +43,14 @@ Có 3 step. Mỗi step được chạy qua adapter như sau:
 
 ```
 agent → adapter.execute_query(
-    operation_id="search_text",          # adapter chạy full-text search
-    entity=None,
+    operation_id="search_text",
+    entity=None,                         # hoặc Host nếu ABLE location là host cụ thể
     window="2026-09-01/02",
-    search_terms=["powershell.exe"],     # value của step
+    search_terms=["powershell.exe", "-Enc"],
 )
 ```
+
+`powershell.exe` là value của step. `-Enc` là token cụ thể lấy từ ABLE evidence, được AND thêm. Sau SQL, agent còn lọc đúng operator trên cột đích (`EQUALS` là khớp nguyên tên file, không phải LIKE).
 
 **CDB adapter** (`src/hunting/m5_adapter/cdb_adapter.py`):
 ```sql
@@ -66,18 +68,38 @@ search "powershell.exe" index=botsv1 earliest=... latest=...
 | head 100
 ```
 
+## Prepare trước khi query
+
+Hunt không chạy nếu thiếu topic, research, behavior, location, evidence, scope, max duration hoặc plan. Actor được trống. Ba cách đưa plan:
+
+1. Trường đó đã nằm trong PoC / file JSON.
+2. `--hunt-plan configs/hunt_plan.example.yaml`.
+3. `--prepare` hỏi tuần tự trên terminal.
+
+`max_duration: 3d` cắt cửa sổ telemetry dài hơn 3 ngày về 3 ngày cuối, và là hạn của pass refine.
+
+ABLE lái query bằng token cụ thể. Với PoC phishing, evidence chứa `powershell.exe` và `-Enc`, nên mỗi step AND thêm hai token đó. Câu "end-user workstations" không có host dạng `DESKTOP-VICTIM1` nên không thành filter host.
+
+## Execute: analyze, refine, IR
+
+Pass 1 chạy các step. Nếu step khớp đầu chỉ có một host, pass 2 chạy lại các step còn lại trên host đó. Nếu cả pass 1 rỗng, agent chạy fallback rồi chạy lại đúng predicate cũ, không đổi `EQUALS` thành `CONTAINS`.
+
+Có hàng khớp, hoặc có narrative LLM khi rỗng, thì ghi `artifacts/poc_hunts/ir/<request_id>.json` cho IR. Narrative đó không phải evidence.
+
 ## Tóm tắt
 
 | Thành phần | Vai trò | AI? |
 |---|---|---|
-| PoC (Python file trong `library.py`) | Định nghĩa predicate | ❌ Thuần Python |
-| `compile_poc(poc)` | Bóc tách thành `SemanticGoalGraph` | ❌ Thuần Python |
-| `_run_step(step)` | Gửi `search_terms` cho adapter | ❌ Thuần Python |
-| Adapter (CDB/Splunk) | LIKE/SPL match trên các cột | ❌ SQL hoặc SPL |
-| `judge()` (LLM-as-Judge) | Chỉ gọi LLM **sau** khi có rows | ✅ LLM |
-| `escalation_hint` (LLM) | Chỉ gọi LLM **khi adapter rỗng** | ✅ LLM |
+| Prepare (`--prepare`, `--hunt-plan`, trường trên PoC) | Cửa trước query | Không |
+| PoC | Predicate field/op/value | Không |
+| `compile_poc` | Graph + constraint ABLE | Không |
+| `_execute_loop` | Pass 1, analyze, tối đa một pass refine | Không |
+| Adapter | LIKE/SPL | Không |
+| IR file | Gói bàn giao khi có finding hoặc narrative | Không tạo evidence |
+| `judge()` | Chấm TP/FP sau khi đã có rows | LLM, advisory |
+| `escalation_hint` | Chỉ khi adapter rỗng và bật escalation | LLM, advisory |
 
-PoC-driven match = **rules**. Không có AI trong giai đoạn match.
+Match = rules. LLM không tạo hàng.
 
 AI chỉ dùng ở 2 chỗ:
 - **Escalation** (khi adapter không tìm thấy gì): LLM được hỏi 1 câu bounded để có hay không có signal.

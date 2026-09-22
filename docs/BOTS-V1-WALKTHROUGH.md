@@ -147,8 +147,9 @@ rows -> StepResult{row_count, rows}
 matched step -> report MATCHED -> judge evaluates with LLM
 ```
 
-No AI is involved in matching. AI is involved only when:
+Matching stays rules. The Prepare gate runs first. After pass 1 the agent may run one refine pass, then files an IR package when something matched. AI is involved only when:
 
-- the matcher returns EMPTY and the PoC has an `escalation_hint`, **or**
+- `--math` asks the API LLM in `.env` to rank leads that already occur in the rows, or
+- the matcher is still EMPTY after refine, the PoC has an `escalation_hint`, and `--poc-allow-escalation` is set, or
 - the analyst passes `--poc-judge`, in which case the matched rows
   are passed to the LLM for TP/FP adjudication.
