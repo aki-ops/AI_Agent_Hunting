@@ -9,7 +9,6 @@ Output: data/raw/events/<sourcetype>.jsonl with {sourcetype, host, raw}.
 """
 import gzip
 import re
-import sys
 from collections import Counter
 from pathlib import Path
 

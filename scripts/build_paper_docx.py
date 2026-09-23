@@ -18,7 +18,7 @@ from docx.enum.section import WD_SECTION
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches, Pt
 
 ROOT = Path(__file__).resolve().parent.parent
 PAPER = ROOT / "docs" / "paper"
@@ -227,7 +227,6 @@ def main() -> int:
                         cr = cp.add_run(cl if cl else " ")
                         cr.font.name = "Consolas"
                         cr.font.size = Pt(9)
-                    p_fmt = cp.paragraph_format if block else None
                 continue
 
             # --- tables ---

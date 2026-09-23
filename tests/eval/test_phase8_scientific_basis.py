@@ -31,9 +31,6 @@ from __future__ import annotations
 
 import csv
 import json
-import os
-import tempfile
-from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -41,14 +38,12 @@ import pytest
 
 from hunting.compiler.compiler import KnowledgeBehaviorCompiler
 from hunting.contracts.hunt import (
-    HuntOutcome,
     HuntRequest,
     HuntRequestKind,
 )
 from hunting.engine import HypothesisHuntEngine
 from hunting.m2_abduction.provider import StubSemanticCompiler
 from hunting.m5_adapter.cdb_adapter import CdbAdapter
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = REPO_ROOT / "tests" / "eval" / "fixtures"

@@ -18,11 +18,10 @@ from pathlib import Path
 from hunting.poc.models import (
     EscalationHint,
     FieldOp,
-    PocKind,
     PoC,
+    PocKind,
     TestStep,
 )
-
 
 POC_LIBRARY: dict[str, PoC] = {}
 

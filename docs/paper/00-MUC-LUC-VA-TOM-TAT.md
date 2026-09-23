@@ -45,7 +45,7 @@ Nguyên tắc trung thực xuyên suốt: **mọi con số đều truy được 
 | — | `10-TAI-LIEU-THAM-KHAO.md` | Tài liệu tham khảo phân nhóm theo chủ đề |
 | — | `11-PHU-LUC.md` | Phụ lục: thuật ngữ, tài liệu nội bộ, trỏ tới danh mục code |
 
-> Tài liệu một-tệp trước đây (`docs/PAPER-BAO-CAO-HE-THONG.md`) vẫn được giữ làm bản tóm lược. Bản nhiều chương này là bản chi tiết.
+> Đây là bản báo cáo nhiều chương chi tiết. Bản tóm lược một-tệp trước đây đã được gỡ bỏ.
 
 ---
 

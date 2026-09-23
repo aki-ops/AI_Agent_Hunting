@@ -31,12 +31,11 @@ from typing import Any
 import pytest
 
 from hunting.compiler.compiler import KnowledgeBehaviorCompiler
-from hunting.controller.cost import LLMUsageTracker
 from hunting.contracts.hunt import HuntRequest, HuntRequestKind
+from hunting.controller.cost import LLMUsageTracker
 from hunting.engine import HypothesisHuntEngine
 from hunting.m2_abduction.provider import StubSemanticCompiler
 from hunting.m5_adapter.cdb_adapter import CdbAdapter
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACT_DIR = REPO_ROOT / "artifacts" / "phase8"
