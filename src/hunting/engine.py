@@ -1943,11 +1943,18 @@ class HypothesisHuntEngine:
                                 rows,
                                 evidence_query_id=sample_id,
                             )
+                            census_complete = bool(census_item.get("complete"))
+                            sample_complete = (
+                                bool(sample.get("complete", False))
+                                if isinstance(sample, dict)
+                                else False
+                            )
                             census_item.update({
                                 "native_query": sample.get("native_query") if isinstance(sample, dict) else None,
                                 "sample_status": sample.get("status") if isinstance(sample, dict) else "UNKNOWN",
                                 "search_terms": list(dict.fromkeys(sample_terms)),
-                                "complete": bool(sample.get("complete", False)) if isinstance(sample, dict) else False,
+                                # Both sample exhaustion and key-cap must hold.
+                                "complete": census_complete and sample_complete,
                             })
                             nested_census_audit.append(census_item)
                             if nested_fields:
