@@ -370,37 +370,59 @@ class ProviderCensusService:
                 status="UNSUPPORTED",
             )
 
-        target_relations = {
-            rel.relation for rel in getattr(goal_graph, "relations", ())
-            if getattr(rel, "required", True)
-        }
-        if not target_relations:
-            target_relations = {
-                rel.relation for rel in getattr(goal_graph, "relations", ())
-            }
+        from hunting.capabilities.route_resolver import CapabilityRouteResolver
+        from hunting.capabilities.semantic_index import SemanticCapabilityIndex
+        from hunting.contracts.capability_query import build_capability_queries
 
-        supports = False
-        for op in catalog.operations:
-            op_rels = set(getattr(op, "guaranteed_relations", ()) or ())
-            op_facts = set(getattr(op, "output_fact_kinds", ()) or ())
-            op_intents = set(getattr(op, "semantic_intents", ()) or ())
-            all_caps = op_rels | op_facts | op_intents | {op.id}
-            if any(r in all_caps or any(r in c for c in all_caps) for r in target_relations):
-                supports = True
-                break
+        operations = [
+            operation for operation in catalog.operations
+            if not getattr(operation, "legacy_alias", False)
+            and getattr(operation, "query_builder", "") != "runtime.source_profile.v1"
+        ]
+        profiles = tuple(getattr(catalog, "source_profiles", ()) or ())
+        resolution = CapabilityRouteResolver().resolve(
+            goal_graph,
+            operations,
+            catalog.provider_id,
+            profiles=profiles,
+        )
+        executable = any(
+            route.executable
+            for routes in resolution.routes_by_goal.values()
+            for route in routes
+        )
+        f1_relevant = False
+        if not executable:
+            index = SemanticCapabilityIndex(profiles, operations=operations)
+            for query in build_capability_queries(goal_graph):
+                retrieval = index.retrieve(query, k=8)
+                if any(hit.relevant for hit in retrieval.operation_hits):
+                    f1_relevant = True
+                    break
+                if any(hit.relevant for hit in retrieval.hits) or any(hit.relevant for hit in retrieval.field_hits):
+                    f1_relevant = True
+                    break
 
-        if not supports and catalog.details.get("descriptor_status") != "LEGACY_UNTYPED":
+        if (
+            not executable
+            and not f1_relevant
+            and catalog.details.get("descriptor_status") != "LEGACY_UNTYPED"
+        ):
             return ProviderSelectionAudit(
                 provider_id=catalog.provider_id,
                 selected=False,
-                reason="provider does not support any required relation in goal graph",
+                reason="provider has no F0/F1 typed route for the accepted goal graph",
                 status="UNSUPPORTED",
             )
 
         return ProviderSelectionAudit(
             provider_id=catalog.provider_id,
             selected=True,
-            reason="provider supports required relation in goal graph",
+            reason=(
+                "provider has an admitted executable F0/F1 route"
+                if executable
+                else "provider has an F1-relevant typed document for the accepted goal graph"
+            ),
             status=catalog.status,
         )
 

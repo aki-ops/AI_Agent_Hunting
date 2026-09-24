@@ -1,0 +1,8 @@
+{
+  "id": "S03_amber_competitor_domain",
+  "kind": "QUESTION",
+  "content": "Amber Turing visited a competitor website. What domain was it?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

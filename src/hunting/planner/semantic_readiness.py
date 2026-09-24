@@ -14,8 +14,10 @@ from hunting.contracts.semantic_route import (
 
 def _constraint_keys(graph: SemanticGoalGraph, goal_id: str) -> set[str]:
     goal = next(item for item in graph.relations if item.id == goal_id)
+    subject = next(item for item in graph.variables if item.id == goal.subject)
     target = next(item for item in graph.variables if item.id == goal.object)
-    keys = {item.key.casefold() for item in target.constraints}
+    keys = {item.key.casefold() for item in subject.constraints}
+    keys.update(item.key.casefold() for item in target.constraints)
     keys.update(
         item.qualifier.casefold()
         for item in graph.qualifiers
@@ -54,21 +56,53 @@ def _operation_gaps(
     return capability_gaps, proof_gaps
 
 
+def _has_executable_route(goal_id: str, candidate_routes: dict[str, tuple[object, ...]] | None) -> bool:
+    return any(
+        bool(getattr(route, "executable", False))
+        for route in (candidate_routes or {}).get(goal_id, ())
+    )
+
+
+def _planned_goal_ids(plan: LogicalPlan) -> set[str]:
+    return {
+        goal_id
+        for step in plan.steps
+        for goal_id in step.advances_goal_ids
+    }
+
+
+def _blocked_on_dependency(goal: object, plan: LogicalPlan) -> bool:
+    deps = tuple(getattr(goal, "dependencies", ()) or ())
+    if not deps:
+        return False
+    planned = _planned_goal_ids(plan)
+    operator = str(getattr(goal, "dependency_operator", "AND") or "AND").upper()
+    if operator in {"AND", "GATE"}:
+        return any(dep not in planned for dep in deps)
+    if operator == "OR":
+        return bool(deps) and all(dep not in planned for dep in deps)
+    return False
+
+
 def assess_semantic_readiness(
     graph: SemanticGoalGraph,
     plan: LogicalPlan,
     operations: Iterable[ProviderOperation],
     *,
     prior_assessments: Iterable[SemanticRouteAssessment] = (),
+    candidate_routes: dict[str, tuple[object, ...]] | None = None,
 ) -> list[SemanticRouteAssessment]:
     """Classify each goal without equating composability with proof readiness.
 
     The assessment uses only declared typed contracts. Searchable constraints can
     make a route retrieval-capable, but only ``relation_observable`` plus full
     ``supported_constraints`` coverage makes it proof-capable.
+    Waiting on AND/GATE/OR dependencies is not a capability gap when an
+    admitted executable route already exists.
     """
     operation_by_id = {item.id: item for item in operations}
     prior_by_goal = {item.goal_id: item for item in prior_assessments}
+    unresolved_reasons = dict(getattr(plan, "unresolved_reasons", {}) or {})
     assessments: list[SemanticRouteAssessment] = []
 
     for goal in graph.relations:
@@ -94,6 +128,20 @@ def assess_semantic_readiness(
             None,
         )
         if step is None or goal.id in plan.unresolved_goal_ids:
+            reason = unresolved_reasons.get(goal.id, "")
+            blocked = reason == "blocked_on_dependency" or (
+                _has_executable_route(goal.id, candidate_routes)
+                and _blocked_on_dependency(goal, plan)
+            )
+            if blocked:
+                assessments.append(SemanticRouteAssessment(
+                    goal_id=goal.id,
+                    relation=goal.relation,
+                    status=SemanticRouteStatus.UNPLANNED,
+                    readiness=CapabilityReadiness.RETRIEVAL_CAPABLE,
+                    capability_gaps=["blocked_on_dependency"],
+                ))
+                continue
             assessments.append(SemanticRouteAssessment(
                 goal_id=goal.id,
                 relation=goal.relation,

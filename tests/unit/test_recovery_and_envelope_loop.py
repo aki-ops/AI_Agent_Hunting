@@ -248,11 +248,23 @@ def test_recovery_controller_next_actions():
     )
     assert act_not_found.action_type == "STOP_BOUNDED_NOT_FOUND"
 
-    # AMBIGUOUS exceeding fanout limit -> NEEDS_DISAMBIGUATION
+    # AMBIGUOUS with discriminator budget remaining -> DISCRIMINATE
     cands_many = [{"role": "host", "value": f"h{i}"} for i in range(10)]
-    act_disambig = rc.choose_next_action(
+    act_disc = rc.choose_next_action(
         ObservationClass.AMBIGUOUS,
         envelope=SearchEnvelope(max_candidate_fanout=5),
+        loop_guard=guard,
+        candidates=cands_many,
+        declared_discriminator=True,
+    )
+    assert act_disc.action_type == "DISCRIMINATE"
+
+    # AMBIGUOUS after discriminator budget is exhausted -> NEEDS_DISAMBIGUATION
+    env_spent = SearchEnvelope(max_candidate_fanout=5)
+    env_spent.budgets.consumed_discriminators = env_spent.budgets.max_discriminators
+    act_disambig = rc.choose_next_action(
+        ObservationClass.AMBIGUOUS,
+        envelope=env_spent,
         loop_guard=guard,
         candidates=cands_many,
     )

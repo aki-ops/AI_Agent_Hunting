@@ -1,0 +1,11 @@
+[
+  {
+    "id": "hypo-req-conflict",
+    "statement": "Identify an event observed on server-01",
+    "status": "LIVE",
+    "hypothesis_class": "",
+    "requirements": [
+      "goal-event"
+    ]
+  }
+]

@@ -1,0 +1,77 @@
+{
+  "id": "graph-mock",
+  "request_id": "req-unsupported",
+  "objective": "Test objective",
+  "variables": [
+    {
+      "id": "host",
+      "entity_type": "host",
+      "value": "host-1",
+      "constraints": [],
+      "value_origin": "llm_proposal",
+      "verification_status": "UNVERIFIED"
+    }
+  ],
+  "relations": [
+    {
+      "id": "rel-1",
+      "subject": "host",
+      "relation": "process_execution",
+      "object": "host",
+      "required": true,
+      "description": "",
+      "atomic_obligation": "",
+      "provenance_span": "",
+      "dependencies": [],
+      "dependency_operator": "AND",
+      "gate_condition": null
+    }
+  ],
+  "qualifiers": [],
+  "answers": [
+    {
+      "variable_id": "host",
+      "answer_type": "value",
+      "required": true
+    }
+  ],
+  "answer_contracts": [
+    {
+      "slot_name": "host",
+      "value_type": "value",
+      "target_variable_id": "host",
+      "required_qualifiers": [],
+      "min_citations": 1,
+      "acceptable_aliases": [],
+      "acceptance_rule": "",
+      "description": ""
+    }
+  ],
+  "dependencies": {},
+  "dependency_kinds": {
+    "rel-1": "AND"
+  },
+  "provenance_spans": {},
+  "assumptions": [],
+  "uncertainties": [],
+  "forbidden_inferences": [],
+  "clarification_triggers": [],
+  "validation_diagnostics": [
+    "Goal 'rel-1' missing explicit request provenance span.",
+    "Novel relation 'process_execution' is not in approved canonical registry; can be explored with retrieval_only but cannot be proven without approved contract."
+  ],
+  "graph_revision": "G0",
+  "revision_history": [],
+  "outcome_contract": {
+    "contract_kind": "FACTUAL_ANSWER",
+    "slots": [
+      "host"
+    ],
+    "types": {
+      "host": "value"
+    },
+    "cardinality": {},
+    "qualifiers": [],
+    "citations": []
+  }
+}

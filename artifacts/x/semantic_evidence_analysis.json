@@ -1,0 +1,310 @@
+{
+  "analysis": {
+    "source_profile": {
+      "status": "NO_LLM_CALLER",
+      "readiness": [
+        {
+          "goal_id": "req-CVE-2024-21887-exploit",
+          "relation": "spawned",
+          "status": "CAPABILITY_GAP",
+          "execution_complete": false,
+          "proof_complete": false,
+          "route_exhausted": false,
+          "readiness": "CAPABILITY_GAP",
+          "attempts": [],
+          "proof_gaps": [],
+          "capability_gaps": [
+            "no_typed_reachable_route"
+          ],
+          "terminal_cause": null
+        },
+        {
+          "goal_id": "req-CVE-2024-21887-post",
+          "relation": "wrote",
+          "status": "CAPABILITY_GAP",
+          "execution_complete": false,
+          "proof_complete": false,
+          "route_exhausted": false,
+          "readiness": "CAPABILITY_GAP",
+          "attempts": [],
+          "proof_gaps": [],
+          "capability_gaps": [
+            "no_typed_reachable_route"
+          ],
+          "terminal_cause": null
+        }
+      ],
+      "profiling_goal_ids": [
+        "req-CVE-2024-21887-exploit",
+        "req-CVE-2024-21887-post"
+      ],
+      "retrieval": [
+        {
+          "relation": "spawned",
+          "goal_id": "req-CVE-2024-21887-exploit",
+          "stage": "F1_METADATA",
+          "query": {
+            "goal_id": "req-CVE-2024-21887-exploit",
+            "subject_type": "host",
+            "object_type": "process",
+            "answer_role": "process",
+            "constraint_keys": [
+              "cmdline"
+            ],
+            "relation_text": "spawned",
+            "canonical_relation": "spawned",
+            "proposed_unregistered": false,
+            "constraint_hints": [
+              {
+                "key": "cmdline",
+                "operator": "contains",
+                "value": "python"
+              }
+            ],
+            "qualifier_hints": [],
+            "query_key": [
+              "host",
+              "process",
+              "process",
+              [
+                "cmdline"
+              ],
+              "spawned"
+            ]
+          },
+          "k": 8,
+          "hits": [
+            {
+              "source_id": "cdb:source:events",
+              "score": 42.0,
+              "matched_terms": [
+                "client",
+                "cmdline",
+                "command",
+                "commandline",
+                "computer",
+                "device",
+                "endpoint",
+                "execution",
+                "host",
+                "image",
+                "name",
+                "process",
+                "server",
+                "target",
+                "workstation"
+              ],
+              "matched_field_ids": [
+                "cdb:events:field:host",
+                "cdb:events:field:cmdline",
+                "cdb:events:field:image",
+                "cdb:events:field:ip",
+                "cdb:events:field:domain",
+                "cdb:events:field:file_path",
+                "cdb:events:field:user"
+              ],
+              "rank": 1
+            }
+          ],
+          "unexamined_ids": [],
+          "nested_census": [
+            {
+              "source_id": "cdb:source:events",
+              "status": "DEFERRED_ADAPTER_UNSUPPORTED",
+              "complete": false
+            }
+          ],
+          "total_documents": 1,
+          "proof": false
+        },
+        {
+          "relation": "wrote",
+          "goal_id": "req-CVE-2024-21887-post",
+          "stage": "F1_METADATA",
+          "query": {
+            "goal_id": "req-CVE-2024-21887-post",
+            "subject_type": "process",
+            "object_type": "file",
+            "answer_role": "file",
+            "constraint_keys": [
+              "cmdline"
+            ],
+            "relation_text": "wrote",
+            "canonical_relation": "modified",
+            "proposed_unregistered": false,
+            "constraint_hints": [
+              {
+                "key": "cmdline",
+                "operator": "contains",
+                "value": "python"
+              }
+            ],
+            "qualifier_hints": [],
+            "query_key": [
+              "process",
+              "file",
+              "file",
+              [
+                "cmdline"
+              ],
+              "modified"
+            ]
+          },
+          "k": 8,
+          "hits": [
+            {
+              "source_id": "cdb:source:events",
+              "score": 40.5,
+              "matched_terms": [
+                "artifact",
+                "cmdline",
+                "command",
+                "commandline",
+                "document",
+                "execution",
+                "file",
+                "image",
+                "name",
+                "path",
+                "process",
+                "source",
+                "target"
+              ],
+              "matched_field_ids": [
+                "cdb:events:field:cmdline",
+                "cdb:events:field:image",
+                "cdb:events:field:file_path",
+                "cdb:events:field:domain",
+                "cdb:events:field:host",
+                "cdb:events:field:ip",
+                "cdb:events:field:user"
+              ],
+              "rank": 1
+            }
+          ],
+          "unexamined_ids": [],
+          "nested_census": [
+            {
+              "source_id": "cdb:source:events",
+              "status": "DEFERRED_ADAPTER_UNSUPPORTED",
+              "complete": false
+            },
+            {
+              "source_id": "cdb:source:events",
+              "status": "DEFERRED_ADAPTER_UNSUPPORTED",
+              "complete": false
+            }
+          ],
+          "total_documents": 1,
+          "proof": false
+        }
+      ],
+      "coverage_manifests": {
+        "spawned": {
+          "total_sources": 1,
+          "considered_source_ids": [
+            "cdb:source:events"
+          ],
+          "examined_source_ids": [
+            "cdb:source:events"
+          ],
+          "rejected_source_ids": {},
+          "unexamined_source_ids": [],
+          "stage_audit": [
+            {
+              "stage": "F1_METADATA",
+              "count": 1,
+              "k": 8,
+              "complete": true
+            },
+            {
+              "stage": "NESTED_PAYLOAD_CENSUS",
+              "count": 1,
+              "complete": false
+            }
+          ]
+        },
+        "wrote": {
+          "total_sources": 1,
+          "considered_source_ids": [
+            "cdb:source:events"
+          ],
+          "examined_source_ids": [
+            "cdb:source:events"
+          ],
+          "rejected_source_ids": {},
+          "unexamined_source_ids": [],
+          "stage_audit": [
+            {
+              "stage": "F1_METADATA",
+              "count": 1,
+              "k": 8,
+              "complete": true
+            },
+            {
+              "stage": "NESTED_PAYLOAD_CENSUS",
+              "count": 2,
+              "complete": false
+            }
+          ]
+        }
+      },
+      "f1": {
+        "shortlist_size": 8,
+        "llm_calls": 0,
+        "proof": false
+      },
+      "census_profile_discovery": {},
+      "proposals": [],
+      "rejected": [],
+      "relation_calls": [],
+      "nested_payload_census": [
+        {
+          "source_id": "cdb:source:events",
+          "status": "DEFERRED_ADAPTER_UNSUPPORTED",
+          "complete": false
+        },
+        {
+          "source_id": "cdb:source:events",
+          "status": "DEFERRED_ADAPTER_UNSUPPORTED",
+          "complete": false
+        }
+      ],
+      "runtime_capabilities": [],
+      "runtime_operation_ids": []
+    }
+  },
+  "assessments": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "req-CVE-2024-21887-exploit",
+      "relation": "spawned",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [],
+      "capability_gaps": [
+        "no_typed_reachable_route"
+      ],
+      "terminal_cause": null
+    },
+    {
+      "goal_id": "req-CVE-2024-21887-post",
+      "relation": "wrote",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [],
+      "capability_gaps": [
+        "no_typed_reachable_route"
+      ],
+      "terminal_cause": null
+    }
+  ]
+}

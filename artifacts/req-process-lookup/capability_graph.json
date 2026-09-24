@@ -134,119 +134,187 @@
               "name": "id",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:timestamp",
               "name": "timestamp",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:event_id",
               "name": "event_id",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:native_type",
               "name": "native_type",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:host",
               "name": "host",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:user",
               "name": "user",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:pid",
               "name": "pid",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:ppid",
               "name": "ppid",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:cmdline",
               "name": "cmdline",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:image",
               "name": "image",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:ip",
               "name": "ip",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:port",
               "name": "port",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:domain",
               "name": "domain",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:file_path",
               "name": "file_path",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:action",
               "name": "action",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:status",
               "name": "status",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             },
             {
               "field_id": "cdb:events:field:raw_ref",
               "name": "raw_ref",
               "primitive_type": "unknown",
               "coverage": null,
-              "sample_values": []
+              "sample_values": [],
+              "origin": "flat",
+              "evidence_query_id": null,
+              "parent_field": "",
+              "nested_key": ""
             }
           ],
           "time_start": null,
@@ -260,7 +328,7 @@
             "table",
             "head"
           ],
-          "schema_fingerprint": "schema-c2a7a92d10d67b502cc1"
+          "schema_fingerprint": "schema-2adb9278231f91d07ae3"
         }
       ]
     }
@@ -329,11 +397,7 @@
       "input_roles": [],
       "output_roles": [],
       "native_field_bindings": {},
-      "output_value_bindings": {
-        "object": [
-          "raw_ref"
-        ]
-      },
+      "output_value_bindings": {},
       "query_builder": "",
       "completeness": "limit+1 EOF proof",
       "expected_cost": null,
@@ -357,8 +421,6 @@
         "process"
       ],
       "output_entity_kinds": [
-        "host",
-        "account",
         "process"
       ],
       "output_fields": [
@@ -383,10 +445,8 @@
       "native_field_bindings": {},
       "output_value_bindings": {
         "object": [
-          "pid",
-          "ppid",
-          "cmdline",
-          "image"
+          "image",
+          "cmdline"
         ]
       },
       "query_builder": "",
@@ -553,8 +613,6 @@
         "file"
       ],
       "output_entity_kinds": [
-        "host",
-        "process",
         "file"
       ],
       "output_fields": [
@@ -576,9 +634,7 @@
       "native_field_bindings": {},
       "output_value_bindings": {
         "object": [
-          "image",
-          "file_path",
-          "action"
+          "file_path"
         ]
       },
       "query_builder": "",
@@ -1021,7 +1077,6 @@
         "host"
       ],
       "output_entity_kinds": [
-        "host",
         "process"
       ],
       "output_fields": [
@@ -1045,8 +1100,6 @@
       "native_field_bindings": {},
       "output_value_bindings": {
         "object": [
-          "pid",
-          "ppid",
           "image",
           "cmdline"
         ]
@@ -1072,7 +1125,6 @@
         "host"
       ],
       "output_entity_kinds": [
-        "host",
         "file"
       ],
       "output_fields": [
@@ -1093,8 +1145,7 @@
       "native_field_bindings": {},
       "output_value_bindings": {
         "object": [
-          "file_path",
-          "action"
+          "file_path"
         ]
       },
       "query_builder": "",
@@ -1118,8 +1169,6 @@
         "process"
       ],
       "output_entity_kinds": [
-        "host",
-        "process",
         "file"
       ],
       "output_fields": [
@@ -1141,9 +1190,7 @@
       "native_field_bindings": {},
       "output_value_bindings": {
         "object": [
-          "image",
-          "file_path",
-          "action"
+          "file_path"
         ]
       },
       "query_builder": "",

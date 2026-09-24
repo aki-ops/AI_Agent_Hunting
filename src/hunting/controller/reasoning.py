@@ -247,46 +247,69 @@ class HypothesisReasoningEngine:
             if not owned:
                 continue
 
-            confirmed = [e for e in owned if e.test_status == TestStatus.CONFIRMED]
-            refuted = [e for e in owned if e.test_status == TestStatus.REFUTED]
-            untested = [e for e in owned if e.test_status == TestStatus.UNTESTED]
-            inconclusive = [e for e in owned if e.test_status in (TestStatus.INCONCLUSIVE, TestStatus.UNTESTABLE)]
+            # Separate primary expectations from speculative pivot probes
+            primary_owned = [e for e in owned if not e.id.startswith("exp-pivot-")]
+            eval_pool = primary_owned if primary_owned else owned
+
+            confirmed = [e for e in eval_pool if e.test_status == TestStatus.CONFIRMED]
+            refuted = [e for e in eval_pool if e.test_status == TestStatus.REFUTED]
+            untested = [e for e in eval_pool if e.test_status == TestStatus.UNTESTED]
+            inconclusive = [e for e in eval_pool if e.test_status in (TestStatus.INCONCLUSIVE, TestStatus.UNTESTABLE)]
+
+            # Check if all explicit requirements declared by the hypothesis are confirmed
+            all_requirements_confirmed = True
+            if h.requirements:
+                confirmed_req_ids = {
+                    req_id for req_id in h.requirements
+                    if any(req_id in e.id and e.test_status == TestStatus.CONFIRMED for e in eval_pool)
+                }
+                all_requirements_confirmed = set(h.requirements).issubset(confirmed_req_ids)
 
             if confirmed and not refuted and not untested and not inconclusive:
-                requires_attack_chain = any(
-                    e.evidence_requirement.value == "web_request" for e in owned
-                )
-                if requires_attack_chain and evidence_cards:
-                    if not verify_attack_chain_correlation(evidence_cards):
-                        h.status = HypothesisStatus.WEAKENED
-                    else:
-                        h.status = HypothesisStatus.SUPPORTED
+                if not all_requirements_confirmed:
+                    h.status = HypothesisStatus.PARTIALLY_SUPPORTED
                 else:
-                    h.status = HypothesisStatus.SUPPORTED
-            elif confirmed and (refuted or untested or inconclusive):
-                # A web request alone is insufficient; require a typed execution
-                # or artifact requirement to be confirmed as well.
-                requires_attack_chain = any(
-                    e.evidence_requirement.value == "web_request" for e in owned
-                )
-                if requires_attack_chain:
-                    confirmed_types = {e.evidence_requirement.value for e in confirmed}
-                    if confirmed_types.intersection({
-                        "process_ancestry", "file_modification", "persistence_change"
-                    }):
-                        if evidence_cards:
-                            if not verify_attack_chain_correlation(evidence_cards):
-                                h.status = HypothesisStatus.WEAKENED
-                            else:
-                                h.status = HypothesisStatus.SUPPORTED
+                    requires_attack_chain = any(
+                        e.evidence_requirement.value == "web_request" for e in eval_pool
+                    )
+                    if requires_attack_chain and evidence_cards:
+                        if not verify_attack_chain_correlation(evidence_cards):
+                            h.status = HypothesisStatus.WEAKENED
                         else:
                             h.status = HypothesisStatus.SUPPORTED
                     else:
-                        h.status = HypothesisStatus.WEAKENED
-                elif confirmed:
-                    h.status = HypothesisStatus.SUPPORTED
-                else:
+                        h.status = HypothesisStatus.SUPPORTED
+            elif confirmed and (refuted or untested or inconclusive):
+                if refuted:
                     h.status = HypothesisStatus.WEAKENED
+                elif not all_requirements_confirmed:
+                    h.status = HypothesisStatus.PARTIALLY_SUPPORTED
+                else:
+                    # A web request alone is insufficient; require a typed execution
+                    # or artifact requirement to be confirmed as well.
+                    requires_attack_chain = any(
+                        e.evidence_requirement.value == "web_request" for e in eval_pool
+                    )
+                    if requires_attack_chain:
+                        confirmed_types = {e.evidence_requirement.value for e in confirmed}
+                        if confirmed_types.intersection({
+                            "process_ancestry", "file_modification", "persistence_change"
+                        }):
+                            if evidence_cards:
+                                if not verify_attack_chain_correlation(evidence_cards):
+                                    h.status = HypothesisStatus.WEAKENED
+                                else:
+                                    h.status = HypothesisStatus.SUPPORTED
+                            else:
+                                h.status = HypothesisStatus.SUPPORTED
+                        else:
+                            h.status = HypothesisStatus.WEAKENED
+                    elif len(eval_pool) > len(confirmed):
+                        h.status = HypothesisStatus.PARTIALLY_SUPPORTED
+                    elif confirmed:
+                        h.status = HypothesisStatus.SUPPORTED
+                    else:
+                        h.status = HypothesisStatus.WEAKENED
             elif refuted and not confirmed and not untested and not inconclusive:
                 h.status = HypothesisStatus.REFUTED
             elif inconclusive or untested or (not confirmed and not refuted):

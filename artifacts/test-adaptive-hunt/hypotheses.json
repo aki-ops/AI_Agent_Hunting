@@ -2,7 +2,7 @@
   {
     "id": "h1",
     "statement": "Tor installed",
-    "status": "PARTIALLY_SUPPORTED",
+    "status": "LIVE",
     "hypothesis_class": "",
     "requirements": [
       "r1"

@@ -1,0 +1,81 @@
+{
+  "id": "logical-goal-graph-powershell",
+  "goal_graph_id": "goal-graph-powershell",
+  "provider_id": "cdb",
+  "steps": [
+    {
+      "id": "step-1",
+      "operation_id": "runtime:cdb:schema-2adb9278231f91d07ae3:cdb:source:events:executed_on",
+      "input_bindings": {
+        "subject": "cmd"
+      },
+      "output_bindings": {
+        "object": "host"
+      },
+      "advances_goal_ids": [
+        "goal-1"
+      ],
+      "depends_on": [],
+      "expected_cost": 1,
+      "constraints": [
+        "cmdline=powershell",
+        "encoding=encoded"
+      ],
+      "constraint_retrieval_terms": [],
+      "relation": "executed_on",
+      "constraint_metadata": [
+        {
+          "key": "cmdline",
+          "operator": "contains",
+          "value": "powershell",
+          "variable_id": "cmd",
+          "provenance": "semantic_graph",
+          "trust_class": "compiler_proposed"
+        },
+        {
+          "key": "encoding",
+          "operator": "equals",
+          "value": "encoded",
+          "variable_id": "cmd",
+          "provenance": "semantic_graph",
+          "trust_class": "compiler_proposed"
+        }
+      ],
+      "alternative_operation_ids": [
+        "cdb_net_search"
+      ],
+      "requires_complete_inputs": true,
+      "dependency_operator": "AND",
+      "gate_condition": null,
+      "mode": "PROVE"
+    }
+  ],
+  "unresolved_goal_ids": [],
+  "proof_methods": [
+    {
+      "id": "method-goal-1-1",
+      "goal_id": "goal-1",
+      "prerequisite_goal_ids": [],
+      "operation_ids": [
+        "cdb_net_search"
+      ],
+      "expected_cost": 1,
+      "description": "cdb_net_search declares relation executed_on"
+    },
+    {
+      "id": "method-goal-1-2",
+      "goal_id": "goal-1",
+      "prerequisite_goal_ids": [],
+      "operation_ids": [
+        "runtime:cdb:schema-2adb9278231f91d07ae3:cdb:source:events:executed_on"
+      ],
+      "expected_cost": 1,
+      "description": "runtime:cdb:schema-2adb9278231f91d07ae3:cdb:source:events:executed_on declares relation executed_on"
+    }
+  ],
+  "selected_method_ids": {
+    "goal-1": "method-goal-1-2"
+  },
+  "graph_revision": "G0",
+  "unresolved_reasons": {}
+}

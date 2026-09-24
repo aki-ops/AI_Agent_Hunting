@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-S07_frothly_file_encryption-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'Was the marketing campaign presentation encrypted by ransomware?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

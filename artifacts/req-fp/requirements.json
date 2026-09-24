@@ -1,0 +1,9 @@
+[
+  {
+    "id": "goal-1",
+    "description": "encoded PowerShell executed on host",
+    "evidence_type": "executed_on",
+    "status": "DEFINED",
+    "necessity": "CRITICAL"
+  }
+]

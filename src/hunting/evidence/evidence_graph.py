@@ -9,10 +9,19 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Iterable
 
 from hunting.contracts.observations import Observation
-from hunting.evidence.facts import EvidenceFact, extract_facts
+from hunting.evidence.facts import extract_facts
+
+
+class EvidenceEdgeClass(str, Enum):
+    """Distinct evidence-graph relation classes. None of these is proof."""
+
+    OBSERVED_TRANSITION = "observed_transition"
+    PROVENANCE_DEPENDENCY = "provenance_dependency"
+    CAUSAL_ATTRIBUTION = "causal_attribution"
 
 
 def _stable_id(prefix: str, payload: Any) -> str:
@@ -45,6 +54,7 @@ class EvidenceEdge:
     observation_ids: tuple[str, ...] = ()
     proof_status: str = "NOT_PROOF"
     attributes: dict[str, Any] = field(default_factory=dict)
+    edge_class: str = EvidenceEdgeClass.OBSERVED_TRANSITION.value
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -52,6 +62,7 @@ class EvidenceEdge:
             "source_id": self.source_id,
             "target_id": self.target_id,
             "edge_type": self.edge_type,
+            "edge_class": self.edge_class,
             "observation_ids": list(self.observation_ids),
             "proof_status": self.proof_status,
             "attributes": dict(self.attributes),
@@ -116,6 +127,7 @@ class EvidenceGraph:
         observation_payload = {
             "timestamp": observation.timestamp,
             "native_type": observation.native_type,
+            "provider_id": getattr(observation.provider_scope, "provider_id", ""),
             "provider_scope": getattr(observation.provider_scope, "scope_id", ""),
             "query_id": observation.query_id or getattr(observation.provenance, "query_id", None),
             "native_fields": dict(observation.native_fields or observation.fields),
@@ -144,6 +156,7 @@ class EvidenceGraph:
                 source_id=observation_node_id,
                 target_id=fact_id,
                 edge_type="contains_fact",
+                edge_class=EvidenceEdgeClass.PROVENANCE_DEPENDENCY.value,
                 observation_ids=(fact.observation_id,),
             ))
             for field_name, value in fact.fields.items():
@@ -156,6 +169,7 @@ class EvidenceGraph:
                     source_id=fact_id,
                     target_id=field_id,
                     edge_type="has_field",
+                    edge_class=EvidenceEdgeClass.PROVENANCE_DEPENDENCY.value,
                     observation_ids=(fact.observation_id,),
                 ))
             for relation in fact.relations:
@@ -168,10 +182,43 @@ class EvidenceGraph:
                     source_id=source_id,
                     target_id=target_id,
                     edge_type="observed_transition",
+                    edge_class=EvidenceEdgeClass.OBSERVED_TRANSITION.value,
                     observation_ids=(fact.observation_id,),
                     attributes={"relation_type": relation.relation_type},
                 ))
         return tuple(added)
+
+    def add_causal_attribution(
+        self,
+        *,
+        source_id: str,
+        target_id: str,
+        observation_ids: tuple[str, ...],
+        contract_id: str,
+    ) -> EvidenceEdge:
+        """Record a declared causal edge. Proximity never authorizes this."""
+        cited = tuple(str(item) for item in observation_ids if str(item).strip())
+        if not cited:
+            raise ValueError("causal attribution requires cited observations")
+        if not str(contract_id).strip():
+            raise ValueError("causal attribution requires an approved correlation or identity contract")
+        unknown = [item for item in cited if item not in self.observation_ids]
+        if unknown:
+            raise ValueError(f"causal attribution cites unknown observations: {unknown}")
+        if source_id not in self.nodes or target_id not in self.nodes:
+            raise ValueError("causal attribution requires existing evidence nodes")
+        edge = EvidenceEdge(
+            id=_stable_id("edge", (source_id, target_id, "causal_attribution", contract_id, cited)),
+            source_id=source_id,
+            target_id=target_id,
+            edge_type="causal_attribution",
+            edge_class=EvidenceEdgeClass.CAUSAL_ATTRIBUTION.value,
+            observation_ids=cited,
+            proof_status="NOT_PROOF",
+            attributes={"contract_id": str(contract_id)},
+        )
+        self.add_edge(edge)
+        return edge
 
     @classmethod
     def from_observations(cls, observations: Iterable[Observation]) -> "EvidenceGraph":
@@ -179,6 +226,28 @@ class EvidenceGraph:
         for observation in observations:
             graph.append_observation(observation)
         return graph
+
+    @classmethod
+    def from_run_account(cls, account: dict[str, Any]) -> "EvidenceGraph":
+        """Rebuild the graph from immutable run-account records only."""
+        if not isinstance(account, dict):
+            raise ValueError("run account must be an object")
+        payload = account.get("semantic_evidence_analysis")
+        if not isinstance(payload, dict):
+            payload = account
+        raw_observations = payload.get("observations", account.get("observations", []))
+        if isinstance(raw_observations, list) and raw_observations:
+            observations: list[Observation] = []
+            for item in raw_observations:
+                if isinstance(item, Observation):
+                    observations.append(item)
+                elif isinstance(item, dict):
+                    observations.append(Observation.from_dict(item))
+            return cls.from_observations(observations)
+        graph_raw = payload.get("evidence_graph", account.get("evidence_graph", {}))
+        if isinstance(graph_raw, dict) and graph_raw:
+            return cls.from_dict(graph_raw)
+        return cls()
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "EvidenceGraph":
@@ -208,6 +277,7 @@ class EvidenceGraph:
                 observation_ids=tuple(str(value) for value in item.get("observation_ids", [])),
                 proof_status=str(item.get("proof_status", "NOT_PROOF")),
                 attributes=dict(item.get("attributes", {}) or {}),
+                edge_class=str(item.get("edge_class") or item.get("edge_type") or EvidenceEdgeClass.OBSERVED_TRANSITION.value),
             )
             if edge.id:
                 graph.add_edge(edge)
@@ -236,4 +306,4 @@ class EvidenceGraph:
         }
 
 
-__all__ = ["EvidenceEdge", "EvidenceGraph", "EvidenceNode", "FieldFact"]
+__all__ = ["EvidenceEdge", "EvidenceEdgeClass", "EvidenceGraph", "EvidenceNode", "FieldFact"]

@@ -1,0 +1,59 @@
+{
+  "analysis": {
+    "workspace": {
+      "run_id": "S01_tor_version",
+      "observation_ids": [],
+      "evidence_graph": {
+        "observation_ids": [],
+        "proof": false
+      },
+      "goal_graph": {},
+      "query_audit": [],
+      "analyst_decisions": [],
+      "unexamined_routes": [],
+      "limitations": [
+        "Provider absence: No telemetry provider configured."
+      ],
+      "timeline": [],
+      "tags": [],
+      "comments": [],
+      "saved_searches": [],
+      "entity_pivot": [],
+      "native_events": [],
+      "proof_obligations": [],
+      "stop_explanation": {
+        "decision": "STOP_UNSUPPORTED",
+        "taxonomy": "StoppingTaxonomyState.COVERAGE_EXHAUSTED",
+        "unresolved_reasons": {},
+        "needs_user_decision": false,
+        "residuals": [
+          "Provider absence: No telemetry provider configured."
+        ],
+        "query_count": 0,
+        "llm_calls": {}
+      },
+      "coverage_view": {
+        "coverage_bound": {},
+        "coverage_gaps": [],
+        "unexamined_routes": [],
+        "query_completeness": []
+      },
+      "binding_reviews": []
+    },
+    "package_versions": [],
+    "stop_explanation": {
+      "decision": "STOP_UNSUPPORTED",
+      "taxonomy": "StoppingTaxonomyState.COVERAGE_EXHAUSTED",
+      "unresolved_reasons": {},
+      "needs_user_decision": false,
+      "residuals": [
+        "Provider absence: No telemetry provider configured."
+      ],
+      "query_count": 0,
+      "llm_calls": {}
+    },
+    "proof_obligations": []
+  },
+  "assessments": [],
+  "semantic_route_assessments": []
+}

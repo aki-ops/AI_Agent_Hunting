@@ -231,6 +231,7 @@ def test_claim_graph_vertical_slice_executes_only_declared_operation() -> None:
     engine = HypothesisHuntEngine(
         compiler=KnowledgeBehaviorCompiler(llm_caller=lambda _: response),
         cdb_adapter=cdb,
+        enable_legacy_execution=True,
     )
     result = engine.execute_hunt(
         HuntRequest(

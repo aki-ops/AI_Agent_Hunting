@@ -1,0 +1,11 @@
+[
+  {
+    "id": "hypo-req-unsupported",
+    "statement": "Test objective",
+    "status": "LIVE",
+    "hypothesis_class": "",
+    "requirements": [
+      "rel-1"
+    ]
+  }
+]

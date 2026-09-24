@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-req-audit-test-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'Which host is associated with user Mallory?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

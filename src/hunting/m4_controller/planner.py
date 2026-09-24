@@ -46,7 +46,7 @@ def compile_query_plan(
     entity: EntityRef,
     window: str,
     preferred_provider: str | None = None,
-    backend: str = "cdb_sqlite",
+    backend: str | None = None,
     query_id: str = "q-001",
 ) -> tuple[Query | None, Diagnostic | None]:
     """Compile an EvidenceRequirement into an executable Query.
@@ -68,7 +68,10 @@ def compile_query_plan(
         operation_id=match_res.operation.id,
         evidence_requirement=requirement,
         window=window,
-        backend=backend,
+        # The matched capability is authoritative. A generic planner must
+        # never silently label a Splunk/EDR/IDS query as SQLite because the
+        # caller omitted an implementation detail.
+        backend=backend or match_res.operation.provider_id,
         generated_by=QueryGenerator.TEMPLATE,
         cost=1,
     )

@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-S01_tor_version-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'What version of Tor Browser was observed in the environment?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

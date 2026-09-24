@@ -44,10 +44,13 @@ class BoundedProbeExecutor:
             return ProbeExecution(False, query_id, reasons=("adapter_probe_returned_invalid_result",))
         if not result.executed_ok:
             return ProbeExecution(False, query_id, result=result, reasons=("probe_query_failed",))
-        if not result.complete:
-            return ProbeExecution(False, query_id, result=result, reasons=("probe_incomplete",))
         if not result.rows:
             return ProbeExecution(False, query_id, result=result, reasons=("probe_returned_no_rows",))
+        # A capability probe is bounded metadata discovery.  It establishes
+        # reachability and field observability; EOF completeness belongs to
+        # evidence queries and is not required here.
+        if not result.complete:
+            return ProbeExecution(True, query_id, result=result, reasons=("probe_bounded",))
         return ProbeExecution(True, query_id, result=result)
 
 

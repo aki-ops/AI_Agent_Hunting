@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-S05_amber_workstation-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'Which workstation hostname belongs to Amber Turing?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

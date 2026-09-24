@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
+from http.client import HTTPResponse
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
@@ -43,6 +45,12 @@ class LLMCommunicationError(ConnectionError):
     pass
 
 
+class LLMUpstreamTimeoutError(LLMTimeoutError):
+    """Raised when an upstream proxy reports that the origin timed out (for example HTTP 524)."""
+
+    pass
+
+
 @dataclass(frozen=True)
 class ApiLLMConfig:
     """External LLM API configuration and secrets.
@@ -55,11 +63,20 @@ class ApiLLMConfig:
     timeout_seconds: int = 30
     max_tokens: int = 2000
     api_key: str = "secret-token-env"
+    provider: str = "openai"
 
     @property
     def is_anthropic(self) -> bool:
         """Return True if endpoint targets an Anthropic Messages API."""
         return "messages" in self.endpoint.lower() or "anthropic" in self.endpoint.lower()
+
+    @property
+    def is_gemini(self) -> bool:
+        """Return True when the native Google Gemini GenerateContent API is used."""
+        return (
+            self.provider.casefold() == "gemini"
+            or "generativelanguage.googleapis.com" in self.endpoint.casefold()
+        )
 
     @classmethod
     def from_env(cls, env_path: str = ".env") -> ApiLLMConfig:
@@ -70,6 +87,29 @@ class ApiLLMConfig:
         openai_base = combined.get("OPENAI_BASE_URL", "")
         anthropic_base = combined.get("ANTHROPIC_BASE_URL", "")
         hermes_base = combined.get("HERMES_API_BASE_URL", "")
+        provider = combined.get("LLM_PROVIDER", "").strip().casefold()
+        gemini_key = combined.get("GEMINI_API_KEY", combined.get("GOOGLE_API_KEY", ""))
+
+        # An explicit provider selection is authoritative.  This matters when
+        # both the Gemini and OpenAI-compatible credentials are present in the
+        # same .env file: a stale Gemini key must not silently override an
+        # explicit `LLM_PROVIDER=openai` selection.
+        if provider == "gemini" or (not provider and gemini_key):
+            gemini_base = combined.get(
+                "GEMINI_API_BASE_URL",
+                "https://generativelanguage.googleapis.com/v1beta",
+            ).rstrip("/")
+            gemini_model = combined.get("GEMINI_MODEL", "gemini-flash-latest").strip()
+            if gemini_model.startswith("models/"):
+                gemini_model = gemini_model[len("models/"):]
+            return cls(
+                endpoint=f"{gemini_base}/models/{gemini_model}:generateContent",
+                model=gemini_model,
+                timeout_seconds=int(combined.get("LLM_TIMEOUT", 120)),
+                max_tokens=int(combined.get("LLM_MAX_TOKENS", 4000)),
+                api_key=gemini_key,
+                provider="gemini",
+            )
 
         if openai_base:
             default_endpoint = f"{openai_base.rstrip('/')}/chat/completions"
@@ -113,6 +153,7 @@ class ApiLLMConfig:
             timeout_seconds=timeout,
             max_tokens=max_tokens,
             api_key=api_key,
+            provider=provider or "openai",
         )
 
 
@@ -216,6 +257,234 @@ class ApiLLMProvider(LLMProvider):
         self.last_attempt_count = 0
         self.last_usage: dict[str, int] = {}
         self.last_finish_reason: str | None = None
+        # Per-request transport telemetry.  These values are deliberately kept
+        # on the provider, not in HuntState; the caller copies them into the
+        # cost/audit ledger immediately after each request.
+        self.last_model: str | None = None
+        self.last_request_id: str | None = None
+        self.last_first_byte_ms: float | None = None
+        self.last_http_status: int | None = None
+        self.last_error_class: str | None = None
+
+    def _reset_request_telemetry(self) -> None:
+        self.last_attempt_count = 0
+        self.last_usage = {}
+        self.last_finish_reason = None
+        self.last_model = None
+        self.last_request_id = None
+        self.last_first_byte_ms = None
+        self.last_http_status = None
+        self.last_error_class = None
+
+    def _capture_response_metadata(self, response: Any) -> None:
+        """Capture provider response metadata without assuming one header spelling."""
+        try:
+            self.last_http_status = int(getattr(response, "status", 200) or 200)
+        except (TypeError, ValueError):
+            self.last_http_status = 200
+        headers = getattr(response, "headers", None)
+        if headers is not None:
+            for name in ("x-request-id", "request-id", "cf-ray"):
+                try:
+                    value = headers.get(name)
+                except Exception:
+                    value = None
+                if value and isinstance(value, str):
+                    self.last_request_id = value
+                    break
+
+    @staticmethod
+    def _usage_from_payload(payload: dict[str, Any]) -> dict[str, int | None]:
+        usage = payload.get("usage") or payload.get("usageMetadata") or {}
+        if not isinstance(usage, dict):
+            return {}
+        prompt = (
+            usage.get("prompt_tokens")
+            or usage.get("promptTokenCount")
+            or usage.get("input_tokens")
+        )
+        completion = (
+            usage.get("completion_tokens")
+            or usage.get("candidatesTokenCount")
+            or usage.get("output_tokens")
+        )
+        result: dict[str, int | None] = {}
+        if prompt is not None:
+            result["prompt_tokens"] = int(prompt)
+        if completion is not None:
+            result["completion_tokens"] = int(completion)
+        return result
+
+    def _parse_openai_response(self, response_text: str) -> str:
+        """Parse JSON or OpenAI-compatible SSE while retaining model/usage metadata."""
+        is_sse = response_text.lstrip().startswith("data:")
+        if is_sse:
+            chunks: list[str] = []
+            for line in response_text.splitlines():
+                line_str = line.strip()
+                if line_str == "data: [DONE]":
+                    break
+                if not line_str.startswith("data:"):
+                    continue
+                try:
+                    chunk = json.loads(line_str[5:].strip())
+                except (TypeError, ValueError):
+                    # One malformed SSE line must not discard the rest of the
+                    # response, but it also must not become a successful {}.
+                    continue
+                if not isinstance(chunk, dict):
+                    continue
+                self.last_model = self.last_model or chunk.get("model")
+                usage = self._usage_from_payload(chunk)
+                if usage:
+                    self.last_usage.update(usage)
+                for choice in chunk.get("choices", []) or []:
+                    if not isinstance(choice, dict):
+                        continue
+                    if choice.get("finish_reason"):
+                        self.last_finish_reason = str(choice["finish_reason"])
+                    delta = choice.get("delta") or {}
+                    if isinstance(delta, dict):
+                        value = delta.get("content", delta.get("text"))
+                        if value:
+                            chunks.append(str(value))
+            content = "".join(chunks).strip()
+        else:
+            payload = json.loads(response_text)
+            if not isinstance(payload, dict):
+                raise LLMCommunicationError("LLM API returned a non-object response")
+            self.last_model = payload.get("model") or self.last_model
+            self.last_usage.update(self._usage_from_payload(payload))
+            choices = payload.get("choices") or []
+            candidates = payload.get("candidates") or []
+            if isinstance(payload.get("content"), list):
+                content = "".join(
+                    item.get("text", "")
+                    for item in payload["content"]
+                    if isinstance(item, dict) and item.get("type") == "text"
+                ).strip()
+                self.last_finish_reason = str(payload.get("stop_reason") or "") or None
+            elif choices:
+                choice = choices[0] if isinstance(choices[0], dict) else {}
+                self.last_finish_reason = str(choice.get("finish_reason") or "") or None
+                message = choice.get("message") or {}
+                content = str(message.get("content", "") or "").strip()
+            elif candidates:
+                candidate = candidates[0] if isinstance(candidates[0], dict) else {}
+                self.last_finish_reason = str(
+                    candidate.get("finishReason") or ""
+                ) or None
+                parts = (candidate.get("content") or {}).get("parts", [])
+                content = "".join(
+                    str(part.get("text", ""))
+                    for part in parts
+                    if isinstance(part, dict)
+                ).strip()
+            else:
+                raise LLMCommunicationError(f"LLM API returned no choices: {payload}")
+
+        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        elif content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+        if not content:
+            raise LLMCommunicationError("LLM API returned an empty response")
+        if not content.startswith("{") and "{" in content and "}" in content:
+            content = content[content.find("{") : content.rfind("}") + 1].strip()
+        return content
+
+    def _generate_gemini_text(self, prompt: str, system_instruction: str) -> str:
+        """Call Google's native GenerateContent REST API and return text."""
+        payload = {
+            "systemInstruction": {"parts": [{"text": system_instruction}]},
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.0,
+                "maxOutputTokens": self.config.max_tokens,
+                "responseMimeType": "application/json",
+            },
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.config.api_key,
+            "User-Agent": "AI-Agent-Hunting/1.0",
+        }
+        req = urllib.request.Request(
+            self.config.endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        max_retries = 2
+        self.last_attempt_count = 0
+        self.last_usage = {}
+        self.last_finish_reason = None
+        last_err: Exception | None = None
+        for attempt in range(1, max_retries + 1):
+            self.last_attempt_count = attempt
+            try:
+                started = time.perf_counter()
+                with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
+                    response = json.loads(resp.read().decode("utf-8", errors="replace"))
+                    usage = response.get("usageMetadata") or {}
+                    self.last_usage = {
+                        "prompt_tokens": usage.get("promptTokenCount"),
+                        "completion_tokens": usage.get("candidatesTokenCount"),
+                    }
+                    candidates = response.get("candidates") or []
+                    if not candidates:
+                        feedback = response.get("promptFeedback") or {}
+                        raise LLMCommunicationError(
+                            f"Gemini API returned no candidates: {feedback}"
+                        )
+                    candidate = candidates[0]
+                    self.last_finish_reason = str(candidate.get("finishReason") or "") or None
+                    parts = (candidate.get("content") or {}).get("parts") or []
+                    content = "".join(
+                        str(part.get("text", ""))
+                        for part in parts
+                        if isinstance(part, dict) and part.get("text") is not None
+                    ).strip()
+                    if not content:
+                        raise LLMCommunicationError("Gemini API returned an empty candidate")
+                    return content
+            except urllib.error.HTTPError as http_err:
+                error_body = http_err.read().decode("utf-8", errors="replace")
+                last_err = LLMCommunicationError(
+                    f"Gemini API HTTP {http_err.code} error: {error_body}"
+                )
+                if http_err.code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                    import time as _t
+                    _t.sleep(1.5 * attempt)
+                    continue
+                raise last_err from http_err
+            except (urllib.error.URLError, TimeoutError) as url_err:
+                reason = getattr(url_err, "reason", str(url_err))
+                if "timed out" in str(reason).lower() or isinstance(url_err, TimeoutError):
+                    last_err = LLMTimeoutError(
+                        f"Gemini API request timed out after {self.config.timeout_seconds}s: {reason}"
+                    )
+                else:
+                    last_err = LLMCommunicationError(f"Gemini API network error: {reason}")
+                if attempt < max_retries:
+                    import time as _t
+                    _t.sleep(1.5 * attempt)
+                    continue
+                raise last_err from url_err
+            except Exception as error:
+                last_err = error
+                if attempt < max_retries:
+                    import time as _t
+                    _t.sleep(1.0)
+                    continue
+                raise
+        if last_err:
+            raise last_err
+        raise LLMCommunicationError("Gemini API request failed without a response")
 
     def generate(self, prompt_context: dict[str, Any]) -> str:
         """Execute real HTTP POST request to external LLM API and return structured JSON string."""
@@ -254,6 +523,12 @@ class ApiLLMProvider(LLMProvider):
             "Valid field_predicate ops: 'EQUALS', 'CONTAINS', 'EXISTS', 'ABSENT'."
         )
 
+        if self.config.is_gemini:
+            return self._generate_gemini_text(
+                json.dumps(prompt_context, indent=2, ensure_ascii=False),
+                system_instruction,
+            )
+
         # Source profiling is a separate bounded component.  It must not use
         # the legacy M2 hypothesis prompt because that prompt can fabricate
         # scenario expectations instead of returning source mappings.
@@ -266,6 +541,7 @@ class ApiLLMProvider(LLMProvider):
                 "Each proposal must use {source_id, relation, input_roles, "
                 "output_roles, proof_mode, probe_kind, projection_roles, "
                 "supported_constraints, searchable_constraints, "
+                "field_transforms, "
                 "temporal_roles, action_roles, state_roles, "
                 "artifact_identity_roles, correlation_roles, "
                 "relaxable_constraint_keys, rationale_refs, confidence}; "
@@ -277,6 +553,8 @@ class ApiLLMProvider(LLMProvider):
                 "Every proposal must reference existing census IDs. Use only these "
                 "proof_mode values: retrieval_only, relation_observable. Use only "
                 "these probe_kind values: cooccurrence, schema, value_presence, temporal. "
+                "For a field whose census origin is nested_payload, use the exact field ID "
+                "and set field_transforms for it to extract_nested_key; never invent a nested key. "
                 "Return {\"proposals\": []} when no mapping is justified."
             )
 
@@ -417,16 +695,26 @@ class ApiLLMProvider(LLMProvider):
             raise last_err
 
 
-    def call_raw(self, prompt: str, system_instruction: str | None = None) -> str:
+    def call_raw(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        *,
+        max_tokens: int | None = None,
+    ) -> str:
         """Execute HTTP POST request for generic prompt to external LLM API and return response text."""
+        self._reset_request_telemetry()
+        output_tokens = max(1, int(max_tokens or self.config.max_tokens))
         sys_inst = (
             system_instruction
             or "You are an expert Threat Hunting AI Agent. Return structured JSON matching the requested format."
         )
+        if self.config.is_gemini:
+            return self._generate_gemini_text(prompt, sys_inst)
         if self.config.is_anthropic:
             payload = {
                 "model": self.config.model,
-                "max_tokens": self.config.max_tokens,
+                "max_tokens": output_tokens,
                 "system": sys_inst,
                 "messages": [
                     {"role": "user", "content": prompt},
@@ -441,7 +729,7 @@ class ApiLLMProvider(LLMProvider):
                     {"role": "user", "content": prompt},
                 ],
                 "temperature": 0.0,
-                "max_tokens": self.config.max_tokens,
+                "max_tokens": output_tokens,
                 "stream": True,
             }
 
@@ -462,131 +750,80 @@ class ApiLLMProvider(LLMProvider):
 
         max_retries = 2
         last_err: Exception | None = None
-        self.last_attempt_count = 0
-        self.last_usage = {}
-        self.last_finish_reason = None
         for attempt in range(1, max_retries + 1):
             self.last_attempt_count = attempt
             try:
+                started = time.perf_counter()
                 with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
-                    content_type = resp.headers.get("Content-Type", "")
-                    resp_bytes = resp.read()
-                    resp_text = resp_bytes.decode("utf-8", errors="replace")
-
-                    is_sse = (
-                        "text/event-stream" in content_type
-                        or resp_text.lstrip().startswith("data:")
-                    )
-
-                    if is_sse:
-                        chunks: list[str] = []
-                        for line in resp_text.splitlines():
-                            line_str = line.strip()
-                            if line_str == "data: [DONE]":
+                    self._capture_response_metadata(resp)
+                    headers = getattr(resp, "headers", None)
+                    content_type = headers.get("Content-Type", "") if headers is not None else ""
+                    # Real HTTPResponse objects expose readline().  Reading
+                    # line-by-line for SSE gives an honest first-byte metric;
+                    # test doubles and ordinary JSON responses use read().
+                    use_line_reader = isinstance(content_type, str) and (
+                        "text/event-stream" in content_type.lower()
+                    ) or isinstance(resp, HTTPResponse)
+                    if use_line_reader and callable(getattr(resp, "readline", None)):
+                        data = bytearray()
+                        while True:
+                            line = resp.readline()
+                            if not line:
                                 break
-                            if line_str.startswith("data:"):
-                                try:
-                                    chunk_json = json.loads(line_str[5:].strip())
-                                    usage = chunk_json.get("usage") or {}
-                                    if usage:
-                                        p_tok = usage.get("prompt_tokens") or usage.get("input_tokens")
-                                        c_tok = usage.get("completion_tokens") or usage.get("output_tokens")
-                                        self.last_usage = {
-                                            "prompt_tokens": int(p_tok) if p_tok is not None else None,
-                                            "completion_tokens": int(c_tok) if c_tok is not None else None,
-                                        }
-                                    for choice in chunk_json.get("choices", []):
-                                        if choice.get("finish_reason"):
-                                            self.last_finish_reason = str(choice.get("finish_reason"))
-                                        delta = choice.get("delta", {})
-                                        if "content" in delta and delta["content"]:
-                                            chunks.append(delta["content"])
-                                        elif "text" in delta and delta["text"]:
-                                            chunks.append(delta["text"])
-                                except Exception:
-                                    continue
-                        content = "".join(chunks).strip()
+                            if self.last_first_byte_ms is None:
+                                self.last_first_byte_ms = round((time.perf_counter() - started) * 1000.0, 2)
+                            data.extend(line)
+                        resp_text = bytes(data).decode("utf-8", errors="replace")
                     else:
-                        resp_json = json.loads(resp_text)
-                        # Extract usage metadata (OpenAI, Gemini, or Anthropic format)
-                        usage = resp_json.get("usage") or resp_json.get("usageMetadata") or {}
-                        p_tok = (
-                            usage.get("prompt_tokens")
-                            or usage.get("promptTokenCount")
-                            or usage.get("input_tokens")
-                        )
-                        c_tok = (
-                            usage.get("completion_tokens")
-                            or usage.get("candidatesTokenCount")
-                            or usage.get("output_tokens")
-                        )
-                        self.last_usage = {
-                            "prompt_tokens": int(p_tok) if p_tok is not None else None,
-                            "completion_tokens": int(c_tok) if c_tok is not None else None,
-                        }
-                        f_reason = None
-                        if isinstance(resp_json.get("content"), list):
-                            content = "".join(
-                                b.get("text", "") for b in resp_json["content"]
-                                if isinstance(b, dict) and b.get("type") == "text"
-                            ).strip()
-                            f_reason = resp_json.get("stop_reason")
+                        raw = resp.read()
+                        if isinstance(raw, str):
+                            resp_text = raw
                         else:
-                            choices = resp_json.get("choices", [])
-                            if choices:
-                                f_reason = choices[0].get("finish_reason")
-                            candidates = resp_json.get("candidates", [])
-                            if candidates and not f_reason:
-                                f_reason = candidates[0].get("finishReason")
-                            if not choices and not candidates:
-                                raise ValueError(f"LLM API returned no choices: {resp_json}")
-                            if choices:
-                                content = str(choices[0].get("message", {}).get("content", "")).strip()
-                            else:
-                                parts = candidates[0].get("content", {}).get("parts", [])
-                                content = "".join(p.get("text", "") for p in parts).strip()
-                        self.last_finish_reason = str(f_reason) if f_reason else None
-
-                    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-                    if content.startswith("```json"):
-                        content = content[7:]
-                    elif content.startswith("```"):
-                        content = content[3:]
-                    if content.endswith("```"):
-                        content = content[:-3]
-                    content = content.strip()
-
-                    if not content.startswith("{") and "{" in content and "}" in content:
-                        start_idx = content.find("{")
-                        end_idx = content.rfind("}") + 1
-                        content = content[start_idx:end_idx].strip()
-
-                    return content
+                            resp_text = bytes(raw).decode("utf-8", errors="replace")
+                        if self.last_first_byte_ms is None and resp_text:
+                            self.last_first_byte_ms = 0.0
+                    return self._parse_openai_response(resp_text)
 
             except urllib.error.HTTPError as http_err:
                 error_body = http_err.read().decode("utf-8", errors="replace")
-                last_err = LLMCommunicationError(f"LLM API HTTP {http_err.code} error: {error_body}")
-                if http_err.code in (429, 500, 502, 503, 504) and attempt < max_retries:
-                    import time as _t
-                    _t.sleep(1.5 * attempt)
+                self.last_http_status = int(http_err.code)
+                self.last_error_class = {
+                    429: "RATE_LIMITED",
+                    500: "UPSTREAM_SERVER_ERROR",
+                    502: "BAD_GATEWAY",
+                    503: "UPSTREAM_UNAVAILABLE",
+                    504: "GATEWAY_TIMEOUT",
+                    524: "UPSTREAM_PROXY_TIMEOUT",
+                }.get(http_err.code, "HTTP_ERROR")
+                if http_err.code == 524:
+                    last_err = LLMUpstreamTimeoutError(
+                        f"LLM API HTTP 524 upstream timeout: {error_body}"
+                    )
+                else:
+                    last_err = LLMCommunicationError(
+                        f"LLM API HTTP {http_err.code} error: {error_body}"
+                    )
+                if http_err.code in (429, 500, 502, 503, 504, 524) and attempt < max_retries:
+                    time.sleep(1.5 * attempt)
                     continue
                 raise last_err from http_err
             except (urllib.error.URLError, TimeoutError) as url_err:
                 reason = getattr(url_err, "reason", str(url_err))
                 if "timed out" in str(reason).lower() or isinstance(url_err, TimeoutError) or "timeout" in str(url_err).lower():
+                    self.last_error_class = "TRANSPORT_TIMEOUT"
                     last_err = LLMTimeoutError(f"LLM API request timed out after {self.config.timeout_seconds}s: {reason}")
                 else:
+                    self.last_error_class = "TRANSPORT_ERROR"
                     last_err = LLMCommunicationError(f"LLM API network error: {reason}")
                 if attempt < max_retries:
-                    import time as _t
-                    _t.sleep(1.5 * attempt)
+                    time.sleep(1.5 * attempt)
                     continue
                 raise last_err from url_err
             except Exception as e:
+                self.last_error_class = self.last_error_class or "RESPONSE_PARSE_ERROR"
                 last_err = e
                 if attempt < max_retries:
-                    import time as _t
-                    _t.sleep(1.0)
+                    time.sleep(1.0)
                     continue
                 raise
         if last_err:
@@ -615,10 +852,15 @@ def create_llm_caller(
     def caller(prompt: str, reason: str = "", phase: Any | None = None) -> str:
         active_phase = normalize_phase(phase or default_phase or component)
         active_reason = reason or active_phase.value
+        configured_completion = int(getattr(getattr(provider, "config", None), "max_tokens", 4000) or 4000)
 
         if tracker is not None and hasattr(tracker, "preflight"):
-            configured_completion = int(getattr(getattr(provider, "config", None), "max_tokens", 4000) or 4000)
-            ceilings = COMPONENT_TOKEN_CEILINGS.get(active_phase.value) or COMPONENT_TOKEN_CEILINGS.get(component)
+            diagnostic_unbounded = bool(
+                getattr(getattr(tracker, "policy", None), "diagnostic_unbounded", False)
+            )
+            ceilings = None if diagnostic_unbounded else (
+                COMPONENT_TOKEN_CEILINGS.get(active_phase.value) or COMPONENT_TOKEN_CEILINGS.get(component)
+            )
             if ceilings and "max_output" in ceilings:
                 configured_completion = min(configured_completion, ceilings["max_output"])
             tracker.preflight(
@@ -632,7 +874,7 @@ def create_llm_caller(
             raise RuntimeError(f"LLM budget exhausted for component '{component}' - maximum {tracker.max_calls} calls exceeded")
 
         t0 = time.perf_counter()
-        resp = "{}"
+        resp = ""
         try:
             if hasattr(provider, "call_raw"):
                 component_system = {
@@ -664,7 +906,18 @@ def create_llm_caller(
                         "invent observations, fields, or verdicts unsupported by the cards."
                     ),
                 }.get(component)
-                resp = provider.call_raw(prompt, system_instruction=component_system)
+                if isinstance(provider, ApiLLMProvider):
+                    # The preflight ceiling is now also the actual HTTP
+                    # max_tokens value.  Previously it only guarded the
+                    # ledger while the gateway still received 4000 tokens for
+                    # every phase.
+                    resp = provider.call_raw(
+                        prompt,
+                        system_instruction=component_system,
+                        max_tokens=configured_completion,
+                    )
+                else:
+                    resp = provider.call_raw(prompt, system_instruction=component_system)
             elif hasattr(provider, "generate"):
                 resp = provider.generate({"prompt": prompt})
             else:
@@ -672,7 +925,7 @@ def create_llm_caller(
         except Exception as err:
             elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
             if tracker is not None:
-                model = getattr(getattr(provider, "config", None), "model", getattr(tracker, "model_name", "stub"))
+                configured_model = getattr(getattr(provider, "config", None), "model", getattr(tracker, "model_name", "stub"))
                 attempts = int(getattr(provider, "last_attempt_count", 1) or 1)
                 try:
                     tracker.record_call(
@@ -680,7 +933,13 @@ def create_llm_caller(
                         prompt=prompt,
                         response="",
                         duration_ms=elapsed_ms,
-                        model=model,
+                        model=getattr(provider, "last_model", None) or configured_model,
+                        configured_model=configured_model,
+                        actual_model=getattr(provider, "last_model", None),
+                        first_byte_ms=getattr(provider, "last_first_byte_ms", None),
+                        http_status=getattr(provider, "last_http_status", None),
+                        request_id=getattr(provider, "last_request_id", None),
+                        error_class=getattr(provider, "last_error_class", "") or type(err).__name__,
                         actual_prompt_tokens=None,
                         actual_completion_tokens=0,
                         status="FAILED",
@@ -702,14 +961,13 @@ def create_llm_caller(
                 logger.error(f"LLM request timed out for component '{component}': {err}")
                 raise LLMTimeoutError(f"LLM API request timed out for component '{component}': {err}") from err
 
-            if component == "compiler":
-                print(f"\n[-] [LLM ERROR] Compilation request failed for component 'compiler': {err}", file=sys.stderr)
-                logger.error(f"LLM compilation request failed: {err}")
-                raise
-
-            print(f"[-] [AI SUB-SYSTEM WARNING] LLM call failed for component '{component}': {err}", file=sys.stderr)
-            logger.warning(f"LLM call failed for component '{component}': {err} - falling back to deterministic processing")
-            return "{}"
+            # A transport failure is not an empty JSON result.  Returning {}
+            # made source profiling/evaluation look like a valid deterministic
+            # response and allowed the engine to continue with a false reason.
+            # Let the owning phase classify the failure as unavailable.
+            print(f"[-] [AI SUB-SYSTEM ERROR] LLM call failed for component '{component}': {err}", file=sys.stderr)
+            logger.error(f"LLM call failed for component '{component}': {err}")
+            raise
 
         elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
         finish_reason = getattr(provider, "last_finish_reason", None)
@@ -718,7 +976,8 @@ def create_llm_caller(
             valid, val_msg = tracker.validate_response(resp, finish_reason=finish_reason)
 
         if tracker is not None:
-            model = getattr(getattr(provider, "config", None), "model", getattr(tracker, "model_name", "stub"))
+            configured_model = getattr(getattr(provider, "config", None), "model", getattr(tracker, "model_name", "stub"))
+            actual_model = getattr(provider, "last_model", None) or configured_model
             last_usage = getattr(provider, "last_usage", {}) or {}
             actual_prompt = last_usage.get("prompt_tokens")
             actual_completion = last_usage.get("completion_tokens")
@@ -730,7 +989,12 @@ def create_llm_caller(
                     prompt=prompt,
                     response=resp,
                     duration_ms=elapsed_ms,
-                    model=model,
+                    model=actual_model,
+                    configured_model=configured_model,
+                    actual_model=getattr(provider, "last_model", None),
+                    first_byte_ms=getattr(provider, "last_first_byte_ms", None),
+                    http_status=getattr(provider, "last_http_status", None),
+                    request_id=getattr(provider, "last_request_id", None),
                     actual_prompt_tokens=actual_prompt,
                     actual_completion_tokens=actual_completion,
                     status=status_val,
@@ -1203,6 +1467,9 @@ class StubSemanticCompiler:
 __all__ = [
     "ApiLLMConfig",
     "LLMProvider",
+    "LLMCommunicationError",
+    "LLMTimeoutError",
+    "LLMUpstreamTimeoutError",
     "StubAbductionProvider",
     "StubSemanticCompiler",
     "ApiLLMProvider",

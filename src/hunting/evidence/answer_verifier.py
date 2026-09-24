@@ -18,6 +18,7 @@ _TYPE_FIELDS: dict[str, tuple[str, ...]] = {
     "email_address": ("sender_email", "recipient_email", "email"),
     "process": ("Image", "image", "process_name", "process_image"),
     "file_path": ("Path", "path", "TargetFilename", "file_path"),
+    "host": ("host", "hosts", "ComputerName", "dest", "src", "dvc"),
     "timestamp": ("_time", "timestamp", "time"),
 }
 
@@ -28,6 +29,23 @@ def _non_empty(value: Any) -> bool:
     if isinstance(value, (list, tuple, set, dict)):
         return bool(value)
     return True
+
+
+def _normalized_values(value: Any) -> set[str]:
+    """Flatten native field values for exact, case-insensitive identity checks."""
+    if isinstance(value, dict):
+        values: set[str] = set()
+        for nested in value.values():
+            values.update(_normalized_values(nested))
+        return values
+    if isinstance(value, (list, tuple, set)):
+        values = set()
+        for nested in value:
+            values.update(_normalized_values(nested))
+        return values
+    if value in (None, ""):
+        return set()
+    return {str(value).strip().casefold()}
 
 
 def _available_fields(cards: Iterable[Any], observations: Iterable[Any] = ()) -> set[str]:
@@ -133,7 +151,6 @@ def verify_answer(
             artifact_obs_ids.extend(art.observation_ids)
 
     for c in cards_list:
-        fs = getattr(c, "field_summary", {}) or {}
         es = getattr(c, "entity_summary", {}) or {}
         hosts = [str(x) for x in es.get("hosts", []) if str(x).strip()]
         if hosts and not artifact_host:
@@ -177,26 +194,21 @@ def verify_answer(
             status = "INCONCLUSIVE"
             reason = "COVERAGE_INCOMPLETE"
         elif effective_binding or candidate.get("value"):
-            answer_value = str(candidate.get("value", "")).strip().lower()
+            answer_value = str(candidate.get("value", "")).strip().casefold()
             if answer_value:
-                bound = False
+                # Identity/value binding is exact after normalization. Substring
+                # matches (host-1 in host-10, example.com in notexample.com)
+                # are retrieval heuristics and cannot verify an answer.
+                evidence_values: set[str] = set()
                 for obs in observations_list:
-                    fields = getattr(obs, "fields", {}) or {}
-                    for v in fields.values():
-                        if answer_value in str(v or "").lower():
-                            bound = True
-                            break
-                    if bound:
-                        break
-                if not bound:
-                    for card in cited_cards:
-                        fs = getattr(card, "field_summary", {}) or {}
-                        for v in fs.values():
-                            if answer_value in str(v or "").lower():
-                                bound = True
-                                break
-                        if bound:
-                            break
+                    for value in (getattr(obs, "fields", {}) or {}).values():
+                        evidence_values.update(_normalized_values(value))
+                for card in cited_cards:
+                    for value in (getattr(card, "field_summary", {}) or {}).values():
+                        evidence_values.update(_normalized_values(value))
+                    for value in (getattr(card, "entity_summary", {}) or {}).values():
+                        evidence_values.update(_normalized_values(value))
+                bound = answer_value in evidence_values
                 if not bound:
                     status = "PARTIAL"
                     reason = "ANSWER_VALUE_NOT_BOUND_TO_EVIDENCE"
@@ -226,7 +238,9 @@ def verify_answer(
             status = "INCONCLUSIVE"
             reason = "COVERAGE_INCOMPLETE"
 
-    # Citation rule: Every assertion must indicate claim, observation IDs, query IDs, native fields
+    # Citation rule: Every assertion must indicate claim, observation IDs, query IDs, native fields.
+    # Missing provenance stays missing; placeholder IDs or guessed native fields
+    # would fabricate evidence that no provider query produced.
     citations: list[dict[str, Any]] = []
     citation_text = ""
     if artifact_detected:
@@ -235,17 +249,16 @@ def verify_answer(
             f for f in ("Path", "Image", "CommandLine", "TargetFilename", "ParentImage", "raw_event", "_raw")
             if f in artifact_fields_set or any(f.lower() == str(x).lower() for x in artifact_fields_set)
         ]
-        if not relevant_native_fields:
-            relevant_native_fields = ["Path", "raw_event"]
-        rep_obs = sorted(list(set(artifact_obs_ids)))[:3] or ["obs-discovery-1"]
-        rep_q = sorted(list(set(artifact_query_ids)))[:2] or ["qp-discovery-0"]
-        citations.append({
-            "claim": claim_stmt,
-            "observation_ids": rep_obs,
-            "query_ids": rep_q,
-            "fields": relevant_native_fields,
-        })
-        citation_text = f"{claim_stmt} Evidence: {', '.join(rep_obs)} Query: {', '.join(rep_q)} Fields: {', '.join(relevant_native_fields)}"
+        rep_obs = sorted(set(artifact_obs_ids))[:3]
+        rep_q = sorted(set(artifact_query_ids))[:2]
+        if rep_obs and rep_q and relevant_native_fields:
+            citations.append({
+                "claim": claim_stmt,
+                "observation_ids": rep_obs,
+                "query_ids": rep_q,
+                "fields": relevant_native_fields,
+            })
+            citation_text = f"{claim_stmt} Evidence: {', '.join(rep_obs)} Query: {', '.join(rep_q)} Fields: {', '.join(relevant_native_fields)}"
 
     verified = dict(candidate)
     verified.update({

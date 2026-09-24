@@ -12,6 +12,7 @@ from hunting.contracts.bindings import (
     CandidateSet,
 )
 from hunting.contracts.cells import ProviderScope
+from hunting.contracts.hunt import HuntObjective, HuntState
 from hunting.contracts.queries import (
     ProviderOperation,
     QueryOutcome,
@@ -20,12 +21,18 @@ from hunting.contracts.queries import (
 from hunting.contracts.semantic_graph import (
     LogicalPlan,
     PlanStep,
+    SemanticConstraint,
+    SemanticGoalGraph,
+    SemanticRelationGoal,
+    SemanticVariable,
 )
+from hunting.engine import HypothesisHuntEngine
 from hunting.human_loop.clarification import (
     ClarificationController,
     DisambiguationAction,
+    DiscriminatorQuerySpec,
 )
-from hunting.planner.semantic_executor import SemanticPlanExecutor
+from hunting.planner.semantic_executor import SemanticExecutionResult, SemanticPlanExecutor, StepExecution
 
 
 def test_two_singular_host_candidates_never_fan_out_into_proof_goal() -> None:
@@ -227,3 +234,221 @@ def test_discriminator_lifecycle_emits_stop_needs_clarification() -> None:
     assert "host-a" in checkpoint.candidate_values
     assert "host-b" in checkpoint.candidate_values
     assert "fact-1" in checkpoint.supporting_citations
+
+
+def test_ambiguous_executor_preserves_candidates_without_downstream_fanout() -> None:
+    step_1 = PlanStep(
+        id="s1",
+        operation_id="lookup-hosts",
+        input_bindings={"subject": "user"},
+        output_bindings={"object": "host"},
+        advances_goal_ids=("goal-1",),
+    )
+    step_2 = PlanStep(
+        id="s2",
+        operation_id="prove-infection",
+        input_bindings={"subject": "host"},
+        output_bindings={"object": "verdict"},
+        advances_goal_ids=("goal-2",),
+        depends_on=("s1",),
+    )
+    plan = LogicalPlan(id="test-plan", goal_graph_id="g1", provider_id="mock", steps=[step_1, step_2])
+
+    class MultiHostAdapter:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def execute_query(self, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs["operation_id"] == "lookup-hosts":
+                return QueryResult(
+                    kwargs["query_id"],
+                    QueryOutcome.ROWS,
+                    True,
+                    True,
+                    rows=[{"host_val": "host-corp-1"}, {"host_val": "host-corp-2"}],
+                )
+            return QueryResult(kwargs["query_id"], QueryOutcome.ROWS, True, True, rows=[{"status": "infected"}])
+
+    adapter = MultiHostAdapter()
+    ops = [
+        ProviderOperation("lookup-hosts", "mock", ("test",), input_entity_kinds=("user",), output_entity_kinds=("host",), output_value_bindings={"object": ("host_val",)}),
+        ProviderOperation("prove-infection", "mock", ("test",), input_entity_kinds=("host",), output_entity_kinds=("verdict",)),
+    ]
+    res = SemanticPlanExecutor(adapter, ops).execute(
+        plan=plan,
+        scope=ProviderScope(provider_id="mock", native_partition={"index": "main"}, scope_id="test"),
+        time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z",
+        initial_variables={"user": "alice"},
+        target_cardinality={"host": "singular"},
+    )
+    assert adapter.calls[0]["operation_id"] == "lookup-hosts"
+    assert res.ambiguous_candidates["host"] == ["host-corp-1", "host-corp-2"]
+    assert "host" not in res.variables
+    assert not any(c["operation_id"] == "prove-infection" for c in adapter.calls)
+
+
+def test_select_discriminator_operation_rejects_candidate_fanout_ops() -> None:
+    spec = DiscriminatorQuerySpec(
+        target_variable_id="host",
+        candidate_values=("h1", "h2"),
+        discriminator_relation="logged_on_to",
+        discriminator_field="host",
+    )
+    fanout_op = ProviderOperation(
+        "by-host",
+        "mock",
+        ("test",),
+        input_entity_kinds=("host",),
+        output_entity_kinds=("host",),
+        guaranteed_relations=("logged_on_to",),
+    )
+    cheap_op = ProviderOperation(
+        "by-account",
+        "mock",
+        ("test",),
+        input_entity_kinds=("account",),
+        output_entity_kinds=("host", "endpoint"),
+        guaranteed_relations=("logged_on_to",),
+        output_value_bindings={"object": ("host",)},
+        discriminator_fields=("logon_type",),
+    )
+    selected = ClarificationController.select_discriminator_operation([fanout_op, cheap_op], spec, "host")
+    assert selected is cheap_op
+    skipped = ClarificationController.select_discriminator_operation(
+        [fanout_op, cheap_op],
+        spec,
+        "host",
+        exclude_operation_ids=("by-account",),
+    )
+    assert skipped is None
+
+
+def test_select_discriminator_operation_rejects_same_native_signature() -> None:
+    spec = DiscriminatorQuerySpec(
+        target_variable_id="endpoint",
+        candidate_values=("h1", "h2"),
+        discriminator_relation="logged_on_to",
+        discriminator_field="host",
+    )
+    source = ProviderOperation(
+        "person-endpoint",
+        "mock",
+        ("test",),
+        input_entity_kinds=("person",),
+        output_entity_kinds=("host",),
+        guaranteed_relations=("associated_with",),
+        native_signature="mock.identity.endpoint.v1",
+        discriminator_fields=("sourcetype",),
+    )
+    alias = ProviderOperation(
+        "account-endpoint",
+        "mock",
+        ("test",),
+        input_entity_kinds=("account",),
+        output_entity_kinds=("host",),
+        guaranteed_relations=("logged_on_to",),
+        native_signature="mock.identity.endpoint.v1",
+        discriminator_fields=("LogonType",),
+    )
+    assert ClarificationController.select_discriminator_operation(
+        [source, alias],
+        spec,
+        "host",
+        exclude_operation_ids=(source.id,),
+        exclude_native_signatures=(source.native_signature,),
+    ) is None
+
+
+def test_engine_previews_same_native_spl_before_discriminator_execution() -> None:
+    """A compiled discriminator with no delta must not execute or consume budget."""
+    graph = SemanticGoalGraph(
+        id="graph-preview",
+        request_id="req-preview",
+        objective="resolve endpoint",
+        variables=[
+            SemanticVariable(id="account", entity_type="account", value="alice"),
+            SemanticVariable(
+                id="endpoint",
+                entity_type="endpoint",
+                constraints=(SemanticConstraint("logon_type", "interactive"),),
+            ),
+        ],
+        relations=[
+            SemanticRelationGoal(
+                id="rel-1",
+                subject="account",
+                relation="associated_with",
+                object="endpoint",
+            ),
+        ],
+    )
+    source = ProviderOperation(
+        "source-op", "mock", ("scope",),
+        input_entity_kinds=("account",), output_entity_kinds=("endpoint",),
+        guaranteed_relations=("associated_with",), native_signature="mock.source.v1",
+    )
+    discriminator = ProviderOperation(
+        "discriminator-op", "mock", ("scope",),
+        input_entity_kinds=("account",), output_entity_kinds=("endpoint",),
+        guaranteed_relations=("logged_on_to",), discriminator_fields=("logon_type",),
+        discriminator_constraint_bindings={"logon_type": "logon_type"},
+        native_signature="mock.discriminator.v1",
+    )
+
+    class PreviewAdapter:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def preview_query(self, **_kwargs: object) -> dict[str, object]:
+            return {
+                "base_query": "search user=alice | table host",
+                "native_query": "search user=alice | table host",
+                "has_secondary_predicate": True,
+            }
+
+        def execute_query(self, **kwargs: object) -> QueryResult:
+            self.calls.append(kwargs)
+            return QueryResult(
+                query_id=str(kwargs["query_id"]), outcome=QueryOutcome.ROWS,
+                executed_ok=True, complete=True, rows=[{"host": "host-a"}],
+                native_query="search user=alice | table host",
+            )
+
+    adapter = PreviewAdapter()
+    state = HuntState(
+        objective=HuntObjective(
+            request_id="req-preview", statement="resolve endpoint",
+            time_window="2026-01-01T00:00:00Z/P1D",
+        ),
+        semantic_goal_graph=graph,
+    )
+    candidate_set = CandidateSet(variable_id="endpoint", entity_type="endpoint", cardinality="singular")
+    candidate_set.add_candidate(CandidateBinding(value="host-a", entity_type="endpoint"))
+    candidate_set.add_candidate(CandidateBinding(value="host-b", entity_type="endpoint"))
+    state.candidate_sets["endpoint"] = candidate_set
+    execution = SemanticExecutionResult(
+        executions=[StepExecution(
+            step_id="step-1", query_id="source-query", operation_id="source-op",
+            result=QueryResult(
+                query_id="source-query", outcome=QueryOutcome.ROWS,
+                executed_ok=True, complete=True,
+                rows=[{"host": "host-a"}, {"host": "host-b"}],
+                native_query="search user=alice | table host",
+            ),
+            inputs={"subject": ["alice"]}, status="AMBIGUOUS",
+        )],
+        ambiguous_candidates={"endpoint": ["host-a", "host-b"]},
+        needs_user_decision=True,
+    )
+    engine = HypothesisHuntEngine()
+    result = engine._attempt_semantic_discrimination(
+        state=state, execution=execution,
+        scope=ProviderScope(provider_id="mock", native_partition={"partition": "main"}, scope_id="scope"),
+        active_adapter=adapter, operations=(source, discriminator), goal_graph=graph,
+        target_cardinality={"endpoint": "singular"}, time_window=state.objective.time_window,
+    )
+
+    assert result is execution
+    assert adapter.calls == []
+    assert state.queries == []

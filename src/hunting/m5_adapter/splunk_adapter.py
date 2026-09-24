@@ -47,6 +47,7 @@ from hunting.contracts.expectations import (
     FieldPredicate,
 )
 from hunting.contracts.native_query import NativeQueryCandidate
+from hunting.contracts.ontology import infer_object_port_kinds
 from hunting.contracts.queries import (
     CapabilityBinding,
     ControlResult,
@@ -54,8 +55,10 @@ from hunting.contracts.queries import (
     ProviderOperation,
     QueryOutcome,
     QueryResult,
+    is_scope_observation_fact_kinds,
 )
 from hunting.contracts.source_profile import TelemetryFieldProfile, TelemetrySourceProfile
+from hunting.contracts.transforms import canonical_transform_name, get_transform_by_name, is_literal_telemetry_token
 from hunting.m5_adapter.allowlist import (
     validate_query_params,
     validate_time_window_format,
@@ -65,7 +68,6 @@ from hunting.m5_adapter.controls import (
     execute_predicate_observability_control,
     execute_scope_health_control,
 )
-from hunting.query_safety.native_query_gate import NativeQueryGate
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
@@ -203,7 +205,7 @@ class SplunkLiveAdapter:
         auth: tuple[str, str] = ("admin", "12345678"),
         index: str = "botsv2",
         manifest_path: str | Path | None = None,
-        verify_ssl: bool = False,
+        verify_ssl: bool = True,
         timeout: int = 60,
         profile_source_limit: int | None = None,
     ) -> None:
@@ -458,7 +460,7 @@ class SplunkLiveAdapter:
         cls,
         splunk_url: str = "https://localhost:8089",
         auth: tuple[str, str] = ("admin", "12345678"),
-        verify_ssl: bool = False,
+        verify_ssl: bool = True,
         timeout: int = 2,
     ) -> bool:
         """Probe whether Splunk REST API is live and reachable."""
@@ -479,7 +481,7 @@ class SplunkLiveAdapter:
         cls,
         splunk_url: str = "https://localhost:8089",
         auth: tuple[str, str] = ("admin", "12345678"),
-        verify_ssl: bool = False,
+        verify_ssl: bool = True,
         timeout: int = 10,
     ) -> dict[str, Any]:
         """Introspect available indexes and select the primary active telemetry index."""
@@ -630,6 +632,9 @@ class SplunkLiveAdapter:
             supported_constraints: tuple[str, ...] = (),
             searchable_constraints: tuple[str, ...] = (),
             query_builder: str = "",
+            native_signature: str = "",
+            discriminator_fields: tuple[str, ...] = (),
+            discriminator_constraint_bindings: dict[str, str] | None = None,
             allow_constraint_relaxation: bool = True,
         ) -> ProviderOperation:
             relation_by_fact = {
@@ -651,23 +656,30 @@ class SplunkLiveAdapter:
             declared_relations = guaranteed_relations or tuple(dict.fromkeys(
                 relation_by_fact[fact] for fact in fact_kinds if fact in relation_by_fact
             ))
+            scope_observation = (
+                not output_entity_kinds
+                and is_scope_observation_fact_kinds(fact_kinds)
+            )
             value_fields = tuple(
                 field_name for field_name in output_fields
                 if field_name.casefold() not in {"timestamp", "host", "user", "native_type", "sourcetype"}
             )
-            derived_output_kinds = output_entity_kinds or tuple(dict.fromkeys(
-                kind for field_name in output_fields
-                for kind, markers in {
-                    "account": ("user", "username"),
-                    "host": ("host", "computer"),
-                    "ip": ("ip", "client_ip", "server_ip", "source_ip", "destination_ip"),
-                    "domain": ("domain", "site", "query", "cs_host"),
-                    "process": ("image", "process", "cmdline"),
-                    "file": ("file_path", "path", "targetfilename"),
-                    "email_address": ("email", "sender_email", "receiver_email"),
-                    "version": ("version", "productversion", "fileversion"),
-                }.items() if field_name.casefold() in {marker.casefold() for marker in markers}
-            ))
+            if scope_observation:
+                derived_output_kinds = ()
+            else:
+                derived_output_kinds = output_entity_kinds or tuple(dict.fromkeys(
+                    kind for field_name in output_fields
+                    for kind, markers in {
+                        "account": ("user", "username"),
+                        "host": ("host", "computer"),
+                        "ip": ("ip", "client_ip", "server_ip", "source_ip", "destination_ip"),
+                        "domain": ("domain", "site", "query", "cs_host"),
+                        "process": ("image", "process", "cmdline"),
+                        "file": ("file_path", "path", "targetfilename"),
+                        "email_address": ("email", "sender_email", "receiver_email"),
+                        "version": ("version", "productversion", "fileversion"),
+                    }.items() if field_name.casefold() in {marker.casefold() for marker in markers}
+                ))
             # Keep identity resolution typed: finding an account may expose
             # an incidental email field in the same raw event, but that does
             # not make the operation an account-to-email resolver.  Otherwise
@@ -697,6 +709,27 @@ class SplunkLiveAdapter:
                     "software", "software_type", "software_name", "process_name",
                     "image", "command", "keyword", "name",
                 )
+            if not discriminator_fields and operation_id in {
+                "cdb_file_writes", "cdb_file_search",
+                "find_file_change_from_endpoint", "find_file_change_from_process",
+            }:
+                discriminator_fields = ("target_path", "action", "TargetFilename", "file_path")
+            if not discriminator_constraint_bindings and operation_id in {
+                "cdb_file_writes", "cdb_file_search",
+                "find_file_change_from_endpoint", "find_file_change_from_process",
+            }:
+                discriminator_constraint_bindings = {
+                    "target_path": "target_path",
+                    "file_path": "file_path",
+                    "action": "action",
+                    "filename": "TargetFilename",
+                    "file_name": "TargetFilename",
+                }
+            final_bindings = (
+                {} if scope_observation and output_value_bindings is None
+                else (output_value_bindings or ({"object": value_fields} if value_fields else {}))
+            )
+            final_kinds = () if scope_observation else (output_entity_kinds or derived_output_kinds)
             return ProviderOperation(
                 operation_id,
                 "splunk",
@@ -706,18 +739,24 @@ class SplunkLiveAdapter:
                 limit_semantics="complete only on EOF",
                 semantic_intents=semantic_intents,
                 input_entity_kinds=input_kinds,
-                output_entity_kinds=derived_output_kinds,
+                output_entity_kinds=final_kinds,
                 output_fields=output_fields,
                 output_fact_kinds=fact_kinds,
                 input_roles=input_roles,
                 output_roles=output_roles,
                 native_field_bindings=native_field_bindings or {},
                 guaranteed_relations=declared_relations,
-                output_value_bindings=output_value_bindings or ({"object": value_fields} if value_fields else {}),
-                output_binding_entity_kinds=output_binding_entity_kinds or {},
+                output_value_bindings=final_bindings,
+                output_binding_entity_kinds=infer_object_port_kinds(
+                    output_binding_entity_kinds=output_binding_entity_kinds,
+                    output_entity_kinds=final_kinds,
+                ),
                 supported_constraints=supported_constraints,
                 searchable_constraints=searchable_constraints,
                 query_builder=query_builder,
+                native_signature=native_signature,
+                discriminator_fields=discriminator_fields,
+                discriminator_constraint_bindings=discriminator_constraint_bindings or {},
                 completeness="limit+1 EOF proof",
                 legacy_alias=operation_id.startswith("cdb_"),
                 allow_constraint_relaxation=allow_constraint_relaxation,
@@ -729,6 +768,7 @@ class SplunkLiveAdapter:
         )
         file_fields = (
             "timestamp", "host", "user", "image", "file_path",
+            "target_path", "TargetFilename", "action",
             "ProductVersion", "FileVersion", "Version",
         )
         web_fields = (
@@ -745,29 +785,29 @@ class SplunkLiveAdapter:
             operation("discover_schema", ("schema_metadata",), ("ANY",), ("field", "count")),
             operation("sample_records", ("scope_records",), ("ANY",), OBSERVABLE_FIELDS, params_schema={"window": "interval", "limit": "integer"}),
             operation("cdb_broad_sweep", ("scope_records",), ("ANY",), OBSERVABLE_FIELDS),
-            operation("cdb_process_lineage", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), process_fields),
-            operation("cdb_process_search", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), process_fields),
+            operation("cdb_process_lineage", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), process_fields, output_entity_kinds=("process",), output_value_bindings={"object": ("image", "cmdline", "parent_image")}, output_binding_entity_kinds={"object": "process"}),
+            operation("cdb_process_search", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), process_fields, output_entity_kinds=("process",), output_value_bindings={"object": ("image", "cmdline", "parent_image")}, output_binding_entity_kinds={"object": "process"}),
             operation("cdb_logon_history", ("authentication_activity", "remote_authentication"), ("host", "account", "person"), ("timestamp", "host", "user", "client_ip", "logon_type", "status")),
             operation("cdb_auth_search", ("authentication_activity", "remote_authentication"), ("host", "account", "person"), ("timestamp", "host", "user", "client_ip", "logon_type", "status")),
-            operation("cdb_file_writes", ("file_modification", "file_artifact"), ("host", "account", "process", "file"), file_fields),
-            operation("cdb_file_search", ("file_modification", "file_artifact", "software_version"), ("host", "process", "file"), file_fields, semantic_intents=("software_version",)),
-            operation("cdb_web_requests", ("web_request", "web_request_activity", "web_navigation"), ("host", "account", "ip", "domain"), web_fields),
-            operation("splunk_search_web", ("web_request", "web_request_activity", "web_navigation"), ("host", "account", "ip", "domain"), web_fields, pagination="cursor"),
+            operation("cdb_file_writes", ("file_modification", "file_artifact"), ("host", "account", "process", "file"), file_fields, output_entity_kinds=("file",), output_value_bindings={"object": ("file_path", "TargetFilename", "target_path", "path", "filename")}, output_binding_entity_kinds={"object": "file"}),
+            operation("cdb_file_search", ("file_modification", "file_artifact", "software_version"), ("host", "process", "file"), file_fields, semantic_intents=("software_version",), output_entity_kinds=("file",), output_value_bindings={"object": ("file_path", "TargetFilename", "target_path", "path", "filename")}, output_binding_entity_kinds={"object": "file"}),
+            operation("cdb_web_requests", ("web_request", "web_request_activity", "web_navigation"), ("host", "account", "ip", "domain"), web_fields, output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "site", "cs_host")}, output_binding_entity_kinds={"object": "domain"}),
+            operation("splunk_search_web", ("web_request", "web_request_activity", "web_navigation"), ("host", "account", "ip", "domain"), web_fields, pagination="cursor", output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "site", "cs_host")}, output_binding_entity_kinds={"object": "domain"}),
             operation("cdb_broad_sweep", ("scope_records", "operational_baseline"), ("ANY",), OBSERVABLE_FIELDS),
             operation("cdb_scope_scan", ("scope_records", "operational_baseline"), ("ANY",), OBSERVABLE_FIELDS),
             operation("search_text", ("scope_records", "operational_baseline"), ("ANY",), OBSERVABLE_FIELDS, params_schema={"terms": "list[string]", "term_groups": "list[list[string]]", "window": "interval"}),
-            operation("cdb_dns_queries", ("dns_activity",), ("host", "account", "ip", "domain"), ("timestamp", "host", "client_ip", "server_ip", "domain", "query")),
-            operation("cdb_dns_search", ("dns_activity",), ("host", "account", "ip", "domain"), ("timestamp", "host", "client_ip", "server_ip", "domain", "query")),
+            operation("cdb_dns_queries", ("dns_activity",), ("host", "account", "ip", "domain"), ("timestamp", "host", "client_ip", "server_ip", "domain", "query"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "query")}, output_binding_entity_kinds={"object": "domain"}),
+            operation("cdb_dns_search", ("dns_activity",), ("host", "account", "ip", "domain"), ("timestamp", "host", "client_ip", "server_ip", "domain", "query"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "query")}, output_binding_entity_kinds={"object": "domain"}),
             operation("cdb_persistence_artifacts", ("persistence_change",), ("host", "account", "process", "file"), ("timestamp", "host", "user", "image", "file_path")),
             operation("cdb_persistence_search", ("persistence_change",), ("host", "account", "process", "file"), ("timestamp", "host", "user", "image", "file_path")),
             operation("cdb_network_connections", ("network_connection",), ("host", "account", "process", "ip", "domain"), ("timestamp", "host", "user", "image", "client_ip", "server_ip", "destination_ip", "destination_port", "protocol")),
             operation("cdb_net_search", ("network_connection",), ("host", "account", "process", "ip", "domain"), ("timestamp", "host", "user", "image", "client_ip", "server_ip", "destination_ip", "destination_port", "protocol")),
-            operation("find_process_from_endpoint", ("process_ancestry", "server_side_execution", "software_version"), ("host", "process"), process_fields, semantic_intents=("software_version",)),
+            operation("find_process_from_endpoint", ("process_ancestry", "server_side_execution", "software_version"), ("host", "process"), process_fields, semantic_intents=("software_version",), output_entity_kinds=("process",), output_value_bindings={"object": ("image", "cmdline", "parent_image")}, output_binding_entity_kinds={"object": "process"}),
             operation("find_file_change_from_endpoint", ("file_modification", "file_artifact", "software_version"), ("host", "file"), file_fields, semantic_intents=("software_version",), output_entity_kinds=("file",), output_value_bindings={"object": ("file_path", "TargetFilename", "target_path", "path", "filename")}, output_binding_entity_kinds={"object": "file"}, allow_constraint_relaxation=False),
             operation("find_file_change_from_process", ("file_modification", "file_artifact", "software_version"), ("process", "file"), file_fields, semantic_intents=("software_version",), output_entity_kinds=("file",), output_value_bindings={"object": ("file_path", "TargetFilename")}, output_binding_entity_kinds={"object": "file"}),
-            operation("find_web_activity_from_endpoint", ("web_request", "web_request_activity", "web_navigation"), ("host",), web_fields),
-            operation("find_web_activity_from_client_ip", ("web_request", "web_request_activity", "web_navigation"), ("ip",), web_fields),
-            operation("find_dns_activity_from_client_ip", ("dns_activity",), ("ip",), ("timestamp", "host", "client_ip", "server_ip", "domain", "query")),
+            operation("find_web_activity_from_endpoint", ("web_request", "web_request_activity", "web_navigation"), ("host",), web_fields, output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "site", "cs_host")}, output_binding_entity_kinds={"object": "domain"}),
+            operation("find_web_activity_from_client_ip", ("web_request", "web_request_activity", "web_navigation"), ("ip",), web_fields, output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "site", "cs_host")}, output_binding_entity_kinds={"object": "domain"}),
+            operation("find_dns_activity_from_client_ip", ("dns_activity",), ("ip",), ("timestamp", "host", "client_ip", "server_ip", "domain", "query"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "query")}, output_binding_entity_kinds={"object": "domain"}),
             operation("resolve_account_to_email", ("identity_binding",), ("account",), ("user", "sender_email"), input_roles=("account_identity",), output_roles=("account_identity", "attribute_value"), output_entity_kinds=("email_address",), native_field_bindings={"account_identity": ("user",), "attribute_value": ("sender_email",)}, query_builder="splunk.identity.account_to_email.v1"),
             operation("resolve_person_to_account", ("identity_binding",), ("person",), ("user", "sender_email"), input_roles=("subject_identity",), output_roles=("subject_identity", "account_identity"), output_entity_kinds=("account",), native_field_bindings={"subject_identity": ("user",), "account_identity": ("user",)}, output_value_bindings={"object": ("user",)}, query_builder="splunk.identity.person_to_account.v1"),
             operation(
@@ -789,6 +829,14 @@ class SplunkLiveAdapter:
                 },
                 output_binding_entity_kinds={"object": "host", "client_ip": "ip"},
                 guaranteed_relations=("associated_with",),
+                native_signature="splunk.identity.endpoint_lookup.v1",
+                discriminator_fields=("sourcetype", "LogonType", "WorkstationName", "ComputerName"),
+                discriminator_constraint_bindings={
+                    "sourcetype": "sourcetype",
+                    "logon_type": "LogonType",
+                    "workstation_name": "WorkstationName",
+                    "computer_name": "ComputerName",
+                },
             ),
             operation(
                 "resolve_person_to_endpoint", ("identity_binding",), ("person",),
@@ -800,26 +848,34 @@ class SplunkLiveAdapter:
                 output_binding_entity_kinds={"object": "host"},
                 guaranteed_relations=("associated_with",),
                 query_builder="splunk.identity.person_to_endpoint.v1",
+                native_signature="splunk.identity.endpoint_lookup.v1",
+                discriminator_fields=("sourcetype", "LogonType", "WorkstationName", "ComputerName"),
+                discriminator_constraint_bindings={
+                    "sourcetype": "sourcetype",
+                    "logon_type": "LogonType",
+                    "workstation_name": "WorkstationName",
+                    "computer_name": "ComputerName",
+                },
             ),
             operation("resolve_endpoint_to_client_ip", ("identity_binding",), ("host",), ("host", "client_ip")),
             operation("find_outbound_message_metadata", ("outbound_message_metadata",), ("account", "email_address", "person"), message_fields, input_roles=("subject_identity", "account_identity"), output_roles=("subject_identity", "attribute_value", "message_context"), output_entity_kinds=("email_address", "message"), native_field_bindings={"subject_identity": ("sender", "user"), "attribute_value": ("sender_email", "receiver_email"), "message_context": ("msg_id", "message_id", "subject")}, query_builder="splunk.message.metadata.v1"),
             operation("resolve_recipient_identity", ("recipient_identity",), ("message",), message_fields),
             operation("resolve_role_identity", ("role_identity",), ("person", "account", "email_address"), ("title", "role", "department", "receiver_email")),
-            operation("cdb_process_lineage", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), process_fields),
-            operation("cdb_process_search", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), process_fields),
+            operation("cdb_process_lineage", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), process_fields, output_entity_kinds=("process",), output_value_bindings={"object": ("image", "cmdline", "parent_image")}, output_binding_entity_kinds={"object": "process"}),
+            operation("cdb_process_search", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), process_fields, output_entity_kinds=("process",), output_value_bindings={"object": ("image", "cmdline", "parent_image")}, output_binding_entity_kinds={"object": "process"}),
             operation("cdb_logon_history", ("authentication_activity", "remote_authentication"), ("host", "account", "person"), ("timestamp", "host", "user", "client_ip", "logon_type", "status")),
             operation("cdb_auth_search", ("authentication_activity", "remote_authentication"), ("host", "account", "person"), ("timestamp", "host", "user", "client_ip", "logon_type", "status")),
             operation("cdb_network_connections", ("network_connection",), ("host", "account", "process", "ip", "domain"), ("timestamp", "host", "user", "image", "client_ip", "server_ip", "destination_ip", "destination_port", "protocol")),
             operation("cdb_net_search", ("network_connection",), ("host", "account", "process", "ip", "domain"), ("timestamp", "host", "user", "image", "client_ip", "server_ip", "destination_ip", "destination_port", "protocol")),
-            operation("cdb_file_writes", ("file_modification",), ("host", "account", "process", "file"), file_fields),
-            operation("cdb_file_search", ("file_modification", "software_version"), ("host", "process", "file"), file_fields, semantic_intents=("software_version",)),
-            operation("cdb_dns_queries", ("dns_activity",), ("host", "account", "ip", "domain"), ("timestamp", "host", "client_ip", "server_ip", "domain", "query")),
-            operation("cdb_dns_search", ("dns_activity",), ("host", "account", "ip", "domain"), ("timestamp", "host", "client_ip", "server_ip", "domain", "query")),
+            operation("cdb_file_writes", ("file_modification",), ("host", "account", "process", "file"), file_fields, output_entity_kinds=("file",), output_value_bindings={"object": ("file_path", "TargetFilename", "target_path", "path", "filename")}, output_binding_entity_kinds={"object": "file"}),
+            operation("cdb_file_search", ("file_modification", "software_version"), ("host", "process", "file"), file_fields, semantic_intents=("software_version",), output_entity_kinds=("file",), output_value_bindings={"object": ("file_path", "TargetFilename", "target_path", "path", "filename")}, output_binding_entity_kinds={"object": "file"}),
+            operation("cdb_dns_queries", ("dns_activity",), ("host", "account", "ip", "domain"), ("timestamp", "host", "client_ip", "server_ip", "domain", "query"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "query")}, output_binding_entity_kinds={"object": "domain"}),
+            operation("cdb_dns_search", ("dns_activity",), ("host", "account", "ip", "domain"), ("timestamp", "host", "client_ip", "server_ip", "domain", "query"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "query")}, output_binding_entity_kinds={"object": "domain"}),
             operation("cdb_persistence_artifacts", ("persistence_change",), ("host", "account", "process", "file"), ("timestamp", "host", "user", "image", "file_path")),
             operation("cdb_persistence_search", ("persistence_change",), ("host", "account", "process", "file"), ("timestamp", "host", "user", "image", "file_path")),
-            operation("cdb_web_requests", ("web_request",), ("host", "account", "ip", "domain"), web_fields),
-            operation("splunk_search_process", ("process_ancestry",), ("host", "account", "process"), process_fields, pagination="cursor"),
-            operation("splunk_search_web", ("web_request",), ("host", "account", "ip", "domain"), web_fields, pagination="cursor"),
+            operation("cdb_web_requests", ("web_request",), ("host", "account", "ip", "domain"), web_fields, output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "site", "cs_host")}, output_binding_entity_kinds={"object": "domain"}),
+            operation("splunk_search_process", ("process_ancestry",), ("host", "account", "process"), process_fields, pagination="cursor", output_entity_kinds=("process",), output_value_bindings={"object": ("image", "cmdline", "parent_image")}, output_binding_entity_kinds={"object": "process"}),
+            operation("splunk_search_web", ("web_request",), ("host", "account", "ip", "domain"), web_fields, pagination="cursor", output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "site", "cs_host")}, output_binding_entity_kinds={"object": "domain"}),
             operation("resolve_person_to_account", ("identity_binding",), ("person",), ("user", "sender_email"), input_roles=("subject_identity",), output_roles=("subject_identity", "account_identity"), output_entity_kinds=("account",), native_field_bindings={"subject_identity": ("user",), "account_identity": ("user",)}, output_value_bindings={"object": ("user",)}, query_builder="splunk.identity.person_to_account.v1"),
             operation(
                 "resolve_account_to_endpoint", ("identity_binding",), ("account",),
@@ -831,6 +887,14 @@ class SplunkLiveAdapter:
                 },
                 output_binding_entity_kinds={"object": "host", "client_ip": "ip"},
                 guaranteed_relations=("associated_with",),
+                native_signature="splunk.identity.endpoint_lookup.v1",
+                discriminator_fields=("sourcetype", "LogonType", "WorkstationName", "ComputerName"),
+                discriminator_constraint_bindings={
+                    "sourcetype": "sourcetype",
+                    "logon_type": "LogonType",
+                    "workstation_name": "WorkstationName",
+                    "computer_name": "ComputerName",
+                },
             ),
             operation(
                 "resolve_person_to_endpoint", ("identity_binding",), ("person",),
@@ -842,12 +906,20 @@ class SplunkLiveAdapter:
                 output_binding_entity_kinds={"object": "host"},
                 guaranteed_relations=("associated_with",),
                 query_builder="splunk.identity.person_to_endpoint.v1",
+                native_signature="splunk.identity.endpoint_lookup.v1",
+                discriminator_fields=("sourcetype", "LogonType", "WorkstationName", "ComputerName"),
+                discriminator_constraint_bindings={
+                    "sourcetype": "sourcetype",
+                    "logon_type": "LogonType",
+                    "workstation_name": "WorkstationName",
+                    "computer_name": "ComputerName",
+                },
             ),
             operation("resolve_endpoint_to_client_ip", ("identity_binding",), ("host",), ("host", "client_ip")),
-            operation("find_web_activity_from_client_ip", ("web_request",), ("ip",), web_fields),
-            operation("find_dns_activity_from_client_ip", ("dns_activity",), ("ip",), ("timestamp", "host", "client_ip", "server_ip", "domain", "query")),
-            operation("find_web_activity_from_endpoint", ("web_request",), ("host",), web_fields),
-            operation("find_process_from_endpoint", ("process_ancestry", "software_version"), ("host", "process"), process_fields, semantic_intents=("software_version",)),
+            operation("find_web_activity_from_client_ip", ("web_request",), ("ip",), web_fields, output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "site", "cs_host")}, output_binding_entity_kinds={"object": "domain"}),
+            operation("find_dns_activity_from_client_ip", ("dns_activity",), ("ip",), ("timestamp", "host", "client_ip", "server_ip", "domain", "query"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "query")}, output_binding_entity_kinds={"object": "domain"}),
+            operation("find_web_activity_from_endpoint", ("web_request",), ("host",), web_fields, output_entity_kinds=("domain",), output_value_bindings={"object": ("domain", "site", "cs_host")}, output_binding_entity_kinds={"object": "domain"}),
+            operation("find_process_from_endpoint", ("process_ancestry", "software_version"), ("host", "process"), process_fields, semantic_intents=("software_version",), output_entity_kinds=("process",), output_value_bindings={"object": ("image", "cmdline", "parent_image")}, output_binding_entity_kinds={"object": "process"}),
             operation("find_file_change_from_endpoint", ("file_modification", "software_version"), ("host", "file"), file_fields, semantic_intents=("software_version",), output_entity_kinds=("file",), output_value_bindings={"object": ("file_path", "TargetFilename", "target_path", "path", "filename")}, output_binding_entity_kinds={"object": "file"}, allow_constraint_relaxation=False),
             operation("find_file_change_from_process", ("file_modification", "software_version"), ("process", "file"), file_fields, semantic_intents=("software_version",), output_entity_kinds=("file",), output_value_bindings={"object": ("file_path", "TargetFilename")}, output_binding_entity_kinds={"object": "file"}),
             operation("resolve_account_to_email", ("identity_binding",), ("account",), ("user", "sender_email"), input_roles=("account_identity",), output_roles=("account_identity", "attribute_value"), output_entity_kinds=("email_address",), native_field_bindings={"account_identity": ("user",), "attribute_value": ("sender_email",)}, query_builder="splunk.identity.account_to_email.v1"),
@@ -899,6 +971,7 @@ class SplunkLiveAdapter:
         window: str,
         limit: int,
         offset: int,
+        search_groups: list[list[str]] | None = None,
     ) -> tuple[str, str, str]:
         """Build SPL from an audited source profile, without source heuristics."""
         source_id = str(runtime_capability.get("source_id", "")).strip()
@@ -917,6 +990,8 @@ class SplunkLiveAdapter:
 
         input_bindings = runtime_capability.get("native_field_bindings", {})
         output_bindings = runtime_capability.get("output_value_bindings", {})
+        nested_bindings = runtime_capability.get("nested_field_bindings", {})
+        constraint_mappings = runtime_capability.get("constraint_mappings", ())
         native_fields = [
             safe_field(name)
             for values in (*input_bindings.values(), *output_bindings.values())
@@ -928,6 +1003,36 @@ class SplunkLiveAdapter:
             raise ValueError("runtime capability has no safe native fields")
 
         clauses = [f'search index="{self.index}" sourcetype="{native_type}"']
+        safe_groups: list[list[str]] = []
+        for group in search_groups or ():
+            terms = [
+                str(term).replace('"', '')[:200].strip()
+                for term in group
+                if str(term).strip()
+            ]
+            if terms:
+                safe_groups.append(list(dict.fromkeys(terms)))
+        if safe_groups:
+            clauses.extend(
+                "(" + " OR ".join(f'"{term}"' for term in group) + ")"
+                for group in safe_groups
+            )
+        extraction_clauses: list[str] = []
+        projected_nested_roles: list[str] = []
+        for role, binding in dict(nested_bindings or {}).items():
+            if not isinstance(binding, dict):
+                raise ValueError("nested field binding must be an object")
+            parent = safe_field(binding.get("field", "_raw"))
+            nested_key = str(binding.get("key", "")).strip()
+            output_role = safe_field(role)
+            if not parent or not output_role or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.:-]{0,199}", nested_key):
+                raise ValueError("nested field binding contains an unsafe field or key")
+            if str(binding.get("transform", "extract_nested_key")).casefold() != "extract_nested_key":
+                raise ValueError("unsupported nested field transform")
+            extraction_clauses.append(
+                f'| spath input={parent} path="{nested_key}" output={output_role}'
+            )
+            projected_nested_roles.append(output_role)
         if entity is not None and not isinstance(entity, AnyEntity):
             if isinstance(entity, Account):
                 value = entity.username
@@ -956,14 +1061,76 @@ class SplunkLiveAdapter:
                     f'{field}="{value}"' for field in fields_for_input
                 ) + ")")
 
+        # Apply only mappings admitted by the capability validator.  This is
+        # deliberately generic: the semantic graph supplies the constraint
+        # value and the provider-approved mapping supplies the native field.
+        # No source/relation/email/file-name heuristic is used here.
+        constraint_metadata = runtime_capability.get("constraint_metadata", ())
+        constraint_clauses: list[str] = []
+        removed_keys = {
+            str(value).strip().casefold()
+            for value in runtime_capability.get("removed_retrieval_keys", ())
+            if str(value).strip()
+        }
+        metadata_by_key = {
+            str(item.get("key", "")).strip().casefold(): item
+            for item in constraint_metadata
+            if isinstance(item, dict) and str(item.get("key", "")).strip()
+        }
+        for raw_mapping in constraint_mappings or ():
+            if not isinstance(raw_mapping, dict):
+                continue
+            key = str(raw_mapping.get("semantic_constraint", "")).strip().casefold()
+            metadata = metadata_by_key.get(key)
+            if not key or metadata is None or key in removed_keys:
+                continue
+            native_field = safe_field(raw_mapping.get("native_field", ""))
+            if not native_field:
+                continue
+            nested_path = str(raw_mapping.get("nested_path", "")).strip()
+            if nested_path:
+                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.:-]{0,199}", nested_path):
+                    continue
+                extracted_field = "__cap_" + re.sub(r"[^A-Za-z0-9_]", "_", key)[:80]
+                extraction_clauses.append(
+                    f'| spath input={native_field} path="{nested_path}" output={extracted_field}'
+                )
+                native_field = extracted_field
+            value = metadata.get("value")
+            operator = str(raw_mapping.get("operator", "equals")).strip().casefold()
+            transform_name = canonical_transform_name(
+                str(raw_mapping.get("transform", "")), key, value
+            )
+            transform = get_transform_by_name(transform_name or "")
+            predicate = ""
+            if transform is not None and transform.name != "extract_nested_key":
+                predicate = transform.to_spl_predicate(native_field, key, value, operator)
+            if not predicate:
+                escaped = str(value or "").replace('"', "")[:200]
+                if operator in {"contains", "like"}:
+                    predicate = f'{native_field}="*{escaped}*"'
+                elif operator == "exists":
+                    predicate = f'isnotnull({native_field}) AND {native_field}!=""'
+                elif operator == "absent":
+                    predicate = f'isnull({native_field}) OR {native_field}==""'
+                else:
+                    predicate = f'{native_field}="{escaped}"'
+            if predicate:
+                constraint_clauses.append(f"| search {predicate}")
+
         start_dt, end_dt = validate_time_window_format(window)
         page_clause = (
             f"| head {limit + 1}"
             if offset <= 0
             else f"| head {offset + limit + 1} | tail {limit + 1}"
         )
-        projection = list(dict.fromkeys(["_time", "host", "sourcetype", *fields, "_raw"]))
-        spl = " ".join(clauses) + f" {page_clause} | table " + ", ".join(projection)
+        projection = list(dict.fromkeys(["_time", "host", "sourcetype", *fields, *projected_nested_roles, "_raw"]))
+        spl = " ".join(clauses)
+        if extraction_clauses:
+            spl += " " + " ".join(extraction_clauses)
+        if constraint_clauses:
+            spl += " " + " ".join(constraint_clauses)
+        spl += f" {page_clause} | table " + ", ".join(projection)
         return (
             spl,
             start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1235,45 +1402,25 @@ class SplunkLiveAdapter:
 
         if operation_id == "find_file_change_from_endpoint":
             ent_val = str(getattr(entity, "name", "") or (getattr(entity, "kind", "") if isinstance(entity, Host) else entity or "")).replace('"', '').strip()
-            # File identity is not equivalent to one event family.  A file
-            # may be present in Sysmon, EDR, audit, osquery or a native file
-            # inventory.  Keep the operation contract typed (host -> file),
-            # but let the Splunk adapter search the selected host across the
-            # index and constrain by declared file terms.  This is the native
-            # equivalent of a hunter starting with host=<candidate> and a
-            # file predicate; it must not discard the answer because Sysmon
-            # EventCode=11 is absent.
+            # File identity is not equivalent to one event family.  Search the
+            # selected host across the index and constrain only by declared
+            # literal file terms (path, filename, or a single extension).
             safe_terms = [
                 str(t).replace('"', '')[:200].strip()
                 for t in (search_terms or [])
-                if str(t).strip() and str(t).strip().casefold() != ent_val.casefold()
+                if is_literal_telemetry_token(t) and str(t).strip().casefold() != ent_val.casefold()
             ]
-            # Retrieval aliases are supplied by the semantic compiler as
-            # provider-neutral data terms.  Do not translate a scenario name
-            # here (for example PowerPoint -> *.pptx): that would make the
-            # adapter a hidden case-specific planner.  A provider may only
-            # consume terms that were declared by the semantic/capability
-            # contract and validated before reaching this method.
             expanded_terms = list(dict.fromkeys(safe_terms))
             term_clause = ""
             if expanded_terms:
                 term_predicates: list[str] = []
                 for term in expanded_terms:
-                    # Bare wildcard terms are intentional: BotSv2's osquery
-                    # file_events stores target_path inside _raw rather than
-                    # extracting TargetFilename/file_path.  A field-only
-                    # query therefore misses the exact artifact even though
-                    # the native Splunk search `(*.pptx OR ...)` finds it.
-                    raw_token = term if term.startswith("*.") else f'"{term}"'
+                    wildcard_term = f"*{term}" if term.startswith(".") and not term.startswith("*.") else term
+                    raw_token = wildcard_term if wildcard_term.startswith("*.") else f'"{wildcard_term}"'
                     term_predicates.append(
-                        f'TargetFilename="{term}" OR file_path="{term}" OR path="{term}" OR {raw_token}'
+                        f'TargetFilename="{wildcard_term}" OR file_path="{wildcard_term}" OR path="{wildcard_term}" OR target_path="{wildcard_term}" OR {raw_token}'
                     )
                 term_clause = " (" + " OR ".join(term_predicates) + ")"
-            # Require one declared file-path marker as well as the filename
-            # predicate.  Without this schema guard, a process snapshot whose
-            # command line merely mentions ``.pptx`` becomes a file result and
-            # causes unrelated hosts to fan out.  This is field-contract
-            # grounding, not a sourcetype/event-family assumption.
             file_record_marker = ' ("target_path" OR "TargetFilename" OR "file_path")'
             rex_version = (
                 " | rex field=_raw \"(?i)<Data Name=[\\\"']ProductVersion[\\\"']>(?<ProductVersion>[^<]+)</Data>\""
@@ -1286,7 +1433,7 @@ class SplunkLiveAdapter:
                 f'search index="{self.index}" (host="{ent_val}" OR ComputerName="{ent_val}")'
                 f'{file_record_marker}{term_clause}{rex_version} '
                 f'{page_clause} '
-                f'| table _time, host, ComputerName, sourcetype, TargetFilename, file_path, path, Image, ProcessId, ProductVersion, FileVersion, Version, _raw'
+                f'| table _time, host, ComputerName, sourcetype, TargetFilename, file_path, path, target_path, filename, name, action, Image, ProcessId, ProductVersion, FileVersion, Version, _raw'
             )
             return spl, earliest_iso, latest_iso
 
@@ -1538,7 +1685,8 @@ class SplunkLiveAdapter:
                     truncation_reason=f"probe field is not in source profile: {field_id}",
                     provider=self.provider_id, index=self.index,
                 )
-            fields.append(field.name.replace('"', '')[:200])
+            native_name = field.parent_field if field.origin == "nested_payload" and field.parent_field else field.name
+            fields.append(native_name.replace('"', '')[:200])
         fields = list(dict.fromkeys(fields or ["_time", "host", "sourcetype"]))
         max_rows = min(max(int(getattr(probe, "max_rows", 20)), 1), 1000)
         table_clause = ", ".join(fields)
@@ -1586,6 +1734,181 @@ class SplunkLiveAdapter:
             truncation_reason=None if complete else "probe_limit_exceeded",
         )
 
+    def sample_payload_rows(
+        self,
+        *,
+        profile: TelemetrySourceProfile,
+        max_rows: int = 20,
+        time_window: str | None = None,
+        query_id: str = "payload-census-001",
+        search_terms: list[str] | tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        """Fetch a bounded raw-payload sample for generic nested-key census.
+
+        This is metadata discovery, not evidence execution.  The engine stores
+        only discovered key names; raw values remain in the provider response.
+        """
+        prefix = f"splunk:{self.index}:"
+        if profile.provider_id != self.provider_id or not profile.source_id.startswith(prefix):
+            return {"status": "UNSUPPORTED", "rows": [], "query_id": query_id}
+        native_type = profile.source_id[len(prefix):].replace('"', "")[:200]
+        if not native_type or any(char in native_type for char in "\r\n|"):
+            return {"status": "UNSUPPORTED", "rows": [], "query_id": query_id}
+        bounded = min(max(int(max_rows), 1), 100)  # noqa: F841
+        safe_terms = [
+            str(term).replace('"', '').replace('\r', ' ').replace('\n', ' ')[:120].strip()
+            for term in (search_terms or ())
+            if str(term).strip()
+        ]
+        term_clause = ""
+        if safe_terms:
+            term_clause = " (" + " OR ".join(f'"{term}"' for term in dict.fromkeys(safe_terms)) + ")"
+        # Extract only payload key names inside Splunk.  This is a generic
+        # schema census, not a semantic/event-family mapping and avoids
+        # transferring raw content to the agent.  A larger bounded scan is
+        # needed because nested keys may be rare in the first records.
+        rex_pattern = r'\"(?<payload_key>[A-Za-z_][A-Za-z0-9_.:-]{0,127})\"\s*:'
+        spl = (
+            f'search index="{self.index}" sourcetype="{native_type}"{term_clause} '
+            f'| head 1000 | rex field=_raw max_match=0 "{rex_pattern}" '
+            '| mvexpand payload_key | stats count by payload_key | sort -count | head 128'
+        )
+        try:
+            start_dt, end_dt = validate_time_window_format(time_window or "NOW-1d/NOW")
+            response = requests.post(
+                f"{self.splunk_url}/services/search/jobs",
+                data={
+                    "search": spl,
+                    "earliest_time": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "latest_time": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "output_mode": "json",
+                    "exec_mode": "oneshot",
+                },
+                auth=self.auth,
+                verify=self.verify_ssl,
+                timeout=min(self.timeout, 30),
+            )
+            if response.status_code != 200:
+                return {
+                    "status": "FAILED",
+                    "rows": [],
+                    "query_id": query_id,
+                    "native_query": spl,
+                    "error": f"HTTP {response.status_code}",
+                }
+            raw_rows = [dict(row) for row in response.json().get("results", [])]
+            rows = raw_rows[:128]
+            return {
+                "status": "BOUNDED",
+                "rows": rows,
+                "complete": False,
+                "query_id": query_id,
+                "native_query": spl,
+                "source_id": profile.source_id,
+            }
+        except Exception as error:
+            return {
+                "status": "FAILED",
+                "rows": [],
+                "query_id": query_id,
+                "native_query": spl,
+                "error": str(error),
+            }
+
+    @staticmethod
+    def _apply_discriminator_intent(
+        spl: str,
+        parameters: dict[str, Any],
+    ) -> str:
+        """Add provider-native candidate and discriminator-field constraints.
+
+        The semantic engine supplies candidate values; this adapter is the
+        only layer allowed to translate them into SPL.  A discriminator that
+        has no declared secondary fields is left unchanged and therefore
+        cannot masquerade as a narrowing query.
+        """
+        intent = parameters.get("query_intent")
+        if not isinstance(intent, dict) or str(intent.get("mode", "")).upper() != "DISCRIMINATE":
+            return spl
+
+        candidate_field = str(parameters.get("candidate_field") or parameters.get("discriminator_field") or "").strip()
+        discriminator_fields = tuple(
+            str(field).strip()
+            for field in parameters.get("discriminator_fields", ()) or ()
+            if str(field).strip()
+        )
+        predicates = tuple(
+            item for item in parameters.get("discriminator_predicates", ()) or ()
+            if isinstance(item, dict)
+        )
+        candidate_values = tuple(
+            str(value).replace('"', "")[:200].strip()
+            for value in parameters.get("candidate_values", ()) or ()
+            if str(value).strip()
+        )
+        safe_name = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+        if not candidate_field or not safe_name.fullmatch(candidate_field):
+            return spl
+        if not discriminator_fields or not candidate_values or not predicates:
+            return spl
+        if not all(safe_name.fullmatch(field) for field in discriminator_fields):
+            return spl
+
+        predicate_clauses: list[str] = []
+        for predicate in predicates:
+            field = str(predicate.get("field") or "").strip()
+            operator = str(predicate.get("operator") or "equals").strip().casefold()
+            value = str(predicate.get("value") or "").replace('"', "")[:200].strip()
+            if not field or not safe_name.fullmatch(field):
+                return spl
+            if field not in discriminator_fields or operator not in {"equals", "contains", "exists"}:
+                return spl
+            if operator == "exists":
+                predicate_clauses.append(f"{field}=*")
+            elif value:
+                needle = f"*{value}*" if operator == "contains" else value
+                predicate_clauses.append(f'{field}="{needle}"')
+            else:
+                return spl
+
+        candidate_clause = " OR ".join(
+            f'{candidate_field}="{value}"' for value in dict.fromkeys(candidate_values)
+        )
+        # The projection intentionally includes the secondary fields so the
+        # controller can measure whether the candidate set actually shrank.
+        projection = ", ".join(dict.fromkeys((candidate_field, *discriminator_fields)))
+        predicate_clause = " ".join(f"({clause})" for clause in predicate_clauses)
+        return f'{spl} | search ({candidate_clause}) {predicate_clause} | table {projection}'
+
+    def preview_query(
+        self,
+        operation_id: str,
+        entity: EntityRef | None,
+        window: str,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        parameters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Compile a discriminator query without contacting Splunk."""
+        params = dict(parameters or {})
+        base_spl, earliest_iso, latest_iso = self._build_spl(
+            operation_id=operation_id,
+            entity=entity,
+            window=window,
+            predicate=None,
+            limit=limit,
+            offset=offset,
+        )
+        compiled = self._apply_discriminator_intent(base_spl, params)
+        return {
+            "base_query": base_spl,
+            "native_query": compiled,
+            "has_secondary_predicate": bool(params.get("discriminator_predicates")),
+            "earliest": earliest_iso,
+            "latest": latest_iso,
+        }
+
     def execute_query(
         self,
         operation_id: str,
@@ -1625,37 +1948,48 @@ class SplunkLiveAdapter:
                     provider=self.provider_id,
                     index=self.index,
                 )
-            gate_result = NativeQueryGate().validate(
-                native_query_candidate,
-                known_sources=[self.index],
-                known_fields=[
-                    *OBSERVABLE_FIELDS,
-                    "sourcetype", "_time", "_raw", "Path", "TargetFilename",
-                    "Image", "CommandLine", "ParentImage", "ProcessId",
-                    *[
-                        field.name
-                        for profile in self.source_profiles
-                        for field in profile.fields
+            if native_query and native_query.strip():
+                # Deterministic compiler output already exists; C3 must not run.
+                spl = native_query.strip()
+                start_dt, end_dt = validate_time_window_format(window)
+                earliest_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                latest_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            else:
+                from hunting.query_safety.c3_admission import admit_c3_candidate
+
+                gate_result = admit_c3_candidate(
+                    native_query_candidate,
+                    admitted=True,
+                    deterministic_plan=None,
+                    known_sources=[self.index],
+                    known_fields=[
+                        *OBSERVABLE_FIELDS,
+                        "sourcetype", "_time", "_raw", "Path", "TargetFilename",
+                        "Image", "CommandLine", "ParentImage", "ProcessId",
+                        *[
+                            field.name
+                            for profile in self.source_profiles
+                            for field in profile.fields
+                        ],
                     ],
-                ],
-                executed_query_signatures=parameters.get("executed_query_signatures", ()),
-            )
-            if not gate_result.accepted:
-                return QueryResult(
-                    query_id=query_id,
-                    outcome=QueryOutcome.UNKNOWN,
-                    executed_ok=False,
-                    complete=False,
-                    diagnostic=Diagnostic.PARSE_FAILED,
-                    truncation_reason="; ".join(gate_result.reasons),
-                    native_query=native_query_candidate.query_text,
-                    provider=self.provider_id,
-                    index=self.index,
+                    executed_query_signatures=parameters.get("executed_query_signatures", ()),
                 )
-            spl = gate_result.normalized_query
-            start_dt, end_dt = validate_time_window_format(window)
-            earliest_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-            latest_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                if not gate_result.accepted:
+                    return QueryResult(
+                        query_id=query_id,
+                        outcome=QueryOutcome.UNKNOWN,
+                        executed_ok=False,
+                        complete=False,
+                        diagnostic=Diagnostic.PARSE_FAILED,
+                        truncation_reason="; ".join(gate_result.reasons),
+                        native_query=native_query_candidate.query_text,
+                        provider=self.provider_id,
+                        index=self.index,
+                    )
+                spl = gate_result.normalized_query
+                start_dt, end_dt = validate_time_window_format(window)
+                earliest_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                latest_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         elif native_query and native_query.strip():
             spl = native_query.strip()
             if not spl.lower().startswith("search") and not spl.startswith("|"):
@@ -1669,8 +2003,42 @@ class SplunkLiveAdapter:
                 search_terms = [*(search_terms or ()), *[str(value) for value in constraint_terms if str(value).strip()]]
             if operation_id.startswith("runtime:") and isinstance(parameters.get("runtime_capability"), dict):
                 try:
+                    runtime_search_groups = search_groups
+                    if not runtime_search_groups:
+                        grouped_terms: dict[str, list[str]] = {}
+                        input_variable_ids = {
+                            str(value).strip()
+                            for value in parameters["runtime_capability"].get("input_variable_ids", ())
+                            if str(value).strip()
+                        }
+                        excluded_keys = {
+                            str(item.get("key", "")).strip().casefold()
+                            for item in parameters["runtime_capability"].get("constraint_metadata", ())
+                            if isinstance(item, dict)
+                            and str(item.get("variable_id", "")).strip() in input_variable_ids
+                        }
+                        metadata_by_key = {
+                            str(item.get("key", "")).strip().casefold(): item
+                            for item in parameters["runtime_capability"].get("constraint_metadata", ())
+                            if isinstance(item, dict) and str(item.get("key", "")).strip()
+                        }
+                        for item in parameters.get("constraint_retrieval_terms", ()) or ():
+                            if not isinstance(item, dict):
+                                continue
+                            key = str(item.get("key", "")).strip().casefold()
+                            term = str(item.get("term", "")).strip()
+                            metadata = metadata_by_key.get(key, {})
+                            variable_id = str(metadata.get("variable_id", "")).strip()
+                            if key and key not in excluded_keys and is_literal_telemetry_token(term):
+                                # Hints belonging to one semantic variable
+                                # are alternatives (OR); required relation
+                                # qualifiers remain separate groups (AND).
+                                group_id = f"variable:{variable_id}" if variable_id else f"qualifier:{key}"
+                                grouped_terms.setdefault(group_id, []).append(term)
+                        runtime_search_groups = list(grouped_terms.values())
                     spl, earliest_iso, latest_iso = self._build_runtime_source_spl(
-                        parameters["runtime_capability"], entity, window, limit, offset
+                        parameters["runtime_capability"], entity, window, limit, offset,
+                        search_groups=runtime_search_groups,
                     )
                 except Exception as error:
                     return QueryResult(
@@ -1694,6 +2062,7 @@ class SplunkLiveAdapter:
                     search_terms=search_terms,
                     search_groups=search_groups,
                 )
+                spl = self._apply_discriminator_intent(spl, parameters)
         self.last_query_text = spl
 
         query_sid = str(parameters.get("sid") or f"hunt_{query_id}_{int(time.time() * 1000)}")

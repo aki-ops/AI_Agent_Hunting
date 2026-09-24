@@ -31,68 +31,35 @@ def test_evaluation_runner_loads_all_15_scenarios_and_splits() -> None:
 
 
 def test_candidate_pipeline_evaluates_all_15_scenarios_successfully() -> None:
-    """Verify Candidate pipeline achieves high accuracy and low waste across all 15 scenarios."""
+    """A suite without a provider must not manufacture benchmark accuracy."""
     runner = EvaluationRunner()
     results = runner.run_suite(mode="CANDIDATE")
     assert len(results) == 15
 
     agg = runner.compute_aggregate_metrics(results)
-    assert agg["stopping_accuracy"] == 1.0
-    assert agg["answer_accuracy"] == 1.0
-
-    # Verify layer metrics
-    assert agg["planning"]["claim_f1"] == 1.0
-    assert agg["planning"]["unsupported_expansion_rate"] == 0.0
-    assert agg["retrieval"]["completeness_accuracy"] == 1.0
-    assert agg["correlation"]["transition_validity"] == 1.0
-    assert agg["answer"]["citation_grounding_rate"] == 1.0
-    assert agg["operations"]["waste_ratio"] < 0.10
+    assert {item.predicted_stopping_state for item in results} == {"NOT_EXECUTED"}
+    assert agg["stopping_accuracy"] == 0.0
+    assert agg["answer_accuracy"] == 0.0
+    assert agg["total_cost_usd"] == 0.0
 
 
 def test_baseline_comparison_b0_vs_b1_vs_candidate() -> None:
-    """Verify Candidate outperforms legacy B0 and single-shot B1 baselines."""
     runner = EvaluationRunner()
-    res_b0 = runner.run_suite(mode="B0_BASELINE")
-    res_b1 = runner.run_suite(mode="B1_DIRECT_QUERY")
-    res_cand = runner.run_suite(mode="CANDIDATE")
-
-    agg_b0 = runner.compute_aggregate_metrics(res_b0)
-    agg_b1 = runner.compute_aggregate_metrics(res_b1)
-    agg_cand = runner.compute_aggregate_metrics(res_cand)
-
-    # Candidate has superior stopping and answer accuracy
-    assert agg_cand["stopping_accuracy"] > agg_b0["stopping_accuracy"]
-    assert agg_cand["answer_accuracy"] > agg_b0["answer_accuracy"]
-    assert agg_cand["stopping_accuracy"] >= agg_b1["stopping_accuracy"]
-
-    # Candidate has significantly lower waste ratio
-    assert agg_cand["operations"]["waste_ratio"] < agg_b1["operations"]["waste_ratio"]
-    assert agg_b1["operations"]["waste_ratio"] < agg_b0["operations"]["waste_ratio"]
-
-    # Candidate has higher citation grounding
-    assert agg_cand["answer"]["citation_grounding_rate"] > agg_b0["answer"]["citation_grounding_rate"]
+    results = runner.run_suite(mode="CANDIDATE")
+    assert len(results) == 15
+    agg = runner.compute_aggregate_metrics(results)
+    assert {item.predicted_stopping_state for item in results} == {"NOT_EXECUTED"}
+    assert agg["stopping_accuracy"] == 0.0
+    assert agg["answer_accuracy"] == 0.0
 
 
 def test_ablations_oracle_dynamic_singleshot() -> None:
-    """Verify ablations demonstrate necessary value of each architectural component."""
     runner = EvaluationRunner()
-
-    # 1. Dynamic mapping only (without approved proof contracts) fails closed on novel relations
-    res_dynamic = runner.run_suite(mode="CANDIDATE", ablation="dynamic_mapping_only")
-    agg_dynamic = runner.compute_aggregate_metrics(res_dynamic)
-    assert agg_dynamic["stopping_accuracy"] < 1.0
-    assert agg_dynamic["correlation"]["edge_precision"] < 1.0
-
-    # 2. Single-shot query (without progressive frontier F0–F4) increases waste dramatically
-    res_singleshot = runner.run_suite(mode="CANDIDATE", ablation="single_shot_query")
-    agg_singleshot = runner.compute_aggregate_metrics(res_singleshot)
-    assert agg_singleshot["operations"]["waste_ratio"] > 0.30
-    assert agg_singleshot["retrieval"]["evidence_precision"] < 0.70
-
-    # 3. Oracle graph confirms semantic compilation preserves plan fidelity
-    res_oracle = runner.run_suite(mode="CANDIDATE", ablation="oracle_graph")
-    agg_oracle = runner.compute_aggregate_metrics(res_oracle)
-    assert agg_oracle["planning"]["claim_f1"] == 1.0
+    results = runner.run_suite(mode="CANDIDATE")
+    assert len(results) == 15
+    agg = runner.compute_aggregate_metrics(results)
+    assert agg["stopping_accuracy"] == 0.0
+    assert agg["answer_accuracy"] == 0.0
 
 
 def test_holdout_split_evaluation() -> None:
@@ -102,6 +69,6 @@ def test_holdout_split_evaluation() -> None:
     assert len(holdout_results) == 5
 
     agg = runner.compute_aggregate_metrics(holdout_results)
-    assert agg["stopping_accuracy"] == 1.0
-    assert agg["answer_accuracy"] == 1.0
-    assert agg["operations"]["waste_ratio"] < 0.10
+    assert {item.predicted_stopping_state for item in holdout_results} == {"NOT_EXECUTED"}
+    assert agg["stopping_accuracy"] == 0.0
+    assert agg["answer_accuracy"] == 0.0

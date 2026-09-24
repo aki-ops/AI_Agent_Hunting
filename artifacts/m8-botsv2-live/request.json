@@ -1,0 +1,8 @@
+{
+  "id": "m8-botsv2-live",
+  "kind": "QUESTION",
+  "content": "Which process ran on an observed host?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

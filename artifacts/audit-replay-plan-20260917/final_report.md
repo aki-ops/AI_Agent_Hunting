@@ -1,0 +1,163 @@
+# Hunt Report
+
+## 1. Request and Outcome
+<!-- ## 1. Hypothesis / Question -->
+
+> Mallory's critical PowerPoint presentation on her MacBook gets encrypted by ransomware on August 18. What is the name of this file after it was encrypted?
+
+- **Request ID:** `audit-replay-plan-20260917`
+- **Hunt Kind:** `HYPOTHESIS`
+**Result:** `INCONCLUSIVE`  
+**Stopping:** `STOP_NEEDS_USER_DECISION`
+**Stopping Taxonomy:** `NEEDS_DISAMBIGUATION`
+
+**Answer Status:** `INCONCLUSIVE`
+
+**Answer:** Inconclusive (USER_DECISION_REQUIRED)
+
+**Answer explanation:** Candidate bindings were discovered, but no downstream query was executed because an analyst must select the intended binding.
+
+## 2. Proposed/Accepted Graph and Assumptions
+<!-- ## 2. Hypothesis analysis -->
+
+- `LIVE` — Mallory's critical PowerPoint presentation on her MacBook gets encrypted by ransomware on August 18. What is the name of this file after it was encrypted?
+
+### Semantic decomposition
+
+- `subject`: `person` = `Mallory`; origin=`request`, verification=`UNVERIFIED`
+- `device`: `endpoint`; constraints: hardware_descriptor=MacBook; origin=`llm_proposal`, verification=`UNVERIFIED`
+- `target`: `file`; constraints: file_type=PowerPoint presentation, importance=critical, owner=Mallory; origin=`llm_proposal`, verification=`UNVERIFIED`
+- Claim `goal-1`: `subject` — `owns` → `device`
+- Claim `goal-2`: `device` — `modified` → `target`
+- Qualifier `goal-2`: `modification_date` = `August 18`
+- Qualifier `goal-2`: `resulting_state` = `encrypted`
+- Qualifier `goal-2`: `modification_cause` = `ransomware`
+- Qualifier `goal-2`: `filename_observation_phase` = `after it was encrypted`
+- Answer: `target` as `file_name`
+
+### Source capability profiling
+
+- Status: `NO_LLM_CALLER`; accepted proposals: `0`; rejected: `0`
+- Proposals are candidates only; a provider probe is required before they become executable capabilities.
+- Source coverage manifests (shortlist never implies absence):
+  - `owns`: total=`100`, considered=`100`, examined=`100`, unexamined=`0`, rejected=`0`
+  - `modified`: total=`100`, considered=`100`, examined=`100`, unexamined=`0`, rejected=`0`
+  - Full source IDs and stage audit are stored in `source_profile_audit.json`.
+- Relation-scoped source retrieval:
+  - `owns`: batches=`14`, ordering_only=`True`, candidates=splunk:botsv2:hardware (score=17.5, rank=1), splunk:botsv2:stream:arp (score=4.0, rank=2), splunk:botsv2:Unix:Version (score=2.0, rank=3), splunk:botsv2:ActiveDirectory (score=0.0, rank=4), splunk:botsv2:Linux:SELinuxConfig (score=0.0, rank=5), splunk:botsv2:MSAD:NT6:Health (score=0.0, rank=6), splunk:botsv2:MSAD:NT6:SiteInfo (score=0.0, rank=7), splunk:botsv2:Perfmon:CPU (score=0.0, rank=8), splunk:botsv2:Perfmon:LogicalDisk (score=0.0, rank=9), splunk:botsv2:Perfmon:Memory (score=0.0, rank=10); (+90 more in source_profile_audit.json); census profiles=`complete`
+  - `modified`: batches=`14`, ordering_only=`True`, candidates=splunk:botsv2:symantec:ep:agent:file (score=33.5, rank=1), splunk:botsv2:symantec:ep:agt_system:file (score=33.5, rank=2), splunk:botsv2:symantec:ep:behavior:file (score=33.5, rank=3), splunk:botsv2:symantec:ep:packet:file (score=33.5, rank=4), splunk:botsv2:symantec:ep:scan:file (score=33.5, rank=5), splunk:botsv2:symantec:ep:scm_system:file (score=33.5, rank=6), splunk:botsv2:symantec:ep:security:file (score=33.5, rank=7), splunk:botsv2:symantec:ep:traffic:file (score=33.5, rank=8), splunk:botsv2:WindowsUpdateLog (score=18.0, rank=9), splunk:botsv2:osquery_info (score=18.0, rank=10); (+90 more in source_profile_audit.json); census profiles=`complete`
+
+### Proof plan
+
+- `selected` `goal-1` via `resolve_person_to_endpoint` (cost=1)
+- `selected` `goal-2` via `find_file_change_from_endpoint` (cost=1; requires `goal-1`)
+
+### Unverified restrictions
+
+The retrieved rows prove only the declared relation. These request restrictions were not proven by a declared provider capability:
+- `goal-1`: `hardware_descriptor=MacBook`
+
+## 3. Step Trace and Binding Changes
+
+### Lifecycle step trace
+
+| Step | Lifecycle Phase | Duration (ms) | Status | Key Inputs / Outputs |
+|---|---|---|---|---|
+| 1 | `STEP_A_FREEZE_REQUEST` | 0.0 | `SUCCESS` | in: request_id=audit-replay-plan-20260917; content=Mallory's ... |
+| 2 | `STEP_B_COMPILE_GOAL_GRAPH` | 0.0 | `SUCCESS` | in: request_id=audit-replay-plan-20260917; out: has_semantic_goal_graph=True |
+| 3 | `STEP_C_RESOLVE_FRONTIER` | 0.0 | `SUCCESS` | in: profiling_requirements=2; out: coverage_manifests=2 |
+| 4 | `STEP_D_BIND_CANDIDATES` | 0.0 | `SUCCESS` | in: initial_variables=subject; out: bound_variable_count=1 |
+| 5 | `STEP_E_COMPILE_QUERY_INTENT` | 0.0 | `SUCCESS` | in: plan_steps=2; out: planned_attempts=1 |
+| 6 | `STEP_F_EXECUTE_NATIVE_QUERY` | 0.0 | `SUCCESS` | in: executions=1; out: total_rows=6; statuses=AMBIGUOUS |
+| 7 | `STEP_G_RECORD_OBSERVATIONS` | 0.0 | `SUCCESS` | in: total_observations=6; out: evidence_cards=0 |
+| 8 | `STEP_H_VERIFY_PROOF` | 0.0 | `SUCCESS` | in: goal_count=2; out: verdicts=INCONCLUSIVE_RESTRICTIONS_UNVERIFIED, INCONCLUSI... |
+| 9 | `STEP_I_CHECK_STOPPING` | 0.0 | `SUCCESS` | in: stopping_decision=StoppingDecision.STOP_NEEDS_USER_DECISION; out: route_exhausted=; unresolved_steps=1 |
+
+### Execution trace
+
+1. `step-1` gọi `resolve_person_to_endpoint` (candidate #1, page 1): 6 row(s), complete=True, executed_ok=True; goal `goal-1` => `INCONCLUSIVE_RESTRICTIONS_UNVERIFIED`.
+- `step-1` chưa chạy/hoàn tất: ambiguous output binding 'device' has 6 candidates; fan-out limit is 5
+- `step-2` chưa chạy/hoàn tất: required upstream proof is incomplete: step-1
+
+### Runtime bindings
+
+- `subject`: `Mallory` (VERIFIED) from `request`
+
+## 4. Evidence and Proof Decisions
+<!-- ## 3. Evidence and explanation -->
+
+No evidence cards were produced.
+
+### Explanation
+
+- **Deterministic Explanation:** Candidate bindings were discovered, but no downstream query was executed because an analyst must select the intended binding.
+- Limitation: No definitive adversary presence or refutation established in searched frame.
+
+### Semantic route assessments
+
+- Goal `goal-1` (`owns`): status=`CANDIDATE_OBSERVED`, execution_complete=`True`, proof_complete=`False`, route_exhausted=`False`, readiness=`RETRIEVAL_CAPABLE`, terminal=`none`
+  - Proof gaps: `relation_or_constraint_proof_missing`
+  - Attempt `attempt-1`: operation=`resolve_person_to_endpoint`, source=`splunk_botsv2`, schema=`unknown`, stage=`narrow`, query=`logical-goal-graph-hunt-req-20260916-034720-step-1`, complete=`True`, rows=`6`, trigger=`initial_route`, negative_license=`False`, alternatives=`[]`
+- Goal `goal-2` (`modified`): status=`CAPABILITY_GAP`, execution_complete=`False`, proof_complete=`False`, route_exhausted=`False`, readiness=`CAPABILITY_GAP`, terminal=`none`
+  - Proof gaps: `relation_or_constraint_proof_missing`
+  - Capability gaps: `no_provider_attempt`
+
+### Proof state
+
+- `goal-1`: `INCONCLUSIVE_RESTRICTIONS_UNVERIFIED`
+- `goal-2`: `INCONCLUSIVE`
+
+## 5. Native Queries, Result Summaries and Completeness
+<!-- ## 4. Queries used -->
+
+### `logical-goal-graph-hunt-req-20260916-034720-step-1` — `goal-1`
+- **Purpose:** resolve_person_to_endpoint
+
+- **Input binding:** `subject=Mallory`
+- **Expected output fields:** `user`, `host`, `ComputerName`, `sourcetype`
+- **Result:** 6 rows returned; complete=True
+- **Observed fields:** `raw_event`, `ComputerName`, `raw_ref`, `native_type`, `timestamp`, `sourcetype`, `host`
+- **Execution:** executed_ok=`True`, diagnostic=`none`
+- **Hypothesis Impact:** Targets `h`
+Provider: `splunk`; completeness: `provider-declared`
+
+- **Provider pages:** `1`; continuation=`False`
+```spl
+search index="botsv2" "Mallory" | rex field=_raw "Workstation Name:\s*(?<WorkstationName>[^\r\n\s]+)" | rex field=_raw "New Logon:[\s\S]*?Account Name:\s*(?<TargetUserName>[^\r\n\s]+)" | eval _host_candidate=coalesce(host,ComputerName) | where isnotnull(_host_candidate) AND _host_candidate!="" AND _host_candidate!="-" | dedup _host_candidate | head 101 | rename _host_candidate as host | table _time, host, ComputerName, TargetUserName, user, IpAddress, WorkstationName, LogonType, sourcetype
+```
+
+**Returned sample rows (raw payload omitted):**
+
+- Row 1: host=MACLORY-AIR13; sourcetype=usersWithLoginPrivs; timestamp=2017-08-29T10:34:18.000+00:00; native_type=usersWithLoginPrivs
+- Row 2: host=kutekitten; sourcetype=usersWithLoginPrivs; timestamp=2017-08-29T10:30:52.000+00:00; native_type=usersWithLoginPrivs
+- Row 3: host=matar; sourcetype=stream:smtp; timestamp=2017-08-25T05:17:39.258+00:00; native_type=stream:smtp
+- Row 4: host=jupiter; sourcetype=suricata; timestamp=2017-08-24T04:02:26.749+00:00; native_type=suricata
+- Row 5: host=venus; ComputerName=venus.frothly.local; sourcetype=WinEventLog:Security; timestamp=2017-08-19T06:26:27.000+00:00; native_type=WinEventLog:Security
+
+
+## 6. Coverage and Cost
+<!-- ## 5. Cost -->
+
+### Scope and Requirement Coverage
+
+- **Causal Path Coverage:** `0.0%` (0/2 relations verified)
+- **Wildcard Scope Coverage:** `100.0%` (1/1 broadsweep cells)
+- **Instance Cell Coverage:** `0.0%` (0/0 concrete entity cells)
+
+### Route and Frontier Coverage
+
+- **Examined routes:**
+  - `goal-1` (`owns`): operation=`resolve_person_to_endpoint`, source=`splunk_botsv2`, query=`logical-goal-graph-hunt-req-20260916-034720-step-1`, rows=`6`, complete=`True`
+- **Unexamined routes & frontier sources:**
+  - Unattempted candidate method: `method-goal-2-1` (`goal-2` via `find_file_change_from_endpoint`)
+- **Route Exhaustion Rationale:** Execution halted before exhaustion with unexamined frontier elements remaining. Stopping decision: `STOP_NEEDS_USER_DECISION`.
+
+### Cost Accounting
+
+- Model: `stub`
+- Calls: `0`
+- Physical API attempts: `0`
+- Failed calls: `0`
+- Tokens: `0` (estimated)
+- Token accounting mode: `ESTIMATED`
+- Estimated cost: `$0.000000`

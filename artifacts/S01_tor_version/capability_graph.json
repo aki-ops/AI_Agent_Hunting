@@ -1,0 +1,7 @@
+{
+  "id": "capability-graph:S01_tor_version",
+  "census_version": "runtime.census.v1",
+  "providers": [],
+  "operations": [],
+  "audit": []
+}

@@ -1,0 +1,8 @@
+{
+  "id": "S06_amber_account_logon",
+  "kind": "QUESTION",
+  "content": "What user account did Amber Turing use to log on to the domain controller?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

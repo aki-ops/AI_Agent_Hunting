@@ -1,0 +1,8 @@
+{
+  "id": "S11_correct_sourcetype_deceptive_name",
+  "kind": "QUESTION",
+  "content": "Check proxy logs in non_standard_proxy_blob for competitor visits.",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

@@ -2,7 +2,7 @@
   {
     "id": "claim-process",
     "statement": "host:SRV-01 observed_process process",
-    "status": "SUPPORTED",
+    "status": "LIVE",
     "hypothesis_class": "unclassified",
     "requirements": [
       "req-process"

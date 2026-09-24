@@ -1,0 +1,7 @@
+{
+  "prompt_hash": "156b4cf7cd2da7cf",
+  "response_length": 705,
+  "response_text": "{\"id\": \"graph-mock\", \"objective\": \"Test objective\", \"claims\": [{\"id\": \"claim-1\", \"fact_type\": \"process_execution\", \"target_entity_type\": \"host\", \"required_roles\": [\"host\"], \"observation_requirements\": [{\"id\": \"req-1\", \"fact_kind\": \"process_execution\", \"required_roles\": [\"host\"], \"field_roles\": {\"host\": \"host\"}}]}], \"variables\": [{\"id\": \"host\", \"entity_type\": \"host\", \"value\": \"host-1\"}], \"relations\": [{\"id\": \"rel-1\", \"subject\": \"host\", \"relation\": \"process_execution\", \"object\": \"host\", \"required\": true}], \"qualifiers\": [], \"answers\": [{\"variable_id\": \"host\", \"answer_type\": \"value\", \"required\": true}], \"assumptions\": [], \"uncertainties\": [], \"forbidden_inferences\": [], \"clarification_triggers\": []}",
+  "validation_result": "VALID",
+  "output_kind": "semantic_goal_graph"
+}

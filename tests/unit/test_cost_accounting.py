@@ -119,7 +119,11 @@ def test_failed_llm_call_and_physical_attempts_are_accounted():
     tracker = LLMUsageTracker(max_calls=5, model_name="gemini-2.5-flash")
     caller = create_llm_caller(provider, tracker, component="source_profiler")
 
-    assert caller("profile this source") == "{}"
+    # A provider/transport failure must not be converted into an empty JSON
+    # response: that would make the engine treat the failed call as a valid
+    # deterministic result.
+    with pytest.raises(RuntimeError, match="gateway unavailable"):
+        caller("profile this source")
     assert tracker.call_count == 1
     assert tracker.is_exhausted is False
     assert tracker.calls[0].status == "FAILED"

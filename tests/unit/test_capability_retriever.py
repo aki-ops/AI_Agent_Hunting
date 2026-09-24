@@ -1,4 +1,5 @@
 from hunting.capabilities.retriever import CapabilityBatcher
+from hunting.capabilities.source_profiler import SourceProfiler
 from hunting.contracts.source_profile import TelemetryFieldProfile, TelemetrySourceProfile
 
 
@@ -82,3 +83,24 @@ def test_batcher_keeps_low_confidence_sources_for_exhaustive_coverage() -> None:
     assert len(candidates) == 3
     assert all(candidate.low_confidence for candidate in candidates)
     assert result.audit[0]["source_coverage"]["scheduled"] == 3
+
+
+def test_default_batcher_keeps_c2_batches_within_token_ceiling() -> None:
+    fields = tuple(f"field_{i}" for i in range(40))
+    profiles = [_profile(f"source:{i}", "Native", *fields) for i in range(6)]
+    result = CapabilityBatcher().batch(
+        profiles,
+        [{"relation": "associated_with", "subject_type": "user", "object_type": "host"}],
+    )
+    batches = result.batches_by_relation["associated_with"]
+    assert batches
+    assert all(len(batch) <= 2 for batch in batches)
+    assert all(len(fragment.fields) <= 12 for batch in batches for fragment in batch)
+
+
+def test_source_profiler_prompt_omits_full_schema_dump() -> None:
+    profile = _profile("source:wide", "Native", *[f"f{i}" for i in range(30)])
+    ctx = SourceProfiler()._context([profile], [{"relation": "associated_with", "subject_type": "user", "object_type": "host", "description": "x" * 400}])
+    assert len(ctx["sources"][0]["fields"]) <= 12
+    assert "coverage" not in ctx["sources"][0]["fields"][0]
+    assert "description" not in ctx["requirements"][0]

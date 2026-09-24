@@ -34,16 +34,7 @@ The v9 Evidence-Grounded Progressive Hunt Graph is the accepted target. The repo
 
 ## Immediate P0 work
 
-Follow `08` in order:
+Gates M1–M5 and M7 remain closed. Gate M6 stays open (no hunt-workspace UI / no usability pilot). Gate M8 is not closed: layered evaluation and a non-skipped live probe exist, but Splunk/BOTS v2 is unreachable (`https://localhost:8089` refused; `SPLUNK_*` unset) so live readiness is not claimed.
 
-1. authority-gap tests;
-2. canonical OutcomeContract/state/taxonomy;
-3. unified semantic entry point and acceptance gate;
-4. executable graph semantics;
-5. CandidateSet and clarification;
-6. ProofEngine;
-7. one controller loop;
-8. actual evaluation runner.
-
-Do not prioritize source ranking or SPL optimization before these reasoning gates pass.
+Do not add relation aliases, SMTP/email/file case branches, or scenario names. Do not treat exact `guaranteed_relations` miss + deferred C2 as `STOP_UNSUPPORTED`. Do not optimize SPL or add providers. Do not enable ClaimGraph/cell/adaptive loops on the default path. Do not weaken ProofContract: proximity, join and graph edges are not proof. Do not reopen closed M1–M5/M7 gates or fake-close M6.
 

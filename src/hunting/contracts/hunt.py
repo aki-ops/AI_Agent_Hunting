@@ -48,6 +48,8 @@ class HuntRequestKind(str, Enum):
     QUESTION = "QUESTION"
     NL_QUESTION = "NL_QUESTION"
     SCHEDULED = "SCHEDULED"
+    ALERT = "ALERT"
+    POC = "POC"
 
 
 @dataclass(frozen=True)
@@ -59,10 +61,10 @@ class TimePolicy:
 
 @dataclass
 class HuntRequest:
-    """Entrypoint contract for pure hypothesis-driven threat hunting.
+    """Entrypoint contract for the v9 semantic hunt path.
 
-    Never requires an alert or PoC. Entities, time policy, and provider hints
-    are optional and deployment-configured, never fabricated.
+    Alert and PoC inputs compile into the same graph contract as questions.
+    Entities, time policy, and provider hints are optional.
     """
     id: str
     kind: HuntRequestKind
@@ -246,12 +248,52 @@ class LogicalQueryPlan:
     limit: int = 100
     is_targeted: bool = False
     evidence_type: str = ""
+    goal_id: str = ""
+    mode: str = "EXPLORE"
+    operation_id: str = ""
+    cursor: str = ""
+    cost_status: str = "unknown"
+    partition: dict[str, Any] = field(default_factory=dict)
+    retention_days: int | None = None
+    cancellation_cap: int | None = None
+    adjacency: list[dict[str, Any]] = field(default_factory=list)
+    pagination: str = "none"
 
     def __post_init__(self) -> None:
         if not self.id.strip():
             raise ValueError("LogicalQueryPlan.id must not be empty")
         if not self.requirement_id.strip():
             raise ValueError("LogicalQueryPlan.requirement_id must not be empty")
+        if self.cost_status not in {"unknown", "estimated", "declared"}:
+            self.cost_status = "unknown"
+        if self.cancellation_cap is None:
+            self.cancellation_cap = self.limit
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "requirement_id": self.requirement_id,
+            "goal_id": self.goal_id or self.requirement_id,
+            "mode": self.mode,
+            "operation_id": self.operation_id,
+            "provider": self.provider,
+            "scope": self.scope,
+            "data_sources": [dict(item) for item in self.data_sources],
+            "filters": [dict(item) for item in self.filters],
+            "fields": list(self.fields),
+            "time_window": self.time_window,
+            "constraints": dict(self.constraints),
+            "limit": self.limit,
+            "is_targeted": self.is_targeted,
+            "evidence_type": self.evidence_type,
+            "cursor": self.cursor,
+            "cost_status": self.cost_status,
+            "partition": dict(self.partition),
+            "retention_days": self.retention_days,
+            "cancellation_cap": self.cancellation_cap,
+            "adjacency": [dict(item) for item in self.adjacency],
+            "pagination": self.pagination,
+        }
 
 
 @dataclass
@@ -264,11 +306,26 @@ class NativeQueryPlan:
     time_range: tuple[str, str] = ("", "")
     limit: int = 100
 
+    job_id: str | None = None
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+
     def __post_init__(self) -> None:
         if not self.id.strip():
             raise ValueError("NativeQueryPlan.id must not be empty")
         if not self.native_query.strip():
             raise ValueError("NativeQueryPlan.native_query must not be empty")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "logical_plan_id": self.logical_plan_id,
+            "provider": self.provider,
+            "native_query": self.native_query,
+            "time_range": list(self.time_range),
+            "limit": self.limit,
+            "job_id": self.job_id,
+            "diagnostics": dict(self.diagnostics),
+        }
 
 
 @dataclass
@@ -356,10 +413,11 @@ class HuntOutcome(str, Enum):
 
 
 class StoppingTaxonomyState(str, Enum):
-    """Canonical 9-state terminal stopping taxonomy."""
+    """Canonical terminal stopping taxonomy."""
     ANSWER_PROVED = "ANSWER_PROVED"
     BOUNDED_NOT_FOUND = "BOUNDED_NOT_FOUND"
     NEEDS_DISAMBIGUATION = "NEEDS_DISAMBIGUATION"
+    INCONCLUSIVE = "INCONCLUSIVE"
     COVERAGE_EXHAUSTED = "COVERAGE_EXHAUSTED"
     BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"
     BACKEND_DEGRADED = "BACKEND_DEGRADED"
@@ -411,6 +469,10 @@ class StoppingDecision(str, Enum):
         return legacy_map.get(self, self)
 
     def to_taxonomy_state(self) -> StoppingTaxonomyState:
+        if self == StoppingDecision.STOP_INCONCLUSIVE:
+            return StoppingTaxonomyState.INCONCLUSIVE
+        if self == StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP:
+            return StoppingTaxonomyState.COVERAGE_EXHAUSTED
         canonical = self.to_canonical_v9()
         if canonical == StoppingDecision.STOP_ANSWERED:
             return StoppingTaxonomyState.ANSWER_PROVED
@@ -428,6 +490,10 @@ class StoppingDecision(str, Enum):
             return StoppingTaxonomyState.ABORTED_BY_USER
         if canonical == StoppingDecision.STOP_ERROR:
             return StoppingTaxonomyState.VALIDATION_FAILED
+        if canonical == StoppingDecision.STOP_INCONCLUSIVE:
+            if self == StoppingDecision.STOP_INSUFFICIENT:
+                return StoppingTaxonomyState.COVERAGE_EXHAUSTED
+            return StoppingTaxonomyState.INCONCLUSIVE
         return StoppingTaxonomyState.COVERAGE_EXHAUSTED
 
 
@@ -487,6 +553,15 @@ class HuntState:
     outcome_contract: Any | None = None
     proof_results: list[Any] = field(default_factory=list)
     candidate_sets: dict[str, Any] = field(default_factory=dict)
+    facet_selections: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # Runtime coverage per semantic goal.  This is deliberately separate from
+    # the final spatial/temporal CoverageBound and from proof status.
+    goal_runtime_states: dict[str, Any] = field(default_factory=dict)
+    package_versions: list[dict[str, Any]] = field(default_factory=list)
+    workspace_snapshot: Any | None = None
+    action_items: list[Any] = field(default_factory=list)
+    knowledge_candidates: list[Any] = field(default_factory=list)
+    lifecycle_record: Any | None = None
 
 
 @dataclass
@@ -536,6 +611,11 @@ class FinalHuntAccount:
     outcome_contract: Any | None = None
     proof_results: list[Any] = field(default_factory=list)
     candidate_sets: dict[str, Any] = field(default_factory=dict)
+    package_versions: list[dict[str, Any]] = field(default_factory=list)
+    workspace_snapshot: Any | None = None
+    action_items: list[Any] = field(default_factory=list)
+    knowledge_candidates: list[Any] = field(default_factory=list)
+    lifecycle_record: Any | None = None
 
 
     @property

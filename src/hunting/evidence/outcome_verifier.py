@@ -113,7 +113,10 @@ class OutcomeVerifier:
             if val in (None, "", "?") and slot in candidate_sets:
                 cset = candidate_sets[slot]
                 cands = getattr(cset, "candidates", ()) or ()
-                active_cands = [c for c in cands if getattr(c, "status", "") in ("ACTIVE", "VERIFIED", "VERIFIED_BINDING")]
+                active_cands = [
+                    c for c in cands
+                    if getattr(c, "status", "") in ("ACTIVE", "CANDIDATE", "VERIFIED", "VERIFIED_BINDING")
+                ]
                 if active_cands:
                     val = [c.value for c in active_cands] if len(active_cands) > 1 else active_cands[0].value
 
@@ -125,19 +128,31 @@ class OutcomeVerifier:
             # Check cardinality
             if contract.is_singular(slot):
                 if isinstance(val, (list, tuple, set)) and len(val) > 1:
-                    diagnostics.append(f"Slot '{slot}' is singular but holds multiple candidates: {val}")
-                    return OutcomeVerificationResult(
-                        verified=False,
-                        status="AMBIGUOUS",
-                        slot_values={slot: val},
-                        missing_slots=tuple(missing_slots),
-                        diagnostics=tuple(diagnostics),
-                    )
-                # Check candidate_set for multiple active candidates
+                    proven_only = [
+                        item for item in val
+                        if cls._value_is_proof_backed(str(item), proof_results or [], candidate_sets.get(slot))
+                    ]
+                    if len(proven_only) == 1:
+                        val = proven_only[0]
+                    else:
+                        diagnostics.append(f"Slot '{slot}' is singular but holds multiple candidates: {val}")
+                        return OutcomeVerificationResult(
+                            verified=False,
+                            status="AMBIGUOUS",
+                            slot_values={slot: list(val)},
+                            missing_slots=tuple(missing_slots),
+                            diagnostics=tuple(diagnostics),
+                        )
+                # Ranking is not a tie-break. Multiple verified bindings stay ambiguous.
                 if slot in candidate_sets:
                     cset = candidate_sets[slot]
-                    if getattr(cset, "is_ambiguous", False) or len(getattr(cset, "active_candidates", ())) > 1:
-                        diagnostics.append(f"Slot '{slot}' has ambiguous candidate set requiring discrimination")
+                    verified_cands = [
+                        c for c in getattr(cset, "candidates", ())
+                        if getattr(c, "status", "") in ("VERIFIED", "VERIFIED_BINDING")
+                        or getattr(c, "is_verified_binding", False)
+                    ]
+                    if len(verified_cands) > 1:
+                        diagnostics.append(f"Slot '{slot}' has multiple verified bindings requiring discrimination")
                         return OutcomeVerificationResult(
                             verified=False,
                             status="AMBIGUOUS",
@@ -171,10 +186,13 @@ class OutcomeVerifier:
                             *pr_bindings.values(),
                             *pr_cited_fields.values(),
                         ]
-                        if any(t_norm == str(pv).strip().casefold() or (len(t_norm) > 3 and t_norm in str(pv).strip().casefold()) for pv in pr_vals if pv):
+                        if any(t_norm == str(pv).strip().casefold() for pv in pr_vals if pv):
                             val_proven = True
                             pr_cits = getattr(pr, "cited_observation_ids", getattr(pr, "citations", ()))
-                            citations.extend(str(c) for c in pr_cits)
+                            if pr_cits:
+                                citations.extend(str(c) for c in pr_cits)
+                            elif getattr(pr, "contract_id", None):
+                                citations.append(str(pr.contract_id))
                             break
 
                 # 2. Check CandidateSets
@@ -192,35 +210,10 @@ class OutcomeVerifier:
                                     citations.append(str(c.provenance))
                                 break
 
-                # 3. Check Observations & Cards
-                if not val_proven and observations:
-                    for obs in observations:
-                        obs_fields = getattr(obs, "fields", None)
-                        obs_raw = getattr(obs, "raw_event", None)
-                        found_in_obs = False
-                        if isinstance(obs_fields, dict):
-                            for ov in obs_fields.values():
-                                if t_norm == str(ov).strip().casefold() or (len(t_norm) > 3 and t_norm in str(ov).strip().casefold()):
-                                    found_in_obs = True
-                                    break
-                        if not found_in_obs and isinstance(obs_raw, dict):
-                            for ov in obs_raw.values():
-                                if t_norm == str(ov).strip().casefold() or (len(t_norm) > 3 and t_norm in str(ov).strip().casefold()):
-                                    found_in_obs = True
-                                    break
-                        if not found_in_obs and not hasattr(obs, "fields") and not hasattr(obs, "raw_event"):
-                            found_in_obs = True
-
-                        if found_in_obs:
-                            val_proven = True
-                            obs_id = getattr(obs, "id", None)
-                            if obs_id:
-                                citations.append(str(obs_id))
-                            break
-
+                # Slot values must strictly be proven by verified ProofResults or verified CandidateSets
                 if not val_proven:
                     all_proven = False
-                    diagnostics.append(f"Slot '{slot}' value '{t_val}' is not verified by proof results or observed telemetry")
+                    diagnostics.append(f"Slot '{slot}' value '{t_val}' is not verified by proof results or candidate sets")
 
         if not citations and cards:
             for card in cards:
@@ -257,6 +250,37 @@ class OutcomeVerifier:
             diagnostics=tuple(diagnostics),
             citations=tuple(list(dict.fromkeys(citations))[:10]),
         )
+
+    @classmethod
+    def _value_is_proof_backed(
+        cls,
+        value: str,
+        proof_results: list[Any],
+        candidate_set: Any | None,
+    ) -> bool:
+        t_norm = str(value).strip().casefold()
+        if not t_norm:
+            return False
+        for pr in proof_results:
+            if not getattr(pr, "proved", getattr(pr, "verified", False)):
+                continue
+            pr_bindings = dict(getattr(pr, "bindings", {}) or {})
+            pr_cited_fields = dict(getattr(pr, "cited_fields", {}) or {})
+            pr_vals = [
+                getattr(pr, "subject_binding", ""),
+                getattr(pr, "object_binding", ""),
+                *pr_bindings.values(),
+                *pr_cited_fields.values(),
+            ]
+            if any(t_norm == str(pv).strip().casefold() for pv in pr_vals if pv):
+                return True
+        if candidate_set is not None:
+            for cand in getattr(candidate_set, "candidates", ()):
+                if str(getattr(cand, "value", "")).strip().casefold() != t_norm:
+                    continue
+                if getattr(cand, "status", "") in ("VERIFIED", "VERIFIED_BINDING") or getattr(cand, "is_verified_binding", False):
+                    return not bool(getattr(cand, "contradictions", ()))
+        return False
 
     @classmethod
     def _verify_hypothesis(
@@ -306,19 +330,37 @@ class OutcomeVerifier:
         cset = candidate_sets.get(unit)
         candidates = list(getattr(cset, "candidates", ()) or []) if cset else []
         values = [getattr(c, "value", str(c)) for c in candidates]
+        if getattr(cset, "cardinality", "plural") == "singular" and len(values) > 1:
+            return OutcomeVerificationResult(
+                verified=False,
+                status="AMBIGUOUS",
+                slot_values={unit: values},
+                diagnostics=("Population unit was coerced to a singular slot",),
+            )
 
         if not coverage_complete and contract.coverage_requirement == "EXHAUSTIVE":
             return OutcomeVerificationResult(
                 verified=False,
                 status="INCONCLUSIVE",
-                slot_values={unit: values},
+                slot_values={
+                    unit: values,
+                    "prevalence": len(values),
+                    "prevalence_aggregation": contract.prevalence_aggregation,
+                    "coverage": "PARTIAL",
+                },
                 diagnostics=("Exhaustive coverage required but scan incomplete",),
             )
 
+        coverage_label = "COMPLETE" if coverage_complete else "PARTIAL"
         return OutcomeVerificationResult(
             verified=True,
             status="ANSWERED",
-            slot_values={unit: values},
+            slot_values={
+                unit: values,
+                "prevalence": len(values),
+                "prevalence_aggregation": contract.prevalence_aggregation,
+                "coverage": coverage_label,
+            },
             diagnostics=(f"Discovered population of {len(values)} items",),
         )
 

@@ -165,10 +165,13 @@ def test_4_free_text_no_llm_stops_insufficient():
     assert hypotheses[0].status == HypothesisStatus.INSUFFICIENTLY_SPECIFIED
     assert len(requirements) == 0
 
-    # Engine execution with this request must immediately transition to STOP_INSUFFICIENT
+    # A missing compiler is a validation/inconclusive boundary, never a
+    # clarification predicate.
     engine = HypothesisHuntEngine(compiler=compiler)
     res = engine.execute_hunt(req, adapter=CdbAdapter(":memory:"))
-    assert res.state.stopping_decision in (StoppingDecision.STOP_INSUFFICIENT, StoppingDecision.STOP_NEEDS_CLARIFICATION)
+    assert res.state.stopping_decision == StoppingDecision.STOP_INSUFFICIENT
+    assert res.state.stopping_decision != StoppingDecision.STOP_NEEDS_CLARIFICATION
+    assert res.account.taxonomy_state != res.account.taxonomy_state.NEEDS_DISAMBIGUATION
     assert len(res.state.evidence_cards) == 0
 
 
@@ -189,10 +192,13 @@ def test_5_llm_invalid_schema_stops_insufficient():
     assert hypotheses[0].status == HypothesisStatus.INSUFFICIENTLY_SPECIFIED
     assert len(requirements) == 0
 
-    # Engine execution must stop with STOP_INSUFFICIENT
+    # Schema failure remains a validation/inconclusive stop; it is not a
+    # deterministic request for clarification.
     engine = HypothesisHuntEngine(compiler=KnowledgeBehaviorCompiler(llm_caller=bad_llm_caller))
     res = engine.execute_hunt(req, adapter=CdbAdapter(":memory:"))
-    assert res.state.stopping_decision in (StoppingDecision.STOP_INSUFFICIENT, StoppingDecision.STOP_NEEDS_CLARIFICATION)
+    assert res.state.stopping_decision == StoppingDecision.STOP_INSUFFICIENT
+    assert res.state.stopping_decision != StoppingDecision.STOP_NEEDS_CLARIFICATION
+    assert res.account.taxonomy_state != res.account.taxonomy_state.NEEDS_DISAMBIGUATION
 
 
 def test_6_search_hints_never_become_evidence():

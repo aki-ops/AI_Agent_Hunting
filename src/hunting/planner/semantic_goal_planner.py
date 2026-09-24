@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 from typing import Any, Iterable
 
-from hunting.contracts.ontology import canonicalize_relation
+from hunting.contracts.ontology import canonicalize_relation, types_are_compatible
 from hunting.contracts.queries import ProviderOperation
 from hunting.contracts.semantic_graph import LogicalPlan, PlanStep, ProofMethod, SemanticGoalGraph
-from hunting.contracts.transforms import get_transform_for_constraint
+from hunting.contracts.transforms import is_literal_telemetry_token
+
+_ROUTE_CLASS_RANK = {"EXECUTABLE": 0, "MAPPING_REQUIRED": 1, "DISCOVERY_ONLY": 2}
 
 
 @dataclass(frozen=True)
@@ -52,85 +53,52 @@ class SemanticGoalPlanner:
         return str(getattr(operation, "route_mode", "EXPLORE") or "EXPLORE").upper()
 
     @staticmethod
-    def _answer_compatible(
+    def _has_native_mapping(operation: ProviderOperation) -> bool:
+        return bool(operation.native_field_bindings or operation.output_value_bindings)
+
+    @classmethod
+    def _route_rank_key(
+        cls,
         operation: ProviderOperation,
-        answer_role: str,
-        object_type: str = "",
-    ) -> bool:
-        """Require an operation to expose a field/role related to the answer.
-
-        This is deliberately lexical and provider-neutral.  It prevents a
-        metadata-only operation from being selected for an artifact-name
-        answer while avoiding scenario-specific aliases.
-        """
-        target = {token for token in re.findall(r"[A-Za-z0-9]+", str(answer_role).casefold()) if len(token) > 1}
-        if not target:
-            return True
-        # Entity answers (process/file/domain/...) are satisfied by the
-        # declared output entity kind.  They do not require a native field
-        # literally named after the entity type.
-        endpoint_types = {"device", "endpoint", "host", "workstation", "computer"}
-        artifact_types = {"file", "artifact", "document", "file_artifact"}
-        for kind in operation.output_entity_kinds:
-            left, right = str(object_type).casefold(), str(kind).casefold()
-            compatible = (
-                left == "any" or right == "any" or left == right
-                or (left in endpoint_types and right in endpoint_types)
-                or (left in artifact_types and right in artifact_types)
-            )
-            if compatible and any(
-                token == right or token in right or right in token
-                for token in target
-            ):
-                return True
-        declared: set[str] = set()
-        declared.update(str(value).casefold() for value in operation.output_roles)
-        declared.update(str(value).casefold() for value in operation.output_fields)
-        for binding in getattr(operation, "nested_field_bindings", {}).values():
-            if isinstance(binding, dict):
-                declared.add(str(binding.get("key", "")).casefold())
-        # Older descriptors may omit output field metadata altogether.  Keep
-        # them usable for compatibility; an explicitly declared but unrelated
-        # projection is the unsafe case this gate rejects.
-        if not declared:
-            return True
-        words = {
-            token for value in declared
-            for token in re.findall(r"[A-Za-z0-9]+", value)
-            if len(token) > 1
-        }
-        return any(
-            left == right or left in right or right in left
-            for left in target
-            for right in words
+        goal_id: str,
+        candidate_routes: dict[str, tuple[Any, ...]] | None,
+        goal_constraints: list[str],
+    ) -> tuple[Any, ...]:
+        route = None
+        for item in (candidate_routes or {}).get(goal_id, ()):
+            if getattr(item, "operation_id", None) == operation.id:
+                route = item
+                break
+        route_class = str(
+            getattr(getattr(route, "route_class", None), "value", None)
+            or getattr(route, "route_class", None)
+            or operation.route_class
+            or "DISCOVERY_ONLY"
         )
-
-    @staticmethod
-    def _type_compatible(actual: str, declared: str) -> bool:
-        """Apply the small provider-neutral endpoint type ontology.
-
-        ``device``, ``endpoint`` and ``host`` are different vocabulary choices
-        for the same executable identity layer in many telemetry estates.  A
-        planner must not reject a graph solely because the LLM used one of
-        these semantic labels while an adapter declared another.  This is a
-        type compatibility rule, not a scenario route or source heuristic.
-        """
-        left = str(actual or "").casefold()
-        right = str(declared or "").casefold()
-        if left == "any" or right == "any":
-            return True
-        if left == right:
-            return True
-        endpoint_types = {"device", "endpoint", "host", "workstation", "computer"}
-        if left in endpoint_types and right in endpoint_types:
-            return True
-        # Artifact vocabulary is likewise not uniform across compilers and
-        # telemetry products.  The provider contract may call the output a
-        # file while the semantic graph calls it an artifact/document.  This
-        # compatibility is only used for typed planning; it does not prove
-        # that the artifact satisfies its content/state qualifiers.
-        artifact_types = {"file", "artifact", "document", "file_artifact"}
-        return left in artifact_types and right in artifact_types
+        class_rank = _ROUTE_CLASS_RANK.get(route_class, 2)
+        stage = str(getattr(route, "frontier_stage", "") or "")
+        provenance = ",".join(getattr(operation, "discovery_provenance", ()) or ())
+        text = f"{stage} {provenance}".upper()
+        if "F0" in text:
+            frontier = 0
+        elif "F1" in text:
+            frontier = 1
+        else:
+            frontier = 2
+        mapping_rank = 0 if cls._has_native_mapping(operation) else 1
+        if operation.input_entity_kinds and operation.output_entity_kinds:
+            narrow = (0, len(operation.input_entity_kinds) + len(operation.output_entity_kinds))
+        else:
+            narrow = (1, 10**6)
+        coverage = -sum(
+            1 for constraint in goal_constraints
+            if cls._constraint_key(constraint) in {
+                str(key).strip().casefold()
+                for key in operation.supported_constraints
+            }
+        )
+        cost = operation.expected_cost if operation.expected_cost is not None else 1
+        return (class_rank, frontier, mapping_rank, narrow[0], narrow[1], coverage, cost, operation.id)
 
     def compose(
         self,
@@ -156,11 +124,6 @@ class SemanticGoalPlanner:
         step_for_goal: dict[str, str] = {}
         proof_methods: list[ProofMethod] = []
         selected_method_ids: dict[str, str] = {}
-        answer_roles = {
-            item.variable_id: str(item.answer_type).strip().casefold()
-            for item in getattr(graph, "answers", ()) or ()
-            if getattr(item, "variable_id", None) and getattr(item, "answer_type", None)
-        }
         route_map = candidate_routes or {}
 
         progress = True
@@ -195,13 +158,8 @@ class SemanticGoalPlanner:
                 for c_var in relevant_constraint_vars:
                     goal_constraints.extend([item.text() for item in c_var.constraints])
                     for item in c_var.constraints:
-                        for term in item.retrieval_terms:
-                            retrieval_terms_list.append((item.key, term))
-                        if not item.retrieval_terms:
-                            transform = get_transform_for_constraint(item.key, item.value)
-                            if transform is not None and hasattr(transform, "get_retrieval_terms"):
-                                for term in transform.get_retrieval_terms(item.key, item.value):
-                                    retrieval_terms_list.append((item.key, term))
+                        if is_literal_telemetry_token(item.value) and c_var.value_origin == "request":
+                            retrieval_terms_list.append((item.key, str(item.value).strip()))
                         goal_constraint_metadata.append({
                             "key": item.key,
                             "operator": item.operator,
@@ -226,16 +184,8 @@ class SemanticGoalPlanner:
                         "operator": "exists" if qualifier.expected_value is None else "equals",
                         "value": qualifier.expected_value,
                         "provenance": f"semantic_qualifier:{qualifier.id}",
-                        "trust_class": "request_grounded",
+                        "trust_class": "compiler_proposed",
                     })
-                    if qualifier.retrieval_terms:
-                        for term in qualifier.retrieval_terms:
-                            retrieval_terms_list.append((qualifier.qualifier, term))
-                    else:
-                        transform = get_transform_for_constraint(qualifier.qualifier, qualifier.expected_value)
-                        if transform is not None and hasattr(transform, "get_retrieval_terms"):
-                            for term in transform.get_retrieval_terms(qualifier.qualifier, qualifier.expected_value):
-                                retrieval_terms_list.append((qualifier.qualifier, term))
 
                 seen_terms: set[tuple[str, str]] = set()
                 deduped_retrieval: list[tuple[str, str]] = []
@@ -260,11 +210,13 @@ class SemanticGoalPlanner:
                     candidates = list({operation.id: operation for operation in self.operations
                         if operation.id in route_operation_ids
                         and operation.provider_id == self.provider_id
-                        and (not operation.output_entity_kinds or any(
-                            self._type_compatible(target.entity_type, kind)
-                            for kind in operation.output_entity_kinds
-                        ))
-                        and self._answer_compatible(operation, answer_roles.get(target.id, ""), target.entity_type)
+                        and (
+                            not operation.output_entity_kinds
+                            or any(
+                                types_are_compatible(target.entity_type, kind)
+                                for kind in operation.output_entity_kinds
+                            )
+                        )
                     }.values())
                 elif legacy_relation_matching:
                     candidates = list({operation.id: operation for operation in self.operations
@@ -273,11 +225,11 @@ class SemanticGoalPlanner:
                             or canonicalize_relation(goal.relation) in {canonicalize_relation(value) for value in operation.guaranteed_relations}
                         )
                         and operation.provider_id == self.provider_id
-                        and (not operation.output_entity_kinds or any(
-                            self._type_compatible(target.entity_type, kind)
+                        and operation.output_entity_kinds
+                        and any(
+                            types_are_compatible(target.entity_type, kind)
                             for kind in operation.output_entity_kinds
-                        ))
-                        and self._answer_compatible(operation, answer_roles.get(target.id, ""), target.entity_type)
+                        )
                     }.values())
                 else:
                     candidates = []
@@ -296,7 +248,7 @@ class SemanticGoalPlanner:
                     # Such entries were not real routes and made the report
                     # claim options the executor could never use.
                     if candidate.input_entity_kinds and not any(
-                        self._type_compatible(subject.entity_type, kind)
+                        types_are_compatible(subject.entity_type, kind)
                         for kind in candidate.input_entity_kinds
                     ):
                         continue
@@ -326,11 +278,12 @@ class SemanticGoalPlanner:
                             ))
                 ready = [
                     operation for operation in candidates
-                    if (not operation.input_entity_kinds or any(
-                        self._type_compatible(subject.entity_type, kind)
+                    if operation.input_entity_kinds
+                    and any(
+                        types_are_compatible(subject.entity_type, kind)
                         for kind in operation.input_entity_kinds
-                    ))
-                    and (not operation.input_entity_kinds or subject.id in known)
+                    )
+                    and subject.id in known
                 ]
                 if not ready:
                     # Find a typed capability path to the operation's input
@@ -374,7 +327,7 @@ class SemanticGoalPlanner:
                         previous_variable = intermediate
                         previous_type = output_type
                     ready = [operation for operation in candidates if any(
-                        self._type_compatible(previous_type, kind)
+                        types_are_compatible(previous_type, kind)
                         for kind in operation.input_entity_kinds
                     )]
                     if not ready:
@@ -386,17 +339,8 @@ class SemanticGoalPlanner:
                 # appears first in a provider descriptor.
                 operation = min(
                     ready,
-                    key=lambda item: (
-                        -sum(
-                            1 for constraint in goal_constraints
-                            if self._constraint_key(constraint) in {
-                                str(key).strip().casefold()
-                                for key in item.supported_constraints
-                            }
-                        ),
-                        item.expected_cost if item.expected_cost is not None else 1,
-                        len(item.input_entity_kinds) or 999,
-                        item.id,
+                    key=lambda item: self._route_rank_key(
+                        item, goal.id, route_map, goal_constraints,
                     ),
                 )
                 selected_method = next(
@@ -481,8 +425,15 @@ class SemanticGoalPlanner:
                 remaining.remove(goal)
                 progress = True
 
+        unresolved_reasons: dict[str, str] = {}
         for goal in remaining:
-            diagnostics.append(PlannerDiagnostic(goal.id, "No declared capability path can satisfy this relation with currently known variables"))
+            has_executable = any(
+                bool(getattr(route, "executable", False))
+                for route in route_map.get(goal.id, ())
+            )
+            reason = "blocked_on_dependency" if has_executable else "no_typed_reachable_route"
+            unresolved_reasons[goal.id] = reason
+            diagnostics.append(PlannerDiagnostic(goal.id, reason))
 
         plan = LogicalPlan(
             id=plan_id,
@@ -493,6 +444,7 @@ class SemanticGoalPlanner:
             proof_methods=proof_methods,
             selected_method_ids=selected_method_ids,
             graph_revision=getattr(graph, "graph_revision", "G0"),
+            unresolved_reasons=unresolved_reasons,
         )
         # Keep diagnostics auditable without adding provider-specific state to
         # the contract itself.  The executor/report layer can serialize them.
@@ -514,7 +466,8 @@ class SemanticGoalPlanner:
         visited = {start_type.casefold()}
         while queue:
             current, path = queue.pop(0)
-            if any(self._type_compatible(current, candidate) for candidate in wanted) and path:
+            if any(types_are_compatible(current, candidate) for candidate in wanted) and path:
+                return path
                 return path
             ordered_operations = sorted(
                 self.operations,
@@ -525,7 +478,7 @@ class SemanticGoalPlanner:
             for operation in ordered_operations:
                 inputs = {kind.casefold() for kind in operation.input_entity_kinds}
                 outputs = {kind.casefold() for kind in operation.output_entity_kinds}
-                if not any(self._type_compatible(current, candidate) for candidate in inputs) or not outputs:
+                if not any(types_are_compatible(current, candidate) for candidate in inputs) or not outputs:
                     continue
                 for output in outputs:
                     if output not in visited:

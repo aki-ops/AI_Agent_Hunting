@@ -191,7 +191,7 @@ def test_3_web_server_never_assigned_as_user_endpoint():
 
 def test_4_splunk_adapter_parses_raw_json_array_queries():
     """4. Splunk adapter correctly parses _raw JSON array queries into scalar query string and normalized IPs."""
-    adapter = SplunkLiveAdapter(index="botsv2")
+    adapter = SplunkLiveAdapter(index="botsv2", verify_ssl=False)
     raw_event_payload = json.dumps({
         "query": ["52.116.31.116.in-addr.arpa"],
         "src_ip": "10.0.1.50",

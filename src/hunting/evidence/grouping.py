@@ -14,7 +14,7 @@ from typing import Any
 
 from hunting.contracts.hunt import EvidenceCard
 from hunting.contracts.observations import Observation
-from hunting.evidence.facts import extract_facts
+from hunting.evidence.facts import extract_facts, observation_has_file_schema
 
 
 class EvidenceGroupBuilder:
@@ -38,6 +38,8 @@ class EvidenceGroupBuilder:
             if f_list:
                 facts = f_list
                 primary_fact_type = f_list[0].fact_type
+                if primary_fact_type == "file_modification":
+                    break
                 if primary_fact_type == "process_execution":
                     break
 
@@ -45,25 +47,39 @@ class EvidenceGroupBuilder:
         if primary_fact_type in ("telemetry", "generic_telemetry"):
             for o in group_obs:
                 sample_f = o.fields
+                file_schema = observation_has_file_schema(sample_f, o.native_type)
                 has_proc = bool(
                     sample_f.get("image") or sample_f.get("Image") or sample_f.get("process_name")
-                    or sample_f.get("Name") or sample_f.get("cmdline") or sample_f.get("CommandLine")
+                    or sample_f.get("cmdline") or sample_f.get("CommandLine")
                     or sample_f.get("parent_image") or sample_f.get("ParentImage")
                 )
                 has_path = bool(
-                    sample_f.get("file_path") or sample_f.get("path") or sample_f.get("Path") or sample_f.get("TargetFilename")
+                    sample_f.get("target_path")
+                    or sample_f.get("TargetFilename")
+                    or sample_f.get("filename")
+                    or (
+                        not has_proc
+                        and (
+                            sample_f.get("file_path")
+                            or sample_f.get("path")
+                            or sample_f.get("Path")
+                        )
+                    )
                 )
-                raw_str = str(o.raw_event or sample_f).lower()
-                if "tor" in raw_str or has_proc:
-                    primary_fact_type = "process_execution"
-                    break
-                elif sample_f.get("uri") or sample_f.get("http_method") or sample_f.get("site"):
-                    primary_fact_type = "web_request"
-                    break
-                elif has_path:
+                if file_schema or (has_path and not has_proc):
                     primary_fact_type = "file_modification"
                     break
-                elif sample_f.get("query") or sample_f.get("domain"):
+                elif has_proc:
+                    primary_fact_type = "process_execution"
+                    break
+                elif sample_f.get("uri") or sample_f.get("http_method") or (
+                    sample_f.get("site") and str(sample_f.get("site")).strip().casefold() not in {"file_events", "file"}
+                ):
+                    primary_fact_type = "web_request"
+                    break
+                elif sample_f.get("query") or (
+                    sample_f.get("domain") and str(sample_f.get("domain")).strip().casefold() not in {"file_events", "file"}
+                ):
                     primary_fact_type = "dns_activity"
                     break
                 elif sample_f.get("destination_ip") or sample_f.get("dest_ip") or sample_f.get("remote_ip"):
@@ -89,10 +105,13 @@ class EvidenceGroupBuilder:
                 entities_seen["destination_ips"].add(str(o.fields["destination_ip"]))
             if "dest_ip" in o.fields and o.fields["dest_ip"]:
                 entities_seen["destination_ips"].add(str(o.fields["dest_ip"]))
-            if "domain" in o.fields and o.fields["domain"]:
+            if "domain" in o.fields and o.fields["domain"] and str(o.fields["domain"]).strip().casefold() not in {"file_events", "file"}:
                 entities_seen["domains"].add(str(o.fields["domain"]))
-            if "site" in o.fields and o.fields["site"]:
+            if "site" in o.fields and o.fields["site"] and str(o.fields["site"]).strip().casefold() not in {"file_events", "file"}:
                 entities_seen["domains"].add(str(o.fields["site"]))
+            for path_key in ("target_path", "file_path", "TargetFilename", "filename"):
+                if o.fields.get(path_key):
+                    entities_seen["files"].add(str(o.fields[path_key]))
 
         entity_summary = {k: sorted(list(v)) for k, v in entities_seen.items()}
         time_summary = {"earliest": earliest, "latest": latest, "span_events": count}
@@ -114,9 +133,10 @@ class EvidenceGroupBuilder:
             field_summary["cmdlines"] = cmd_list[:20]
 
         images = {
-            str(o.fields.get("image") or o.fields.get("Image") or o.fields.get("process_name") or o.fields.get("Name"))
+            str(o.fields.get("image") or o.fields.get("Image") or o.fields.get("process_name"))
             for o in group_obs
-            if o.fields.get("image") or o.fields.get("Image") or o.fields.get("process_name") or o.fields.get("Name")
+            if not observation_has_file_schema(o.fields, o.native_type)
+            and (o.fields.get("image") or o.fields.get("Image") or o.fields.get("process_name"))
         }
         images = {im for im in images if im and im != "None"}
         if images:
@@ -133,9 +153,23 @@ class EvidenceGroupBuilder:
             field_summary["parent_images"] = sorted(list(parent_images))[:5]
 
         file_paths = {
-            str(o.fields.get("file_path") or o.fields.get("path") or o.fields.get("Path") or o.fields.get("TargetFilename"))
+            str(
+                o.fields.get("file_path")
+                or o.fields.get("target_path")
+                or o.fields.get("path")
+                or o.fields.get("Path")
+                or o.fields.get("TargetFilename")
+                or o.fields.get("filename")
+                or (o.fields.get("name") if observation_has_file_schema(o.fields, o.native_type) else None)
+            )
             for o in group_obs
-            if o.fields.get("file_path") or o.fields.get("path") or o.fields.get("Path") or o.fields.get("TargetFilename")
+            if o.fields.get("file_path")
+            or o.fields.get("target_path")
+            or o.fields.get("path")
+            or o.fields.get("Path")
+            or o.fields.get("TargetFilename")
+            or o.fields.get("filename")
+            or (o.fields.get("name") and observation_has_file_schema(o.fields, o.native_type))
         }
         file_paths = {fp_str for fp_str in file_paths if fp_str and fp_str != "None"}
         if file_paths:
@@ -158,13 +192,22 @@ class EvidenceGroupBuilder:
             ver_list = sorted(list(software_versions))[:5]
             field_summary["software_versions"] = ver_list
             field_summary["software_version"] = ver_list
-        domains = {str(o.fields.get("domain") or o.fields.get("query")) for o in group_obs if o.fields.get("domain") or o.fields.get("query")}
+        domains = {
+            str(o.fields.get("domain") or o.fields.get("query"))
+            for o in group_obs
+            if (o.fields.get("domain") or o.fields.get("query"))
+            and str(o.fields.get("domain") or "").strip().casefold() not in {"file_events", "file"}
+        }
         if domains:
             field_summary["domains"] = sorted(list(domains))[:5]
         uris = {str(o.fields.get("uri")) for o in group_obs if o.fields.get("uri")}
         if uris:
             field_summary["uris"] = sorted(list(uris))[:5]
-        sites = {str(o.fields.get("site")) for o in group_obs if o.fields.get("site")}
+        sites = {
+            str(o.fields.get("site"))
+            for o in group_obs
+            if o.fields.get("site") and str(o.fields.get("site")).strip().casefold() not in {"file_events", "file"}
+        }
         if sites:
             field_summary["sites"] = sorted(list(sites))[:5]
 

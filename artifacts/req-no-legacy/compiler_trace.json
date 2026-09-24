@@ -1,0 +1,8 @@
+{
+  "prompt_hash": "a50eb39b9cb66d1d",
+  "response_length": 523,
+  "response_text": "\n    {\n      \"id\": \"claim-only\",\n      \"claims\": [\n        {\n          \"id\": \"claim-process\",\n          \"fact_type\": \"process_execution\",\n          \"target_entity_type\": \"process\",\n          \"required_roles\": [\"host\", \"process\"],\n          \"observation_requirements\": [\n            {\"id\": \"req-1\", \"fact_kind\": \"process_execution\", \"required_roles\": [\"host\"]}\n          ]\n        }\n      ],\n      \"variables\": [{\"id\": \"host\", \"entity_type\": \"host\", \"value\": \"SRV-01\"}],\n      \"relations\": [],\n      \"answers\": []\n    }\n    ",
+  "validation_result": "FAILED",
+  "repair_attempted": true,
+  "validation_error": "SemanticGoalGraph.objective must not be empty"
+}

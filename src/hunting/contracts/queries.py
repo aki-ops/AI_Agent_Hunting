@@ -286,6 +286,73 @@ class ProviderOperation:
                 max_attempts=2,
             )
         object.__setattr__(self, "retrieval_policy", policy)
+        from hunting.contracts.ontology import infer_object_port_kinds
+
+        object.__setattr__(
+            self,
+            "output_binding_entity_kinds",
+            infer_object_port_kinds(
+                output_binding_entity_kinds=self.output_binding_entity_kinds,
+                output_entity_kinds=self.output_entity_kinds,
+            ),
+        )
+        if is_untyped_leftover_contract(self):
+            if self.route_class == "EXECUTABLE":
+                object.__setattr__(self, "route_class", "DISCOVERY_ONLY")
+            if not self.legacy_alias:
+                object.__setattr__(self, "legacy_alias", True)
+
+
+def is_untyped_leftover_contract(operation: Any) -> bool:
+    """True when the contract cannot produce a typed entity port.
+
+    Classification is by shape, not by operation id.  Leftover copies remain
+    discoverable as DISCOVERY_ONLY / legacy aliases; they are not EXECUTABLE.
+    A field soup without per-port kinds is leftover even when output_fields
+    are populated: listing columns is not an entity projection.
+    """
+    from hunting.contracts.ontology import PRIMARY_ENTITY_KINDS, canonicalize_role
+
+    port_kinds = {
+        str(key).strip(): str(value).strip()
+        for key, value in dict(getattr(operation, "output_binding_entity_kinds", {}) or {}).items()
+        if str(key).strip() and str(value).strip()
+    }
+    if port_kinds:
+        return False
+    input_kinds = tuple(getattr(operation, "input_entity_kinds", ()) or ())
+    output_kinds = tuple(getattr(operation, "output_entity_kinds", ()) or ())
+    has_mapping = bool(
+        getattr(operation, "native_field_bindings", None)
+        or getattr(operation, "output_value_bindings", None)
+        or getattr(operation, "output_fields", None)
+        or getattr(operation, "output_roles", None)
+    )
+    has_builder = bool(str(getattr(operation, "query_builder", "") or "").strip())
+    if (not input_kinds) and (not output_kinds) and (not has_mapping) and (not has_builder):
+        return True
+    object_fields = tuple((getattr(operation, "output_value_bindings", {}) or {}).get("object") or ())
+    if not object_fields:
+        object_fields = tuple(getattr(operation, "output_fields", ()) or ())
+    spanned = {
+        canonicalize_role(str(name))
+        for name in object_fields
+        if canonicalize_role(str(name)) in PRIMARY_ENTITY_KINDS
+    }
+    folded_inputs = {str(kind).strip().casefold() for kind in input_kinds if str(kind).strip()}
+    dump_shaped = (not folded_inputs) or folded_inputs <= {"any"}
+    if dump_shaped and len(spanned) > 1:
+        return True
+    if dump_shaped and folded_inputs and (has_mapping or output_kinds):
+        return True
+    return False
+
+
+def is_scope_observation_fact_kinds(fact_kinds: tuple[str, ...] | list[str]) -> bool:
+    """True when fact kinds describe scope/schema observation, not an entity port."""
+    allowed = {"scope_records", "operational_baseline", "schema_metadata"}
+    kinds = {str(item).strip().casefold() for item in fact_kinds if str(item).strip()}
+    return bool(kinds) and kinds <= allowed
 
 
 @dataclass(frozen=True)

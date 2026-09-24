@@ -8,5 +8,8 @@
   ],
   "proof_methods": [],
   "selected_method_ids": {},
-  "graph_revision": "G0"
+  "graph_revision": "G0",
+  "unresolved_reasons": {
+    "claim-process": "no_typed_reachable_route"
+  }
 }

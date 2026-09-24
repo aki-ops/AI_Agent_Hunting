@@ -1,0 +1,19 @@
+{
+  "request_id": "S01_tor_version",
+  "step_count": 1,
+  "steps": [
+    {
+      "step_name": "STEP_A_FREEZE_REQUEST",
+      "step_index": 1,
+      "timestamp_iso": "2026-09-21T16:57:14Z",
+      "duration_ms": 0.0,
+      "status": "SUCCESS",
+      "inputs_summary": {
+        "request_id": "S01_tor_version",
+        "content": "What version of Tor Browser was observed in the environment?"
+      },
+      "outputs_summary": {},
+      "diagnostics": []
+    }
+  ]
+}

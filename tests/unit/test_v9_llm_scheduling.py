@@ -308,3 +308,44 @@ def test_gate_h_call_metadata_and_estimation_labeling() -> None:
     assert "Token accounting mode: `HYBRID`" in rendered
     assert "`C1_COMPILER`" in rendered
     assert "`C3_QUERY_GEN`" in rendered
+
+
+def test_unbounded_diagnostic_policy_lifts_legacy_component_call_limits() -> None:
+    """Correctness mode permits repeated C1-C5 calls while retaining full accounting."""
+    policy = LLMBudgetPolicy.unbounded_for_testing(model_name="mock-model")
+    tracker = LLMUsageTracker(policy=policy)
+
+    for index in range(3):
+        allowed, reason = tracker.can_schedule(
+            LLMPhase.C3_QUERY_GEN,
+            prompt=f"query proposal {index}",
+            expected_completion_tokens=10,
+            component="planner",
+        )
+        assert allowed, reason
+        tracker.preflight(
+            f"query proposal {index}",
+            expected_completion_tokens=10,
+            component="planner",
+            phase=LLMPhase.C3_QUERY_GEN,
+            reason="correctness validation",
+        )
+        tracker.record_call(
+            component="planner",
+            phase=LLMPhase.C3_QUERY_GEN,
+            reason="correctness validation",
+            prompt=f"query proposal {index}",
+            response='{"status":"ok"}',
+            duration_ms=10.0 + index,
+            actual_prompt_tokens=5,
+            actual_completion_tokens=3,
+            validation_status="VALID",
+            status="SUCCESS",
+        )
+
+    account = tracker.to_dict()
+    assert account["calls_made"] == 3
+    assert account["total_tokens"] == 24
+    assert all(call["validation_status"] == "VALID" for call in account["calls"])
+    assert all(call["latency_ms"] > 0 for call in account["calls"])
+    assert all("cost_usd" in call for call in account["calls"])

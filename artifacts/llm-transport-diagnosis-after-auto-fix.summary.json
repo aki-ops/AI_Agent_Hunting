@@ -1,0 +1,14 @@
+{
+  "auto_model": "auto",
+  "specific_model": "mb/gemini-3.7-flash-high",
+  "successful_attempts": 3,
+  "auto_actual_models": [
+    "gpt-5.6-sol-omni"
+  ],
+  "mean_hidden_token_delta": 1876.0,
+  "findings": [
+    "auto is a router, not a model; it resolved to ['gpt-5.6-sol-omni'].",
+    "Every successful prompt is inflated by ~2000+ tokens: gateway injects shared system/context or miscounts tokens.",
+    "Inflation is roughly constant: fixed hidden prefix, not tokenizer drift."
+  ]
+}

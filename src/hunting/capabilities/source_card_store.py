@@ -76,7 +76,7 @@ class SourceCard:
     def field_names(self) -> set[str]:
         return {f.name for f in self.fields}
 
-    def compact_summary(self, max_fields: int = 32) -> dict[str, Any]:
+    def compact_summary(self, max_fields: int = 8) -> dict[str, Any]:
         """Compact summary suitable for inclusion in bounded LLM prompts."""
         selected_fields = list(self.fields)[:max_fields]
         return {

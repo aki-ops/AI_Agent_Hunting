@@ -1,6 +1,12 @@
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.queries import ProviderOperation, QueryOutcome, QueryResult
-from hunting.contracts.semantic_graph import LogicalPlan, PlanStep
+from hunting.contracts.semantic_graph import (
+    LogicalPlan,
+    PlanStep,
+    SemanticGoalGraph,
+    SemanticRelationGoal,
+    SemanticVariable,
+)
 from hunting.contracts.semantic_route import SemanticRouteStatus
 from hunting.planner.semantic_executor import SemanticPlanExecutor
 
@@ -19,8 +25,8 @@ class FakeAdapter:
 def test_executor_passes_declared_output_to_dependent_step() -> None:
     adapter = FakeAdapter()
     operations = [
-        ProviderOperation("lookup-host", "p", ("scope",), input_entity_kinds=("person",), output_entity_kinds=("host",), output_value_bindings={"object": ("host_value",)}),
-        ProviderOperation("lookup-domain", "p", ("scope",), input_entity_kinds=("host",), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain_value",)}),
+        ProviderOperation("lookup-host", "p", ("scope",), input_entity_kinds=("person",), output_entity_kinds=("host",), output_value_bindings={"object": ("host_value",)}, output_binding_entity_kinds={"object": "host"}),
+        ProviderOperation("lookup-domain", "p", ("scope",), input_entity_kinds=("host",), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain_value",)}, output_binding_entity_kinds={"object": "domain"}),
     ]
     plan = LogicalPlan("p1", "g1", "p", [
             PlanStep("s1", "lookup-host", {"subject": "person"}, {"object": "host"}, mode="PROVE"),
@@ -129,13 +135,52 @@ def test_executor_blocks_downstream_step_when_upstream_result_is_partial() -> No
         plan, ProviderScope("p", "scope", {}), "2026-01-01T00:00:00Z/P1D", {"person": "Mallory"},
         variable_types={"person": "person", "account": "account", "host": "host"},
     )
-    assert adapter.calls == ["person-account"]
+    assert adapter.calls and all(call == "person-account" for call in adapter.calls)
+    assert "account-host" not in adapter.calls
     assert result.unresolved_reasons["s2"].startswith("required upstream proof is incomplete")
     assert result.binding_provenance["account"][0]["status"] == "CANDIDATE"
     route = next(item for item in result.route_assessments if item.goal_id == "s1")
     assert route.status.value == "ATTEMPTED_PARTIAL"
     assert route.execution_complete is False
     assert route.route_exhausted is False
+
+
+def test_executor_uses_transform_to_discriminate_singular_output() -> None:
+    class Adapter:
+        def execute_query(self, operation_id, entity, window, limit, query_id, parameters=None):
+            return QueryResult(
+                query_id,
+                QueryOutcome.ROWS,
+                True,
+                True,
+                rows=[
+                    {"host": "HOST-A", "cmdline": "cmd.exe -enc X", "image": "cmd.exe"},
+                    {"host": "HOST-B", "cmdline": "powershell.exe -enc Y", "image": "powershell.exe"},
+                ],
+            )
+
+    adapter = Adapter()
+    operation = ProviderOperation(
+        "find-host", "p", ("scope",),
+        input_entity_kinds=("person",), output_entity_kinds=("host",),
+        output_value_bindings={"object": ("host",)},
+        output_binding_entity_kinds={"object": "host"},
+        searchable_constraints=("command_interpreter",),
+        guaranteed_relations=("executed_on",),
+    )
+    plan = LogicalPlan("p", "g", "p", [PlanStep(
+        "s1", "find-host", {"subject": "person"}, {"object": "host"},
+        constraints=("command_interpreter=PowerShell",),
+        relation="executed_on",
+        advances_goal_ids=("r1",),
+    )])
+    result = SemanticPlanExecutor(adapter, [operation]).execute(
+        plan, ProviderScope("p", "scope", {}), "2026-01-01T00:00:00Z/P1D", {"person": "Alice"},
+        variable_types={"person": "person", "host": "host"},
+        target_cardinality={"host": "singular"},
+    )
+    assert result.variables.get("host") == ["HOST-B"]
+    assert result.needs_user_decision is False
 
 
 def test_executor_uses_declared_or_alternative_when_primary_has_no_proof() -> None:
@@ -184,14 +229,14 @@ def test_executor_relaxes_search_hint_once_when_narrow_query_is_empty() -> None:
     )
     plan = LogicalPlan("relax", "g", "p", [PlanStep(
         "s1", "find-file", {"subject": "host"}, {"object": "file"},
-        constraints=("file_type=PowerPoint",),
+        constraints=("file_type=.pdf",),
     )])
     result = SemanticPlanExecutor(adapter, [operation]).execute(
         plan, ProviderScope("p", "scope", {}), "2026-01-01T00:00:00Z/P1D", {"host": "venus"},
         variable_types={"host": "host", "file": "file"},
     )
     assert len(adapter.parameters) == 2
-    assert adapter.parameters[0]["constraint_search_terms"] == ["PowerPoint"]
+    assert adapter.parameters[0]["constraint_search_terms"] == [".pdf"]
     assert "constraint_search_terms" not in adapter.parameters[1]
     assert result.variables["file"] == ["report.locked"]
     assert any(page.get("relaxation") == "removed_searchable_constraints" for page in result.page_trace)
@@ -351,6 +396,11 @@ def test_executor_resumes_downstream_step_from_user_selected_binding() -> None:
     assert adapter.calls == ["lookup-file"]
     assert result.variables["file"] == ["selected.txt"]
     assert result.executions[0].status == "USER_SELECTED"
+    assert result.route_assessments[0].status.value == "CANDIDATE_OBSERVED"
+    assert "CAPABILITY_GAP" not in {item.status.value for item in result.route_assessments}
+    assert result.executions[0].proof_result is not None
+    assert result.executions[0].proof_result.verified is False
+    assert "user_selection_binding" in result.executions[0].proof_result.reason_codes
     assert len(result.binding_events) == 1
     assert result.binding_events[0].values == {"host": ["user-selected-host"]}
 
@@ -428,3 +478,332 @@ def test_partial_continuation_prevents_route_exhaustion() -> None:
     assert assessment.route_exhausted is False
     assert "s1" in result.continuations
 
+
+def test_executor_unproven_binding_blocks_downstream_step() -> None:
+    """Counterexample 1: Telemetry returns unrelated host, ProofEngine concludes proved=False.
+
+    The executor must NOT mark UNRELATED-HOST as VERIFIED and must NOT execute downstream file step.
+    """
+    class MockUnprovenProofEngine:
+        def evaluate(self, goal, operation, query_result, observations, bindings):
+            from hunting.contracts.proof_contract import ProofResult
+            # Relation Mallory -> UNRELATED-HOST is NOT proved
+            return ProofResult(
+                contract_id="contract-mallory",
+                verified=False,
+                verdict="UNPROVEN",
+                diagnostic="Observed user does not match subject entity",
+            )
+
+    class HostFileAdapter:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def execute_query(self, operation_id, entity, window, limit, query_id):
+            self.calls.append(operation_id)
+            if operation_id == "lookup-device":
+                return QueryResult(query_id, QueryOutcome.ROWS, True, True, rows=[{"host": "UNRELATED-HOST"}])
+            return QueryResult(query_id, QueryOutcome.ROWS, True, True, rows=[{"file": "confidential.pdf"}])
+
+    adapter = HostFileAdapter()
+    operations = [
+        ProviderOperation(
+            "lookup-device", "p", ("scope",),
+            input_entity_kinds=("account",), output_entity_kinds=("host",),
+            output_value_bindings={"object": ("host",)},
+            output_binding_entity_kinds={"object": "host"},
+            proof_mode="relation_observable",
+        ),
+        ProviderOperation(
+            "lookup-file", "p", ("scope",),
+            input_entity_kinds=("host",), output_entity_kinds=("file",),
+            output_value_bindings={"object": ("file",)},
+            output_binding_entity_kinds={"object": "file"},
+            proof_mode="relation_observable",
+        ),
+    ]
+    plan = LogicalPlan("p-mallory-unproven", "g1", "p", [
+        PlanStep("s1", "lookup-device", {"subject": "account"}, {"object": "host"}),
+        PlanStep("s2", "lookup-file", {"subject": "host"}, {"object": "file"}, depends_on=("s1",), requires_complete_inputs=True),
+    ])
+
+    result = SemanticPlanExecutor(adapter, operations, proof_engine=MockUnprovenProofEngine()).execute(
+        plan,
+        ProviderScope("p", "scope", {}),
+        "2026-01-01T00:00:00Z/P1D",
+        {"account": "mallory"},
+        variable_types={"account": "account", "host": "host", "file": "file"},
+    )
+
+    # 1. Host query executed, but UNRELATED-HOST is CANDIDATE, not VERIFIED
+    assert adapter.calls == ["lookup-device"]
+    assert result.binding_provenance["host"][0]["status"] == "CANDIDATE"
+    # 2. Downstream file query must NOT be executed on UNRELATED-HOST
+    assert result.variables.get("file") is None
+    assert result.needs_user_decision is True
+    assert "s2" in result.candidate_input_warnings
+
+
+def test_executor_does_not_synthesize_goal_relation_from_operation_metadata() -> None:
+    """A plan step absent from the graph cannot borrow its operation's relation."""
+    class MetadataOnlyAdapter:
+        def execute_query(self, operation_id, entity, window, limit, query_id):
+            return QueryResult(
+                query_id,
+                QueryOutcome.ROWS,
+                True,
+                True,
+                rows=[{"host": "host-1", "site": "example.com", "http_method": "GET"}],
+            )
+
+    operation = ProviderOperation(
+        "lookup-metadata-only",
+        "p",
+        ("scope",),
+        input_entity_kinds=("endpoint",),
+        output_entity_kinds=("domain",),
+        output_value_bindings={"object": ("site",)},
+        output_binding_entity_kinds={"object": "domain"},
+        guaranteed_relations=("visited",),
+        proof_mode="relation_observable",
+    )
+    plan = LogicalPlan("metadata-only-plan", "g", "p", [
+        PlanStep(
+            "orphan-step",
+            operation.id,
+            {"subject": "host"},
+            {"object": "domain"},
+            relation="visited",
+        ),
+    ])
+
+    result = SemanticPlanExecutor(MetadataOnlyAdapter(), [operation]).execute(
+        plan,
+        ProviderScope("p", "scope", {}),
+        "2026-01-01T00:00:00Z/P1D",
+        {"host": "host-1"},
+        variable_types={"host": "endpoint", "domain": "domain"},
+    )
+
+    execution = result.executions[0]
+    assert execution.proof_result is not None
+    assert execution.proof_result.verified is False
+    assert execution.proof_result.evaluator_id == "no_graph_goal"
+    assert "accepted_graph_goal" in execution.proof_result.missing_obligations
+    assert result.binding_provenance["domain"][0]["status"] == "CANDIDATE"
+
+
+def test_executor_does_not_synthesize_goal_relation_from_operation_role_kinds() -> None:
+    """Matching operation role kinds cannot introduce proof semantics."""
+    class RoleShapeAdapter:
+        def execute_query(self, operation_id, entity, window, limit, query_id):
+            return QueryResult(
+                query_id,
+                QueryOutcome.ROWS,
+                True,
+                True,
+                rows=[{"host": "host-1", "site": "example.com", "http_method": "GET"}],
+            )
+
+    operation = ProviderOperation(
+        "lookup-role-shape",
+        "p",
+        ("scope",),
+        input_entity_kinds=("endpoint",),
+        output_entity_kinds=("domain",),
+        output_value_bindings={"object": ("site",)},
+        output_binding_entity_kinds={"object": "domain"},
+        proof_mode="relation_observable",
+    )
+    plan = LogicalPlan("role-shape-plan", "g", "p", [
+        PlanStep(
+            "orphan-step",
+            operation.id,
+            {"subject": "host"},
+            {"object": "domain"},
+            relation="observed",
+        ),
+    ])
+
+    result = SemanticPlanExecutor(RoleShapeAdapter(), [operation]).execute(
+        plan,
+        ProviderScope("p", "scope", {}),
+        "2026-01-01T00:00:00Z/P1D",
+        {"host": "host-1"},
+        variable_types={"host": "endpoint", "domain": "domain"},
+    )
+
+    execution = result.executions[0]
+    assert execution.proof_result is not None
+    assert execution.proof_result.verified is False
+    assert execution.proof_result.evaluator_id == "no_graph_goal"
+    assert result.binding_provenance["domain"][0]["status"] == "CANDIDATE"
+
+
+def test_default_proof_engine_no_contract_cannot_promote_provider_metadata() -> None:
+    """A complete row plus relation_observable remains retrieval-only without a contract."""
+    class NovelRelationAdapter:
+        def execute_query(self, operation_id, entity, window, limit, query_id):
+            return QueryResult(
+                query_id,
+                QueryOutcome.ROWS,
+                True,
+                True,
+                rows=[{"host": "host-1", "artifact": "artifact-1"}],
+            )
+
+    operation = ProviderOperation(
+        "lookup-novel-relation",
+        "p",
+        ("scope",),
+        input_entity_kinds=("host",),
+        output_entity_kinds=("artifact",),
+        output_value_bindings={"object": ("artifact",)},
+        output_binding_entity_kinds={"object": "artifact"},
+        guaranteed_relations=("novel_unapproved_relation",),
+        proof_mode="relation_observable",
+    )
+    plan = LogicalPlan("novel-plan", "g", "p", [
+        PlanStep(
+            "s1",
+            operation.id,
+            {"subject": "host"},
+            {"object": "artifact"},
+            relation="novel_unapproved_relation",
+        ),
+    ])
+
+    graph = SemanticGoalGraph(
+        id="g",
+        request_id="novel-request",
+        objective="Evaluate a novel relation",
+        variables=[
+            SemanticVariable("host", "host", "host-1"),
+            SemanticVariable("artifact", "artifact"),
+        ],
+        relations=[
+            SemanticRelationGoal(
+                id="s1",
+                subject="host",
+                relation="novel_unapproved_relation",
+                object="artifact",
+            ),
+        ],
+    )
+    result = SemanticPlanExecutor(NovelRelationAdapter(), [operation]).execute(
+        plan,
+        ProviderScope("p", "scope", {}),
+        "2026-01-01T00:00:00Z/P1D",
+        {"host": "host-1"},
+        variable_types={"host": "host", "artifact": "artifact"},
+        goal_graph=graph,
+    )
+
+    execution = result.executions[0]
+    assert execution.proof_result is not None
+    assert execution.proof_result.verdict == "PROOF_GAP"
+    assert execution.proof_result.evaluator_id == "no_contract"
+    assert result.binding_provenance["artifact"][0]["status"] == "CANDIDATE"
+    assert result.route_assessments[0].proof_complete is False
+
+
+def test_proof_evaluator_exception_is_preserved_as_explicit_proof_gap() -> None:
+    """Evaluator failures must be auditable and must never fall through to metadata proof."""
+    class RaisingProofEngine:
+        def evaluate(self, **kwargs):
+            raise RuntimeError("proof evaluator unavailable")
+
+    class NovelRelationAdapter:
+        def execute_query(self, operation_id, entity, window, limit, query_id):
+            return QueryResult(
+                query_id,
+                QueryOutcome.ROWS,
+                True,
+                True,
+                rows=[{"artifact": "artifact-1"}],
+            )
+
+    operation = ProviderOperation(
+        "lookup-novel-relation",
+        "p",
+        ("scope",),
+        input_entity_kinds=("host",),
+        output_entity_kinds=("artifact",),
+        output_value_bindings={"object": ("artifact",)},
+        output_binding_entity_kinds={"object": "artifact"},
+        guaranteed_relations=("novel_unapproved_relation",),
+        proof_mode="relation_observable",
+    )
+    plan = LogicalPlan("raising-plan", "g", "p", [
+        PlanStep(
+            "s1",
+            operation.id,
+            {"subject": "host"},
+            {"object": "artifact"},
+            relation="novel_unapproved_relation",
+        ),
+    ])
+
+    graph = SemanticGoalGraph(
+        id="g",
+        request_id="raising-request",
+        objective="Preserve proof evaluator failures",
+        variables=[
+            SemanticVariable("host", "host", "host-1"),
+            SemanticVariable("artifact", "artifact"),
+        ],
+        relations=[
+            SemanticRelationGoal(
+                id="s1",
+                subject="host",
+                relation="novel_unapproved_relation",
+                object="artifact",
+            ),
+        ],
+    )
+    result = SemanticPlanExecutor(
+        NovelRelationAdapter(),
+        [operation],
+        proof_engine=RaisingProofEngine(),
+    ).execute(
+        plan,
+        ProviderScope("p", "scope", {}),
+        "2026-01-01T00:00:00Z/P1D",
+        {"host": "host-1"},
+        variable_types={"host": "host", "artifact": "artifact"},
+        goal_graph=graph,
+    )
+
+    execution = result.executions[0]
+    assert execution.proof_result is not None
+    assert execution.proof_result.verdict == "PROOF_GAP"
+    assert "proof_evaluator_error" in execution.proof_result.reason_codes
+    assert "proof evaluator unavailable" in execution.proof_result.diagnostic
+    assert result.binding_provenance["artifact"][0]["status"] == "CANDIDATE"
+
+
+def test_untrusted_initial_binding_is_not_promoted_to_verified() -> None:
+    """A direct caller cannot assert verification merely by supplying an initial value."""
+    operation = ProviderOperation(
+        "lookup-file",
+        "p",
+        ("scope",),
+        input_entity_kinds=("host",),
+        output_entity_kinds=("file",),
+        output_value_bindings={"object": ("file",)},
+        output_binding_entity_kinds={"object": "file"},
+    )
+    plan = LogicalPlan("untrusted-binding", "g", "p", [
+        PlanStep("s1", operation.id, {"subject": "host"}, {"object": "file"}),
+    ])
+
+    result = SemanticPlanExecutor(FakeAdapter(), [operation]).execute(
+        plan,
+        ProviderScope("p", "scope", {}),
+        "2026-01-01T00:00:00Z/P1D",
+        {"host": "caller-injected-host"},
+        initial_variable_sources={"host": "caller"},
+        variable_types={"host": "host", "file": "file"},
+    )
+
+    assert result.binding_provenance["host"][0]["status"] == "CANDIDATE"

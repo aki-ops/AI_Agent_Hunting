@@ -320,9 +320,10 @@ def test_engine_stops_before_query_when_online_provider_is_irrelevant(
 
     result = engine.execute_hunt(request, adapters=[irrelevant])
 
+    assert result.state.stopping_decision != StoppingDecision.STOP_UNSUPPORTED
     assert result.state.stopping_decision in (
-        StoppingDecision.STOP_UNSUPPORTED,
-        StoppingDecision.STOP_UNSUPPORTED_CAPABILITY,
+        StoppingDecision.STOP_INCONCLUSIVE,
+        StoppingDecision.STOP_BUDGET,
     )
     assert irrelevant.executions == 0
     assert result.state.capability_graph.rejected_providers() == ["irrelevant"]

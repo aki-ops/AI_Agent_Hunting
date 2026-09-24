@@ -56,7 +56,7 @@ Select actions by mandatory status, answer utility, information gain and bounded
 For the current unresolved goal only, build a `CapabilityQuery` from types, constraint keys, relation text and answer role. Do not require `goal.relation == operation.guaranteed_relations`. Do not add scenario aliases.
 
 1. F0: exact approved proof-capable operations when labels already coincide.
-2. F1: retrieve top-k operations/sources/fields from the provider semantic index (no LLM). Record unretrieved items as unexamined.
+2. F1: retrieve top-k operation, source and field documents from the provider semantic index (no LLM). The in-repo index uses hashed n-gram dense similarity plus typed overlap; rank is not relevance. Record unretrieved items as unexamined.
 3. F2: at most one C2 call over that shortlist to propose mappings. Compact cards only. A deferred or failed C2 is a coverage gap, not `STOP_UNSUPPORTED`.
 4. F3: adjacent sources through declared joins/field relations on admitted candidates.
 5. F4: approved exhaustive discovery.
@@ -70,9 +70,10 @@ Unexamined sources remain explicit coverage gaps. Retrieval scores cannot create
 Store every value in a `CandidateSet` with provenance. Apply answer/variable cardinality:
 
 - singular + one proof-supported candidate: bind;
-- singular + multiple candidates: execute discriminator, otherwise ask user;
+- singular + multiple candidates: execute a declared discriminator, otherwise ask user;
 - plural: preserve all admissible candidates within budget;
-- candidate-only evidence may support exploration but not downstream proof that requires a verified input.
+- candidate-only evidence may support exploration but not downstream proof that requires a verified input;
+- EXPLORE records candidates and cannot `SEEK_PROOF`; PROVE without an approved route preserves the limitation.
 
 No selection by first row, substring, provider order or fixed hostname rules.
 
@@ -84,13 +85,13 @@ The planner emits provider-neutral `QueryIntent` in one mode:
 - `DISCRIMINATE`: distinguish candidates;
 - `PROVE`: retrieve evidence required by an approved contract.
 
-Prefer a deterministic provider compiler. C3 may propose a native query only when no compiler supports the intent. The query must pass parsing, read-only allowlist, scope binding, field/role checks, time/row/scan/runtime limits and cancellation support.
+Prefer a deterministic provider compiler. The default path records `QueryIntent -> LogicalQueryPlan -> NativeQuery` as an operation envelope and an explicit `unknown` cost when no backend estimator exists. Incomplete results paginate from the logical cursor or split the time window when the operation has no cursor pagination. Declared `correlation_roles` become adjacency plans and stay `NOT_PROOF`. C3 may propose a native query only when no compiler supports the intent. The query must pass `admit_c3_candidate`: parsing, read-only allowlist, scope binding, field/role checks, time/row/scan/runtime limits and rejection of truncated output.
 
 Output: a `QueryResult` whose `executed_ok`, `complete`, rows, cursor, diagnostics, scan and runtime are explicit.
 
 ### Step H — Build evidence without semantic promotion
 
-Append raw rows as immutable `Observation` records. Extract `FieldFact` records while preserving native provenance. Group repeated evidence for LLM context, but retain raw observation IDs.
+Append raw rows as immutable `Observation` records. Extract `FieldFact` records while preserving native provenance. Project them into an append-only `EvidenceGraph` whose edge classes are observed transition, provenance dependency or declared causal attribution. Graph proximity is `NOT_PROOF`. Group repeated evidence for LLM context, but retain raw observation IDs.
 
 Rows and extracted values are candidates. They are not verified relations.
 
@@ -217,6 +218,24 @@ The planner therefore receives `candidate_routes[goal_id]` and does not infer
 that a relation is supported merely because its text equals an operation
 label. Compatibility matching remains only for callers that have not yet
 migrated to route formation and is covered by the removal gate in `09`/`10`.
+
+### 6.2 Lifecycle and analyst boundary
+
+The runtime may emit a `HuntLifecycleRecord` containing preparation, the actual
+run account, cited analyst decisions, Act items and pending knowledge
+candidates. `CapabilityArtifact`, `HuntPackage` and `AnalyticPackage` are
+versioned control-plane inputs; only approved, tested packages may be used as
+F0 routes. The default engine compiles those packages into the same
+`ProviderOperation` / Observation / ProofContract path and records package
+versions on the run account. An LLM, a single hunt, or package metadata cannot
+approve content or verify a relation. Workspace annotations and decisions are
+append-only views over the run and never change semantic obligations, proof,
+budget or stop state directly. The default hunt attaches a `WorkspaceSnapshot`
+reconstructed from the machine account (query audit, timeline, entity pivot,
+native events, proof obligations, stop explanation, coverage) and emits an Act
+or explicit `no_action`. Binding review is a typed analyst action; it never
+auto-selects an ambiguous singular binding. Knowledge promotion is a separate
+reviewed registry operation with scope, temporal validity and conformance tests.
 
 ## 7. Definition of done
 

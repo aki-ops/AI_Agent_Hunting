@@ -100,7 +100,7 @@ def test_counterfactual_renamed_source():
     assert op is not None
     assert op.id == "cap_custom_assoc"
     assert op.provider_id == "splunk"
-    assert "associated_with" in op.guaranteed_relations
+    assert op.output_binding_entity_kinds.get("object") == "endpoint"
 
 
 def test_counterfactual_misleading_source_name():

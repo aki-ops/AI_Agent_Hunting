@@ -1,0 +1,10 @@
+{
+  "auto_model": "auto",
+  "specific_model": "mb/gemini-3.7-flash-high",
+  "successful_attempts": 0,
+  "auto_actual_models": [],
+  "mean_hidden_token_delta": null,
+  "findings": [
+    "No attempt returned provider prompt tokens; cannot measure hidden context."
+  ]
+}

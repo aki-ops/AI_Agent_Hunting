@@ -4,15 +4,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from eval.layers import LayeredHuntMetrics
+
 
 @dataclass
 class PlanningMetrics:
-    claim_precision: float = 1.0
-    claim_recall: float = 1.0
-    claim_f1: float = 1.0
-    unsupported_expansion_rate: float = 0.0
+    claim_precision: float = 0.0
+    claim_recall: float = 0.0
+    claim_f1: float = 0.0
+    unsupported_expansion_rate: float = 1.0
 
-    def to_dict(self) -> dict[str, float]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "claim_precision": self.claim_precision,
             "claim_recall": self.claim_recall,
@@ -23,26 +25,30 @@ class PlanningMetrics:
 
 @dataclass
 class RetrievalMetrics:
-    evidence_precision: float = 1.0
-    evidence_recall_at_k: float = 1.0
-    completeness_accuracy: float = 1.0
+    evidence_precision: float = 0.0
+    evidence_recall_at_k: float = 0.0
+    completeness_accuracy: float = 0.0
+    evidence_precision_labelled: bool = False
+    completeness_labelled: bool = False
 
-    def to_dict(self) -> dict[str, float]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "evidence_precision": self.evidence_precision,
             "evidence_recall_at_k": self.evidence_recall_at_k,
             "completeness_accuracy": self.completeness_accuracy,
+            "evidence_precision_labelled": self.evidence_precision_labelled,
+            "completeness_labelled": self.completeness_labelled,
         }
 
 
 @dataclass
 class CorrelationMetrics:
-    edge_precision: float = 1.0
-    edge_recall: float = 1.0
-    edge_f1: float = 1.0
-    transition_validity: float = 1.0
+    edge_precision: float = 0.0
+    edge_recall: float = 0.0
+    edge_f1: float = 0.0
+    transition_validity: float = 0.0
 
-    def to_dict(self) -> dict[str, float]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "edge_precision": self.edge_precision,
             "edge_recall": self.edge_recall,
@@ -53,11 +59,11 @@ class CorrelationMetrics:
 
 @dataclass
 class AnswerMetrics:
-    exact_match: float = 1.0
-    value_f1: float = 1.0
-    citation_grounding_rate: float = 1.0
+    exact_match: float = 0.0
+    value_f1: float = 0.0
+    citation_grounding_rate: float = 0.0
 
-    def to_dict(self) -> dict[str, float]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "exact_match": self.exact_match,
             "value_f1": self.value_f1,
@@ -67,14 +73,16 @@ class AnswerMetrics:
 
 @dataclass
 class OperationalMetrics:
-    decision_coverage: float = 1.0
+    decision_coverage: float = 0.0
     waste_ratio: float = 0.0
+    waste_labelled: bool = False
     mean_time_to_verdict_ms: float = 0.0
 
-    def to_dict(self) -> dict[str, float]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "decision_coverage": self.decision_coverage,
             "waste_ratio": self.waste_ratio,
+            "waste_labelled": self.waste_labelled,
             "mean_time_to_verdict_ms": self.mean_time_to_verdict_ms,
         }
 
@@ -96,6 +104,8 @@ class ScenarioEvaluationResult:
     operations: OperationalMetrics = field(default_factory=OperationalMetrics)
     cost_usd: float = 0.0
     run_account: dict[str, Any] | None = None
+    layers: LayeredHuntMetrics = field(default_factory=LayeredHuntMetrics)
+    envelope: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -114,6 +124,8 @@ class ScenarioEvaluationResult:
             "operations": self.operations.to_dict(),
             "cost_usd": self.cost_usd,
             "run_account": self.run_account,
+            "layers": self.layers.to_dict(),
+            "envelope": dict(self.envelope),
         }
 
 
@@ -124,4 +136,5 @@ __all__ = [
     "AnswerMetrics",
     "OperationalMetrics",
     "ScenarioEvaluationResult",
+    "LayeredHuntMetrics",
 ]

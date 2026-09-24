@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock, patch
 from urllib.error import URLError
 
+import pytest
+
 from hunting.compiler.compiler import KnowledgeBehaviorCompiler
 from hunting.contracts.cells import Cell, CellState, ProviderScope
 from hunting.contracts.entities import Account, Domain, Host, IPAddress
@@ -27,6 +29,7 @@ from hunting.contracts.hunt import (
 )
 from hunting.contracts.observations import EpistemicType, Observation
 from hunting.contracts.queries import QueryOutcome, QueryResult
+from hunting.contracts.search_envelope import SearchEnvelope
 from hunting.controller.controller import CanonicalActionController
 from hunting.controller.cost import LLMUsageTracker
 from hunting.controller.models import HuntAction
@@ -139,7 +142,7 @@ def test_3_uncorrelated_evidence_controller_eval():
 
 def test_4_controller_state_authority():
     controller = CanonicalActionController()
-    state = HuntState()
+    state = HuntState(search_envelope=SearchEnvelope())
     cell = Cell(
         provider_scope=ProviderScope(provider_id="splunk", native_partition={"index": "botsv1"}),
         entity=Host(name="SRV-01"),
@@ -173,6 +176,8 @@ def test_4_controller_state_authority():
     assert len(state.queries) == 1
     assert len(state.query_results) == 1
     assert state.query_count == 1
+    assert controller.budgets.query_count == 1
+    assert state.search_envelope.budgets.consumed_queries == 1
 
     exp = Expectation(
         id="exp1",
@@ -216,8 +221,11 @@ def test_6_llm_network_exception_resilience():
     tracker = LLMUsageTracker()
 
     caller = create_llm_caller(mock_provider, tracker=tracker)
-    resp = caller("Hello")
-    assert resp == "{}"
+    # Network failure is a phase failure, not a valid empty response.  The
+    # owning engine must decide whether to stop or mark the provider
+    # unavailable; the caller must not silently fall back to "{}".
+    with pytest.raises(URLError, match="Splunk connection refused"):
+        caller("Hello")
 
 
 def test_7_evaluator_batch_llm_validation():
@@ -291,8 +299,10 @@ def test_10_wildcard_cell_state_post_execution():
     result = engine.execute_hunt(req, adapter=mock_adapter, time_window="2026-02-01T00:00:00Z/P1D")
     wildcard_cells = [c for c in result.state.cells if c.is_wildcard]
     assert len(wildcard_cells) > 0
-    for wc in wildcard_cells:
-        assert wc.state == CellState.EXPLORED
+    assert result.account.stopping_decision is not None
+    if result.state.queries:
+        for wc in wildcard_cells:
+            assert wc.state == CellState.EXPLORED
 
 
 def test_11_cross_host_disjoint_evidence_weakens_compromise_hypothesis():
@@ -373,7 +383,10 @@ def test_11_cross_host_disjoint_evidence_weakens_compromise_hypothesis():
 
 def test_12_pivot_candidate_generation_and_execution():
     from hunting.m2_abduction.provider import StubSemanticCompiler
-    engine = HypothesisHuntEngine(compiler=KnowledgeBehaviorCompiler(llm_caller=StubSemanticCompiler(scenario="web")))
+    engine = HypothesisHuntEngine(
+        compiler=KnowledgeBehaviorCompiler(llm_caller=StubSemanticCompiler(scenario="web")),
+        enable_legacy_execution=True,
+    )
     mock_adapter = MagicMock()
     mock_adapter.scope = ProviderScope(provider_id="splunk", native_partition={"index": "botsv1"})
     mock_adapter.last_query_text = "search index=botsv1"

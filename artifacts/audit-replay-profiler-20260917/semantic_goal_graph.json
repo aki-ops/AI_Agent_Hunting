@@ -1,0 +1,203 @@
+{
+  "id": "goal-graph-hunt-req-20260916-034720",
+  "request_id": "hunt-req-20260916-034720",
+  "objective": "Determine the name of Mallory's critical PowerPoint presentation on her MacBook after it was encrypted by ransomware on August 18.",
+  "variables": [
+    {
+      "id": "subject",
+      "entity_type": "person",
+      "value": "Mallory",
+      "constraints": [],
+      "value_origin": "request",
+      "verification_status": "UNVERIFIED"
+    },
+    {
+      "id": "device",
+      "entity_type": "endpoint",
+      "value": null,
+      "constraints": [
+        {
+          "key": "hardware_descriptor",
+          "operator": "equals",
+          "value": "MacBook",
+          "retrieval_terms": [
+            "MacBook"
+          ]
+        }
+      ],
+      "value_origin": "llm_proposal",
+      "verification_status": "UNVERIFIED"
+    },
+    {
+      "id": "target",
+      "entity_type": "file",
+      "value": null,
+      "constraints": [
+        {
+          "key": "file_type",
+          "operator": "equals",
+          "value": "PowerPoint presentation",
+          "retrieval_terms": [
+            "PowerPoint",
+            ".ppt",
+            ".pptx",
+            ".pptm"
+          ]
+        },
+        {
+          "key": "importance",
+          "operator": "equals",
+          "value": "critical"
+        },
+        {
+          "key": "owner",
+          "operator": "equals",
+          "value": "Mallory"
+        }
+      ],
+      "value_origin": "llm_proposal",
+      "verification_status": "UNVERIFIED"
+    }
+  ],
+  "relations": [
+    {
+      "id": "goal-1",
+      "subject": "subject",
+      "relation": "owns",
+      "object": "device",
+      "required": true,
+      "description": "Establish the MacBook belonging to Mallory.",
+      "atomic_obligation": "Resolve Mallory's endpoint constrained by the MacBook hardware descriptor.",
+      "provenance_span": "her MacBook",
+      "dependencies": [],
+      "dependency_operator": "AND",
+      "gate_condition": null
+    },
+    {
+      "id": "goal-2",
+      "subject": "device",
+      "relation": "modified",
+      "object": "target",
+      "required": true,
+      "description": "Establish the critical PowerPoint presentation on Mallory's MacBook that was encrypted by ransomware on August 18.",
+      "atomic_obligation": "Resolve the file modified into an encrypted state on the identified device under the specified date and cause restrictions.",
+      "provenance_span": "critical PowerPoint presentation on her MacBook gets encrypted by ransomware on August 18",
+      "dependencies": [
+        "goal-1"
+      ],
+      "dependency_operator": "AND",
+      "gate_condition": null
+    }
+  ],
+  "qualifiers": [
+    {
+      "id": "qualifier-1",
+      "target_goal_id": "goal-2",
+      "qualifier": "modification_date",
+      "expected_value": "August 18",
+      "required": true
+    },
+    {
+      "id": "qualifier-2",
+      "target_goal_id": "goal-2",
+      "qualifier": "resulting_state",
+      "expected_value": "encrypted",
+      "required": true,
+      "retrieval_terms": [
+        "encrypted"
+      ]
+    },
+    {
+      "id": "qualifier-3",
+      "target_goal_id": "goal-2",
+      "qualifier": "modification_cause",
+      "expected_value": "ransomware",
+      "required": true,
+      "retrieval_terms": [
+        "ransomware"
+      ]
+    },
+    {
+      "id": "qualifier-4",
+      "target_goal_id": "goal-2",
+      "qualifier": "filename_observation_phase",
+      "expected_value": "after it was encrypted",
+      "required": true
+    }
+  ],
+  "answers": [
+    {
+      "variable_id": "target",
+      "answer_type": "file_name",
+      "required": true
+    }
+  ],
+  "answer_contracts": [
+    {
+      "slot_name": "target",
+      "value_type": "file_name",
+      "target_variable_id": "target",
+      "required_qualifiers": [
+        "qualifier-1",
+        "qualifier-2",
+        "qualifier-3",
+        "qualifier-4"
+      ],
+      "min_citations": 1,
+      "acceptable_aliases": [],
+      "acceptance_rule": "An observed post-encryption file name for the critical PowerPoint presentation owned by Mallory and modified on her MacBook by ransomware on August 18.",
+      "description": ""
+    }
+  ],
+  "dependencies": {
+    "goal-2": [
+      "goal-1"
+    ]
+  },
+  "dependency_kinds": {
+    "goal-1": "AND",
+    "goal-2": "AND"
+  },
+  "provenance_spans": {
+    "goal-1": "her MacBook",
+    "goal-2": "critical PowerPoint presentation on her MacBook gets encrypted by ransomware on August 18"
+  },
+  "assumptions": [],
+  "uncertainties": [
+    "The year associated with August 18 is not specified.",
+    "The ransomware family is not specified.",
+    "MacBook is an endpoint descriptor rather than a unique endpoint identifier."
+  ],
+  "forbidden_inferences": [
+    "Do not infer a year for August 18.",
+    "Do not infer a ransomware family.",
+    "Do not treat MacBook as a hostname or address.",
+    "Do not infer a specific PowerPoint extension without observation."
+  ],
+  "clarification_triggers": [
+    "Multiple files satisfy all required ownership, device, file-type, importance, date, state, and cause restrictions.",
+    "The available observations cannot distinguish the pre-encryption file name from the post-encryption file name."
+  ],
+  "clarification_predicates": [],
+  "clarification_evaluations": [],
+  "validation_diagnostics": [],
+  "graph_revision": "G0",
+  "revision_history": [],
+  "outcome_contract": {
+    "contract_kind": "FACTUAL_ANSWER",
+    "slots": [
+      "target"
+    ],
+    "types": {
+      "target": "file_name"
+    },
+    "cardinality": {},
+    "qualifiers": [
+      "qualifier-1",
+      "qualifier-2",
+      "qualifier-3",
+      "qualifier-4"
+    ],
+    "citations": []
+  }
+}

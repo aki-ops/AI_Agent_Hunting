@@ -1,0 +1,10 @@
+{
+  "id": "req-mallory-c1",
+  "kind": "NL_QUESTION",
+  "content": "Find sensitive files on Mallory's MacBook",
+  "entities": [
+    "Account(kind=<EntityKind.ACCOUNT: 'account'>, username='mallory')"
+  ],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

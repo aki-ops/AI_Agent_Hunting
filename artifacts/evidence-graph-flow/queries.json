@@ -1,0 +1,153 @@
+[
+  {
+    "query_id": "logical-goal-graph-evidence-graph-flow-step-1",
+    "requirement_id": "req-CVE-2024-21887-exploit",
+    "hypothesis_ids": [
+      "hypo-CVE-2024-21887-exploited"
+    ],
+    "semantic_intent": "process_ancestry",
+    "purpose": "Evidence of exploitation attempts targeting CVE-2024-21887: POST request containing command injection tokens in /api/v1/cav/client/status/path parameter; Execution of python/sh subprocesses by web server daemons",
+    "entity_binding": "subject=HOST-1",
+    "binding_provenance": {
+      "subject": {
+        "variable_id": "var_endpoint",
+        "provenance": "logical_plan",
+        "trust_class": "runtime_binding_required"
+      }
+    },
+    "expected_fields": [
+      "host",
+      "pid",
+      "ppid",
+      "image",
+      "cmdline"
+    ],
+    "retrieval_stage": "narrow",
+    "removed_retrieval_keys": [],
+    "provider": "cdb",
+    "provider_id": "cdb",
+    "native_language": "sql",
+    "native_query": "SELECT * FROM events WHERE timestamp >= ? AND timestamp <= ? AND host = ? AND cmdline LIKE ? AND (pid IS NOT NULL OR image IS NOT NULL OR cmdline IS NOT NULL) ORDER BY timestamp ASC LIMIT ? OFFSET ?",
+    "rows_count": 1,
+    "raw_count": null,
+    "observed_fields": [
+      "raw_ref",
+      "domain",
+      "file_path",
+      "event_id",
+      "pid",
+      "ppid",
+      "port",
+      "action",
+      "native_type",
+      "status",
+      "id",
+      "timestamp",
+      "cmdline",
+      "ip",
+      "user",
+      "host",
+      "image"
+    ],
+    "sample_rows": [
+      {
+        "host": "HOST-1",
+        "pid": "7",
+        "image": "/bin/sh",
+        "cmdline": "python -c id",
+        "timestamp": "2026-02-01T10:00:00Z",
+        "id": "1",
+        "native_type": "process_creation"
+      }
+    ],
+    "complete": true,
+    "executed_ok": true,
+    "diagnostic": null,
+    "truncation_reason": null,
+    "result_summary": "1 rows returned; complete=True",
+    "completeness_contract": "provider-declared",
+    "is_targeted": true,
+    "operation_id": "find_process_from_endpoint",
+    "scope_id": "cdb_security",
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "find_process_from_endpoint",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-evidence-graph-flow-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 1,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuation": {}
+  },
+  {
+    "query_id": "logical-goal-graph-evidence-graph-flow-step-2",
+    "requirement_id": "req-CVE-2024-21887-post",
+    "hypothesis_ids": [
+      "hypo-CVE-2024-21887-exploited"
+    ],
+    "semantic_intent": "file_modification",
+    "purpose": "Post-exploitation indicators for CVE-2024-21887: Web shell written into /home/etc/manifest/ or static web paths; Outbound TLS connection to adversary C2 infrastructure; Tampering with internal integrity checker tool (ICT)",
+    "entity_binding": "subject=7",
+    "binding_provenance": {
+      "subject": {
+        "variable_id": "var_exploit_proc",
+        "provenance": "logical_plan",
+        "trust_class": "runtime_binding_required"
+      }
+    },
+    "expected_fields": [
+      "host",
+      "image",
+      "file_path",
+      "action"
+    ],
+    "retrieval_stage": "narrow",
+    "removed_retrieval_keys": [],
+    "provider": "cdb",
+    "provider_id": "cdb",
+    "native_language": "sql",
+    "native_query": "SELECT * FROM events WHERE timestamp >= ? AND timestamp <= ? AND pid = ? AND (file_path IS NOT NULL OR action LIKE '%write%' OR action LIKE '%create%') ORDER BY timestamp ASC LIMIT ? OFFSET ?",
+    "rows_count": 0,
+    "raw_count": null,
+    "observed_fields": [],
+    "sample_rows": [],
+    "complete": true,
+    "executed_ok": true,
+    "diagnostic": null,
+    "truncation_reason": null,
+    "result_summary": "0 rows returned; complete=True",
+    "completeness_contract": "provider-declared",
+    "is_targeted": true,
+    "operation_id": "find_file_change_from_process",
+    "scope_id": "cdb_security",
+    "page_trace": [
+      {
+        "step_id": "step-2",
+        "operation_id": "find_file_change_from_process",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-evidence-graph-flow-step-2",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 0,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuation": {}
+  }
+]

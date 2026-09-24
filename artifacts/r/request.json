@@ -1,0 +1,10 @@
+{
+  "id": "r",
+  "kind": "NL_QUESTION",
+  "content": "content",
+  "entities": [
+    "Account(kind=<EntityKind.ACCOUNT: 'account'>, username='mallory')"
+  ],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

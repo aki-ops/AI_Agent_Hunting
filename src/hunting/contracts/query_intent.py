@@ -93,6 +93,7 @@ class QueryIntentSpec:
     binding_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
     retrieval_stage: str = "narrow"
     mode: str = QueryIntentMode.EXPLORE.value
+    differentiating_fields: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("goal_id", "operation_id", "source_id", "relation"):
@@ -111,6 +112,11 @@ class QueryIntentSpec:
         object.__setattr__(self, "binding_metadata", {
             str(key): dict(value) for key, value in self.binding_metadata.items()
         })
+        object.__setattr__(
+            self,
+            "differentiating_fields",
+            tuple(dict.fromkeys(str(item).strip() for item in self.differentiating_fields if str(item).strip())),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -129,6 +135,7 @@ class QueryIntentSpec:
             "max_rows": self.max_rows,
             "expected_cost": self.expected_cost,
             "retrieval_stage": self.retrieval_stage,
+            "differentiating_fields": list(self.differentiating_fields),
         }
 
 

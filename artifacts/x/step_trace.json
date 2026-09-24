@@ -1,0 +1,75 @@
+{
+  "request_id": "x",
+  "step_count": 5,
+  "steps": [
+    {
+      "step_name": "STEP_A_FREEZE_REQUEST",
+      "step_index": 1,
+      "timestamp_iso": "2026-09-20T12:49:27Z",
+      "duration_ms": 0.0,
+      "status": "SUCCESS",
+      "inputs_summary": {
+        "request_id": "x",
+        "content": "CVE-2024-21887"
+      },
+      "outputs_summary": {},
+      "diagnostics": []
+    },
+    {
+      "step_name": "STEP_B_COMPILE_GOAL_GRAPH",
+      "step_index": 2,
+      "timestamp_iso": "2026-09-20T12:49:27Z",
+      "duration_ms": 0.0,
+      "status": "SUCCESS",
+      "inputs_summary": {
+        "request_id": "x"
+      },
+      "outputs_summary": {
+        "has_semantic_goal_graph": true
+      },
+      "diagnostics": []
+    },
+    {
+      "step_name": "STEP_C_RESOLVE_FRONTIER",
+      "step_index": 3,
+      "timestamp_iso": "2026-09-20T12:49:27Z",
+      "duration_ms": 0.0,
+      "status": "SUCCESS",
+      "inputs_summary": {
+        "profiling_requirements": 2
+      },
+      "outputs_summary": {
+        "coverage_manifests": 2
+      },
+      "diagnostics": []
+    },
+    {
+      "step_name": "STEP_I_CHECK_STOPPING",
+      "step_index": 4,
+      "timestamp_iso": "2026-09-20T12:49:27Z",
+      "duration_ms": 0.0,
+      "status": "SUCCESS",
+      "inputs_summary": {
+        "stopping_decision": "StoppingDecision.STOP_UNSUPPORTED"
+      },
+      "outputs_summary": {
+        "status": "EVALUATED_BEFORE_FINAL_REPORT"
+      },
+      "diagnostics": []
+    },
+    {
+      "step_name": "STEP_J_REPORT_AND_ACCOUNT",
+      "step_index": 5,
+      "timestamp_iso": "2026-09-20T12:49:27Z",
+      "duration_ms": 0.0,
+      "status": "SUCCESS",
+      "inputs_summary": {
+        "request_id": "x"
+      },
+      "outputs_summary": {
+        "report_length": 4898
+      },
+      "diagnostics": []
+    }
+  ]
+}

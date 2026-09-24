@@ -1,0 +1,8 @@
+{
+  "id": "S09_powerpoint_benign_download",
+  "kind": "HYPOTHESIS",
+  "content": "Did a user download Frothly_marketing_campaign_Q317.pptx without any encryption observed?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

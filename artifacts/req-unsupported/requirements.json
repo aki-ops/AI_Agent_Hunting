@@ -1,0 +1,9 @@
+[
+  {
+    "id": "rel-1",
+    "description": "process_execution",
+    "evidence_type": "process_execution",
+    "status": "DEFINED",
+    "necessity": "CRITICAL"
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "id": "hypo-req-discrim-1",
+    "statement": "Which host executed an encoded PowerShell command?",
+    "status": "SUPPORTED",
+    "hypothesis_class": "",
+    "requirements": [
+      "goal-1"
+    ]
+  }
+]

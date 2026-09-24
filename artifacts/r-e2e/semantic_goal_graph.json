@@ -1,0 +1,95 @@
+{
+  "id": "g-e2e",
+  "request_id": "r-e2e",
+  "objective": "host running powershell",
+  "variables": [
+    {
+      "id": "cmd",
+      "entity_type": "command_execution",
+      "value": null,
+      "constraints": [
+        {
+          "key": "cmdline",
+          "operator": "contains",
+          "value": "powershell"
+        },
+        {
+          "key": "encoding",
+          "operator": "equals",
+          "value": "encoded"
+        }
+      ],
+      "value_origin": "llm_proposal",
+      "verification_status": "UNVERIFIED"
+    },
+    {
+      "id": "host",
+      "entity_type": "host",
+      "value": null,
+      "constraints": [],
+      "value_origin": "llm_proposal",
+      "verification_status": "UNVERIFIED"
+    }
+  ],
+  "relations": [
+    {
+      "id": "goal-1",
+      "subject": "cmd",
+      "relation": "executed_on",
+      "object": "host",
+      "required": true,
+      "description": "",
+      "atomic_obligation": "",
+      "provenance_span": "",
+      "dependencies": [],
+      "dependency_operator": "AND",
+      "gate_condition": null
+    }
+  ],
+  "qualifiers": [],
+  "answers": [
+    {
+      "variable_id": "host",
+      "answer_type": "host",
+      "required": true
+    }
+  ],
+  "answer_contracts": [
+    {
+      "slot_name": "host",
+      "value_type": "host",
+      "target_variable_id": "host",
+      "required_qualifiers": [],
+      "min_citations": 1,
+      "acceptable_aliases": [],
+      "acceptance_rule": "observed value",
+      "description": ""
+    }
+  ],
+  "dependencies": {},
+  "dependency_kinds": {
+    "goal-1": "AND"
+  },
+  "provenance_spans": {},
+  "assumptions": [],
+  "uncertainties": [],
+  "forbidden_inferences": [],
+  "clarification_triggers": [],
+  "validation_diagnostics": [
+    "Goal 'goal-1' missing explicit request provenance span."
+  ],
+  "graph_revision": "G0",
+  "revision_history": [],
+  "outcome_contract": {
+    "contract_kind": "FACTUAL_ANSWER",
+    "slots": [
+      "host"
+    ],
+    "types": {
+      "host": "host"
+    },
+    "cardinality": {},
+    "qualifiers": [],
+    "citations": []
+  }
+}

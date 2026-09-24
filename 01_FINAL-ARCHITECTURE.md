@@ -341,3 +341,15 @@ authority path.
 This decision solves goal identity collision and open-vocabulary route
 formation. It does not claim retrieval or provider coverage is complete;
 frontier, execution, proof and unexamined state remain separately measured.
+
+### Control-plane lifecycle decision (ADR-20260920-02)
+
+Reusable capability, hunt and analytic packages, analyst workspace records and
+knowledge candidates are control-plane records around the same v9 kernel. They
+are versioned and scoped, but they are never incident evidence and their
+metadata cannot grant proof authority. A package is an F0 execution asset only
+after explicit approval and conformance fixtures. A run may emit an Act or
+`KnowledgeCandidate`, but promotion requires human review, cited run evidence
+and passing tests; an LLM or one run cannot auto-promote durable knowledge.
+Workspace annotations are append-only and cannot mutate goal, evidence, proof,
+budget or stop state.

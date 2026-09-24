@@ -13,6 +13,7 @@ from enum import Enum
 from typing import Any
 
 from hunting.contracts.bindings import CandidateSet
+from hunting.contracts.ontology import roles_are_compatible
 
 
 class DisambiguationAction(str, Enum):
@@ -103,15 +104,22 @@ class ClarificationController:
             attempts = self._discriminator_attempts.get(var_id, 0)
 
             # Step 1: Synthesize a cheap discriminator query only if differentiating field exists
-            has_differentiating_field = bool(candidate_set.entity_type in {"host", "endpoint", "user", "account"})
+            has_differentiating_field = True
             if attempts < self.max_discriminator_attempts and has_differentiating_field:
                 self._discriminator_attempts[var_id] = attempts + 1
                 cand_vals = tuple(c.value for c in valid)
+                entity = str(candidate_set.entity_type or "")
+                if entity in {"host", "endpoint"}:
+                    relation, field = "logged_on_to", "host"
+                elif entity in {"user", "account"}:
+                    relation, field = "observed", "username"
+                else:
+                    relation, field = "observed", entity or "value"
                 discriminator = DiscriminatorQuerySpec(
                     target_variable_id=var_id,
                     candidate_values=cand_vals,
-                    discriminator_relation="logged_on_to" if candidate_set.entity_type in {"host", "endpoint"} else "observed",
-                    discriminator_field="host" if candidate_set.entity_type in {"host", "endpoint"} else "username",
+                    discriminator_relation=relation,
+                    discriminator_field=field,
                     expected_information_gain=1.0,
                     estimated_cost=1,
                     description=f"Differentiate {len(cand_vals)} candidates for '{var_id}': {cand_vals}",
@@ -149,6 +157,97 @@ class ClarificationController:
 
         # 0 valid candidates
         return DisambiguationAction.NEEDS_DISAMBIGUATION, None
+
+    @staticmethod
+    def select_discriminator_operation(
+        operations: Any,
+        spec: DiscriminatorQuerySpec,
+        entity_type: str,
+        exclude_operation_ids: tuple[str, ...] | list[str] = (),
+        exclude_native_signatures: tuple[str, ...] | list[str] = (),
+    ) -> Any:
+        """Return a catalog operation that can discriminate without candidate fan-out.
+
+        The operation must emit the ambiguous entity type from a different
+        relation than the producing query. It must not require that entity as
+        its only input; that would replay every candidate instead of differentiating.
+        Fan-out limits never skip this selection.
+        """
+        target = str(entity_type or "").casefold()
+        preferred = str(spec.discriminator_relation or "").casefold()
+        fallbacks = {
+            "logged_on_to",
+            "owns",
+            "associated_with",
+            "assigned_to",
+            "observed",
+        }
+        accepted = {preferred} | fallbacks if preferred else fallbacks
+        excluded = {str(item) for item in exclude_operation_ids}
+        excluded_signatures = {
+            str(item).strip()
+            for item in exclude_native_signatures
+            if str(item).strip()
+        }
+        ranked: list[tuple[int, Any]] = []
+        for operation in operations or ():
+            if getattr(operation, "id", "") in excluded:
+                continue
+            native_signature = ClarificationController.operation_native_signature(operation)
+            if native_signature and native_signature in excluded_signatures:
+                continue
+            # Without a provider-declared discriminator field this operation
+            # can only replay the original lookup under another ID.
+            if not tuple(getattr(operation, "discriminator_fields", ()) or ()):
+                continue
+            rels = {str(item).casefold() for item in getattr(operation, "guaranteed_relations", ()) or ()}
+            if not (rels & accepted):
+                continue
+            outputs = {str(item).casefold() for item in getattr(operation, "output_entity_kinds", ()) or ()}
+            output_roles = {str(item).casefold() for item in getattr(operation, "output_roles", ()) or ()}
+            emits_target = (
+                target in outputs
+                or target in output_roles
+                or any(roles_are_compatible(target, item) for item in outputs | output_roles)
+            )
+            if not emits_target:
+                continue
+            inputs = {str(item).casefold() for item in getattr(operation, "input_entity_kinds", ()) or ()}
+            input_roles = {str(item).casefold() for item in getattr(operation, "input_roles", ()) or ()}
+            requires_only_target = (
+                bool(inputs | input_roles)
+                and all(
+                    item == target or roles_are_compatible(target, item)
+                    for item in (inputs | input_roles)
+                )
+            )
+            if requires_only_target:
+                continue
+            score = 0 if preferred and preferred in rels else 1
+            ranked.append((score, operation))
+        ranked.sort(key=lambda item: item[0])
+        return ranked[0][1] if ranked else None
+
+    @staticmethod
+    def operation_native_signature(operation: Any) -> str:
+        """Return the provider-declared or structural native operation signature."""
+        declared = str(getattr(operation, "native_signature", "") or "").strip()
+        if declared:
+            return declared
+        query_builder = str(getattr(operation, "query_builder", "") or "").strip()
+        if query_builder:
+            return query_builder
+        # Structural fallback deliberately ignores operation IDs so aliases
+        # with the same native contract compare equal.
+        parts = (
+            tuple(sorted(str(v).casefold() for v in getattr(operation, "input_entity_kinds", ()) or ())),
+            tuple(sorted(str(v).casefold() for v in getattr(operation, "output_entity_kinds", ()) or ())),
+            tuple(sorted(str(v).casefold() for v in getattr(operation, "input_roles", ()) or ())),
+            tuple(sorted(str(v).casefold() for v in getattr(operation, "output_roles", ()) or ())),
+            tuple(sorted(str(v).casefold() for v in getattr(operation, "output_fields", ()) or ())),
+            tuple(sorted(str(v).casefold() for v in getattr(operation, "guaranteed_relations", ()) or ())),
+        )
+        return repr(parts)
 
 
 __all__ = [

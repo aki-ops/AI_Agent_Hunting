@@ -1,9 +1,9 @@
 [
   {
     "id": "card-e5d92fdeb056",
-    "summary": "Process artifact observed on wrk-amber: C:\\Tor\\firefox.exe",
-    "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
-    "fact_type": "process_execution",
+    "summary": "File modification on wrk-amber: C:\\Tor\\firefox.exe",
+    "why_it_matters": "Observed disk write activity, indicating payload delivery, persistence creation, or artifact modification.",
+    "fact_type": "file_modification",
     "count": 1,
     "confidence": "MEDIUM",
     "hypotheses": [],
@@ -21,6 +21,9 @@
     "entity_summary": {
       "hosts": [
         "wrk-amber"
+      ],
+      "files": [
+        "C:\\Tor\\firefox.exe"
       ]
     },
     "time_summary": {

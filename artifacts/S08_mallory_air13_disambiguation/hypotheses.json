@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-S08_mallory_air13_disambiguation-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'Which endpoint host did Mallory use on 2017-08-18?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

@@ -1,0 +1,46 @@
+[
+  {
+    "id": "card-0edf9f9f183a",
+    "summary": "Process: /bin/sh Host: HOST-1",
+    "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
+    "fact_type": "process_execution",
+    "count": 1,
+    "confidence": "MEDIUM",
+    "hypotheses": [],
+    "requirements": [],
+    "query_ids": [
+      "logical-goal-graph-final-flow-step-1"
+    ],
+    "replay": {
+      "artifact": "observations.jsonl",
+      "query_ids": [
+        "logical-goal-graph-final-flow-step-1"
+      ],
+      "command": "python -m hunting.cli show-observation --observation-id obs-logical-goal-graph-final-flow-step-1-0"
+    },
+    "entity_summary": {
+      "hosts": [
+        "HOST-1"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2026-02-01T10:00:00Z",
+      "latest": "2026-02-01T10:00:00Z",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "python -c id"
+      ],
+      "images": [
+        "/bin/sh"
+      ],
+      "process_names": [
+        "/bin/sh"
+      ]
+    },
+    "representative_observation_ids": [
+      "obs-logical-goal-graph-final-flow-step-1-0"
+    ]
+  }
+]

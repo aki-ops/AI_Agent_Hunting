@@ -12,6 +12,7 @@ from hunting.m2_abduction.provider import (
     LLMCommunicationError,
     LLMProvider,
     LLMTimeoutError,
+    LLMUpstreamTimeoutError,
     StubAbductionProvider,
 )
 from hunting.m2_abduction.schema import (
@@ -29,10 +30,10 @@ __all__ = [
     "ApiLLMProvider",
     "LLMTimeoutError",
     "LLMCommunicationError",
+    "LLMUpstreamTimeoutError",
     "sanitize_observation_for_llm",
     "build_llm_prompt_context",
     "parse_entity_dict",
     "parse_predicate_dict",
     "validate_m2_response",
 ]
-

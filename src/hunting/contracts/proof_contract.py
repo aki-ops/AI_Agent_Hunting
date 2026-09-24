@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from hunting.contracts.ontology import canonicalize_role, roles_are_compatible
+
 
 def _required(value: str, name: str) -> str:
     text = str(value).strip()
@@ -123,20 +125,24 @@ class ProofContract:
         output_role_keys = {str(k).strip().casefold() for k in output_roles.keys()}
         provided_roles = input_role_keys | output_role_keys
 
-        missing_entities = [r for r in self.required_entity_roles if r not in provided_roles]
+        def _role_satisfied(required_role: str, available_roles: set[str]) -> bool:
+            return any(roles_are_compatible(required_role, available) for available in available_roles)
+
+        def _all_roles_satisfied(required_roles: tuple[str, ...], candidate_roles: set[str]) -> bool:
+            return all(_role_satisfied(req, candidate_roles) for req in required_roles)
+
+        missing_entities = [r for r in self.required_entity_roles if not _role_satisfied(r, provided_roles)]
         if missing_entities:
             return False, (f"missing_entity_roles:{','.join(missing_entities)}",)
 
-        missing_values = [r for r in self.required_value_roles if r not in provided_roles]
+        missing_values = [r for r in self.required_value_roles if not _role_satisfied(r, provided_roles)]
         if missing_values:
             return False, (f"missing_value_roles:{','.join(missing_values)}",)
 
         # Enforce directional separation: input roles must cover entity or value, output roles the other
-        req_entities = set(self.required_entity_roles)
-        req_values = set(self.required_value_roles)
         valid_direction = (
-            (req_entities.issubset(input_role_keys) and req_values.issubset(output_role_keys))
-            or (req_values.issubset(input_role_keys) and req_entities.issubset(output_role_keys))
+            (_all_roles_satisfied(self.required_entity_roles, input_role_keys) and _all_roles_satisfied(self.required_value_roles, output_role_keys))
+            or (_all_roles_satisfied(self.required_value_roles, input_role_keys) and _all_roles_satisfied(self.required_entity_roles, output_role_keys))
         )
         if not valid_direction:
             return False, ("roles_do_not_satisfy_contract_direction",)
@@ -145,7 +151,7 @@ class ProofContract:
         for role, field_name in list(input_roles.items()) + list(output_roles.items()):
             r_norm = str(role).strip().casefold()
             f_norm = str(field_name).strip().casefold()
-            incompat = ROLE_INCOMPATIBLE_FIELDS.get(r_norm, set())
+            incompat = ROLE_INCOMPATIBLE_FIELDS.get(r_norm) or ROLE_INCOMPATIBLE_FIELDS.get(canonicalize_role(r_norm), set())
             if f_norm in incompat:
                 return False, (f"native_field_semantically_incompatible:{role}->{field_name}",)
 
@@ -214,6 +220,8 @@ class ProofResult:
     bindings: tuple[tuple[str, str], ...] = ()
     satisfied_obligations: tuple[str, ...] = ()
     missing_obligations: tuple[str, ...] = ()
+    satisfied_constraints: tuple[str, ...] = ()
+    unsatisfied_constraints: tuple[str, ...] = ()
     citations: tuple[str, ...] = ()
     cited_fields: tuple[tuple[str, str], ...] = ()
     completeness_satisfied: bool = False
@@ -234,6 +242,8 @@ class ProofResult:
             "reason_codes",
             "satisfied_obligations",
             "missing_obligations",
+            "satisfied_constraints",
+            "unsatisfied_constraints",
             "citations",
             "limitations",
         ):
@@ -281,6 +291,8 @@ class ProofResult:
             "bindings": dict(self.bindings),
             "satisfied_obligations": list(self.satisfied_obligations),
             "missing_obligations": list(self.missing_obligations),
+            "satisfied_constraints": list(self.satisfied_constraints),
+            "unsatisfied_constraints": list(self.unsatisfied_constraints),
             "citations": list(self.citations),
             "cited_fields": dict(self.cited_fields),
             "completeness_satisfied": self.completeness_satisfied,

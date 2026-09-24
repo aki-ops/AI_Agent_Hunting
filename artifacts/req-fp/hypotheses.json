@@ -1,0 +1,11 @@
+[
+  {
+    "id": "hypo-req-fp",
+    "statement": "Which host executed an encoded PowerShell command?",
+    "status": "LIVE",
+    "hypothesis_class": "",
+    "requirements": [
+      "goal-1"
+    ]
+  }
+]

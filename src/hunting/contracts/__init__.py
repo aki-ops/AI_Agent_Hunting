@@ -6,6 +6,7 @@ from hunting.contracts.bindings import (
     CandidateSet,
     ConfidenceClass,
 )
+from hunting.contracts.candidate_route import CandidateRoute, RouteAdmission, RouteClass, RouteMode
 from hunting.contracts.capabilities import (
     CapabilityDescriptor,
     CapabilityGraph,
@@ -15,7 +16,6 @@ from hunting.contracts.capabilities import (
     ProviderSelectionAudit,
 )
 from hunting.contracts.capability_query import CapabilityQuery, build_capability_queries
-from hunting.contracts.candidate_route import CandidateRoute, RouteAdmission, RouteClass, RouteMode
 from hunting.contracts.case_graph import (
     ActionCandidate,
     EvidenceGoal,
@@ -142,6 +142,7 @@ from hunting.contracts.ontology import (
     get_canonical_relation,
     get_inverse_relation,
     roles_are_compatible,
+    types_are_compatible,
 )
 from hunting.contracts.queries import (
     Diagnostic,
@@ -203,9 +204,9 @@ from hunting.contracts.state import (
 )
 from hunting.contracts.transforms import (
     BashInterpreterTransform,
+    NestedKeyExtractionTransform,
     PowerShellEncodedTransform,
     PowerShellInterpreterTransform,
-    NestedKeyExtractionTransform,
     SemanticTransform,
     evaluate_constraint_against_row,
     get_transform_for_constraint,
@@ -394,6 +395,7 @@ __all__ = [
     "get_canonical_relation",
     "get_inverse_relation",
     "roles_are_compatible",
+    "types_are_compatible",
     # Modular Semantic Transforms
     "BashInterpreterTransform",
     "PowerShellEncodedTransform",

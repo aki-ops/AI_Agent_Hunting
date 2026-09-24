@@ -1,0 +1,8 @@
+{
+  "id": "r-e2e",
+  "kind": "QUESTION",
+  "content": "Which host executed encoded powershell?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

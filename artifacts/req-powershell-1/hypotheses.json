@@ -1,0 +1,11 @@
+[
+  {
+    "id": "hypo-req-powershell-1",
+    "statement": "Identify host executing encoded PowerShell",
+    "status": "SUPPORTED",
+    "hypothesis_class": "",
+    "requirements": [
+      "goal-1"
+    ]
+  }
+]

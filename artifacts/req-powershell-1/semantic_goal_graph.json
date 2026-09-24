@@ -1,0 +1,101 @@
+{
+  "id": "goal-graph-powershell",
+  "request_id": "req-powershell-1",
+  "objective": "Identify host executing encoded PowerShell",
+  "variables": [
+    {
+      "id": "cmd",
+      "entity_type": "command_execution",
+      "value": null,
+      "constraints": [
+        {
+          "key": "cmdline",
+          "operator": "contains",
+          "value": "powershell"
+        },
+        {
+          "key": "encoding",
+          "operator": "equals",
+          "value": "encoded",
+          "retrieval_terms": [
+            "-enc",
+            "-encodedcommand"
+          ]
+        }
+      ],
+      "value_origin": "llm_proposal",
+      "verification_status": "UNVERIFIED"
+    },
+    {
+      "id": "host",
+      "entity_type": "host",
+      "value": null,
+      "constraints": [],
+      "value_origin": "llm_proposal",
+      "verification_status": "UNVERIFIED"
+    }
+  ],
+  "relations": [
+    {
+      "id": "goal-1",
+      "subject": "cmd",
+      "relation": "executed_on",
+      "object": "host",
+      "required": true,
+      "description": "powershell process executed on host",
+      "atomic_obligation": "identify executing host",
+      "provenance_span": "host executed an encoded PowerShell command",
+      "dependencies": [],
+      "dependency_operator": "AND",
+      "gate_condition": null
+    }
+  ],
+  "qualifiers": [],
+  "answers": [
+    {
+      "variable_id": "host",
+      "answer_type": "host",
+      "required": true
+    }
+  ],
+  "answer_contracts": [
+    {
+      "slot_name": "host",
+      "value_type": "host",
+      "target_variable_id": "host",
+      "required_qualifiers": [],
+      "min_citations": 1,
+      "acceptable_aliases": [],
+      "acceptance_rule": "observed value",
+      "description": ""
+    }
+  ],
+  "dependencies": {},
+  "dependency_kinds": {
+    "goal-1": "AND"
+  },
+  "provenance_spans": {
+    "goal-1": "host executed an encoded PowerShell command"
+  },
+  "assumptions": [],
+  "uncertainties": [],
+  "forbidden_inferences": [],
+  "clarification_triggers": [],
+  "clarification_predicates": [],
+  "clarification_evaluations": [],
+  "validation_diagnostics": [],
+  "graph_revision": "G0",
+  "revision_history": [],
+  "outcome_contract": {
+    "contract_kind": "FACTUAL_ANSWER",
+    "slots": [
+      "host"
+    ],
+    "types": {
+      "host": "host"
+    },
+    "cardinality": {},
+    "qualifiers": [],
+    "citations": []
+  }
+}

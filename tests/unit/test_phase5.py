@@ -94,6 +94,47 @@ def test_api_llm_config_secrets_separated_from_state():
         assert sent_body["max_tokens"] == 3000
 
 
+def test_gemini_native_config_and_response_parsing(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "LLM_PROVIDER=gemini\n"
+        "GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta\n"
+        "GEMINI_API_KEY=gemini-test-key\n"
+        "GEMINI_MODEL=gemini-flash-latest\n"
+        "LLM_TIMEOUT=17\n"
+        "LLM_MAX_TOKENS=321\n",
+        encoding="utf-8",
+    )
+    config = ApiLLMConfig.from_env(str(env_file))
+    assert config.is_gemini is True
+    assert config.model == "gemini-flash-latest"
+    assert config.endpoint.endswith("/models/gemini-flash-latest:generateContent")
+
+    response_body = json.dumps({
+        "candidates": [{
+            "content": {"parts": [{"text": '{"ok":true}'}]},
+            "finishReason": "STOP",
+        }],
+        "usageMetadata": {"promptTokenCount": 12, "candidatesTokenCount": 4},
+    }).encode("utf-8")
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = response_body
+    mock_resp.__enter__.return_value = mock_resp
+
+    with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+        provider = ApiLLMProvider(config)
+        response = provider.generate({"observations": []})
+
+    assert response == '{"ok":true}'
+    assert provider.last_usage == {"prompt_tokens": 12, "completion_tokens": 4}
+    req_arg = mock_urlopen.call_args[0][0]
+    assert req_arg.full_url.endswith("/models/gemini-flash-latest:generateContent")
+    assert req_arg.headers["X-goog-api-key"] == "gemini-test-key"
+    sent_body = json.loads(req_arg.data.decode("utf-8"))
+    assert sent_body["contents"][0]["role"] == "user"
+    assert sent_body["generationConfig"]["maxOutputTokens"] == 321
+
+
 
 def test_security_prompt_injection_boundary_and_hidden_fields():
     scope = ProviderScope("cdb", {"table": "events"}, "scope1")

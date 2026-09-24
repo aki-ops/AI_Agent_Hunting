@@ -1,0 +1,9 @@
+[
+  {
+    "id": "h1",
+    "statement": "Find sensitive files on Mallory's MacBook",
+    "status": "LIVE",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

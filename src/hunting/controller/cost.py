@@ -82,7 +82,10 @@ def get_model_pricing(model_name: str) -> dict[str, float]:
 
 COMPONENT_TOKEN_CEILINGS: dict[str, dict[str, int]] = {
     "compiler": {"max_input": 2500, "max_output": 1200},
-    "source_profiler": {"max_input": 1800, "max_output": 700},
+    # C2 carries the full provider-neutral CapabilityQuery plus a bounded
+    # nested-payload census.  A smaller ceiling silently defers the only
+    # source-discovery call after adding the required semantic context.
+    "source_profiler": {"max_input": 4000, "max_output": 700},
     "planner": {"max_input": 1800, "max_output": 700},
     "adaptive_planner": {"max_input": 1800, "max_output": 700},
     "evaluator": {"max_input": 2500, "max_output": 800},
@@ -90,7 +93,7 @@ COMPONENT_TOKEN_CEILINGS: dict[str, dict[str, int]] = {
     "narrative": {"max_input": 1500, "max_output": 600},
     LLMPhase.C1_COMPILER.value: {"max_input": 2500, "max_output": 1200},
     LLMPhase.C1V_AMBIGUITY.value: {"max_input": 1500, "max_output": 600},
-    LLMPhase.C2_SOURCE_PROFILER.value: {"max_input": 1800, "max_output": 700},
+    LLMPhase.C2_SOURCE_PROFILER.value: {"max_input": 4000, "max_output": 700},
     LLMPhase.C3_QUERY_GEN.value: {"max_input": 1800, "max_output": 700},
     LLMPhase.C4_DISCRIMINATOR.value: {"max_input": 2500, "max_output": 800},
     LLMPhase.C5_REPLAN.value: {"max_input": 2000, "max_output": 900},
@@ -119,6 +122,12 @@ class LLMCallRecord:
     duration_ms: float = 0.0
     cost_usd: float = 0.0
     model: str = ""
+    configured_model: str = ""
+    actual_model: str | None = None
+    first_byte_ms: float | None = None
+    http_status: int | None = None
+    request_id: str | None = None
+    error_class: str = ""
     prompt_hash: str = ""
     validation_result: str = ""
     validation_status: str = "VALID"
@@ -149,6 +158,12 @@ class LLMCallRecord:
             "cost_usd": self.cost_usd,
             "timestamp": self.timestamp_iso,
             "model": self.model,
+            "configured_model": self.configured_model,
+            "actual_model": self.actual_model,
+            "first_byte_ms": self.first_byte_ms,
+            "http_status": self.http_status,
+            "request_id": self.request_id,
+            "error_class": self.error_class,
             "prompt_hash": self.prompt_hash,
             "validation_result": self.validation_result,
             "validation_status": self.validation_status,
@@ -176,7 +191,7 @@ class LLMUsageTracker:
         self.max_total_tokens = max_total_tokens if max_total_tokens is not None else self.policy.max_total_tokens
         self.model_name = model_name if model_name is not None else self.policy.model_name
 
-        self.component_limits = component_limits or {
+        default_component_limits = {
             "compiler": 2,
             "source_profiler": 1,
             "planner": 1,
@@ -184,6 +199,14 @@ class LLMUsageTracker:
             "replan": 1,
             "narrative": 0,
         }
+        # Diagnostic correctness runs are governed by the deliberately high
+        # per-phase/global policy ceilings.  Retaining legacy component caps
+        # here would silently starve C1-C5 despite --unbounded-llm.
+        self.component_limits = (
+            dict(component_limits)
+            if component_limits is not None
+            else ({} if self.policy.diagnostic_unbounded else default_component_limits)
+        )
         self.calls: list[LLMCallRecord] = []
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
@@ -338,7 +361,9 @@ class LLMUsageTracker:
 
         prompt_tokens = self.estimate_tokens(prompt)
         reserved_completion = max(0, int(expected_completion_tokens))
-        ceilings = COMPONENT_TOKEN_CEILINGS.get(norm.value) or COMPONENT_TOKEN_CEILINGS.get(component)
+        ceilings = None if self.policy.diagnostic_unbounded else (
+            COMPONENT_TOKEN_CEILINGS.get(norm.value) or COMPONENT_TOKEN_CEILINGS.get(component)
+        )
         if ceilings:
             if prompt_tokens > ceilings["max_input"]:
                 raise LLMPreflightRejectionError(
@@ -366,6 +391,12 @@ class LLMUsageTracker:
         response: str,
         duration_ms: float = 0.0,
         model: str | None = None,
+        configured_model: str | None = None,
+        actual_model: str | None = None,
+        first_byte_ms: float | None = None,
+        http_status: int | None = None,
+        request_id: str | None = None,
+        error_class: str = "",
         actual_prompt_tokens: int | None = None,
         actual_completion_tokens: int | None = None,
         prompt_hash: str | None = None,
@@ -423,6 +454,12 @@ class LLMUsageTracker:
             duration_ms=duration_ms,
             cost_usd=round(call_cost, 6),
             model=active_model,
+            configured_model=configured_model or active_model,
+            actual_model=actual_model,
+            first_byte_ms=first_byte_ms,
+            http_status=http_status,
+            request_id=request_id,
+            error_class=error_class,
             prompt_hash=p_hash,
             validation_result=validation_result,
             validation_status=val_status,

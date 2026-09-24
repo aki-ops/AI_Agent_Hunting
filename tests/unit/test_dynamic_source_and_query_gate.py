@@ -12,6 +12,7 @@ from hunting.contracts.entities import Account
 from hunting.contracts.native_query import NativeQueryCandidate
 from hunting.contracts.query_intent import QueryIntentSpec
 from hunting.contracts.source_profile import (
+    ConstraintMapping,
     RuntimeCapability,
     SourceCapabilityProposal,
     TelemetryFieldProfile,
@@ -112,6 +113,77 @@ def test_successful_probe_is_required_for_validated_capability() -> None:
     assert ok and not reasons and probe is not None
     assert validator.materialize(candidate, profile).status == "CANDIDATE"
     assert validator.materialize(candidate, profile, probe_succeeded=True).status == "VALIDATED"
+
+
+def test_constraint_mapping_requires_census_field_and_registered_transform() -> None:
+    profile = _profile()
+    validator = SourceMappingValidator()
+
+    bad_field = SourceCapabilityProposal(
+        source_id=profile.source_id,
+        relation="executed_on",
+        input_roles={"command": "f-file"},
+        output_roles={"endpoint": "f-host"},
+        proof_mode="relation_observable",
+        constraint_mappings=(
+            ConstraintMapping(
+                semantic_constraint="encoding_state",
+                native_field="field-not-in-census",
+                transform="powershell_encoded",
+            ),
+        ),
+    )
+    ok, reasons, _ = validator.validate(bad_field, [profile])
+    assert not ok
+    assert "constraint_mapping_field_id_not_in_census:field-not-in-census" in reasons
+
+    bad_transform = SourceCapabilityProposal(
+        source_id=profile.source_id,
+        relation="executed_on",
+        input_roles={"command": "f-file"},
+        output_roles={"endpoint": "f-host"},
+        proof_mode="relation_observable",
+        constraint_mappings=(
+            ConstraintMapping(
+                semantic_constraint="encoding_state",
+                native_field="f-file",
+                transform="invented_transform",
+            ),
+        ),
+    )
+    ok, reasons, _ = validator.validate(bad_transform, [profile])
+    assert not ok
+    assert any("constraint_mapping_transform_not_registered" in reason for reason in reasons)
+
+
+def test_legacy_transform_labels_are_normalized_to_registered_ids() -> None:
+    base = _profile()
+    profile = TelemetrySourceProfile(
+        source_id=base.source_id,
+        provider_id=base.provider_id,
+        partition_id=base.partition_id,
+        native_type=base.native_type,
+        fields=(*base.fields, TelemetryFieldProfile("f-cmd", "cmdline")),
+    )
+    proposal = SourceCapabilityProposal(
+        source_id=profile.source_id,
+        relation="executed_on",
+        input_roles={"command": "f-cmd"},
+        output_roles={"endpoint": "f-host"},
+        proof_mode="relation_observable",
+        constraint_mappings=(
+            ConstraintMapping(
+                semantic_constraint="encoding_state",
+                native_field="f-cmd",
+                transform="encoded",
+            ),
+        ),
+    )
+    validator = SourceMappingValidator()
+    ok, reasons, _ = validator.validate(proposal, [profile])
+    assert ok, reasons
+    capability = validator.materialize(proposal, profile, probe_succeeded=True)
+    assert capability.constraint_mappings[0].transform == "powershell_encoded"
 
 
 def test_native_query_gate_accepts_bounded_census_bound_spl() -> None:
@@ -297,3 +369,40 @@ def test_cdb_probe_is_bounded_and_observability_only() -> None:
     assert execution.succeeded
     assert execution.result is not None and execution.result.complete
     assert execution.result.row_count <= 2
+
+
+def test_profiler_normalizes_field_names_and_filter_probe_kind() -> None:
+    """Counterexample 5: LLM returning field names and probe_kind='filter' is normalized to census field_id and cooccurrence."""
+    import json
+
+    from hunting.capabilities.source_profiler import SourceProfiler
+
+    profile = TelemetrySourceProfile(
+        source_id="win:sec",
+        provider_id="splunk",
+        partition_id="p1",
+        native_type="event",
+        fields=(
+            TelemetryFieldProfile("f-user", "user"),
+            TelemetryFieldProfile("f-host", "dest"),
+        ),
+    )
+    # LLM outputs field names ('user', 'dest') instead of field_ids, and probe_kind='filter'
+    llm_output = json.dumps({
+        "proposals": [
+            {
+                "source_id": "win:sec",
+                "relation": "associated_with",
+                "input_roles": {"subject_identity": "user"},
+                "output_roles": {"object": "dest"},
+                "proof_mode": "retrieval_only",
+                "probe_kind": "filter",
+            }
+        ]
+    })
+    profiler = SourceProfiler(llm_caller=lambda _: llm_output)
+    proposals, audit = profiler.propose([profile], [{"relation": "associated_with"}])
+    assert len(proposals) == 1
+    assert proposals[0].input_roles["subject_identity"] == "f-user"
+    assert proposals[0].output_roles["object"] == "f-host"
+    assert proposals[0].probe_kind == "cooccurrence"

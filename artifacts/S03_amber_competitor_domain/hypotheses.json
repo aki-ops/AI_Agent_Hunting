@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-S03_amber_competitor_domain-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'Amber Turing visited a competitor website. What domain was it?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

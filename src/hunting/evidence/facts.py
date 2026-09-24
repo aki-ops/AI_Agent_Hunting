@@ -52,6 +52,42 @@ def _safe_int(val: Any, default: int = 0) -> int:
         return default
 
 
+_FILE_IDENTITY_FIELDS = (
+    "target_path", "TargetFilename", "target_filename",
+)
+_FILE_PATH_FALLBACK_FIELDS = (
+    "file_path", "filename", "path", "Path",
+)
+_PROCESS_FIELDS = ("image", "Image", "process_name", "cmdline", "CommandLine")
+_FILE_TABLE_TOKENS = frozenset({"file_events", "file"})
+_FILE_ACTIONS = frozenset({
+    "moved_to", "moved_from", "created", "deleted", "updated",
+    "file_create", "file_modify", "file_delete", "renamed",
+})
+
+
+def observation_has_file_schema(fields: dict[str, Any], native_type: str | None = None) -> bool:
+    """True when native fields identify a file record rather than process/web telemetry."""
+    if any(fields.get(key) for key in _FILE_IDENTITY_FIELDS):
+        return True
+    site = str(fields.get("site") or "").strip().casefold()
+    domain = str(fields.get("domain") or "").strip().casefold()
+    if site in _FILE_TABLE_TOKENS or domain in _FILE_TABLE_TOKENS:
+        return True
+    action = str(fields.get("action") or "").strip().casefold()
+    if action in _FILE_ACTIONS:
+        return True
+    if native_type and "file" in str(native_type).lower():
+        return True
+    if any(fields.get(key) for key in _PROCESS_FIELDS):
+        return False
+    return any(fields.get(key) for key in _FILE_PATH_FALLBACK_FIELDS)
+
+
+def _file_table_token(value: Any) -> bool:
+    return str(value or "").strip().casefold() in _FILE_TABLE_TOKENS
+
+
 def extract_facts(observation: Observation) -> list[EvidenceFact]:
     """Deterministically extract structured facts and relationships from an observation."""
     facts: list[EvidenceFact] = []
@@ -61,14 +97,46 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
     fields = observation.fields
     relations: list[EntityRelation] = []
 
+    if observation_has_file_schema(fields, observation.native_type):
+        path = (
+            fields.get("target_path")
+            or fields.get("file_path")
+            or fields.get("TargetFilename")
+            or fields.get("path")
+            or fields.get("filename")
+            or fields.get("name")
+            or "unknown_file"
+        )
+        file_entity = File(host=str(host_name), path=str(path))
+        relations.append(EntityRelation(source_entity=host_entity, relation_type="wrote_file", target_entity=file_entity))
+        facts.append(
+            EvidenceFact(
+                observation_id=observation.id,
+                fact_type="file_modification",
+                timestamp=timestamp,
+                primary_entity=file_entity,
+                fields={
+                    k: v for k, v in fields.items()
+                    if k in (
+                        "file_path", "path", "target_path", "TargetFilename", "filename",
+                        "name", "action", "hash", "user", "pid", "status",
+                    )
+                    and v is not None
+                },
+                relations=tuple(relations),
+            )
+        )
+        return facts
+
     # 1. Process execution fact & ancestry relationship
     proc_val = fields.get("process_name") or fields.get("image") or fields.get("Image") or fields.get("cmdline") or fields.get("CommandLine")
     path_val = fields.get("file_path") or fields.get("path") or fields.get("Path") or fields.get("TargetFilename")
-    # If path points to executable or contains tor / browser / setup / exe, it indicates process/software artifact
+    # A path is treated as process/software evidence only when the provider
+    # exposes an executable extension. Product names are semantic input, not
+    # a hard-coded fact classifier.
     is_software_artifact = bool(
         proc_val
         or (path_val and any(str(path_val).lower().endswith(ext) for ext in (".exe", ".bat", ".cmd", ".ps1", ".vbs", ".dll", ".msi")))
-        or (path_val and any(k in str(path_val).lower() for k in ("tor browser", "firefox", "setup", "installer")))
     )
 
     if is_software_artifact:
@@ -149,7 +217,7 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
         or fields.get("cs_uri_stem")
         or fields.get("http_method")
         or fields.get("cs_method")
-        or fields.get("site")
+        or (fields.get("site") and not _file_table_token(fields.get("site")))
         or (observation.native_type and any(k in str(observation.native_type).lower() for k in ("http", "iis", "web")))
     ):
         site_val = fields.get("site") or fields.get("domain") or str(host_name)
@@ -193,8 +261,13 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
             )
         )
 
-    # 4. Authentication fact
-    elif fields.get("user") and (fields.get("logon_type") or fields.get("status")):
+    # 5. Authentication fact
+    elif (
+        (fields.get("user") and (fields.get("logon_type") or fields.get("event_id") in ("4624", "4625")))
+        or (observation.native_type and any(k in str(observation.native_type).lower() for k in ("auth", "logon")))
+        or (fields.get("action") and str(fields.get("action")).lower() in ("logon", "login", "authenticate"))
+        or (fields.get("user") and not fields.get("file_path") and not fields.get("cmdline") and fields.get("status"))
+    ):
         user_entity = Account(username=str(fields["user"]))
         relations.append(EntityRelation(source_entity=user_entity, relation_type="authenticated_on", target_entity=host_entity))
 
@@ -204,24 +277,7 @@ def extract_facts(observation: Observation) -> list[EvidenceFact]:
                 fact_type="authentication_activity",
                 timestamp=timestamp,
                 primary_entity=user_entity,
-                fields={k: v for k, v in fields.items() if k in ("user", "logon_type", "source_ip", "status") and v is not None},
-                relations=tuple(relations),
-            )
-        )
-
-    # 5. File modification fact
-    elif fields.get("file_path") or fields.get("path"):
-        path = fields.get("file_path") or fields.get("path")
-        file_entity = File(host=str(host_name), path=str(path))
-        relations.append(EntityRelation(source_entity=host_entity, relation_type="wrote_file", target_entity=file_entity))
-
-        facts.append(
-            EvidenceFact(
-                observation_id=observation.id,
-                fact_type="file_modification",
-                timestamp=timestamp,
-                primary_entity=file_entity,
-                fields={k: v for k, v in fields.items() if k in ("file_path", "path", "action", "hash") and v is not None},
+                fields={k: v for k, v in fields.items() if k in ("user", "logon_type", "source_ip", "status", "event_id") and v is not None},
                 relations=tuple(relations),
             )
         )

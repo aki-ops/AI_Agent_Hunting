@@ -1,0 +1,9 @@
+[
+  {
+    "id": "goal-1",
+    "description": "executed_on",
+    "evidence_type": "executed_on",
+    "status": "DEFINED",
+    "necessity": "CRITICAL"
+  }
+]

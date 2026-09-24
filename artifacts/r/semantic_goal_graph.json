@@ -1,0 +1,110 @@
+{
+  "id": "g",
+  "request_id": "r",
+  "objective": "obj",
+  "variables": [
+    {
+      "id": "var_user",
+      "entity_type": "account",
+      "value": "mallory",
+      "constraints": [],
+      "value_origin": "request",
+      "verification_status": "UNVERIFIED"
+    },
+    {
+      "id": "var_endpoint",
+      "entity_type": "endpoint",
+      "value": null,
+      "constraints": [
+        {
+          "key": "hardware_form_factor",
+          "operator": "equals",
+          "value": "MacBook"
+        }
+      ],
+      "value_origin": "llm_proposal",
+      "verification_status": "UNVERIFIED"
+    },
+    {
+      "id": "var_file",
+      "entity_type": "file",
+      "value": null,
+      "constraints": [],
+      "value_origin": "llm_proposal",
+      "verification_status": "UNVERIFIED"
+    }
+  ],
+  "relations": [
+    {
+      "id": "rel_user_host",
+      "subject": "var_user",
+      "relation": "associated_with",
+      "object": "var_endpoint",
+      "required": true,
+      "description": "",
+      "atomic_obligation": "",
+      "provenance_span": "",
+      "dependencies": [],
+      "dependency_operator": "AND",
+      "gate_condition": null
+    },
+    {
+      "id": "rel_host_file",
+      "subject": "var_endpoint",
+      "relation": "modified",
+      "object": "var_file",
+      "required": true,
+      "description": "",
+      "atomic_obligation": "",
+      "provenance_span": "",
+      "dependencies": [],
+      "dependency_operator": "AND",
+      "gate_condition": null
+    }
+  ],
+  "qualifiers": [],
+  "answers": [
+    {
+      "variable_id": "var_file",
+      "answer_type": "file",
+      "required": true
+    }
+  ],
+  "answer_contracts": [
+    {
+      "slot_name": "var_file",
+      "value_type": "file",
+      "target_variable_id": "var_file",
+      "required_qualifiers": [],
+      "min_citations": 1,
+      "acceptable_aliases": [],
+      "acceptance_rule": "",
+      "description": ""
+    }
+  ],
+  "dependencies": {},
+  "dependency_kinds": {
+    "rel_user_host": "AND",
+    "rel_host_file": "AND"
+  },
+  "provenance_spans": {},
+  "assumptions": [],
+  "uncertainties": [],
+  "forbidden_inferences": [],
+  "clarification_triggers": [],
+  "validation_diagnostics": [],
+  "graph_revision": "G0",
+  "revision_history": [],
+  "outcome_contract": {
+    "contract_kind": "FACTUAL_ANSWER",
+    "slots": [
+      "var_file"
+    ],
+    "types": {
+      "var_file": "file"
+    },
+    "cardinality": {},
+    "qualifiers": [],
+    "citations": []
+  }
+}

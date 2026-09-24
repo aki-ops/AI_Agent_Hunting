@@ -1,0 +1,8 @@
+{
+  "id": "req-fp",
+  "kind": "QUESTION",
+  "content": "Which host executed an encoded PowerShell command?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

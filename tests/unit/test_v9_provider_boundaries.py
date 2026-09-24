@@ -171,10 +171,14 @@ def test_unsupported_relation_does_not_select_first_configured_adapter(tmp_path:
 
     result = engine.execute_hunt(request, adapters=[irrelevant])
 
-    # Acceptance Gate I: Unsupported relation produces STOP_UNSUPPORTED without running on irrelevant adapter
-    assert result.state.stopping_decision == StoppingDecision.STOP_UNSUPPORTED
+    # Vocabulary miss + no C2 caller is an incomplete census, not a completed
+    # unsupported capability.  The irrelevant adapter still must not execute.
+    assert result.state.stopping_decision != StoppingDecision.STOP_UNSUPPORTED
+    assert result.state.stopping_decision in {
+        StoppingDecision.STOP_INCONCLUSIVE,
+        StoppingDecision.STOP_BUDGET,
+    }
     assert irrelevant.executions == []
-    assert any("unsupported" in r.lower() for r in result.state.residuals)
 
 
 # =============================================================================

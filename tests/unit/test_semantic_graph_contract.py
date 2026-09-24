@@ -2,6 +2,8 @@ import pytest
 
 from hunting.compiler.compiler import parse_and_validate_semantic_goal_graph
 from hunting.contracts.semantic_graph import (
+    ClarificationEvaluationResult,
+    ClarificationPredicate,
     LogicalPlan,
     PlanStep,
     SemanticAnswerGoal,
@@ -157,6 +159,106 @@ def test_retrieval_terms_reject_native_query_syntax() -> None:
             "qualifiers": [],
             "answers": [{"variable_id": "artifact", "answer_type": "file_name"}],
         }, "req-injection")
+
+
+def test_qualifier_retrieval_terms_survive_graph_serialization() -> None:
+    graph = parse_and_validate_semantic_goal_graph({
+        "id": "goal-qualifier-terms",
+        "request_id": "req-qualifier-terms",
+        "objective": "Find an encrypted document",
+        "variables": [
+            {"id": "host", "entity_type": "host", "value": "HOST-1"},
+            {"id": "file", "entity_type": "file"},
+        ],
+        "relations": [{"id": "r1", "subject": "host", "relation": "modified", "object": "file"}],
+        "qualifiers": [{
+            "id": "q1",
+            "target_goal_id": "r1",
+            "qualifier": "file_type",
+            "expected_value": "PowerPoint presentation",
+            "retrieval_terms": [".pptx", ".pptm"],
+            "required": True,
+        }],
+        "answers": [{"variable_id": "file", "answer_type": "file_name"}],
+    }, "req-qualifier-terms")
+    qualifier = graph.qualifiers[0]
+    assert qualifier.retrieval_terms == (".pptx", ".pptm")
+    assert graph.to_dict()["qualifiers"][0]["retrieval_terms"] == [".pptx", ".pptm"]
+
+
+def test_clarification_predicate_round_trip_is_typed_and_versioned() -> None:
+    graph = parse_and_validate_semantic_goal_graph({
+        "id": "goal-clarification",
+        "request_id": "req-clarification",
+        "objective": "Resolve one action",
+        "variables": [
+            {
+                "id": "event",
+                "entity_type": "event",
+                "constraints": [
+                    {"key": "action", "operator": "equals", "value": "login"},
+                    {"key": "action", "operator": "equals", "value": "reboot"},
+                ],
+            },
+        ],
+        "relations": [
+            {"id": "r1", "subject": "event", "relation": "observed_transition", "object": "event"},
+        ],
+        "qualifiers": [],
+        "answers": [{"variable_id": "event", "answer_type": "event"}],
+        "clarification_predicates": [{
+            "id": "clarify-event-action",
+            "kind": "CONFLICTING_EQUALS",
+            "operator": "HAS_CONFLICT",
+            "variable_id": "event",
+            "constraint_key": "action",
+            "provenance_span": "one action",
+            "schema_version": "1.0",
+            "rule_version": "1.0",
+        }],
+    }, "req-clarification")
+
+    predicate = graph.clarification_predicates[0]
+    assert isinstance(predicate, ClarificationPredicate)
+    assert predicate.id == "clarify-event-action"
+    assert predicate.schema_version == "1.0"
+    assert graph.to_dict()["clarification_predicates"][0]["kind"] == "CONFLICTING_EQUALS"
+
+
+def test_legacy_clarification_trigger_round_trip_stays_advisory() -> None:
+    graph = SemanticGoalGraph.from_dict({
+        "id": "goal-legacy-trigger",
+        "request_id": "req-legacy-trigger",
+        "objective": "Find an observed value",
+        "variables": [{"id": "value", "entity_type": "value"}],
+        "relations": [],
+        "clarification_triggers": ["Ask if more than one value exists"],
+    })
+
+    assert graph.clarification_triggers == ["Ask if more than one value exists"]
+    assert graph.clarification_predicates == []
+    assert graph.clarification_evaluations == []
+
+
+def test_malformed_clarification_predicate_is_invalid_not_true() -> None:
+    graph = SemanticGoalGraph.from_dict({
+        "id": "goal-invalid-predicate",
+        "request_id": "req-invalid-predicate",
+        "objective": "Find an observed value",
+        "variables": [{"id": "value", "entity_type": "value"}],
+        "relations": [],
+        "clarification_predicates": [{
+            "id": "clarify-unknown",
+            "kind": "MODEL_PROSE",
+            "operator": "EVALUATE_TEXT",
+            "variable_id": "value",
+            "constraint_key": "name",
+        }],
+    })
+
+    evaluation = graph.clarification_evaluations[0]
+    assert evaluation.result == ClarificationEvaluationResult.INVALID
+    assert graph.needs_clarification is False
 
 
 def test_wrong_qualifier_shape_is_rejected_instead_of_dropped() -> None:

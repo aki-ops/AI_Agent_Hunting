@@ -51,7 +51,18 @@ def test_1_hypothesis_only_hunt_runs_without_alert_or_poc():
             "cmdline": "python -c 'import socket,subprocess,os;s=socket.socket()'",
             "image": "/usr/bin/python3",
             "status": "SUCCESS",
-        }
+        },
+        {
+            "timestamp": "2026-02-01T10:01:00Z",
+            "native_type": "file_modification",
+            "host": "WEB-IVANTI-01",
+            "user": "root",
+            "image": "/usr/bin/python3",
+            "file_path": "/home/etc/manifest/webshell.py",
+            "action": "CREATE",
+            "pid": 4123,
+            "status": "SUCCESS",
+        },
     ])
 
     request = HuntRequest(
@@ -473,6 +484,45 @@ def test_11_premature_conclusion_prevented_and_competing_hypotheses_retained():
     benign_hypos = [h for h in result.account.hypotheses if "benign" in h.id]
     assert len(benign_hypos) == 1
     assert benign_hypos[0].status in (HypothesisStatus.LIVE, HypothesisStatus.SUPPORTED)
+
+
+def test_11b_benign_python_without_post_exploitation_does_not_support_cve_attack():
+    """Counterexample 6: Benign python process execution without post-exploitation must NOT mark CVE attack SUPPORTED."""
+    cdb = CdbAdapter()
+    # Insert normal benign Python process (e.g. background worker or server), with NO webshell/post-exploit file modification
+    cdb.insert_events([
+        {
+            "timestamp": "2026-02-01T10:00:00Z",
+            "native_type": "process_creation",
+            "host": "WEB-PYTHON-01",
+            "user": "www-data",
+            "pid": 2048,
+            "cmdline": "python /opt/app/worker.py --service=queue",
+            "image": "/usr/bin/python3",
+            "status": "SUCCESS",
+        }
+    ])
+
+    request = HuntRequest(
+        id="hunt-benign-python-cve",
+        kind=HuntRequestKind.CVE,
+        content="CVE-2024-21887",
+        entities=[Host(name="WEB-PYTHON-01")],
+    )
+
+    engine = HypothesisHuntEngine(cdb_adapter=cdb)
+    result = engine.execute_hunt(request, adapter=cdb, time_window="2026-02-01T00:00:00Z/P1D")
+
+    # Invariants:
+    # 1. Attack hypothesis must NOT be SUPPORTED because post-exploitation obligation (webshell write) was not proven
+    attack_hypos = [h for h in result.account.hypotheses if "exploited" in h.id]
+    assert len(attack_hypos) == 1
+    assert attack_hypos[0].status != HypothesisStatus.SUPPORTED
+    # 2. Benign hypothesis remains LIVE or SUPPORTED
+    benign_hypos = [h for h in result.account.hypotheses if "benign" in h.id]
+    assert len(benign_hypos) == 1
+    assert benign_hypos[0].status in (HypothesisStatus.LIVE, HypothesisStatus.SUPPORTED)
+
 
 
 def test_12_delta_grouping_incremental_efficiency():

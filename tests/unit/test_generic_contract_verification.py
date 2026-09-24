@@ -239,7 +239,7 @@ def test_role_unproven_without_independent_directory():
 def test_native_queries_contain_no_scenario_constants():
     """Generated queries must be parameterized purely by entity value, without hardcoded scenario constants."""
     binder = CapabilityBinder()
-    adapter = SplunkLiveAdapter(splunk_url="https://127.0.0.1:8089", index="test_index")
+    adapter = SplunkLiveAdapter(splunk_url="https://127.0.0.1:8089", index="test_index", verify_ssl=False)
 
     banned_substrings = [
         "amber",

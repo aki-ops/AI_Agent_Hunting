@@ -325,7 +325,7 @@ def test_6_full_investigation_loop_orchestration_and_stopping_taxonomy(tmp_path)
     """6. Full investigation loop adheres to epistemic stop conditions and renders relation chain."""
     stub = StubSemanticCompiler(scenario="amber")
     compiler = KnowledgeBehaviorCompiler(llm_caller=stub)
-    engine = HypothesisHuntEngine(compiler=compiler)
+    engine = HypothesisHuntEngine(compiler=compiler, enable_legacy_execution=True)
 
     req = HuntRequest(
         id="hunt-loop-amber",

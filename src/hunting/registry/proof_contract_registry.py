@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from hunting.contracts.ontology import get_inverse_relation
 from hunting.contracts.proof_contract import (
     ProofContract,
     ProofContractStatus,
@@ -54,24 +55,42 @@ class ProofContractRegistry:
         """Find the first approved contract satisfied by the declared operation roles."""
         rel = str(relation).strip().casefold()
         candidates = [c for c in self._contracts.values() if c.is_approved and c.relation == rel]
-        if not candidates:
+        rejection_reasons: list[str] = []
+        if candidates:
+            for contract in candidates:
+                ok, reasons = contract.validate_capability_conformance(
+                    relation=rel,
+                    input_roles=input_roles,
+                    output_roles=output_roles,
+                    action_roles=action_roles,
+                    state_roles=state_roles,
+                    artifact_identity_roles=artifact_identity_roles,
+                )
+                if ok:
+                    return contract, ()
+                rejection_reasons.extend(reasons)
+
+        # If no direct match, check inverse canonical relation with inverted roles
+        inv_rel = get_inverse_relation(rel)
+        if inv_rel:
+            inv_candidates = [c for c in self._contracts.values() if c.is_approved and c.relation == inv_rel]
+            for contract in inv_candidates:
+                ok, reasons = contract.validate_capability_conformance(
+                    relation=inv_rel,
+                    input_roles=output_roles,
+                    output_roles=input_roles,
+                    action_roles=action_roles,
+                    state_roles=state_roles,
+                    artifact_identity_roles=artifact_identity_roles,
+                )
+                if ok:
+                    return contract, ()
+                rejection_reasons.extend(reasons)
+
+        if not candidates and not inv_rel:
             return None, (f"no_approved_proof_contract_for_relation:{rel}",)
 
-        rejection_reasons: list[str] = []
-        for contract in candidates:
-            ok, reasons = contract.validate_capability_conformance(
-                relation=rel,
-                input_roles=input_roles,
-                output_roles=output_roles,
-                action_roles=action_roles,
-                state_roles=state_roles,
-                artifact_identity_roles=artifact_identity_roles,
-            )
-            if ok:
-                return contract, ()
-            rejection_reasons.extend(reasons)
-
-        return None, tuple(rejection_reasons)
+        return None, tuple(rejection_reasons or [f"no_approved_proof_contract_for_relation:{rel}"])
 
     def _register_canonical_defaults(self) -> None:
         """Initialize built-in approved contracts for canonical security relations."""
@@ -160,6 +179,16 @@ class ProofContractRegistry:
                 required_value_roles=("process",),
                 status=ProofContractStatus.APPROVED,
                 description="Proves process execution on an endpoint.",
+            ),
+            # 6d. Process executed on endpoint proof (inverse of executed/spawned)
+            ProofContract(
+                contract_id="proof-process-executed-on-v1",
+                version="1.0.0",
+                relation="executed_on",
+                required_entity_roles=("process",),
+                required_value_roles=("endpoint",),
+                status=ProofContractStatus.APPROVED,
+                description="Proves process or command execution on an endpoint host.",
             ),
             # 7. Tor Browser install/run proof
             ProofContract(

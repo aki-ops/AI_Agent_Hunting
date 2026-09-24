@@ -1,0 +1,774 @@
+{
+  "analysis": {
+    "compiler_trace": {
+      "prompt_hash": "4032c50db390ccfe",
+      "response_length": 1343,
+      "response_text": "{\"id\": \"goal-graph-powershell\", \"request_id\": \"req-powershell-1\", \"objective\": \"Identify host executing encoded PowerShell\", \"variables\": [{\"id\": \"cmd\", \"entity_type\": \"command_execution\", \"value\": null, \"value_origin\": \"llm_proposal\", \"verification_status\": \"UNVERIFIED\", \"constraints\": [{\"key\": \"cmdline\", \"operator\": \"contains\", \"value\": \"powershell\"}, {\"key\": \"encoding\", \"operator\": \"equals\", \"value\": \"encoded\", \"retrieval_terms\": [\"-enc\", \"-encodedcommand\"]}]}, {\"id\": \"host\", \"entity_type\": \"host\", \"value\": null, \"value_origin\": \"llm_proposal\", \"verification_status\": \"UNVERIFIED\", \"constraints\": []}], \"relations\": [{\"id\": \"goal-1\", \"subject\": \"cmd\", \"relation\": \"executed_on\", \"object\": \"host\", \"required\": true, \"description\": \"powershell process executed on host\", \"atomic_obligation\": \"identify executing host\", \"provenance_span\": \"host executed an encoded PowerShell command\", \"dependencies\": [], \"dependency_operator\": \"AND\", \"gate_condition\": null}], \"qualifiers\": [], \"answers\": [{\"variable_id\": \"host\", \"answer_type\": \"host\", \"required\": true}], \"answer_contracts\": [{\"slot_name\": \"host\", \"value_type\": \"host\", \"target_variable_id\": \"host\", \"required_qualifiers\": [], \"min_citations\": 1, \"acceptance_rule\": \"observed value\"}], \"assumptions\": [], \"uncertainties\": [], \"forbidden_inferences\": [], \"clarification_triggers\": []}",
+      "validation_result": "VALID",
+      "output_kind": "semantic_goal_graph"
+    },
+    "goal_verdicts": [
+      {
+        "goal_id": "goal-1",
+        "relation": "executed_on",
+        "status": "SUPPORTED",
+        "query_ids": [
+          "logical-goal-graph-powershell-step-1"
+        ],
+        "proof_method_id": "method-goal-1-2",
+        "unverified_restrictions": [],
+        "compiler_limitations": [
+          "cmdline=powershell",
+          "encoding=encoded"
+        ],
+        "proof_results": [
+          {
+            "contract_id": "proof-process-executed-on-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "evaluate_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": true,
+            "verdict": "PROVEN",
+            "status": "VERIFIED",
+            "reason_codes": [
+              "contract_requirements_satisfied"
+            ],
+            "subject_binding": "powershell.exe -enc SQBYAE8...",
+            "object_binding": "WORKSTATION-01",
+            "bindings": {
+              "endpoint": "WORKSTATION-01",
+              "process": "powershell.exe -enc SQBYAE8...",
+              "proved_object_0": "WORKSTATION-01",
+              "proved_subject_0": "powershell.exe -enc SQBYAE8..."
+            },
+            "satisfied_obligations": [
+              "process",
+              "endpoint"
+            ],
+            "missing_obligations": [],
+            "satisfied_constraints": [
+              "cmdline=powershell",
+              "encoding=encoded"
+            ],
+            "unsatisfied_constraints": [],
+            "citations": [
+              "obs-logical-goal-graph-powershell-step-1-0"
+            ],
+            "cited_fields": {
+              "endpoint": "host",
+              "process": "cmdline"
+            },
+            "completeness_satisfied": true,
+            "coverage_satisfied": true,
+            "limitations": [],
+            "diagnostic": "Proof established for relation 'executed_on' via contract 'proof-process-executed-on-v1'."
+          }
+        ]
+      }
+    ],
+    "proof_state": {
+      "goal-1": "SUPPORTED"
+    },
+    "executed_steps": [
+      "step-1"
+    ],
+    "step_actions": [
+      {
+        "step_id": "step-1",
+        "observation_class": "VERIFIED",
+        "next_action_reason": "ProofContract verified by native event semantics"
+      }
+    ],
+    "unresolved_steps": [],
+    "unresolved_goals": [],
+    "unresolved_reasons": {},
+    "candidate_input_warnings": {},
+    "needs_user_decision": false,
+    "retrieval_incomplete": false,
+    "compiler_limitations": [
+      "cmdline=powershell",
+      "encoding=encoded"
+    ],
+    "winning_facets": {},
+    "binding_provenance": {
+      "host": [
+        {
+          "value": "WORKSTATION-01",
+          "source": "step-1",
+          "query_id": "logical-goal-graph-powershell-step-1",
+          "status": "VERIFIED"
+        }
+      ],
+      "cmd": [
+        {
+          "value": "powershell.exe -enc SQBYAE8...",
+          "source": "step-1",
+          "query_id": "logical-goal-graph-powershell-step-1",
+          "status": "VERIFIED"
+        }
+      ]
+    },
+    "candidate_groups": {},
+    "candidate_census": {},
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "runtime:cdb:schema-2adb9278231f91d07ae3:cdb:source:events:executed_on",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-powershell-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "window": "2026-02-01T00:00:00Z/P1D",
+        "cursor": "0",
+        "rows": 1,
+        "complete": true,
+        "executed_ok": true,
+        "diagnostic": null,
+        "time_split": false
+      }
+    ],
+    "continuations": {},
+    "unverified_restrictions": {},
+    "binding_events": [],
+    "route_assessments": [
+      {
+        "goal_id": "goal-1",
+        "relation": "executed_on",
+        "status": "VERIFIED",
+        "execution_complete": true,
+        "proof_complete": true,
+        "route_exhausted": false,
+        "readiness": "PROOF_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-1",
+            "goal_id": "goal-1",
+            "operation_id": "runtime:cdb:schema-2adb9278231f91d07ae3:cdb:source:events:executed_on",
+            "source_id": "cdb:source:events",
+            "schema_fingerprint": "schema-2adb9278231f91d07ae3",
+            "stage_id": "narrow",
+            "query_id": "logical-goal-graph-powershell-step-1",
+            "result_complete": true,
+            "row_count": 1,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('runtime:cdb:schema-2adb9278231f91d07ae3:cdb:source:events:executed_on', 'cdb:source:events', (('subject', ()),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+            "alternatives_considered": [
+              "cdb_net_search"
+            ],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [],
+        "capability_gaps": [],
+        "terminal_cause": null
+      }
+    ],
+    "observations": [
+      {
+        "id": "obs-logical-goal-graph-powershell-step-1-0",
+        "provider_scope": {
+          "provider_id": "cdb",
+          "native_partition": {
+            "database": "cdb.sqlite",
+            "table": "events"
+          },
+          "scope_id": "cdb_security",
+          "retention_days": null
+        },
+        "cell_id": "2026-02-01T00:00:00Z/P1D",
+        "timestamp": "2026-02-01T10:00:00Z",
+        "epistemic_type": "observed",
+        "native_type": "process",
+        "fields": {
+          "id": 1,
+          "timestamp": "2026-02-01T10:00:00Z",
+          "native_type": "process",
+          "cmdline": "powershell.exe -enc SQBYAE8...",
+          "host": "WORKSTATION-01",
+          "command_line": "powershell.exe -enc SQBYAE8..."
+        },
+        "native_fields": {
+          "id": 1,
+          "timestamp": "2026-02-01T10:00:00Z",
+          "native_type": "process",
+          "cmdline": "powershell.exe -enc SQBYAE8...",
+          "host": "WORKSTATION-01"
+        },
+        "query_id": "logical-goal-graph-powershell-step-1",
+        "raw_ref": null
+      }
+    ],
+    "evidence_graph": {
+      "nodes": [
+        {
+          "id": "observation:obs-logical-goal-graph-powershell-step-1-0",
+          "node_type": "observation",
+          "payload": {
+            "timestamp": "2026-02-01T10:00:00Z",
+            "native_type": "process",
+            "provider_id": "cdb",
+            "provider_scope": "cdb_security",
+            "query_id": "logical-goal-graph-powershell-step-1",
+            "native_fields": {
+              "id": 1,
+              "timestamp": "2026-02-01T10:00:00Z",
+              "native_type": "process",
+              "cmdline": "powershell.exe -enc SQBYAE8...",
+              "host": "WORKSTATION-01"
+            },
+            "raw_ref": null
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ]
+        },
+        {
+          "id": "fact-f2ffe99f924bda12",
+          "node_type": "fact",
+          "payload": {
+            "fact_type": "process_execution",
+            "timestamp": "2026-02-01T10:00:00Z",
+            "primary_entity": "Process(kind=<EntityKind.PROCESS: 'process'>, host='WORKSTATION-01', pid=0, time='2026-02-01T10:00:00Z')",
+            "fields": {
+              "cmdline": "powershell.exe -enc SQBYAE8..."
+            }
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ]
+        },
+        {
+          "id": "field-e753b0df0c405817",
+          "node_type": "field_fact",
+          "payload": {
+            "id": "field-e753b0df0c405817",
+            "fact_node_id": "fact-f2ffe99f924bda12",
+            "field_name": "cmdline",
+            "value": "powershell.exe -enc SQBYAE8...",
+            "native_field_name": "cmdline",
+            "observation_id": "obs-logical-goal-graph-powershell-step-1-0"
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ]
+        },
+        {
+          "id": "entity-1cd99b6573e91933",
+          "node_type": "entity",
+          "payload": {
+            "entity": "Host(kind=<EntityKind.HOST: 'host'>, name='WORKSTATION-01')"
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ]
+        },
+        {
+          "id": "entity-2fc4e0cbaedcbafc",
+          "node_type": "entity",
+          "payload": {
+            "entity": "Process(kind=<EntityKind.PROCESS: 'process'>, host='WORKSTATION-01', pid=0, time='2026-02-01T10:00:00Z')"
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-227541d33cde2cef",
+          "source_id": "observation:obs-logical-goal-graph-powershell-step-1-0",
+          "target_id": "fact-f2ffe99f924bda12",
+          "edge_type": "contains_fact",
+          "edge_class": "provenance_dependency",
+          "observation_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-a4884cc312e341c0",
+          "source_id": "fact-f2ffe99f924bda12",
+          "target_id": "field-e753b0df0c405817",
+          "edge_type": "has_field",
+          "edge_class": "provenance_dependency",
+          "observation_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-64aa993d3f4404a8",
+          "source_id": "entity-1cd99b6573e91933",
+          "target_id": "entity-2fc4e0cbaedcbafc",
+          "edge_type": "observed_transition",
+          "edge_class": "observed_transition",
+          "observation_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {
+            "relation_type": "executed_process"
+          }
+        }
+      ],
+      "field_facts": [
+        {
+          "id": "field-e753b0df0c405817",
+          "fact_node_id": "fact-f2ffe99f924bda12",
+          "field_name": "cmdline",
+          "value": "powershell.exe -enc SQBYAE8...",
+          "native_field_name": "cmdline",
+          "observation_id": "obs-logical-goal-graph-powershell-step-1-0"
+        }
+      ],
+      "observation_ids": [
+        "obs-logical-goal-graph-powershell-step-1-0"
+      ],
+      "proof_note": "Graph proximity and co-occurrence are not proof."
+    },
+    "agenda": {
+      "items": [],
+      "dispatched": [
+        "step-1"
+      ]
+    },
+    "workspace": {
+      "run_id": "req-powershell-1",
+      "observation_ids": [
+        "obs-logical-goal-graph-powershell-step-1-0"
+      ],
+      "evidence_graph": {
+        "observation_ids": [
+          "obs-logical-goal-graph-powershell-step-1-0"
+        ],
+        "proof": false
+      },
+      "goal_graph": {
+        "id": "goal-graph-powershell",
+        "request_id": "req-powershell-1",
+        "objective": "Identify host executing encoded PowerShell",
+        "variables": [
+          {
+            "id": "cmd",
+            "entity_type": "command_execution",
+            "value": null,
+            "constraints": [
+              {
+                "key": "cmdline",
+                "operator": "contains",
+                "value": "powershell"
+              },
+              {
+                "key": "encoding",
+                "operator": "equals",
+                "value": "encoded",
+                "retrieval_terms": [
+                  "-enc",
+                  "-encodedcommand"
+                ]
+              }
+            ],
+            "value_origin": "llm_proposal",
+            "verification_status": "UNVERIFIED"
+          },
+          {
+            "id": "host",
+            "entity_type": "host",
+            "value": null,
+            "constraints": [],
+            "value_origin": "llm_proposal",
+            "verification_status": "UNVERIFIED"
+          }
+        ],
+        "relations": [
+          {
+            "id": "goal-1",
+            "subject": "cmd",
+            "relation": "executed_on",
+            "object": "host",
+            "required": true,
+            "description": "powershell process executed on host",
+            "atomic_obligation": "identify executing host",
+            "provenance_span": "host executed an encoded PowerShell command",
+            "dependencies": [],
+            "dependency_operator": "AND",
+            "gate_condition": null
+          }
+        ],
+        "qualifiers": [],
+        "answers": [
+          {
+            "variable_id": "host",
+            "answer_type": "host",
+            "required": true
+          }
+        ],
+        "answer_contracts": [
+          {
+            "slot_name": "host",
+            "value_type": "host",
+            "target_variable_id": "host",
+            "required_qualifiers": [],
+            "min_citations": 1,
+            "acceptable_aliases": [],
+            "acceptance_rule": "observed value",
+            "description": ""
+          }
+        ],
+        "dependencies": {},
+        "dependency_kinds": {
+          "goal-1": "AND"
+        },
+        "provenance_spans": {
+          "goal-1": "host executed an encoded PowerShell command"
+        },
+        "assumptions": [],
+        "uncertainties": [],
+        "forbidden_inferences": [],
+        "clarification_triggers": [],
+        "clarification_predicates": [],
+        "clarification_evaluations": [],
+        "validation_diagnostics": [],
+        "graph_revision": "G0",
+        "revision_history": [],
+        "outcome_contract": {
+          "contract_kind": "FACTUAL_ANSWER",
+          "slots": [
+            "host"
+          ],
+          "types": {
+            "host": "host"
+          },
+          "cardinality": {},
+          "qualifiers": [],
+          "citations": []
+        }
+      },
+      "query_audit": [
+        {
+          "query_id": "logical-goal-graph-powershell-step-1",
+          "operation_id": "runtime:cdb:schema-2adb9278231f91d07ae3:cdb:source:events:executed_on",
+          "c3_invoked": false,
+          "advances_goal_ids": [
+            "goal-1"
+          ],
+          "relation": "executed_on",
+          "reason": "advances goals ['goal-1'] via operation runtime:cdb:schema-2adb9278231f91d07ae3:cdb:source:events:executed_on",
+          "complete": true,
+          "retrieval_stage": "narrow"
+        }
+      ],
+      "analyst_decisions": [],
+      "unexamined_routes": [],
+      "limitations": [],
+      "timeline": [
+        {
+          "observation_id": "obs-logical-goal-graph-powershell-step-1-0",
+          "timestamp": "2026-02-01T10:00:00Z",
+          "query_id": "logical-goal-graph-powershell-step-1",
+          "fields": {
+            "id": 1,
+            "timestamp": "2026-02-01T10:00:00Z",
+            "native_type": "process",
+            "cmdline": "powershell.exe -enc SQBYAE8...",
+            "host": "WORKSTATION-01",
+            "command_line": "powershell.exe -enc SQBYAE8..."
+          },
+          "native_fields": {
+            "id": 1,
+            "timestamp": "2026-02-01T10:00:00Z",
+            "native_type": "process",
+            "cmdline": "powershell.exe -enc SQBYAE8...",
+            "host": "WORKSTATION-01"
+          }
+        }
+      ],
+      "tags": [],
+      "comments": [],
+      "saved_searches": [],
+      "entity_pivot": [
+        {
+          "entity_type": "cmdline",
+          "value": "powershell.exe -enc SQBYAE8...",
+          "observation_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ],
+          "query_ids": [
+            "logical-goal-graph-powershell-step-1"
+          ]
+        },
+        {
+          "entity_type": "command_line",
+          "value": "powershell.exe -enc SQBYAE8...",
+          "observation_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ],
+          "query_ids": [
+            "logical-goal-graph-powershell-step-1"
+          ]
+        },
+        {
+          "entity_type": "host",
+          "value": "WORKSTATION-01",
+          "observation_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ],
+          "query_ids": [
+            "logical-goal-graph-powershell-step-1"
+          ]
+        },
+        {
+          "entity_type": "id",
+          "value": "1",
+          "observation_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ],
+          "query_ids": [
+            "logical-goal-graph-powershell-step-1"
+          ]
+        },
+        {
+          "entity_type": "native_type",
+          "value": "process",
+          "observation_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ],
+          "query_ids": [
+            "logical-goal-graph-powershell-step-1"
+          ]
+        },
+        {
+          "entity_type": "timestamp",
+          "value": "2026-02-01T10:00:00Z",
+          "observation_ids": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ],
+          "query_ids": [
+            "logical-goal-graph-powershell-step-1"
+          ]
+        }
+      ],
+      "native_events": [
+        {
+          "observation_id": "obs-logical-goal-graph-powershell-step-1-0",
+          "timestamp": "2026-02-01T10:00:00Z",
+          "query_id": "logical-goal-graph-powershell-step-1",
+          "native_fields": {
+            "id": 1,
+            "timestamp": "2026-02-01T10:00:00Z",
+            "native_type": "process",
+            "cmdline": "powershell.exe -enc SQBYAE8...",
+            "host": "WORKSTATION-01"
+          },
+          "raw_event": {}
+        }
+      ],
+      "proof_obligations": [
+        {
+          "goal_id": "goal-1",
+          "relation": "executed_on",
+          "status": "SUPPORTED",
+          "contract_id": "method-goal-1-2",
+          "verified": true,
+          "satisfied_obligations": [
+            "process",
+            "endpoint"
+          ],
+          "missing_obligations": [],
+          "citations": [
+            "obs-logical-goal-graph-powershell-step-1-0"
+          ],
+          "query_ids": [
+            "logical-goal-graph-powershell-step-1"
+          ]
+        }
+      ],
+      "stop_explanation": {
+        "decision": "STOP_ANSWERED",
+        "taxonomy": "StoppingTaxonomyState.ANSWER_PROVED",
+        "unresolved_reasons": {},
+        "needs_user_decision": false,
+        "residuals": [],
+        "query_count": 1,
+        "llm_calls": {
+          "model": "stub",
+          "max_calls_budget": 5,
+          "calls_made": 1,
+          "is_exhausted": false,
+          "total_prompt_tokens": 8,
+          "total_completion_tokens": 8,
+          "total_tokens": 16,
+          "estimated_cost_usd": 0.0,
+          "token_accounting_mode": "ESTIMATED",
+          "is_estimate": true,
+          "calls": [
+            {
+              "component": "compiler",
+              "phase": "C1_COMPILER",
+              "reason": "C1_COMPILER",
+              "payload_size": 29,
+              "prompt_len": 29,
+              "response_len": 30,
+              "prompt_tokens": 8,
+              "completion_tokens": 8,
+              "total_tokens": 16,
+              "estimated_prompt_tokens": 8,
+              "estimated_completion_tokens": 8,
+              "actual_prompt_tokens": null,
+              "actual_completion_tokens": null,
+              "is_estimate": true,
+              "duration_ms": 0.0,
+              "latency_ms": 0.0,
+              "cost_usd": 0.0,
+              "timestamp": "2026-09-21T16:57:14Z",
+              "model": "stub",
+              "configured_model": "stub",
+              "actual_model": null,
+              "first_byte_ms": null,
+              "http_status": null,
+              "request_id": null,
+              "error_class": "",
+              "prompt_hash": "c61222a4ea6c8514",
+              "validation_result": "",
+              "validation_status": "VALID",
+              "selected_operation": "",
+              "search_terms": [],
+              "status": "SUCCESS",
+              "physical_attempts": 1,
+              "error": ""
+            }
+          ]
+        }
+      },
+      "coverage_view": {
+        "coverage_bound": {},
+        "coverage_gaps": [],
+        "unexamined_routes": [],
+        "query_completeness": [
+          {
+            "query_id": "logical-goal-graph-powershell-step-1",
+            "complete": true
+          }
+        ]
+      },
+      "binding_reviews": []
+    },
+    "package_versions": [],
+    "stop_explanation": {
+      "decision": "STOP_ANSWERED",
+      "taxonomy": "StoppingTaxonomyState.ANSWER_PROVED",
+      "unresolved_reasons": {},
+      "needs_user_decision": false,
+      "residuals": [],
+      "query_count": 1,
+      "llm_calls": {
+        "model": "stub",
+        "max_calls_budget": 5,
+        "calls_made": 1,
+        "is_exhausted": false,
+        "total_prompt_tokens": 8,
+        "total_completion_tokens": 8,
+        "total_tokens": 16,
+        "estimated_cost_usd": 0.0,
+        "token_accounting_mode": "ESTIMATED",
+        "is_estimate": true,
+        "calls": [
+          {
+            "component": "compiler",
+            "phase": "C1_COMPILER",
+            "reason": "C1_COMPILER",
+            "payload_size": 29,
+            "prompt_len": 29,
+            "response_len": 30,
+            "prompt_tokens": 8,
+            "completion_tokens": 8,
+            "total_tokens": 16,
+            "estimated_prompt_tokens": 8,
+            "estimated_completion_tokens": 8,
+            "actual_prompt_tokens": null,
+            "actual_completion_tokens": null,
+            "is_estimate": true,
+            "duration_ms": 0.0,
+            "latency_ms": 0.0,
+            "cost_usd": 0.0,
+            "timestamp": "2026-09-21T16:57:14Z",
+            "model": "stub",
+            "configured_model": "stub",
+            "actual_model": null,
+            "first_byte_ms": null,
+            "http_status": null,
+            "request_id": null,
+            "error_class": "",
+            "prompt_hash": "c61222a4ea6c8514",
+            "validation_result": "",
+            "validation_status": "VALID",
+            "selected_operation": "",
+            "search_terms": [],
+            "status": "SUCCESS",
+            "physical_attempts": 1,
+            "error": ""
+          }
+        ]
+      }
+    },
+    "proof_obligations": [
+      {
+        "goal_id": "goal-1",
+        "relation": "executed_on",
+        "status": "SUPPORTED",
+        "contract_id": "method-goal-1-2",
+        "verified": true,
+        "satisfied_obligations": [
+          "process",
+          "endpoint"
+        ],
+        "missing_obligations": [],
+        "citations": [
+          "obs-logical-goal-graph-powershell-step-1-0"
+        ],
+        "query_ids": [
+          "logical-goal-graph-powershell-step-1"
+        ]
+      }
+    ]
+  },
+  "assessments": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "goal-1",
+      "relation": "executed_on",
+      "status": "VERIFIED",
+      "execution_complete": true,
+      "proof_complete": true,
+      "route_exhausted": false,
+      "readiness": "PROOF_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-1",
+          "goal_id": "goal-1",
+          "operation_id": "runtime:cdb:schema-2adb9278231f91d07ae3:cdb:source:events:executed_on",
+          "source_id": "cdb:source:events",
+          "schema_fingerprint": "schema-2adb9278231f91d07ae3",
+          "stage_id": "narrow",
+          "query_id": "logical-goal-graph-powershell-step-1",
+          "result_complete": true,
+          "row_count": 1,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('runtime:cdb:schema-2adb9278231f91d07ae3:cdb:source:events:executed_on', 'cdb:source:events', (('subject', ()),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+          "alternatives_considered": [
+            "cdb_net_search"
+          ],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [],
+      "capability_gaps": [],
+      "terminal_cause": null
+    }
+  ]
+}

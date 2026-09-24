@@ -1,0 +1,213 @@
+{
+  "analysis": {
+    "compiler_trace": {},
+    "goal_verdicts": [
+      {
+        "goal_id": "goal-1",
+        "relation": "owns",
+        "status": "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED",
+        "query_ids": [
+          "logical-goal-graph-hunt-req-20260916-034720-step-1"
+        ],
+        "proof_method_id": "method-goal-1-2",
+        "unverified_restrictions": [
+          "hardware_descriptor=MacBook"
+        ],
+        "proof_results": [
+          {
+            "contract_id": "proof-person-endpoint-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "evaluate_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": false,
+            "verdict": "PROOF_GAP",
+            "status": "PROOF_GAP",
+            "reason_codes": [
+              "non_conforming_rows",
+              "unsatisfied_constraints:hardware_descriptor=MacBook",
+              "unsatisfied_constraints:hardware_descriptor=MacBook",
+              "unsatisfied_constraints:hardware_descriptor=MacBook"
+            ],
+            "subject_binding": null,
+            "object_binding": null,
+            "bindings": {},
+            "satisfied_obligations": [],
+            "missing_obligations": [],
+            "satisfied_constraints": [],
+            "unsatisfied_constraints": [
+              "hardware_descriptor=MacBook"
+            ],
+            "citations": [],
+            "cited_fields": {},
+            "completeness_satisfied": false,
+            "coverage_satisfied": false,
+            "limitations": [],
+            "diagnostic": "No event conformed to proof contract 'proof-person-endpoint-v1'. Missing roles: none; Unsatisfied constraints: hardware_descriptor=MacBook; violations: ['unsatisfied_constraints:hardware_descriptor=MacBook', 'unsatisfied_constraints:hardware_descriptor=MacBook', 'unsatisfied_constraints:hardware_descriptor=MacBook', 'unsatisfied_constraints:hardware_descriptor=MacBook', 'unsatisfied_constraints:hardware_descriptor=MacBook', 'unsatisfied_constraints:hardware_descriptor=MacBook']"
+          }
+        ]
+      },
+      {
+        "goal_id": "goal-2",
+        "relation": "modified",
+        "status": "INCONCLUSIVE",
+        "query_ids": [],
+        "proof_method_id": "method-goal-2-1",
+        "unverified_restrictions": [],
+        "proof_results": []
+      }
+    ],
+    "proof_state": {
+      "goal-1": "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED",
+      "goal-2": "INCONCLUSIVE"
+    },
+    "executed_steps": [
+      "step-1"
+    ],
+    "unresolved_steps": [
+      "step-2"
+    ],
+    "unresolved_goals": [],
+    "unresolved_reasons": {
+      "step-1": "ambiguous output binding 'device' has 6 candidates; fan-out limit is 5",
+      "step-2": "required upstream proof is incomplete: step-1"
+    },
+    "candidate_input_warnings": {},
+    "needs_user_decision": true,
+    "binding_provenance": {
+      "subject": [
+        {
+          "value": "Mallory",
+          "source": "request",
+          "query_id": "",
+          "status": "VERIFIED"
+        }
+      ]
+    },
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "resolve_person_to_endpoint",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-hunt-req-20260916-034720-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 6,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuations": {},
+    "unverified_restrictions": {
+      "goal-1": [
+        "hardware_descriptor=MacBook"
+      ]
+    },
+    "binding_events": [],
+    "route_assessments": [
+      {
+        "goal_id": "goal-1",
+        "relation": "owns",
+        "status": "CANDIDATE_OBSERVED",
+        "execution_complete": true,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "RETRIEVAL_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-1",
+            "goal_id": "goal-1",
+            "operation_id": "resolve_person_to_endpoint",
+            "source_id": "splunk_botsv2",
+            "schema_fingerprint": "",
+            "stage_id": "narrow",
+            "query_id": "logical-goal-graph-hunt-req-20260916-034720-step-1",
+            "result_complete": true,
+            "row_count": 6,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('resolve_person_to_endpoint', 'splunk_botsv2', (('subject', ('Mallory',)),), '2017-08-01T00:00:00Z/2018-10-29T18:03:43Z', 'narrow')",
+            "alternatives_considered": [],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [
+          "relation_or_constraint_proof_missing"
+        ],
+        "capability_gaps": [],
+        "terminal_cause": null
+      },
+      {
+        "goal_id": "goal-2",
+        "relation": "modified",
+        "status": "CAPABILITY_GAP",
+        "execution_complete": false,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "CAPABILITY_GAP",
+        "attempts": [],
+        "proof_gaps": [
+          "relation_or_constraint_proof_missing"
+        ],
+        "capability_gaps": [
+          "no_provider_attempt"
+        ],
+        "terminal_cause": null
+      }
+    ]
+  },
+  "assessments": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "goal-1",
+      "relation": "owns",
+      "status": "CANDIDATE_OBSERVED",
+      "execution_complete": true,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "RETRIEVAL_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-1",
+          "goal_id": "goal-1",
+          "operation_id": "resolve_person_to_endpoint",
+          "source_id": "splunk_botsv2",
+          "schema_fingerprint": "",
+          "stage_id": "narrow",
+          "query_id": "logical-goal-graph-hunt-req-20260916-034720-step-1",
+          "result_complete": true,
+          "row_count": 6,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('resolve_person_to_endpoint', 'splunk_botsv2', (('subject', ('Mallory',)),), '2017-08-01T00:00:00Z/2018-10-29T18:03:43Z', 'narrow')",
+          "alternatives_considered": [],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [
+        "relation_or_constraint_proof_missing"
+      ],
+      "capability_gaps": [],
+      "terminal_cause": null
+    },
+    {
+      "goal_id": "goal-2",
+      "relation": "modified",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [
+        "relation_or_constraint_proof_missing"
+      ],
+      "capability_gaps": [
+        "no_provider_attempt"
+      ],
+      "terminal_cause": null
+    }
+  ]
+}

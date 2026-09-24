@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-S11_correct_sourcetype_deceptive_name-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'Check proxy logs in non_standard_proxy_blob for competitor visits.'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

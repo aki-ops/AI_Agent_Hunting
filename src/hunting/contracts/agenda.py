@@ -22,6 +22,9 @@ class AgendaItem:
     cost: float = 1.0
     cursor: str | None = None
     envelope_id: str = ""
+    proof_method_id: str = ""
+    route_id: str = ""
+    bindings: tuple[tuple[str, str], ...] = ()
 
     @property
     def priority_key(self) -> tuple[Any, ...]:
@@ -49,6 +52,9 @@ class AgendaItem:
             "cost": self.cost,
             "cursor": self.cursor,
             "envelope_id": self.envelope_id,
+            "proof_method_id": self.proof_method_id,
+            "route_id": self.route_id,
+            "bindings": [[key, value] for key, value in self.bindings],
         }
 
     @classmethod
@@ -65,6 +71,13 @@ class AgendaItem:
             cost=float(raw.get("cost", 1.0)),
             cursor=raw.get("cursor"),
             envelope_id=str(raw.get("envelope_id", "")),
+            proof_method_id=str(raw.get("proof_method_id", "")),
+            route_id=str(raw.get("route_id", "")),
+            bindings=tuple(
+                (str(item[0]), str(item[1]))
+                for item in raw.get("bindings", ())
+                if isinstance(item, (list, tuple)) and len(item) == 2
+            ),
         )
 
 

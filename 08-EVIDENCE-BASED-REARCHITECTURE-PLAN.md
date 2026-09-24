@@ -472,6 +472,8 @@ Tests (`tests/unit/test_v9_capability_matching.py`):
 
 Acceptance gate L: production matcher is not exact relation equality; C2 cannot replace F1; unknown-relation live hunts explore an admitted route or abstain with unexamined coverage; no new scenario/vendor string in the kernel.
 
+Status: L1–L5 are on the default production path as of 2026-09-21. F0/F1 typed retrieve admits executable routes without C2; census no longer selects providers by relation-string equality; deferred/`NO_LLM_CALLER` C2 cannot complete an unsupported census. Live unknown-relation hunts and BOTS v2 remain later gates.
+
 ## 14. Pull-request sequence
 
 Keep changes reviewable in this order:

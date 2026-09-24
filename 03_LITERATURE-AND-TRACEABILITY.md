@@ -40,7 +40,7 @@ This record distinguishes external evidence, engineering transfer and thesis hyp
 | SemanticGoalGraph as obligation DAG | REF-AIQL, REF-THREATRAPTOR, REF-EXCYTIN, REF-UMCP | Generic factual/hypothesis/population graph and explicit AND/OR/GATE semantics |
 | OutcomeContract union | REF-EXCYTIN, REF-ECTH, REF-USENIX-TH, REF-SELECTIVE | Unifying factual answers, hypothesis verdicts and population discovery |
 | Semantic Acceptance Gate | REF-SAFE-TOOLS, REF-SELECTIVE, schema-matching sources | Provenance checks plus selective clarification for semantic uncertainty |
-| Progressive Capability Frontier | REF-AUTOLINK, REF-MDB-LINK, REF-CHESS, REF-TOOLSHED | F0–F4 stages and explicit unexamined-source coverage |
+| Progressive Capability Frontier | REF-AUTOLINK, REF-MDB-LINK, REF-CHESS, REF-TOOLSHED, REF-REMATCH, REF-RATSQL | F0–F4 retrieve-then-admit matching; no exact-name or case-alias matcher; C2 only on a budgeted shortlist |
 | Controlled CandidateSet | REF-UMCP, REF-SAFE-TOOLS | Cardinality-aware discriminator and human checkpoint |
 | Typed EvidenceAction / QueryIntent | REF-AIQL, REF-THREATRAPTOR | Provider-neutral EXPLORE/DISCRIMINATE/PROVE contract |
 | Immutable observations and evidence graph | REF-SLEUTH, REF-HOLMES, REF-OMEGALOG, REF-OCSF | Native-preserving FieldFacts and cited CandidateRelations |
@@ -58,7 +58,8 @@ It may not yet claim:
 - that v9 is optimal or universally sound/complete;
 - that its semantic compiler understands arbitrary requests reliably;
 - that its ProofContract registry covers every relation;
-- that F0–F4 is better than exhaustive or simpler baselines;
+- that F0–F4 retrieve-then-admit matching is better than exhaustive or simpler baselines;
+- that an exact `guaranteed_relations` string match is a completed capability census;
 - a cross-provider generalization result;
 - F1, answer accuracy or cost superiority from the current simulated runner;
 - production readiness from skipped live tests.

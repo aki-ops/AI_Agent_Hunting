@@ -1,0 +1,10 @@
+{
+  "id": "req-mallory-resume",
+  "kind": "NL_QUESTION",
+  "content": "Find confidential files on Mallory's endpoint",
+  "entities": [
+    "Account(kind=<EntityKind.ACCOUNT: 'account'>, username='mallory')"
+  ],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

@@ -1,0 +1,9 @@
+[
+  {
+    "id": "goal-event",
+    "description": "observed_transition",
+    "evidence_type": "observed_transition",
+    "status": "DEFINED",
+    "necessity": "CRITICAL"
+  }
+]

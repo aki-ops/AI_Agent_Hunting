@@ -46,6 +46,9 @@ class GoalRuntimeState:
     active_methods: tuple[str, ...] = ()
     exhausted_methods: tuple[str, ...] = ()
     last_material_delta: str | None = None
+    # F1/F2 coverage is kept separate from proof status.  In particular,
+    # unexamined source IDs must survive a deferred C2 call.
+    coverage: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.assert_consistent_state_axes()
@@ -181,4 +184,3 @@ class InvestigationState:
     stop: TerminalState | None = None
     turn: int = 0
     query_count: int = 0
-

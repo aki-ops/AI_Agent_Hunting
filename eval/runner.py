@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import time
+from pathlib import Path
 from typing import Any
 
+from eval.baselines import BaselineRunAccount, BaselineSpec
+from eval.layers import LayeredHuntMetrics, layered_metrics_from_execution
 from eval.metrics import (
     AnswerMetrics,
     CorrelationMetrics,
@@ -14,7 +16,6 @@ from eval.metrics import (
     RetrievalMetrics,
     ScenarioEvaluationResult,
 )
-from eval.baselines import BaselineRunAccount, BaselineSpec
 
 
 class EvaluationRunner:
@@ -43,18 +44,43 @@ class EvaluationRunner:
                     scenarios.append(sc)
         return scenarios
 
+    def evaluation_envelope(self, scenario: dict[str, Any], adapter: Any | None) -> dict[str, Any]:
+        specs = {
+            (item.scenario_id, item.mode): item
+            for item in self.load_baseline_specs()
+        }
+        scenario_id = str(scenario.get("scenario_id") or "")
+        spec = specs.get((scenario_id, "B0_BASELINE")) or specs.get((scenario_id, "B1_DIRECT_QUERY"))
+        temporal = dict(scenario.get("temporal_policy") or {})
+        window = ""
+        if spec is not None:
+            window = spec.time_window
+        elif temporal.get("earliest") or temporal.get("latest"):
+            window = f"{temporal.get('earliest') or ''}/{temporal.get('latest') or ''}"
+        elif temporal.get("relative"):
+            window = str(temporal.get("relative"))
+        return {
+            "request_id": scenario_id,
+            "request_text": scenario.get("request_text", ""),
+            "time_window": window,
+            "provider_id": str(getattr(adapter, "provider_id", "") or (spec.provider_id if spec else "")),
+            "budget": dict(scenario.get("budget") or {}),
+            "permission_digest": str(getattr(getattr(adapter, "scope", None), "scope_id", "") or ""),
+        }
+
     def execute_candidate_pipeline(
         self,
         scenario: dict[str, Any],
         adapter: Any | None = None,
         configured_adapters: list[Any] | tuple[Any, ...] | None = None,
+        content_registry: Any | None = None,
     ) -> Any:
         """Invoke the live candidate HypothesisHuntEngine pipeline directly.
 
         Enforces Workstream K1: eval/runner.py invokes the actual candidate
         pipeline instead of simulating expected outcomes.
         """
-        from hunting.contracts.hunt import HuntRequest, HuntRequestKind
+        from hunting.contracts.hunt import HuntRequest, HuntRequestKind, TimePolicy
         from hunting.engine import HypothesisHuntEngine
 
         kind_str = str(scenario.get("kind", "QUESTION")).upper()
@@ -63,13 +89,25 @@ class EvaluationRunner:
         except Exception:
             kind_enum = HuntRequestKind.QUESTION
 
+        temporal = dict(scenario.get("temporal_policy") or {})
+        time_policy = None
+        if temporal.get("earliest") or temporal.get("latest"):
+            time_policy = TimePolicy(start=temporal.get("earliest"), end=temporal.get("latest"))
+        hints = list(scenario.get("provider_hints") or [])
+        if adapter is not None and getattr(adapter, "provider_id", None):
+            hints = hints or [str(adapter.provider_id)]
         request = HuntRequest(
             id=scenario["scenario_id"],
             kind=kind_enum,
             content=scenario.get("request_text", ""),
+            time_policy=time_policy,
+            provider_hints=hints,
         )
         adapters_list = list(configured_adapters) if configured_adapters else ([adapter] if adapter else [])
-        engine = HypothesisHuntEngine(configured_adapters=adapters_list)
+        engine = HypothesisHuntEngine(
+            configured_adapters=adapters_list,
+            content_registry=content_registry,
+        )
         return engine.execute_hunt(request, adapter=adapter)
 
     def load_baseline_specs(self) -> list[BaselineSpec]:
@@ -162,6 +200,7 @@ class EvaluationRunner:
         ablation: str | None = None,
         adapter: Any | None = None,
         configured_adapters: list[Any] | tuple[Any, ...] | None = None,
+        content_registry: Any | None = None,
     ) -> ScenarioEvaluationResult:
         """Evaluate an individual scenario under the specified architecture mode or ablation."""
         scenario_id = scenario["scenario_id"]
@@ -169,8 +208,9 @@ class EvaluationRunner:
         expected_stop = scenario.get("expected_stopping_decision", "ANSWER_PROVED")
         answer_contract = scenario.get("answer_contract", {})
         gold_values = answer_contract.get("gold_values", [])
-        request_text = scenario.get("request_text", "")
-        entities = scenario.get("entities", {})
+        envelope = self.evaluation_envelope(scenario, adapter)
+        layers = LayeredHuntMetrics()
+        run_account_dict: dict[str, Any] | None = None
 
         if mode == "CANDIDATE" and adapter is None and not configured_adapters:
             # Candidate metrics require an execution artifact or configured provider.
@@ -185,15 +225,22 @@ class EvaluationRunner:
             cost_usd = 0.0
             stop_correct = False
             ans_correct = False
+            run_account_dict = {"status": "NOT_EXECUTED", "envelope": dict(envelope)}
+            layers = LayeredHuntMetrics(zero_query=True)
 
         elif mode == "CANDIDATE":
             exec_res = None
+            execution_error: str | None = None
             start_t = time.perf_counter()
             try:
                 exec_res = self.execute_candidate_pipeline(
-                    scenario, adapter=adapter, configured_adapters=configured_adapters
+                    scenario,
+                    adapter=adapter,
+                    configured_adapters=configured_adapters,
+                    content_registry=content_registry,
                 )
-            except Exception:
+            except Exception as exc:
+                execution_error = f"{type(exc).__name__}: {exc}"
                 exec_res = None
             elapsed_ms = (time.perf_counter() - start_t) * 1000.0
 
@@ -241,7 +288,6 @@ class EvaluationRunner:
 
                 # Real metrics from execution trace & gold annotations
                 required_goals = scenario.get("required_goals", []) or []
-                queries = getattr(state, "queries", []) or []
                 query_results = getattr(state, "query_results", []) or []
                 cards = getattr(state, "evidence_cards", []) or []
                 observations = getattr(state, "observations", []) or []
@@ -302,13 +348,26 @@ class EvaluationRunner:
                 )
 
                 # 2. Retrieval metrics: evaluated against cited observations and gold answers
-                if observations:
-                    evidence_prec = len(cited_obs_ids) / len(observations)
+                relevant_obs_ids = set(scenario.get("relevant_observation_ids", []) or [])
+                if relevant_obs_ids:
+                    # Precision is a labelled retrieval metric: citations that
+                    # are not in the independently adjudicated relevant set
+                    # must count as noise.  Citation count alone is not a
+                    # relevance label.
+                    evidence_prec = (
+                        len(cited_obs_ids & relevant_obs_ids) / len(cited_obs_ids)
+                        if cited_obs_ids else 0.0
+                    )
+                    evidence_precision_labelled = True
                 elif cards:
-                    answer_cards = set(account.answer.get("card_ids", []) if isinstance(account.answer, dict) else [])
-                    evidence_prec = (len(answer_cards) / len(cards)) if answer_cards else (1.0 if not gold_values else 0.0)
+                    # No independent relevance labels: expose the metric as
+                    # unlabelled instead of pretending that selected cards are
+                    # relevant merely because they were selected.
+                    evidence_prec = 0.0
+                    evidence_precision_labelled = False
                 else:
-                    evidence_prec = 1.0 if not gold_values else 0.0
+                    evidence_prec = 0.0
+                    evidence_precision_labelled = bool(relevant_obs_ids)
 
                 found_gold_evidence = False
                 if gold_values:
@@ -340,17 +399,25 @@ class EvaluationRunner:
                         and getattr(qr, "completeness_contract", "") not in ("TRUNCATED", "FAILED")
                     )
                     completeness = comp_queries / len(query_results)
+                    completeness_labelled = True
                 elif req_cov:
                     sat_reqs = len(getattr(req_cov, "satisfied_requirements", ()))
                     att_reqs = len(getattr(req_cov, "attempted_requirements", ()))
-                    completeness = (sat_reqs / att_reqs) if att_reqs > 0 else 1.0
+                    completeness = (sat_reqs / att_reqs) if att_reqs > 0 else 0.0
+                    completeness_labelled = True
                 else:
-                    completeness = 1.0
+                    # A zero-query execution has not demonstrated complete
+                    # coverage.  Only an explicit scenario contract may mark
+                    # a no-query task as complete.
+                    completeness = 1.0 if answer_contract.get("no_query_required") is True else 0.0
+                    completeness_labelled = answer_contract.get("no_query_required") is True
 
                 retrieval = RetrievalMetrics(
                     evidence_precision=evidence_prec,
                     evidence_recall_at_k=evidence_rec,
                     completeness_accuracy=completeness,
+                    evidence_precision_labelled=evidence_precision_labelled,
+                    completeness_labelled=completeness_labelled,
                 )
 
                 # 3. Correlation metrics: evaluated against verified causal edges and provenance
@@ -412,7 +479,14 @@ class EvaluationRunner:
                 if min_citations > 0:
                     citation_grounding = min(1.0, len(cited_obs_ids) / min_citations)
                 else:
-                    citation_grounding = 1.0 if grounded else 1.0
+                    # No-citation contracts must say so explicitly.  A missing
+                    # citation is otherwise a failed grounding measurement,
+                    # not a perfect score.
+                    citation_grounding = (
+                        1.0
+                        if answer_contract.get("citation_policy") == "not_required"
+                        else grounded
+                    )
 
                 answer = AnswerMetrics(
                     exact_match=em,
@@ -421,8 +495,23 @@ class EvaluationRunner:
                 )
 
                 # 5. Operational metrics & timing from step_trace / elapsed time
-                empty_queries = sum(1 for qr in query_results if getattr(qr, "row_count", 0) == 0)
-                waste = (empty_queries / len(queries)) if queries else 0.0
+                irrelevant_obs_ids = set(scenario.get("irrelevant_observation_ids", []) or [])
+                if irrelevant_obs_ids:
+                    returned_obs_ids = {
+                        str(getattr(obs, "id", "")) for obs in observations
+                    }
+                    waste = (
+                        len(returned_obs_ids & irrelevant_obs_ids) / len(returned_obs_ids)
+                        if returned_obs_ids else 0.0
+                    )
+                    waste_labelled = True
+                else:
+                    # Empty results are not waste by themselves; they may be a
+                    # legitimate negative/branching result.  Without an
+                    # independent irrelevant-row label, leave waste at zero
+                    # and mark it unlabelled.
+                    waste = 0.0
+                    waste_labelled = False
 
                 step_trace = getattr(account, "step_trace", None) or getattr(state, "step_trace", None)
                 steps = getattr(step_trace, "steps", []) if step_trace else []
@@ -436,6 +525,7 @@ class EvaluationRunner:
                 operations = OperationalMetrics(
                     decision_coverage=dec_cov,
                     waste_ratio=waste,
+                    waste_labelled=waste_labelled,
                     mean_time_to_verdict_ms=time_ms,
                 )
 
@@ -450,6 +540,31 @@ class EvaluationRunner:
                         cost_usd = float(account.llm_usage.get("estimated_cost_usd", 0.0) or 0.0)
                     else:
                         cost_usd = 0.0
+
+                layers = layered_metrics_from_execution(
+                    scenario=scenario,
+                    account=account,
+                    state=state,
+                    pred_answer=pred_answer,
+                    gold_values=gold_values,
+                    pred_stop=pred_stop,
+                    elapsed_ms=elapsed_ms,
+                    cost_usd=cost_usd,
+                    evidence_precision=retrieval.evidence_precision,
+                    evidence_precision_labelled=retrieval.evidence_precision_labelled,
+                )
+                if hasattr(account, "to_dict"):
+                    run_account_dict = dict(account.to_dict())
+                else:
+                    run_account_dict = {
+                        "status": "EXECUTED",
+                        "stopping_decision": pred_stop,
+                        "predicted_answer": pred_answer,
+                        "query_count": layers.query_count,
+                        "observation_citations": list(getattr(account, "observation_citations", []) or []),
+                    }
+                run_account_dict["envelope"] = dict(envelope)
+                run_account_dict["elapsed_ms"] = elapsed_ms
             else:
                 pred_stop = "EXECUTION_ERROR"
                 pred_answer = None
@@ -458,7 +573,18 @@ class EvaluationRunner:
                 correlation = CorrelationMetrics(edge_precision=0.0, edge_recall=0.0, edge_f1=0.0, transition_validity=0.0)
                 answer = AnswerMetrics(exact_match=0.0, value_f1=0.0, citation_grounding_rate=0.0)
                 operations = OperationalMetrics(decision_coverage=0.0, waste_ratio=1.0, mean_time_to_verdict_ms=0.0)
+                # Preserve the failed attempt in the serialized evaluation
+                # record.  Unknown provider billing is not silently reported as
+                # zero; callers can reconcile it from transport/provider logs.
                 cost_usd = 0.0
+                run_account_dict = {
+                    "status": "EXECUTION_FAILED",
+                    "diagnostic": execution_error or "candidate returned no execution account",
+                    "elapsed_ms": elapsed_ms,
+                    "cost_status": "UNKNOWN",
+                    "envelope": dict(envelope),
+                }
+                layers = LayeredHuntMetrics(cost_usd=0.0, zero_query=True)
 
             if ablation in {"oracle_graph", "dynamic_mapping_only", "single_shot_query"}:
                 raise NotImplementedError(
@@ -486,6 +612,15 @@ class EvaluationRunner:
             stop_correct = False
             ans_correct = False
             run_account_dict = run_account.to_dict()
+            run_account_dict["envelope"] = dict(envelope)
+            layers = LayeredHuntMetrics(
+                query=1.0 if run_account.status == "EXECUTED" else 0.0,
+                query_count=1 if run_account.status == "EXECUTED" else 0,
+                zero_query=run_account.status != "EXECUTED",
+                time_to_first_query_ms=run_account.elapsed_ms,
+                cost_usd=0.0,
+                labelled={"proof": False, "retrieve": False, "binding": False, "answer": False},
+            )
 
         else:
             raise ValueError(f"Unknown architecture mode: {mode}")
@@ -505,7 +640,9 @@ class EvaluationRunner:
             answer=answer,
             operations=operations,
             cost_usd=cost_usd,
-            run_account=locals().get("run_account_dict"),
+            run_account=run_account_dict,
+            layers=layers,
+            envelope=envelope,
         )
 
     def run_suite(
@@ -515,6 +652,7 @@ class EvaluationRunner:
         ablation: str | None = None,
         adapter: Any | None = None,
         configured_adapters: list[Any] | tuple[Any, ...] | None = None,
+        content_registry: Any | None = None,
     ) -> list[ScenarioEvaluationResult]:
         """Execute evaluation suite across loaded scenarios."""
         scenarios = self.load_scenarios(split=split)
@@ -525,9 +663,32 @@ class EvaluationRunner:
                 ablation=ablation,
                 adapter=adapter,
                 configured_adapters=configured_adapters,
+                content_registry=content_registry,
             )
             for sc in scenarios
         ]
+
+    def evaluate_matched(
+        self,
+        scenario: dict[str, Any],
+        adapter: Any | None,
+        configured_adapters: list[Any] | tuple[Any, ...] | None = None,
+        content_registry: Any | None = None,
+    ) -> dict[str, Any]:
+        """Run B0, B1 and candidate under the same request/permission/window envelope."""
+        envelope = self.evaluation_envelope(scenario, adapter)
+        candidate = self.evaluate_scenario(
+            scenario, mode="CANDIDATE", adapter=adapter,
+            configured_adapters=configured_adapters, content_registry=content_registry,
+        )
+        b0 = self.evaluate_scenario(scenario, mode="B0_BASELINE", adapter=adapter)
+        b1 = self.evaluate_scenario(scenario, mode="B1_DIRECT_QUERY", adapter=adapter)
+        return {
+            "envelope": envelope,
+            "CANDIDATE": candidate,
+            "B0_BASELINE": b0,
+            "B1_DIRECT_QUERY": b1,
+        }
 
     def compute_aggregate_metrics(
         self,
@@ -537,10 +698,26 @@ class EvaluationRunner:
         if not results:
             return {}
         n = len(results)
+        failed_or_abstained = [
+            item for item in results
+            if str(item.predicted_stopping_state) in {
+                "NOT_EXECUTED", "EXECUTION_ERROR", "EXECUTION_FAILED", "NOT_CONFIGURED",
+            } or item.layers.abstention >= 1.0 or item.layers.zero_query
+        ]
         return {
             "total_scenarios": n,
             "stopping_accuracy": sum(1 for r in results if r.stopping_state_correct) / n,
             "answer_accuracy": sum(1 for r in results if r.answer_correct) / n,
+            "wrong_path_rate": sum(1 for r in results if r.layers.wrong_path) / n,
+            "zero_query_terminal_rate": sum(1 for r in results if r.layers.zero_query) / n,
+            "query_execution_rate": sum(1 for r in results if r.layers.query_count > 0) / n,
+            "mean_time_to_first_query_ms": sum(r.layers.time_to_first_query_ms for r in results) / n,
+            "mean_time_to_first_evidence_ms": sum(r.layers.time_to_first_evidence_ms for r in results) / n,
+            "wrong_binding_rate": sum(1 for r in results if r.layers.wrong_binding) / n,
+            "proof_gap_rate": sum(1 for r in results if r.layers.proof_gap) / n,
+            "false_proof_rate": sum(1 for r in results if r.layers.false_proof) / n,
+            "failed_or_abstained": len(failed_or_abstained),
+            "cohort_n": n,
             "planning": {
                 "claim_precision": sum(r.planning.claim_precision for r in results) / n,
                 "claim_recall": sum(r.planning.claim_recall for r in results) / n,
@@ -551,6 +728,8 @@ class EvaluationRunner:
                 "evidence_precision": sum(r.retrieval.evidence_precision for r in results) / n,
                 "evidence_recall_at_k": sum(r.retrieval.evidence_recall_at_k for r in results) / n,
                 "completeness_accuracy": sum(r.retrieval.completeness_accuracy for r in results) / n,
+                "evidence_precision_labelled_rate": sum(bool(r.retrieval.evidence_precision_labelled) for r in results) / n,
+                "completeness_labelled_rate": sum(bool(r.retrieval.completeness_labelled) for r in results) / n,
             },
             "correlation": {
                 "edge_precision": sum(r.correlation.edge_precision for r in results) / n,
@@ -566,9 +745,20 @@ class EvaluationRunner:
             "operations": {
                 "decision_coverage": sum(r.operations.decision_coverage for r in results) / n,
                 "waste_ratio": sum(r.operations.waste_ratio for r in results) / n,
+                "waste_labelled_rate": sum(bool(r.operations.waste_labelled) for r in results) / n,
                 "mean_time_to_verdict_ms": sum(r.operations.mean_time_to_verdict_ms for r in results) / n,
             },
+            "layers": {
+                "request_to_graph": sum(r.layers.request_to_graph for r in results) / n,
+                "retrieve": sum(r.layers.retrieve for r in results) / n,
+                "query": sum(r.layers.query for r in results) / n,
+                "proof": sum(r.layers.proof for r in results) / n,
+                "binding": sum(r.layers.binding for r in results) / n,
+                "outcome": sum(r.layers.outcome for r in results) / n,
+                "abstention": sum(r.layers.abstention for r in results) / n,
+            },
             "total_cost_usd": sum(r.cost_usd for r in results),
+            "cohort_cost_usd": sum(r.cost_usd for r in results),
         }
 
 

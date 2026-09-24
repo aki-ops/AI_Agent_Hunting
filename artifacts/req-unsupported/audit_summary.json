@@ -1,0 +1,306 @@
+{
+  "hunt_id": "req-unsupported",
+  "outcome": "UNSUPPORTED",
+  "stopping_decision": "STOP_UNSUPPORTED",
+  "answer": {
+    "status": "INCONCLUSIVE",
+    "reason": "NO_VERIFIED_ANSWER_CANDIDATE",
+    "explanation": "No verified answer candidate was found, but semantic absence is not licensed by the current execution, proof, and route state.",
+    "answer_type": "value",
+    "card_ids": [],
+    "required_fields": [],
+    "available_fields": [],
+    "missing_fields": [],
+    "artifact_detected": false,
+    "claim": "No verified answer candidate was found, but semantic absence is not licensed until every required route is exhausted with complete-empty results under an explicit provider contract.",
+    "citations": [],
+    "citation_text": ""
+  },
+  "llm_usage": {
+    "model": "stub",
+    "max_calls_budget": 5,
+    "calls_made": 1,
+    "is_exhausted": false,
+    "total_prompt_tokens": 8,
+    "total_completion_tokens": 8,
+    "total_tokens": 16,
+    "estimated_cost_usd": 0.0,
+    "token_accounting_mode": "ESTIMATED",
+    "is_estimate": true,
+    "calls": [
+      {
+        "component": "compiler",
+        "phase": "C1_COMPILER",
+        "reason": "C1_COMPILER",
+        "payload_size": 29,
+        "prompt_len": 29,
+        "response_len": 30,
+        "prompt_tokens": 8,
+        "completion_tokens": 8,
+        "total_tokens": 16,
+        "estimated_prompt_tokens": 8,
+        "estimated_completion_tokens": 8,
+        "actual_prompt_tokens": null,
+        "actual_completion_tokens": null,
+        "is_estimate": true,
+        "duration_ms": 0.0,
+        "latency_ms": 0.0,
+        "cost_usd": 0.0,
+        "timestamp": "2026-09-14T07:12:20Z",
+        "model": "stub",
+        "prompt_hash": "c61222a4ea6c8514",
+        "validation_result": "",
+        "validation_status": "VALID",
+        "selected_operation": "",
+        "search_terms": [],
+        "status": "SUCCESS",
+        "physical_attempts": 1,
+        "error": ""
+      }
+    ]
+  },
+  "total_observations": 0,
+  "total_cards": 0,
+  "total_queries": 0,
+  "semantic_graph_id": "graph-mock",
+  "proof_plan_id": "logical-graph-mock",
+  "semantic_analysis": {
+    "source_profile": {
+      "status": "NO_LLM_CALLER",
+      "readiness": [
+        {
+          "goal_id": "rel-1",
+          "relation": "process_execution",
+          "status": "CAPABILITY_GAP",
+          "execution_complete": false,
+          "proof_complete": false,
+          "route_exhausted": false,
+          "readiness": "CAPABILITY_GAP",
+          "attempts": [],
+          "proof_gaps": [],
+          "capability_gaps": [
+            "no_typed_reachable_route"
+          ],
+          "terminal_cause": null
+        }
+      ],
+      "profiling_goal_ids": [
+        "rel-1"
+      ],
+      "retrieval": [
+        {
+          "relation": "process_execution",
+          "query_terms": [
+            "execution",
+            "host",
+            "process"
+          ],
+          "profile_count": 1,
+          "candidate_count": 1,
+          "candidates": [
+            {
+              "relation": "process_execution",
+              "source_id": "sensor_provider:source:default",
+              "score": 0.0,
+              "matched_terms": [],
+              "matched_field_ids": [],
+              "rank": 1,
+              "low_confidence": true
+            }
+          ],
+          "selected_source_ids": [
+            "sensor_provider:source:default"
+          ],
+          "source_coverage": {
+            "discovered": 1,
+            "scheduled": 1,
+            "complete": true
+          },
+          "field_coverage": {
+            "discovered": 1,
+            "scheduled": 1,
+            "complete": true
+          },
+          "batch_count": 1,
+          "max_profiles_per_batch": 8,
+          "max_fields_per_source_per_batch": 48,
+          "ordering_only": true
+        }
+      ],
+      "coverage_manifests": {
+        "process_execution": {
+          "total_sources": 1,
+          "considered_source_ids": [
+            "sensor_provider:source:default"
+          ],
+          "examined_source_ids": [
+            "sensor_provider:source:default"
+          ],
+          "rejected_source_ids": {},
+          "unexamined_source_ids": [],
+          "stage_audit": [
+            {
+              "stage": "F0_CERTIFIED",
+              "discovered_sources": [],
+              "count": 0
+            },
+            {
+              "stage": "F1_METADATA",
+              "discovered_sources": [],
+              "count": 0
+            },
+            {
+              "stage": "F2_ADJACENT",
+              "discovered_sources": [],
+              "count": 0
+            },
+            {
+              "stage": "F3_BOUNDED_PROFILING",
+              "discovered_sources": [
+                "sensor_provider:source:default"
+              ],
+              "count": 1
+            }
+          ]
+        }
+      },
+      "census_profile_discovery": {},
+      "proposals": [],
+      "rejected": [],
+      "relation_calls": [],
+      "runtime_capabilities": [],
+      "runtime_operation_ids": []
+    },
+    "compiler_trace": {
+      "prompt_hash": "156b4cf7cd2da7cf",
+      "response_length": 705,
+      "response_text": "{\"id\": \"graph-mock\", \"objective\": \"Test objective\", \"claims\": [{\"id\": \"claim-1\", \"fact_type\": \"process_execution\", \"target_entity_type\": \"host\", \"required_roles\": [\"host\"], \"observation_requirements\": [{\"id\": \"req-1\", \"fact_kind\": \"process_execution\", \"required_roles\": [\"host\"], \"field_roles\": {\"host\": \"host\"}}]}], \"variables\": [{\"id\": \"host\", \"entity_type\": \"host\", \"value\": \"host-1\"}], \"relations\": [{\"id\": \"rel-1\", \"subject\": \"host\", \"relation\": \"process_execution\", \"object\": \"host\", \"required\": true}], \"qualifiers\": [], \"answers\": [{\"variable_id\": \"host\", \"answer_type\": \"value\", \"required\": true}], \"assumptions\": [], \"uncertainties\": [], \"forbidden_inferences\": [], \"clarification_triggers\": []}",
+      "validation_result": "VALID",
+      "output_kind": "semantic_goal_graph"
+    }
+  },
+  "source_profile_audit": {
+    "status": "NO_LLM_CALLER",
+    "readiness": [
+      {
+        "goal_id": "rel-1",
+        "relation": "process_execution",
+        "status": "CAPABILITY_GAP",
+        "execution_complete": false,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "CAPABILITY_GAP",
+        "attempts": [],
+        "proof_gaps": [],
+        "capability_gaps": [
+          "no_typed_reachable_route"
+        ],
+        "terminal_cause": null
+      }
+    ],
+    "profiling_goal_ids": [
+      "rel-1"
+    ],
+    "retrieval": [
+      {
+        "relation": "process_execution",
+        "query_terms": [
+          "execution",
+          "host",
+          "process"
+        ],
+        "profile_count": 1,
+        "candidate_count": 1,
+        "candidates": [
+          {
+            "relation": "process_execution",
+            "source_id": "sensor_provider:source:default",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 1,
+            "low_confidence": true
+          }
+        ],
+        "selected_source_ids": [
+          "sensor_provider:source:default"
+        ],
+        "source_coverage": {
+          "discovered": 1,
+          "scheduled": 1,
+          "complete": true
+        },
+        "field_coverage": {
+          "discovered": 1,
+          "scheduled": 1,
+          "complete": true
+        },
+        "batch_count": 1,
+        "max_profiles_per_batch": 8,
+        "max_fields_per_source_per_batch": 48,
+        "ordering_only": true
+      }
+    ],
+    "coverage_manifests": {
+      "process_execution": {
+        "total_sources": 1,
+        "considered_source_ids": [
+          "sensor_provider:source:default"
+        ],
+        "examined_source_ids": [
+          "sensor_provider:source:default"
+        ],
+        "rejected_source_ids": {},
+        "unexamined_source_ids": [],
+        "stage_audit": [
+          {
+            "stage": "F0_CERTIFIED",
+            "discovered_sources": [],
+            "count": 0
+          },
+          {
+            "stage": "F1_METADATA",
+            "discovered_sources": [],
+            "count": 0
+          },
+          {
+            "stage": "F2_ADJACENT",
+            "discovered_sources": [],
+            "count": 0
+          },
+          {
+            "stage": "F3_BOUNDED_PROFILING",
+            "discovered_sources": [
+              "sensor_provider:source:default"
+            ],
+            "count": 1
+          }
+        ]
+      }
+    },
+    "census_profile_discovery": {},
+    "proposals": [],
+    "rejected": [],
+    "relation_calls": [],
+    "runtime_capabilities": [],
+    "runtime_operation_ids": []
+  },
+  "runtime_capabilities": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "rel-1",
+      "relation": "process_execution",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [],
+      "capability_gaps": [
+        "no_typed_reachable_route"
+      ],
+      "terminal_cause": null
+    }
+  ]
+}

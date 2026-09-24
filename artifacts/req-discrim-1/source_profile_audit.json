@@ -1,0 +1,667 @@
+{
+  "status": "RELATION_SCOPED_PROFILING",
+  "readiness": [
+    {
+      "goal_id": "goal-1",
+      "relation": "executed_on",
+      "status": "PROOF_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "RETRIEVAL_CAPABLE",
+      "attempts": [],
+      "proof_gaps": [
+        "constraint_not_proof_observable:command_interpreter",
+        "constraint_not_proof_observable:encoding_state"
+      ],
+      "capability_gaps": [],
+      "terminal_cause": null
+    }
+  ],
+  "profiling_goal_ids": [
+    "goal-1"
+  ],
+  "retrieval": [
+    {
+      "relation": "executed_on",
+      "goal_id": "goal-1",
+      "stage": "F1_METADATA",
+      "query": {
+        "goal_id": "goal-1",
+        "subject_type": "command_execution",
+        "object_type": "host",
+        "answer_role": "host",
+        "constraint_keys": [
+          "command_interpreter",
+          "encoding_state"
+        ],
+        "relation_text": "executed_on",
+        "canonical_relation": "executed_on",
+        "proposed_unregistered": false,
+        "constraint_hints": [
+          {
+            "key": "command_interpreter",
+            "operator": "equals",
+            "value": "PowerShell"
+          },
+          {
+            "key": "encoding_state",
+            "operator": "equals",
+            "value": "encoded",
+            "retrieval_terms": [
+              "-enc",
+              "-encodedcommand"
+            ]
+          }
+        ],
+        "qualifier_hints": [],
+        "query_key": [
+          "command_execution",
+          "host",
+          "host",
+          [
+            "command_interpreter",
+            "encoding_state"
+          ],
+          "executed_on"
+        ]
+      },
+      "k": 8,
+      "hits": [
+        {
+          "source_id": "cdb:source:events",
+          "score": 47.319944,
+          "matched_terms": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "matched_field_ids": [
+            "cdb:events:field:host",
+            "cdb:events:field:cmdline",
+            "cdb:events:field:image",
+            "cdb:events:field:ip",
+            "cdb:events:field:file_path",
+            "cdb:events:field:user",
+            "cdb:events:field:domain"
+          ],
+          "rank": 1,
+          "relevant": true,
+          "document_kind": "source",
+          "document_id": "cdb:source:events",
+          "operation_id": null,
+          "field_id": null,
+          "features": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "index_version": "f1-dense-v1",
+          "route_class": "MAPPING_REQUIRED",
+          "frontier_stage": "F1_METADATA"
+        }
+      ],
+      "unexamined_ids": [],
+      "deferred_ids": [],
+      "nested_census": [],
+      "total_documents": 35,
+      "proof": false
+    }
+  ],
+  "coverage_manifests": {
+    "goal-1": {
+      "goal_id": "goal-1",
+      "relation": "executed_on",
+      "total_sources": 35,
+      "considered_source_ids": [
+        "cdb:source:events"
+      ],
+      "examined_source_ids": [
+        "cdb:source:events"
+      ],
+      "rejected_source_ids": {},
+      "unexamined_source_ids": [],
+      "f0_complete": true,
+      "f1_complete": true,
+      "f2_status": "NOT_RUN",
+      "operation_hits": [
+        {
+          "source_id": "cdb_net_search",
+          "score": 34.230239,
+          "matched_terms": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "matched_field_ids": [],
+          "rank": 1,
+          "relevant": true,
+          "document_kind": "operation",
+          "document_id": "cdb_net_search",
+          "operation_id": "cdb_net_search",
+          "field_id": null,
+          "features": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "index_version": "f1-dense-v1",
+          "route_class": "EXECUTABLE",
+          "frontier_stage": "F1_METADATA"
+        },
+        {
+          "source_id": "cdb_process_search",
+          "score": 31.928836,
+          "matched_terms": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "executed",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "matched_field_ids": [],
+          "rank": 2,
+          "relevant": true,
+          "document_kind": "operation",
+          "document_id": "cdb_process_search",
+          "operation_id": "cdb_process_search",
+          "field_id": null,
+          "features": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "executed",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "index_version": "f1-dense-v1",
+          "route_class": "EXECUTABLE",
+          "frontier_stage": "F1_METADATA"
+        },
+        {
+          "source_id": "find_file_change_from_process",
+          "score": 30.881894,
+          "matched_terms": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "matched_field_ids": [],
+          "rank": 3,
+          "relevant": true,
+          "document_kind": "operation",
+          "document_id": "find_file_change_from_process",
+          "operation_id": "find_file_change_from_process",
+          "field_id": null,
+          "features": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "index_version": "f1-dense-v1",
+          "route_class": "EXECUTABLE",
+          "frontier_stage": "F1_METADATA"
+        },
+        {
+          "source_id": "cdb_file_search",
+          "score": 30.878117,
+          "matched_terms": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "matched_field_ids": [],
+          "rank": 4,
+          "relevant": true,
+          "document_kind": "operation",
+          "document_id": "cdb_file_search",
+          "operation_id": "cdb_file_search",
+          "field_id": null,
+          "features": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "index_version": "f1-dense-v1",
+          "route_class": "EXECUTABLE",
+          "frontier_stage": "F1_METADATA"
+        },
+        {
+          "source_id": "find_process_from_endpoint",
+          "score": 29.384357,
+          "matched_terms": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "executed",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "matched_field_ids": [],
+          "rank": 5,
+          "relevant": true,
+          "document_kind": "operation",
+          "document_id": "find_process_from_endpoint",
+          "operation_id": "find_process_from_endpoint",
+          "field_id": null,
+          "features": [
+            "client",
+            "cmdline",
+            "command",
+            "commandline",
+            "computer",
+            "device",
+            "endpoint",
+            "executed",
+            "execution",
+            "host",
+            "identity",
+            "image",
+            "name",
+            "process",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "index_version": "f1-dense-v1",
+          "route_class": "EXECUTABLE",
+          "frontier_stage": "F1_METADATA"
+        },
+        {
+          "source_id": "resolve_account_to_endpoint",
+          "score": 18.590707,
+          "matched_terms": [
+            "client",
+            "computer",
+            "device",
+            "endpoint",
+            "host",
+            "identity",
+            "name",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "matched_field_ids": [],
+          "rank": 6,
+          "relevant": true,
+          "document_kind": "operation",
+          "document_id": "resolve_account_to_endpoint",
+          "operation_id": "resolve_account_to_endpoint",
+          "field_id": null,
+          "features": [
+            "client",
+            "computer",
+            "device",
+            "endpoint",
+            "host",
+            "identity",
+            "name",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "index_version": "f1-dense-v1",
+          "route_class": "EXECUTABLE",
+          "frontier_stage": "F1_METADATA"
+        },
+        {
+          "source_id": "cdb_auth_search",
+          "score": 18.255796,
+          "matched_terms": [
+            "client",
+            "computer",
+            "device",
+            "endpoint",
+            "host",
+            "identity",
+            "name",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "matched_field_ids": [],
+          "rank": 7,
+          "relevant": true,
+          "document_kind": "operation",
+          "document_id": "cdb_auth_search",
+          "operation_id": "cdb_auth_search",
+          "field_id": null,
+          "features": [
+            "client",
+            "computer",
+            "device",
+            "endpoint",
+            "host",
+            "identity",
+            "name",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "index_version": "f1-dense-v1",
+          "route_class": "EXECUTABLE",
+          "frontier_stage": "F1_METADATA"
+        },
+        {
+          "source_id": "cdb_persistence_search",
+          "score": 18.155243,
+          "matched_terms": [
+            "client",
+            "computer",
+            "device",
+            "endpoint",
+            "host",
+            "identity",
+            "name",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "matched_field_ids": [],
+          "rank": 8,
+          "relevant": true,
+          "document_kind": "operation",
+          "document_id": "cdb_persistence_search",
+          "operation_id": "cdb_persistence_search",
+          "field_id": null,
+          "features": [
+            "client",
+            "computer",
+            "device",
+            "endpoint",
+            "host",
+            "identity",
+            "name",
+            "server",
+            "target",
+            "workstation"
+          ],
+          "index_version": "f1-dense-v1",
+          "route_class": "EXECUTABLE",
+          "frontier_stage": "F1_METADATA"
+        }
+      ],
+      "stage_audit": [
+        {
+          "stage": "F1_METADATA",
+          "count": 1,
+          "k": 8,
+          "complete": true
+        },
+        {
+          "stage": "NESTED_PAYLOAD_CENSUS",
+          "count": 0,
+          "complete": true
+        }
+      ]
+    }
+  },
+  "f1": {
+    "shortlist_size": 8,
+    "llm_calls": 0,
+    "proof": false
+  },
+  "census_profile_discovery": {},
+  "proposals": [
+    {
+      "source_id": "cdb:source:events",
+      "relation": "executed_on",
+      "goal_id": "",
+      "input_roles": {
+        "command_execution": "cdb:events:field:cmdline"
+      },
+      "output_roles": {
+        "host": "cdb:events:field:host"
+      },
+      "proof_mode": "relation_observable",
+      "probe_kind": "cooccurrence",
+      "projection_roles": [],
+      "supported_constraints": [
+        "command_interpreter",
+        "encoding_state",
+        "cmdline"
+      ],
+      "searchable_constraints": [],
+      "constraint_mappings": [
+        {
+          "semantic_constraint": "command_interpreter",
+          "native_field": "cdb:events:field:cmdline",
+          "operator": "equals",
+          "transform": "powershell_interpreter",
+          "proof_method": "field_match",
+          "nested_path": ""
+        },
+        {
+          "semantic_constraint": "encoding_state",
+          "native_field": "cdb:events:field:cmdline",
+          "operator": "equals",
+          "transform": "powershell_encoded",
+          "proof_method": "field_match",
+          "nested_path": ""
+        }
+      ],
+      "temporal_roles": {},
+      "action_roles": {},
+      "state_roles": {},
+      "artifact_identity_roles": {},
+      "correlation_roles": {},
+      "relaxable_constraint_keys": [],
+      "rationale_refs": [],
+      "confidence": null,
+      "field_transforms": {}
+    }
+  ],
+  "rejected": [],
+  "relation_calls": [
+    {
+      "relation": "executed_on",
+      "batch_index": 1,
+      "batch_count": 1,
+      "profile_count": 1,
+      "status": "VALIDATED_CANDIDATES",
+      "proposals": [
+        {
+          "source_id": "cdb:source:events",
+          "relation": "executed_on",
+          "goal_id": "",
+          "input_roles": {
+            "command_execution": "cdb:events:field:cmdline"
+          },
+          "output_roles": {
+            "host": "cdb:events:field:host"
+          },
+          "proof_mode": "relation_observable",
+          "probe_kind": "cooccurrence",
+          "projection_roles": [],
+          "supported_constraints": [
+            "command_interpreter",
+            "encoding_state",
+            "cmdline"
+          ],
+          "searchable_constraints": [],
+          "constraint_mappings": [
+            {
+              "semantic_constraint": "command_interpreter",
+              "native_field": "cdb:events:field:cmdline",
+              "operator": "equals",
+              "transform": "powershell_interpreter",
+              "proof_method": "field_match",
+              "nested_path": ""
+            },
+            {
+              "semantic_constraint": "encoding_state",
+              "native_field": "cdb:events:field:cmdline",
+              "operator": "equals",
+              "transform": "powershell_encoded",
+              "proof_method": "field_match",
+              "nested_path": ""
+            }
+          ],
+          "temporal_roles": {},
+          "action_roles": {},
+          "state_roles": {},
+          "artifact_identity_roles": {},
+          "correlation_roles": {},
+          "relaxable_constraint_keys": [],
+          "rationale_refs": [],
+          "confidence": null,
+          "field_transforms": {}
+        }
+      ],
+      "rejected": []
+    }
+  ],
+  "nested_payload_census": [],
+  "runtime_capabilities": [
+    {
+      "source_id": "cdb:source:events",
+      "relation": "executed_on",
+      "status": "VALIDATED",
+      "probe_query_id": "probe-req-discrim-1-1",
+      "probe_succeeded": true,
+      "probe_reasons": []
+    }
+  ],
+  "runtime_operation_ids": [
+    "runtime:cdb:schema-2adb9278231f91d07ae3:cdb:source:events:executed_on"
+  ]
+}

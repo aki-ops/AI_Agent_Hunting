@@ -1,0 +1,8 @@
+{
+  "id": "S07_frothly_file_encryption",
+  "kind": "HYPOTHESIS",
+  "content": "Was the marketing campaign presentation encrypted by ransomware?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

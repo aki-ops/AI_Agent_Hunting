@@ -1,0 +1,224 @@
+{
+  "status": "RELATION_SCOPED_PROFILING",
+  "readiness": [
+    {
+      "goal_id": "goal-1",
+      "relation": "executed_on",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [],
+      "capability_gaps": [
+        "no_typed_reachable_route"
+      ],
+      "terminal_cause": null
+    }
+  ],
+  "profiling_goal_ids": [
+    "goal-1"
+  ],
+  "retrieval": [
+    {
+      "relation": "executed_on",
+      "query_terms": [
+        "cmdline",
+        "command",
+        "encoded",
+        "encoding",
+        "executed",
+        "execution",
+        "host",
+        "powershell"
+      ],
+      "profile_count": 1,
+      "candidate_count": 1,
+      "candidates": [
+        {
+          "relation": "executed_on",
+          "source_id": "cdb:source:events",
+          "score": 6.0,
+          "matched_terms": [
+            "cmdline",
+            "host"
+          ],
+          "matched_field_ids": [
+            "cdb:events:field:cmdline",
+            "cdb:events:field:host"
+          ],
+          "rank": 1,
+          "low_confidence": false
+        }
+      ],
+      "selected_source_ids": [
+        "cdb:source:events"
+      ],
+      "source_coverage": {
+        "discovered": 1,
+        "scheduled": 1,
+        "complete": true
+      },
+      "field_coverage": {
+        "discovered": 17,
+        "scheduled": 17,
+        "complete": true
+      },
+      "batch_count": 1,
+      "max_profiles_per_batch": 8,
+      "max_fields_per_source_per_batch": 48,
+      "ordering_only": true
+    }
+  ],
+  "coverage_manifests": {
+    "executed_on": {
+      "total_sources": 1,
+      "considered_source_ids": [
+        "cdb:source:events"
+      ],
+      "examined_source_ids": [
+        "cdb:source:events"
+      ],
+      "rejected_source_ids": {},
+      "unexamined_source_ids": [],
+      "stage_audit": [
+        {
+          "stage": "F0_CERTIFIED",
+          "discovered_sources": [],
+          "count": 0
+        },
+        {
+          "stage": "F1_METADATA",
+          "discovered_sources": [],
+          "count": 0
+        },
+        {
+          "stage": "F2_ADJACENT",
+          "discovered_sources": [],
+          "count": 0
+        },
+        {
+          "stage": "F3_BOUNDED_PROFILING",
+          "discovered_sources": [
+            "cdb:source:events"
+          ],
+          "count": 1
+        }
+      ]
+    }
+  },
+  "census_profile_discovery": {},
+  "proposals": [
+    {
+      "source_id": "cdb:source:events",
+      "relation": "executed_on",
+      "input_roles": {
+        "command_execution": "cdb:events:field:cmdline"
+      },
+      "output_roles": {
+        "host": "cdb:events:field:host"
+      },
+      "proof_mode": "relation_observable",
+      "probe_kind": "cooccurrence",
+      "projection_roles": [],
+      "supported_constraints": [
+        "cmdline",
+        "encoding"
+      ],
+      "searchable_constraints": [],
+      "constraint_mappings": [
+        {
+          "semantic_constraint": "cmdline",
+          "native_field": "cdb:events:field:cmdline",
+          "operator": "equals",
+          "transform": "",
+          "proof_method": "field_match"
+        },
+        {
+          "semantic_constraint": "encoding",
+          "native_field": "cdb:events:field:cmdline",
+          "operator": "equals",
+          "transform": "powershell_encoded",
+          "proof_method": "field_match"
+        }
+      ],
+      "temporal_roles": {},
+      "action_roles": {},
+      "state_roles": {},
+      "artifact_identity_roles": {},
+      "correlation_roles": {},
+      "relaxable_constraint_keys": [],
+      "rationale_refs": [],
+      "confidence": null
+    }
+  ],
+  "rejected": [],
+  "relation_calls": [
+    {
+      "relation": "executed_on",
+      "batch_index": 1,
+      "batch_count": 1,
+      "profile_count": 1,
+      "status": "VALIDATED_CANDIDATES",
+      "proposals": [
+        {
+          "source_id": "cdb:source:events",
+          "relation": "executed_on",
+          "input_roles": {
+            "command_execution": "cdb:events:field:cmdline"
+          },
+          "output_roles": {
+            "host": "cdb:events:field:host"
+          },
+          "proof_mode": "relation_observable",
+          "probe_kind": "cooccurrence",
+          "projection_roles": [],
+          "supported_constraints": [
+            "cmdline",
+            "encoding"
+          ],
+          "searchable_constraints": [],
+          "constraint_mappings": [
+            {
+              "semantic_constraint": "cmdline",
+              "native_field": "cdb:events:field:cmdline",
+              "operator": "equals",
+              "transform": "",
+              "proof_method": "field_match"
+            },
+            {
+              "semantic_constraint": "encoding",
+              "native_field": "cdb:events:field:cmdline",
+              "operator": "equals",
+              "transform": "powershell_encoded",
+              "proof_method": "field_match"
+            }
+          ],
+          "temporal_roles": {},
+          "action_roles": {},
+          "state_roles": {},
+          "artifact_identity_roles": {},
+          "correlation_roles": {},
+          "relaxable_constraint_keys": [],
+          "rationale_refs": [],
+          "confidence": null
+        }
+      ],
+      "rejected": []
+    }
+  ],
+  "runtime_capabilities": [
+    {
+      "source_id": "cdb:source:events",
+      "relation": "executed_on",
+      "status": "CANDIDATE",
+      "probe_query_id": "probe-r-e2e-1",
+      "probe_succeeded": false,
+      "probe_reasons": [
+        "probe_returned_no_rows"
+      ]
+    }
+  ],
+  "runtime_operation_ids": []
+}

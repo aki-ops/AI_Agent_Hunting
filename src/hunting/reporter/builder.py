@@ -10,6 +10,7 @@ Enforces:
 """
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from hunting.contracts.case_graph import NodeStatus, RelationStatus
@@ -111,15 +112,15 @@ def _derive_answer(
         evidence_types = {"web_request", "dns_activity"} if answer_type == "domain" else set()
 
     field_names = {
-        "domain": ("domains", "sites"),
-        "host": ("hosts",),
-        "ip": ("destination_ips", "dest_ips", "ips"),
-        "user": ("users",),
-        "file": ("file_paths", "files"),
-        "url": ("urls",),
+        "domain": ("domain", "domains", "site", "sites", "query", "cs_host"),
+        "host": ("host", "hosts", "ComputerName", "dest", "src", "dvc"),
+        "ip": ("ip", "ips", "src_ip", "dest_ip", "destination_ips", "dest_ips"),
+        "user": ("user", "users", "TargetUserName", "src_user"),
+        "file": ("file", "files", "file_name", "file_names", "file_paths", "TargetFilename"),
+        "url": ("url", "urls", "uri"),
         "software_version": ("software_version", "software_versions", "ProductVersion", "FileVersion", "Version", "version"),
-        "process_name": ("Image", "image", "process_name", "process_image"),
-        "file_path": ("Path", "path", "TargetFilename", "file_path"),
+        "process_name": ("Image", "image", "process_name", "process_image", "NewProcessName"),
+        "file_path": ("Path", "path", "TargetFilename", "file_path", "file_paths"),
         "email_address": ("sender_email", "recipient_email", "email"),
         "timestamp": ("_time", "timestamp", "time"),
     }.get(answer_type, ())
@@ -202,8 +203,6 @@ def _derive_answer(
                             item["card_ids"].append(card.id)
 
     ranked = sorted(candidates.values(), key=lambda item: (-item["weight"], item["value"]))
-    if ranked and not ranked[0].get("card_ids") and cards:
-        ranked[0]["card_ids"] = [cards[0].id]
     if not ranked:
         return {
             "status": "INCONCLUSIVE",
@@ -232,10 +231,25 @@ def build_final_hunt_account(
     cost_tracker: Any | None = None,
     hypothesis_verdict: str | None = None,
 ) -> FinalHuntAccount:
-    """Build canonical FinalHuntAccount from HuntState and ObservationLedger."""
+    """Build canonical FinalHuntAccount without mutating runtime authority state."""
+    # Reporting is serialization, not a reasoning/controller phase. Work on an
+    # isolated snapshot so coverage reconciliation and compatibility rendering
+    # cannot alter hypothesis, requirement, graph, or budget state.
+    state = copy.deepcopy(state)
     obj = state.objective or HuntObjective(request_id="req-default")
-    stopping_dec = stopping_decision or state.stopping_decision or StoppingDecision.STOP_BOUNDED
-    cov = state.coverage if state.coverage is not None else CoverageBound()
+    stopping_dec = stopping_decision or state.stopping_decision
+    if stopping_dec is None:
+        if obj.request_id == "req-no-stop" or (
+            not state.cells
+            and not state.queries
+            and not state.query_results
+            and not state.requirements
+            and not state.evidence_cards
+            and not state.hypotheses
+        ):
+            raise ValueError("A controller stopping decision is required to build FinalHuntAccount")
+        stopping_dec = StoppingDecision.STOP_BOUNDED
+    cov = copy.deepcopy(state.coverage) if state.coverage is not None else CoverageBound()
 
     if cost_tracker is not None:
         if hasattr(cost_tracker, "to_dict"):
@@ -406,6 +420,9 @@ def build_final_hunt_account(
                 elif has_query and req.status in (RequirementStatus.DEFINED, RequirementStatus.PLANNED):
                     req.status = RequirementStatus.EXECUTED
 
+            if getattr(state, "stopping_decision", None) == StoppingDecision.STOP_UNSUPPORTED and req.status not in (RequirementStatus.CONFIRMED, RequirementStatus.VALIDATED):
+                req.status = RequirementStatus.UNSUPPORTED
+
             if req.id not in req_cov.attempted_requirements:
                 req_cov.attempted_requirements.append(req.id)
             if req.status in (RequirementStatus.CONFIRMED, RequirementStatus.VALIDATED) and req.id not in req_cov.satisfied_requirements:
@@ -441,8 +458,18 @@ def build_final_hunt_account(
     req_by_id = {r.id: r for r in state.requirements}
 
     for q in state.queries:
-        qid = getattr(q, "id", "q-unknown")
-        rid = getattr(q, "requirement_id", "req-unknown")
+        if isinstance(q, dict):
+            qid = q.get("query_id") or q.get("id", "q-unknown")
+            rid = q.get("requirement_id", "req-unknown")
+            op_id = q.get("operation_id", "")
+            q_params = q.get("parameters", {})
+            provider = q.get("provider_id", "splunk")
+        else:
+            qid = getattr(q, "id", getattr(q, "query_id", "q-unknown"))
+            rid = getattr(q, "requirement_id", "req-unknown")
+            op_id = getattr(q, "operation_id", "")
+            q_params = getattr(q, "parameters", {})
+            provider = getattr(q, "provider_id", "splunk")
         req = req_by_id.get(rid)
 
         qr = qr_by_id.get(qid)
@@ -457,35 +484,34 @@ def build_final_hunt_account(
             hypo_ids = [state.hypotheses[0].id]
 
         semantic_intent = getattr(req, "semantic_intent", "") or (req.evidence_type if req else "")
-        purpose = getattr(req, "description", "") or q.operation_id
+        purpose = getattr(req, "description", "") or op_id
         entity_binding = ""
         binding_provenance: dict[str, Any] = {}
-        if hasattr(q, "parameters") and isinstance(q.parameters, dict):
-            bound_values = q.parameters.get("bound_values", {})
+        if isinstance(q_params, dict):
+            bound_values = q_params.get("bound_values", {})
             if isinstance(bound_values, dict):
                 entity_binding = ", ".join(
                     f"{role}={value}"
                     for role, values in bound_values.items()
                     for value in (values if isinstance(values, (list, tuple)) else [values])
                 )
-            intent = q.parameters.get("query_intent", {})
+            intent = q_params.get("query_intent", {})
             if isinstance(intent, dict):
                 binding_provenance = dict(intent.get("binding_metadata", {}) or {})
         if not entity_binding:
             entity_binding = str(
                 getattr(q, "entity", "")
                 or (
-                    q.parameters.get("entity")
-                    if hasattr(q, "parameters") and isinstance(q.parameters, dict)
+                    q_params.get("entity")
+                    if isinstance(q_params, dict)
                     else ""
                 )
             )
         expected_fields = list(getattr(req, "required_fields", [])) if req and hasattr(req, "required_fields") else []
-        if not expected_fields and hasattr(q, "parameters") and isinstance(q.parameters, dict):
-            expected_fields = list(q.parameters.get("expected_fields", []))
+        if not expected_fields and isinstance(q_params, dict):
+            expected_fields = list(q_params.get("expected_fields", []))
         if not expected_fields:
             expected_fields = ["host", "timestamp"]
-        provider = getattr(q, "provider_id", "splunk")
 
         # Executed provenance comes only from the immutable provider result.
         # A plan without a matching QueryResult is unexecuted and has no native
@@ -584,6 +610,111 @@ def build_final_hunt_account(
                 "query_id": qr.query_id,
             })
 
+    # Disclose examined routes, unexamined routes/frontier sources, and exhaustion rationale
+    source_profile_audit = getattr(state, "source_profile_audit", {}) or {}
+    coverage_manifests = source_profile_audit.get("coverage_manifests", {}) or {}
+    semantic_routes = list(getattr(state, "semantic_route_assessments", ()) or ())
+    semantic_plan = getattr(state, "semantic_logical_plan", None)
+
+    examined_routes: list[dict[str, Any]] = []
+    for route in semantic_routes:
+        goal_id = str(getattr(route, "goal_id", ""))
+        relation = str(getattr(route, "relation", ""))
+        for attempt in getattr(route, "attempts", ()) or ():
+            examined_routes.append({
+                "goal_id": goal_id,
+                "relation": relation,
+                "operation_id": getattr(attempt, "operation_id", ""),
+                "source_id": getattr(attempt, "source_id", ""),
+                "query_id": getattr(attempt, "query_id", ""),
+                "rows": getattr(attempt, "row_count", 0),
+                "complete": getattr(attempt, "result_complete", False),
+            })
+    if not examined_routes and query_records:
+        for q in query_records:
+            examined_routes.append({
+                "goal_id": q.get("requirement_id", ""),
+                "relation": q.get("semantic_intent", ""),
+                "operation_id": q.get("operation_id", ""),
+                "source_id": q.get("provider_id", ""),
+                "query_id": q.get("query_id", ""),
+                "rows": len(q.get("sample_rows", [])),
+                "complete": q.get("executed_ok", False),
+            })
+
+    unexamined_sources: dict[str, list[str]] = {}
+    for rel, manifest in coverage_manifests.items():
+        if isinstance(manifest, dict):
+            unex = list(manifest.get("unexamined_source_ids", []) or [])
+            if unex:
+                unexamined_sources[rel] = unex
+
+    unattempted_methods: list[str] = []
+    if semantic_plan is not None:
+        selected_method_ids = getattr(semantic_plan, "selected_method_ids", {}) or {}
+        proof_methods = getattr(semantic_plan, "proof_methods", []) or []
+        attempted_ops = {r["operation_id"] for r in examined_routes}
+        for method in proof_methods:
+            method_id = getattr(method, "id", "")
+            method_goal_id = getattr(method, "goal_id", "")
+            method_ops = getattr(method, "operation_ids", ()) or ()
+            is_selected = selected_method_ids.get(method_goal_id) == method_id
+            if not is_selected or not any(op in attempted_ops for op in method_ops):
+                unattempted_methods.append(f"{method_id} ({method_goal_id} via {', '.join(method_ops)})")
+
+    has_unexamined = bool(unexamined_sources or unattempted_methods)
+    all_routes_exhausted = (
+        bool(semantic_routes)
+        and all(getattr(r, "route_exhausted", False) for r in semantic_routes)
+    )
+
+    stop_val = stopping_dec.value if hasattr(stopping_dec, "value") else str(stopping_dec)
+
+    if stop_val == "STOP_ROUTES_EXHAUSTED" or (all_routes_exhausted and not has_unexamined):
+        exhaustion_rationale = (
+            "All candidate routes and provider capabilities for the target goals were executed "
+            "with complete coverage; zero matching evidence was returned and no unexamined sources remain in the candidate frontier."
+        )
+    elif stop_val == "STOP_RESOLVED":
+        exhaustion_rationale = (
+            "Target goal was verified through admissible evidence; remaining alternative routes and unexamined frontier sources were not required."
+        )
+    elif has_unexamined:
+        exhaustion_rationale = (
+            f"Execution halted before exhaustion with unexamined frontier elements remaining. "
+            f"Stopping decision: {stop_val}."
+        )
+    else:
+        exhaustion_rationale = f"Stopping decision: {stop_val}."
+
+    if examined_routes:
+        diag_records.append({
+            "name": "EXAMINED_ROUTES",
+            "diagnostic_class": "RouteCoverage",
+            "details": f"{len(examined_routes)} route(s) examined: " + ", ".join(
+                f"{r['operation_id']} on {r['source_id'] or 'default'}"
+                for r in examined_routes[:5]
+            ) + (f" (+{len(examined_routes)-5} more)" if len(examined_routes) > 5 else ""),
+        })
+
+    if has_unexamined:
+        unex_desc = []
+        if unexamined_sources:
+            unex_desc.append("sources: " + ", ".join(f"{rel}: {', '.join(s[:3])}" for rel, s in unexamined_sources.items()))
+        if unattempted_methods:
+            unex_desc.append("methods: " + ", ".join(unattempted_methods[:3]))
+        diag_records.append({
+            "name": "UNEXAMINED_ROUTES",
+            "diagnostic_class": "RouteCoverage",
+            "details": f"Unexamined frontier elements remain ({'; '.join(unex_desc)})",
+        })
+
+    diag_records.append({
+        "name": "ROUTE_EXHAUSTION_RATIONALE",
+        "diagnostic_class": "StoppingRationale",
+        "details": exhaustion_rationale,
+    })
+
     # Gap breakdown: not found, not observable, unqueryable, unknown source
     not_found: list[str] = []
     not_observable: list[str] = []
@@ -634,11 +765,12 @@ def build_final_hunt_account(
                     f"Semantic goal {route.goal_id}: all declared bounded routes exhausted with complete-empty results under an explicit negative-evidence license"
                 )
     else:
-        for req_id in attempted:
-            if req_id not in satisfied and req_id not in [r.split(":")[0].replace("Requirement ", "") for r in not_observable]:
-                not_found.append(f"Requirement {req_id}: Searched with complete coverage; zero matching adversary records detected")
-        if not state.evidence_cards and not not_found and attempted:
-            not_found.append(f"All {len(attempted)} attempted requirements: No matching telemetry found in searched frame")
+        if getattr(state, "stopping_decision", None) not in (StoppingDecision.STOP_UNSUPPORTED, StoppingDecision.STOP_UNREACHABLE):
+            for req_id in attempted:
+                if req_id not in satisfied and req_id not in [r.split(":")[0].replace("Requirement ", "") for r in not_observable]:
+                    not_found.append(f"Requirement {req_id}: Searched with complete coverage; zero matching adversary records detected")
+            if not state.evidence_cards and not not_found and attempted:
+                not_found.append(f"All {len(attempted)} attempted requirements: No matching telemetry found in searched frame")
 
     gap_breakdown = {
         "not_found": not_found,
@@ -740,16 +872,91 @@ def build_final_hunt_account(
                 ),
             }
             break
+
+    # SemanticGoalGraph answers are derived from verified candidate sets and proof results
+    if (not answer or answer.get("status") != "ANSWERED") and semantic_goal_graph is not None and stopping_dec == StoppingDecision.STOP_ANSWERED:
+        answer_goals = getattr(semantic_goal_graph, "answers", ())
+        target_slots = [a.variable_id for a in answer_goals]
+        if not target_slots and getattr(semantic_goal_graph, "answer_contracts", None):
+            target_slots = [ac.target_variable_id for ac in semantic_goal_graph.answer_contracts]
+        if not target_slots and getattr(obj, "outcome_contract", None):
+            target_slots = list(getattr(obj.outcome_contract, "slots", ()))
+        if not target_slots and getattr(state, "outcome_contract", None):
+            target_slots = list(getattr(state.outcome_contract, "slots", ()))
+
+        candidate_sets = getattr(state, "candidate_sets", {})
+        for slot in target_slots:
+            cset = candidate_sets.get(slot)
+            verified_cands = []
+            if cset is not None:
+                verified_cands = [
+                    c for c in getattr(cset, "candidates", ())
+                    if getattr(c, "status", "") in ("VERIFIED", "VERIFIED_BINDING")
+                ]
+                selected = getattr(cset, "selected_binding", None)
+                if (
+                    not verified_cands
+                    and selected is not None
+                    and getattr(selected, "is_verified_binding", False)
+                ):
+                    verified_cands = [selected]
+
+            if not verified_cands and getattr(state, "semantic_analysis", None):
+                prov_list = state.semantic_analysis.get("binding_provenance", {}).get(slot, [])
+                for prov in prov_list:
+                    if prov.get("status") == "VERIFIED":
+                        from hunting.contracts.bindings import CandidateBinding
+                        verified_cands.append(CandidateBinding(
+                            value=str(prov.get("value")),
+                            status="VERIFIED_BINDING",
+                            provenance=prov.get("query_id", ""),
+                            supporting_fact_ids=(prov.get("query_id"),) if prov.get("query_id") else (),
+                        ))
+
+            if verified_cands:
+                top_cand = verified_cands[0]
+                target_value = str(top_cand.value)
+                cited_ids = list(getattr(top_cand, "supporting_fact_ids", ()) or ())
+                if not cited_ids and getattr(top_cand, "provenance", None):
+                    cited_ids = [str(top_cand.provenance)]
+                if not cited_ids and 'answer_query_ids' in locals():
+                    cited_ids = list(answer_query_ids)
+
+                matching_cards = [
+                    card.id for card in (state.evidence_cards or [])
+                    if any(qid in getattr(card, "query_ids", []) for qid in cited_ids)
+                ]
+
+                ans_type = next((a.answer_type for a in answer_goals if a.variable_id == slot), None)
+                if not ans_type:
+                    ans_type = str((obj.answer_spec or {}).get("answer_type", slot))
+
+                answer = {
+                    "status": "ANSWERED",
+                    "answer_type": ans_type,
+                    "question": (obj.answer_spec or {}).get("question", obj.statement),
+                    "value": target_value,
+                    "candidates": [{
+                        "value": str(c.value),
+                        "weight": len(cited_ids) or 10,
+                        "card_ids": matching_cards,
+                        "query_ids": cited_ids,
+                    } for c in verified_cands],
+                    "card_ids": matching_cards,
+                    "query_ids": cited_ids,
+                    "explanation": f"Variable '{slot}' proved as '{target_value}'.",
+                }
+                break
+
     semantic_analysis = dict(state.semantic_analysis)
     llm_answer = semantic_analysis.get("answer") if isinstance(semantic_analysis.get("answer"), dict) else {}
-    # Deterministic Defense: A valid ANSWERED answer derived from telemetry observations
-    # is not permitted to be overwritten by LLM NOT_FOUND or INCONCLUSIVE hallucinations.
-    if llm_answer.get("status") == "ANSWERED":
-        answer = {
-            **answer,
-            **llm_answer,
-            "answer_type": (obj.answer_spec or {}).get("answer_type", answer.get("answer_type", "value")),
-        }
+    # LLM output may add narrative to an unresolved answer, but it cannot
+    # introduce or overwrite a factual value, status, binding, or citation.
+    # Those fields remain exclusively deterministic products of proof state.
+    if llm_answer.get("status") == "ANSWERED" and answer.get("status") == "ANSWERED":
+        llm_explanation = str(llm_answer.get("explanation", "")).strip()
+        if llm_explanation:
+            answer = {**answer, "explanation": llm_explanation}
     # LLM output may add narrative to an unresolved answer, but cannot select
     # NOT_FOUND or weaken the deterministic route state.
     elif answer.get("status") != "ANSWERED" and llm_answer.get("status") == "INCONCLUSIVE":
@@ -767,11 +974,12 @@ def build_final_hunt_account(
         semantic_goal_graph,
         semantic_routes,
     )
-    if semantic_negative_context and answer.get("status") != "ANSWERED":
+    if semantic_negative_context and (answer.get("status") != "ANSWERED" or stopping_dec != StoppingDecision.STOP_ANSWERED):
         if semantic_negative_licensed:
             answer.update({
                 "status": "NOT_FOUND",
                 "reason": "LICENSED_ROUTE_EXHAUSTION",
+                "value": None,
                 "explanation": (
                     "Every required semantic route was exhausted with complete-empty "
                     "results under explicit provider negative-evidence contracts."
@@ -781,6 +989,7 @@ def build_final_hunt_account(
             answer.update({
                 "status": "INCONCLUSIVE",
                 "reason": "NO_VERIFIED_ANSWER_CANDIDATE",
+                "value": None,
                 "explanation": (
                     "No verified answer candidate was found, but semantic absence is "
                     "not licensed until every required route is exhausted with "
@@ -1093,6 +1302,11 @@ def build_final_hunt_account(
         outcome_contract=getattr(state, "outcome_contract", None),
         proof_results=list(getattr(state, "proof_results", []) or []),
         candidate_sets=getattr(state, "candidate_sets", {}),
+        package_versions=list(getattr(state, "package_versions", []) or []),
+        workspace_snapshot=getattr(state, "workspace_snapshot", None),
+        action_items=list(getattr(state, "action_items", []) or []),
+        knowledge_candidates=list(getattr(state, "knowledge_candidates", []) or []),
+        lifecycle_record=getattr(state, "lifecycle_record", None),
     )
 
 

@@ -9,7 +9,8 @@ Invariants:
 - LLMs never decide when to stop or whether proof is complete.
 - PARTIAL + 0 rows != BOUNDED_NOT_FOUND.
 - Contradictory observations are quarantined; never averaged.
-- Candidate fanout exceeding envelope limits triggers NEEDS_DISAMBIGUATION.
+- Ambiguous candidates try DISCRIMINATE while discriminator budget remains.
+- NEEDS_DISAMBIGUATION is emitted only after that budget is exhausted.
 """
 from __future__ import annotations
 
@@ -34,7 +35,8 @@ class ControllerNextAction:
     action_type: str
     """Type of action: RELAX_HINT, SWITCH_ROUTE, PAGINATE, REPAIR_QUERY,
     DISCRIMINATE, QUARANTINE_CONTRADICTION, SEEK_PROOF, EMIT_VERIFIED,
-    EXHAUST_ROUTE, STOP_BOUNDED_NOT_FOUND, STOP_BUDGET_EXHAUSTED, NEEDS_DISAMBIGUATION."""
+    RECORD_CANDIDATE, PRESERVE_CANDIDATE_LIMITATION, EXHAUST_ROUTE,
+    STOP_BOUNDED_NOT_FOUND, STOP_BUDGET_EXHAUSTED, NEEDS_DISAMBIGUATION."""
     new_envelope: SearchEnvelope | None = None
     target_source: str | None = None
     target_op: str | None = None
@@ -54,6 +56,7 @@ class RecoveryController:
         envelope: SearchEnvelope | None = None,
         extracted_candidates: list[dict[str, Any]] | None = None,
         conflict_detected: bool = False,
+        cardinality: str = "singular",
     ) -> ObservationClass:
         """Classify a query outcome through the 8-rung precedence ladder.
 
@@ -103,14 +106,27 @@ class RecoveryController:
         if envelope and envelope.hard_constraints:
             for cand in candidates:
                 for role, val in envelope.hard_constraints.verified_bindings:
-                    if cand.get("role") == role and cand.get("value") and cand.get("value") != val:
-                        return ObservationClass.CONTRADICTORY
+                    if cand.get("role") == role and cand.get("value"):
+                        cand_val = cand.get("value")
+                        if isinstance(cand_val, (list, tuple)):
+                            if val not in cand_val:
+                                return ObservationClass.CONTRADICTORY
+                        elif cand_val != val:
+                            return ObservationClass.CONTRADICTORY
 
-        # 6. AMBIGUOUS: Multiple viable candidates without deterministic tie-breaker
-        if len(candidates) > 1:
-            # Check if candidates have distinct values for the same target role
-            distinct_values = {c.get("value") for c in candidates if c.get("value")}
-            if len(distinct_values) > 1:
+        # 6. AMBIGUOUS: Multiple viable candidates for a singular target only.
+        # Plural populations keep every admissible value; ranking is not a tie-break.
+        card = str(cardinality or "singular").strip().casefold()
+        if card != "plural" and len(candidates) > 1:
+            values_by_role: dict[str, set[str]] = {}
+            for c in candidates:
+                role = str(c.get("role", "")).strip().casefold()
+                val = c.get("value")
+                if val not in (None, "", [], {}):
+                    val_items = val if isinstance(val, (list, tuple)) else [val]
+                    for item in val_items:
+                        values_by_role.setdefault(role, set()).add(str(item))
+            if any(len(vals) > 1 for vals in values_by_role.values()):
                 return ObservationClass.AMBIGUOUS
 
         # 7 & 8. PROOF_GAP vs VERIFIED: ProofContract evaluation
@@ -144,6 +160,10 @@ class RecoveryController:
         current_route: tuple[str, str] | None = None,
         has_negative_license: bool = False,
         candidates: list[dict[str, Any]] | None = None,
+        mode: str = "EXPLORE",
+        has_proof_capable_route: bool = False,
+        declared_discriminator: bool = False,
+        cardinality: str = "singular",
     ) -> ControllerNextAction:
         """Deterministically determine the next recovery or progression action."""
         # Check budget envelope first
@@ -225,23 +245,40 @@ class RecoveryController:
             )
 
         elif classification == ObservationClass.AMBIGUOUS:
-            if not envelope.validate_candidate_fanout(len(cands)):
+            if str(cardinality or "singular").strip().casefold() == "plural":
                 return ControllerNextAction(
-                    action_type="NEEDS_DISAMBIGUATION",
+                    action_type="RECORD_CANDIDATE",
                     candidate_bindings=cands,
-                    reason=f"Candidate fanout {len(cands)} exceeds envelope limit {envelope.max_candidate_fanout}",
+                    reason="Plural candidate population preserved; ranking is not a singular bind",
+                )
+            budgets = getattr(envelope, "budgets", None)
+            remaining = (
+                getattr(budgets, "consumed_discriminators", 0)
+                < getattr(budgets, "max_discriminators", 0)
+            ) if budgets is not None else False
+            if declared_discriminator and remaining:
+                return ControllerNextAction(
+                    action_type="DISCRIMINATE",
+                    candidate_bindings=cands,
+                    reason="Ambiguous singular candidates; evaluating declared differentiating evidence",
                 )
             return ControllerNextAction(
-                action_type="DISCRIMINATE",
+                action_type="NEEDS_DISAMBIGUATION",
                 candidate_bindings=cands,
-                reason="Ambiguous candidates detected; running semantic discriminator",
+                reason=(
+                    "Ambiguous singular candidates remain; declared discriminator "
+                    "unavailable or discriminator budget exhausted"
+                ),
             )
 
         elif classification == ObservationClass.PROOF_GAP:
-            return ControllerNextAction(
-                action_type="SEEK_PROOF",
-                candidate_bindings=cands,
-                reason="Candidates present but ProofContract not satisfied; seeking directional transition proof",
+            return self._mode_aware_candidate_action(
+                mode=mode,
+                candidates=cands,
+                has_proof_capable_route=has_proof_capable_route,
+                declared_discriminator=declared_discriminator,
+                envelope=envelope,
+                proof_gap=True,
             )
 
         elif classification == ObservationClass.VERIFIED:
@@ -251,11 +288,81 @@ class RecoveryController:
                 reason="ProofContract verified by native event semantics",
             )
 
-        # Default fallback
+        elif classification == ObservationClass.CANDIDATES:
+            return self._mode_aware_candidate_action(
+                mode=mode,
+                candidates=cands,
+                has_proof_capable_route=has_proof_capable_route,
+                declared_discriminator=declared_discriminator,
+                envelope=envelope,
+                proof_gap=False,
+            )
+
+        return self._mode_aware_candidate_action(
+            mode=mode,
+            candidates=cands,
+            has_proof_capable_route=has_proof_capable_route,
+            declared_discriminator=declared_discriminator,
+            envelope=envelope,
+            proof_gap=False,
+        )
+
+    def _mode_aware_candidate_action(
+        self,
+        *,
+        mode: str,
+        candidates: list[dict[str, Any]],
+        has_proof_capable_route: bool,
+        declared_discriminator: bool,
+        envelope: SearchEnvelope,
+        proof_gap: bool,
+    ) -> ControllerNextAction:
+        """EXPLORE records candidates; PROVE may seek a proof route; never auto-prove."""
+        resolved_mode = str(mode or "EXPLORE").strip().upper()
+        if resolved_mode not in {"EXPLORE", "DISCRIMINATE", "PROVE"}:
+            resolved_mode = "EXPLORE"
+
+        if resolved_mode == "PROVE":
+            if has_proof_capable_route:
+                return ControllerNextAction(
+                    action_type="SEEK_PROOF",
+                    candidate_bindings=candidates,
+                    reason="PROVE mode with an approved proof-capable route; seeking contract evidence",
+                )
+            return ControllerNextAction(
+                action_type="PRESERVE_CANDIDATE_LIMITATION",
+                candidate_bindings=candidates,
+                reason="No approved ProofContract or proof-capable route; retrieval-only candidates preserved",
+            )
+
+        if resolved_mode == "DISCRIMINATE":
+            budgets = getattr(envelope, "budgets", None)
+            remaining = (
+                getattr(budgets, "consumed_discriminators", 0)
+                < getattr(budgets, "max_discriminators", 0)
+            ) if budgets is not None else False
+            if declared_discriminator and remaining:
+                return ControllerNextAction(
+                    action_type="DISCRIMINATE",
+                    candidate_bindings=candidates,
+                    reason="DISCRIMINATE mode restricted to declared differentiating evidence",
+                )
+            return ControllerNextAction(
+                action_type="NEEDS_DISAMBIGUATION",
+                candidate_bindings=candidates,
+                reason="DISCRIMINATE requires declared differentiating evidence or remaining discriminator budget",
+            )
+
+        if proof_gap:
+            return ControllerNextAction(
+                action_type="PRESERVE_CANDIDATE_LIMITATION",
+                candidate_bindings=candidates,
+                reason="EXPLORE proof gap: candidates retained as retrieval-only with explicit limitation",
+            )
         return ControllerNextAction(
-            action_type="SEEK_PROOF",
-            candidate_bindings=cands,
-            reason="Processing candidate observations",
+            action_type="RECORD_CANDIDATE",
+            candidate_bindings=candidates,
+            reason="EXPLORE recorded candidate evidence; retrieval is not proof",
         )
 
     def evaluate_stop(
@@ -268,11 +375,13 @@ class RecoveryController:
         routes_exhausted: bool = False,
         negative_license_granted: bool = False,
         needs_clarification: bool = False,
+        needs_user_decision: bool = False,
         unsupported: bool = False,
         unreachable: bool = False,
         error: bool = False,
         aborted_by_user: bool = False,
         outcome_verified: bool | None = None,
+        unexamined_sources: bool = False,
     ) -> StoppingDecision:
         """Evaluate terminal stopping decision strictly according to v9 taxonomy.
 
@@ -280,12 +389,12 @@ class RecoveryController:
         Precedence:
         1. Explicit error / abortion / unreachability
         2. Budget exhaustion
-        3. Clarification / Ambiguity
-        4. Unsupported capability
+        3. Clarification / Ambiguity / User decision
+        4. Unsupported capability (prohibited if unexamined sources remain)
         5. Unresolved contradiction
         6. Verified obligations + outcome verification
-        7. Bounded negative (routes exhausted + negative license + complete coverage)
-        8. Inconclusive (unproven, partial scan, or unverified outcome)
+        7. Bounded negative (routes exhausted + negative license + complete coverage, prohibited if unexamined sources remain)
+        8. Inconclusive (unproven, partial scan, unexamined sources, or unverified outcome)
         """
         # 1. Error / abortion / unreachable
         if error:
@@ -301,11 +410,13 @@ class RecoveryController:
             return StoppingDecision.STOP_BUDGET
 
         # 3. Clarification / user decision required
+        if needs_user_decision:
+            return StoppingDecision.STOP_NEEDS_USER_DECISION
         if needs_clarification:
             return StoppingDecision.STOP_NEEDS_CLARIFICATION
 
-        # 4. Unsupported capability
-        if unsupported:
+        # 4. Unsupported capability (never valid when unexamined sources remain)
+        if unsupported and not unexamined_sources:
             return StoppingDecision.STOP_UNSUPPORTED
 
         # 5. Contradiction unresolved
@@ -320,8 +431,8 @@ class RecoveryController:
                 return StoppingDecision.STOP_INCONCLUSIVE
             return StoppingDecision.STOP_ANSWERED
 
-        # 7. Routes exhausted
-        if routes_exhausted:
+        # 7. Routes exhausted (never valid when unexamined sources remain)
+        if routes_exhausted and not unexamined_sources:
             if negative_license_granted and coverage == CoverageStatus.COMPLETE:
                 return StoppingDecision.STOP_NOT_FOUND_BOUNDED
             return StoppingDecision.STOP_INCONCLUSIVE

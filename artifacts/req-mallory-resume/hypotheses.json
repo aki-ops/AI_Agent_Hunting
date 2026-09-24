@@ -1,0 +1,9 @@
+[
+  {
+    "id": "h1",
+    "statement": "Find confidential files on Mallory's endpoint",
+    "status": "SUPPORTED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

@@ -1,14 +1,19 @@
-from hunting.capabilities.route_resolver import CapabilityRouteResolver
-from hunting.contracts.candidate_route import RouteClass
-from hunting.contracts.queries import ProviderOperation
-from hunting.contracts.semantic_graph import SemanticAnswerGoal, SemanticGoalGraph, SemanticRelationGoal, SemanticVariable
-from hunting.planner.semantic_goal_planner import SemanticGoalPlanner
 from dataclasses import replace
 
+from hunting.capabilities.route_resolver import CapabilityRouteResolver
+from hunting.contracts.agenda import AgendaItem, BoundedAgenda
+from hunting.contracts.candidate_route import RouteClass
+from hunting.contracts.queries import ProviderOperation
+from hunting.contracts.semantic_graph import (
+    SemanticAnswerGoal,
+    SemanticGoalGraph,
+    SemanticRelationGoal,
+    SemanticVariable,
+)
 from hunting.m5_adapter.cdb_adapter import CdbAdapter
 from hunting.planner.semantic_executor import SemanticPlanExecutor
+from hunting.planner.semantic_goal_planner import SemanticGoalPlanner
 from hunting.planner.semantic_query_compiler import query_plan_from_step
-from hunting.contracts.agenda import AgendaItem, BoundedAgenda
 
 
 def _graph(relation: str = "novel relation") -> SemanticGoalGraph:
@@ -225,6 +230,29 @@ def test_prove_route_requires_an_approved_proof_contract_id() -> None:
     assert routes["unapproved-proof"].proof_contract_id is None
     assert routes["approved-proof"].mode.value == "PROVE"
     assert routes["approved-proof"].proof_contract_id == "pc-typed-action-v1"
+
+
+def test_f1_typed_operation_is_executable_without_relation_overlap_or_goal_binding() -> None:
+    graph = _graph("unregistered wording")
+    operation = ProviderOperation(
+        id="op-typed-file",
+        provider_id="mock",
+        scope_ids=("scope",),
+        input_entity_kinds=("person",),
+        output_entity_kinds=("artifact",),
+        output_roles=("file_name",),
+        output_value_bindings={"object": ("name",)},
+        route_class="EXECUTABLE",
+        route_mode="EXPLORE",
+    )
+    resolution = CapabilityRouteResolver().resolve(graph, (operation,), "mock")
+    route = resolution.routes_by_goal["goal-1"][0]
+    assert route.executable
+    assert "F1" in ",".join(route.discovery_provenance) or route.frontier_stage.startswith("F")
+    plan = SemanticGoalPlanner((operation,), "mock").compose(
+        graph, candidate_routes=resolution.routes_by_goal, legacy_relation_matching=False,
+    )
+    assert [step.operation_id for step in plan.steps] == ["op-typed-file"]
 
 
 def test_bounded_agenda_is_deterministic_and_resumable() -> None:

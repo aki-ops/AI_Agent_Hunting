@@ -1,0 +1,42 @@
+[
+  {
+    "id": "card-3cb7db88e48b",
+    "summary": "Telemetry observations (2 events on MACLORY-AIR13)",
+    "why_it_matters": "Observed operational telemetry within the monitored scope.",
+    "fact_type": "generic_telemetry",
+    "count": 2,
+    "confidence": "LOW",
+    "hypotheses": [],
+    "requirements": [],
+    "query_ids": [
+      "logical-graph-mallory-constraints-step-1",
+      "logical-graph-mallory-constraints-step-2"
+    ],
+    "replay": {
+      "artifact": "observations.jsonl",
+      "query_ids": [
+        "logical-graph-mallory-constraints-step-1",
+        "logical-graph-mallory-constraints-step-2"
+      ],
+      "command": "python -m hunting.cli show-observation --observation-id obs-logical-graph-mallory-constraints-step-1-0"
+    },
+    "entity_summary": {
+      "hosts": [
+        "MACLORY-AIR13"
+      ],
+      "users": [
+        "mallory"
+      ]
+    },
+    "time_summary": {
+      "earliest": "1970-01-01T00:00:00Z",
+      "latest": "1970-01-01T00:00:00Z",
+      "span_events": 2
+    },
+    "field_summary": {},
+    "representative_observation_ids": [
+      "obs-logical-graph-mallory-constraints-step-1-0",
+      "obs-logical-graph-mallory-constraints-step-2-0"
+    ]
+  }
+]

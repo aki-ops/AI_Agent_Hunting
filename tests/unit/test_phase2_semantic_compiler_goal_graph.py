@@ -153,10 +153,10 @@ def test_validator_preserves_proper_nouns_in_vietnamese_and_unfamiliar_names() -
         objective="Tìm tệp tải về",
         variables=[
             SemanticVariable("p1", "person", "Nguyễn Văn Bình", value_origin="request"),
-            SemanticVariable("f1", "file"),
+            SemanticVariable("h1", "host"),
         ],
         relations=[
-            SemanticRelationGoal("r1", "p1", "downloaded", "f1", provenance_span="Nguyễn Văn Bình đã tải về"),
+            SemanticRelationGoal("r1", "p1", "associated_with", "h1", provenance_span="Nguyễn Văn Bình"),
         ],
         answers=[],
     )
@@ -180,7 +180,7 @@ def test_validator_prunes_unrelated_story_expansion() -> None:
             SemanticVariable("domain", "domain", "evil.com", value_origin="llm_proposal"),
         ],
         relations=[
-            SemanticRelationGoal("r_target", "user", "associated_with", "email"),
+            SemanticRelationGoal("r_target", "user", "has_email", "email"),
             # Unrequested story expansion: random DNS exfil not leading to the requested email
             SemanticRelationGoal("r_story", "dns_server", "resolved", "domain"),
         ],
@@ -323,7 +323,7 @@ def test_compiler_end_to_end_emits_goal_graph_and_persists_to_account() -> None:
             {
                 "id": "g2",
                 "subject": "endpoint",
-                "relation": "stored_on",
+                "relation": "modified",
                 "object": "pres",
                 "required": True,
                 "atomic_obligation": "Find presentation file stored on endpoint",

@@ -1,0 +1,110 @@
+{
+  "id": "logical-goal-graph-final-flow",
+  "goal_graph_id": "goal-graph-final-flow",
+  "provider_id": "cdb",
+  "steps": [
+    {
+      "id": "step-1",
+      "operation_id": "find_process_from_endpoint",
+      "input_bindings": {
+        "subject": "var_endpoint"
+      },
+      "output_bindings": {
+        "object": "var_exploit_proc"
+      },
+      "advances_goal_ids": [
+        "req-CVE-2024-21887-exploit"
+      ],
+      "depends_on": [],
+      "expected_cost": 1,
+      "constraints": [
+        "cmdline=python"
+      ],
+      "constraint_retrieval_terms": [],
+      "relation": "spawned",
+      "constraint_metadata": [
+        {
+          "key": "cmdline",
+          "operator": "contains",
+          "value": "python",
+          "variable_id": "var_exploit_proc",
+          "provenance": "semantic_graph",
+          "trust_class": "request_grounded"
+        }
+      ],
+      "alternative_operation_ids": [
+        "cdb_process_search"
+      ],
+      "requires_complete_inputs": true,
+      "dependency_operator": "AND",
+      "gate_condition": null,
+      "mode": "EXPLORE"
+    },
+    {
+      "id": "step-2",
+      "operation_id": "find_file_change_from_process",
+      "input_bindings": {
+        "subject": "var_exploit_proc"
+      },
+      "output_bindings": {
+        "object": "var_webshell_file"
+      },
+      "advances_goal_ids": [
+        "req-CVE-2024-21887-post"
+      ],
+      "depends_on": [
+        "step-1"
+      ],
+      "expected_cost": 1,
+      "constraints": [],
+      "constraint_retrieval_terms": [],
+      "relation": "wrote",
+      "constraint_metadata": [],
+      "alternative_operation_ids": [],
+      "requires_complete_inputs": true,
+      "dependency_operator": "AND",
+      "gate_condition": null,
+      "mode": "EXPLORE"
+    }
+  ],
+  "unresolved_goal_ids": [],
+  "proof_methods": [
+    {
+      "id": "method-req-CVE-2024-21887-exploit-1",
+      "goal_id": "req-CVE-2024-21887-exploit",
+      "prerequisite_goal_ids": [],
+      "operation_ids": [
+        "cdb_process_search"
+      ],
+      "expected_cost": 1,
+      "description": "cdb_process_search declares relation spawned"
+    },
+    {
+      "id": "method-req-CVE-2024-21887-exploit-2",
+      "goal_id": "req-CVE-2024-21887-exploit",
+      "prerequisite_goal_ids": [],
+      "operation_ids": [
+        "find_process_from_endpoint"
+      ],
+      "expected_cost": 1,
+      "description": "find_process_from_endpoint declares relation spawned"
+    },
+    {
+      "id": "method-req-CVE-2024-21887-post-1",
+      "goal_id": "req-CVE-2024-21887-post",
+      "prerequisite_goal_ids": [
+        "req-CVE-2024-21887-exploit"
+      ],
+      "operation_ids": [
+        "find_file_change_from_process"
+      ],
+      "expected_cost": 1,
+      "description": "find_file_change_from_process declares relation wrote"
+    }
+  ],
+  "selected_method_ids": {
+    "req-CVE-2024-21887-exploit": "method-req-CVE-2024-21887-exploit-2",
+    "req-CVE-2024-21887-post": "method-req-CVE-2024-21887-post-1"
+  },
+  "graph_revision": "G0"
+}

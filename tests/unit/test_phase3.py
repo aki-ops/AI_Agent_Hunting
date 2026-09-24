@@ -52,6 +52,7 @@ def test_compile_query_plan_and_unsupported_requirement():
     assert diag is None
     assert query.intent == QueryIntent.PROCESS_LINEAGE
     assert query.operation_id == "cdb_proc_scan"
+    assert query.backend == "winsec"
 
     # Unsupported requirement returns Diagnostic.UNSUPPORTED_REQUIREMENT without fabricating a query
     query_unsupported, diag_unsupported = compile_query_plan(
@@ -389,4 +390,3 @@ def test_frontier_manager_instance_entity_in_multiple_windows():
     assert len(frontier.instance_cells) == 2
     buckets = [c.time_bucket for c in frontier.instance_cells]
     assert buckets == ["window_1", "window_2"]
-

@@ -1,0 +1,1094 @@
+{
+  "hunt_id": "req-mallory-c1",
+  "outcome": "INCONCLUSIVE",
+  "stopping_decision": "STOP_INCONCLUSIVE",
+  "answer": {
+    "status": "INCONCLUSIVE",
+    "reason": "NO_VERIFIED_ANSWER_CANDIDATE",
+    "value": null,
+    "explanation": "No verified answer candidate was found, but semantic absence is not licensed by the current execution, proof, and route state.",
+    "answer_type": "value",
+    "card_ids": [],
+    "required_fields": [],
+    "available_fields": [
+      "action",
+      "file",
+      "host",
+      "user"
+    ],
+    "missing_fields": [],
+    "artifact_detected": false,
+    "claim": "No verified answer candidate was found, but semantic absence is not licensed until every required route is exhausted with complete-empty results under an explicit provider contract.",
+    "citations": [],
+    "citation_text": ""
+  },
+  "llm_usage": {
+    "model": "stub",
+    "max_calls_budget": 5,
+    "calls_made": 0,
+    "is_exhausted": false,
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "total_tokens": 0,
+    "estimated_cost_usd": 0,
+    "token_accounting_mode": "ESTIMATED",
+    "is_estimate": true,
+    "calls": []
+  },
+  "total_observations": 2,
+  "total_cards": 1,
+  "total_queries": 2,
+  "semantic_graph_id": "graph-mallory-constraints",
+  "proof_plan_id": "logical-graph-mallory-constraints",
+  "semantic_analysis": {
+    "compiler_trace": {},
+    "goal_verdicts": [
+      {
+        "goal_id": "rel_user_host",
+        "relation": "associated_with",
+        "status": "INCONCLUSIVE",
+        "query_ids": [
+          "logical-graph-mallory-constraints-step-1"
+        ],
+        "proof_method_id": "method-rel_user_host-1",
+        "unverified_restrictions": [],
+        "compiler_limitations": [
+          "hardware_form_factor=MacBook"
+        ],
+        "proof_results": [
+          {
+            "contract_id": "proof-person-endpoint-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "evaluate_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": false,
+            "verdict": "PROOF_GAP",
+            "status": "PROOF_GAP",
+            "reason_codes": [
+              "non_conforming_rows",
+              "unsatisfied_constraints:hardware_form_factor=MacBook"
+            ],
+            "subject_binding": null,
+            "object_binding": null,
+            "bindings": {},
+            "satisfied_obligations": [],
+            "missing_obligations": [],
+            "satisfied_constraints": [],
+            "unsatisfied_constraints": [
+              "hardware_form_factor=MacBook"
+            ],
+            "citations": [],
+            "cited_fields": {},
+            "completeness_satisfied": false,
+            "coverage_satisfied": false,
+            "limitations": [],
+            "diagnostic": "No event conformed to proof contract 'proof-person-endpoint-v1'. Missing roles: none; Unsatisfied constraints: hardware_form_factor=MacBook; violations: ['unsatisfied_constraints:hardware_form_factor=MacBook']"
+          }
+        ]
+      },
+      {
+        "goal_id": "rel_host_file",
+        "relation": "modified",
+        "status": "SUPPORTED",
+        "query_ids": [
+          "logical-graph-mallory-constraints-step-2"
+        ],
+        "proof_method_id": "method-rel_host_file-1",
+        "unverified_restrictions": [],
+        "compiler_limitations": [],
+        "proof_results": [
+          {
+            "contract_id": "proof-file-modified-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "evaluate_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": true,
+            "verdict": "PROVEN",
+            "status": "VERIFIED",
+            "reason_codes": [
+              "contract_requirements_satisfied"
+            ],
+            "subject_binding": "MACLORY-AIR13",
+            "object_binding": "sensitive_doc.pdf",
+            "bindings": {
+              "endpoint": "MACLORY-AIR13",
+              "file": "sensitive_doc.pdf",
+              "proved_object_0": "sensitive_doc.pdf",
+              "proved_subject_0": "MACLORY-AIR13"
+            },
+            "satisfied_obligations": [
+              "endpoint",
+              "file"
+            ],
+            "missing_obligations": [],
+            "satisfied_constraints": [],
+            "unsatisfied_constraints": [],
+            "citations": [
+              "obs-logical-graph-mallory-constraints-step-2-0"
+            ],
+            "cited_fields": {
+              "endpoint": "host",
+              "file": "file"
+            },
+            "completeness_satisfied": true,
+            "coverage_satisfied": true,
+            "limitations": [],
+            "diagnostic": "Proof established for relation 'modified' via contract 'proof-file-modified-v1'."
+          }
+        ]
+      }
+    ],
+    "proof_state": {
+      "rel_user_host": "INCONCLUSIVE",
+      "rel_host_file": "SUPPORTED"
+    },
+    "executed_steps": [
+      "step-1",
+      "step-2"
+    ],
+    "step_actions": [
+      {
+        "step_id": "step-1",
+        "observation_class": "CANDIDATES",
+        "next_action_reason": "EXPLORE recorded candidate evidence; retrieval is not proof"
+      },
+      {
+        "step_id": "step-2",
+        "observation_class": "VERIFIED",
+        "next_action_reason": "ProofContract verified by native event semantics"
+      }
+    ],
+    "unresolved_steps": [],
+    "unresolved_goals": [],
+    "unresolved_reasons": {},
+    "candidate_input_warnings": {
+      "step-2": "upstream candidate binding requires explicit user selection before this downstream step: var_endpoint"
+    },
+    "needs_user_decision": false,
+    "retrieval_incomplete": false,
+    "compiler_limitations": [
+      "hardware_form_factor=MacBook"
+    ],
+    "winning_facets": {},
+    "binding_provenance": {
+      "var_user": [
+        {
+          "value": "mallory",
+          "source": "request",
+          "query_id": "",
+          "status": "VERIFIED"
+        }
+      ],
+      "var_endpoint": [
+        {
+          "value": "MACLORY-AIR13",
+          "source": "step-1",
+          "query_id": "logical-graph-mallory-constraints-step-1",
+          "status": "CANDIDATE"
+        }
+      ],
+      "var_file": [
+        {
+          "value": "sensitive_doc.pdf",
+          "source": "step-2",
+          "query_id": "logical-graph-mallory-constraints-step-2",
+          "status": "CANDIDATE"
+        }
+      ]
+    },
+    "candidate_groups": {},
+    "candidate_census": {},
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "resolve-user-host",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-graph-mallory-constraints-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "window": "2026-02-01T00:00:00Z/P1D",
+        "cursor": null,
+        "rows": 1,
+        "complete": true,
+        "executed_ok": true,
+        "diagnostic": null,
+        "time_split": false
+      },
+      {
+        "step_id": "step-2",
+        "operation_id": "find-files-on-host",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-graph-mallory-constraints-step-2",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "window": "2026-02-01T00:00:00Z/P1D",
+        "cursor": null,
+        "rows": 1,
+        "complete": true,
+        "executed_ok": true,
+        "diagnostic": null,
+        "time_split": false
+      }
+    ],
+    "continuations": {},
+    "unverified_restrictions": {},
+    "binding_events": [],
+    "route_assessments": [
+      {
+        "goal_id": "rel_user_host",
+        "relation": "associated_with",
+        "status": "CANDIDATE_OBSERVED",
+        "execution_complete": true,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "RETRIEVAL_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-1",
+            "goal_id": "rel_user_host",
+            "operation_id": "resolve-user-host",
+            "source_id": "scope-1",
+            "schema_fingerprint": "",
+            "stage_id": "narrow",
+            "query_id": "logical-graph-mallory-constraints-step-1",
+            "result_complete": true,
+            "row_count": 1,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('resolve-user-host', 'scope-1', (('subject', ('mallory',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+            "alternatives_considered": [],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [
+          "relation_or_constraint_proof_missing"
+        ],
+        "capability_gaps": [],
+        "terminal_cause": null
+      },
+      {
+        "goal_id": "rel_host_file",
+        "relation": "modified",
+        "status": "VERIFIED",
+        "execution_complete": true,
+        "proof_complete": true,
+        "route_exhausted": false,
+        "readiness": "PROOF_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-2",
+            "goal_id": "rel_host_file",
+            "operation_id": "find-files-on-host",
+            "source_id": "scope-1",
+            "schema_fingerprint": "",
+            "stage_id": "narrow",
+            "query_id": "logical-graph-mallory-constraints-step-2",
+            "result_complete": true,
+            "row_count": 1,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('find-files-on-host', 'scope-1', (('subject', ('MACLORY-AIR13',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+            "alternatives_considered": [],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [],
+        "capability_gaps": [],
+        "terminal_cause": null
+      }
+    ],
+    "observations": [
+      {
+        "id": "obs-logical-graph-mallory-constraints-step-1-0",
+        "provider_scope": {
+          "provider_id": "mock-edr",
+          "native_partition": {
+            "index": "main"
+          },
+          "scope_id": "scope-1",
+          "retention_days": null
+        },
+        "cell_id": "2026-02-01T00:00:00Z/P1D",
+        "timestamp": "1970-01-01T00:00:00Z",
+        "epistemic_type": "observed",
+        "native_type": "",
+        "fields": {
+          "host": "MACLORY-AIR13",
+          "user": "mallory"
+        },
+        "native_fields": {
+          "host": "MACLORY-AIR13",
+          "user": "mallory"
+        },
+        "query_id": "logical-graph-mallory-constraints-step-1",
+        "raw_ref": null
+      },
+      {
+        "id": "obs-logical-graph-mallory-constraints-step-2-0",
+        "provider_scope": {
+          "provider_id": "mock-edr",
+          "native_partition": {
+            "index": "main"
+          },
+          "scope_id": "scope-1",
+          "retention_days": null
+        },
+        "cell_id": "2026-02-01T00:00:00Z/P1D",
+        "timestamp": "1970-01-01T00:00:00Z",
+        "epistemic_type": "observed",
+        "native_type": "",
+        "fields": {
+          "file": "sensitive_doc.pdf",
+          "host": "MACLORY-AIR13",
+          "action": "modified"
+        },
+        "native_fields": {
+          "file": "sensitive_doc.pdf",
+          "host": "MACLORY-AIR13",
+          "action": "modified"
+        },
+        "query_id": "logical-graph-mallory-constraints-step-2",
+        "raw_ref": null
+      }
+    ],
+    "evidence_graph": {
+      "nodes": [
+        {
+          "id": "observation:obs-logical-graph-mallory-constraints-step-1-0",
+          "node_type": "observation",
+          "payload": {
+            "timestamp": "1970-01-01T00:00:00Z",
+            "native_type": "",
+            "provider_id": "mock-edr",
+            "provider_scope": "scope-1",
+            "query_id": "logical-graph-mallory-constraints-step-1",
+            "native_fields": {
+              "host": "MACLORY-AIR13",
+              "user": "mallory"
+            },
+            "raw_ref": null
+          },
+          "provenance_ids": [
+            "obs-logical-graph-mallory-constraints-step-1-0"
+          ]
+        },
+        {
+          "id": "fact-056f2017c53dc1a2",
+          "node_type": "fact",
+          "payload": {
+            "fact_type": "generic_telemetry",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "primary_entity": "Host(kind=<EntityKind.HOST: 'host'>, name='MACLORY-AIR13')",
+            "fields": {
+              "host": "MACLORY-AIR13",
+              "user": "mallory"
+            }
+          },
+          "provenance_ids": [
+            "obs-logical-graph-mallory-constraints-step-1-0"
+          ]
+        },
+        {
+          "id": "field-c087c49fd9e26fdb",
+          "node_type": "field_fact",
+          "payload": {
+            "id": "field-c087c49fd9e26fdb",
+            "fact_node_id": "fact-056f2017c53dc1a2",
+            "field_name": "host",
+            "value": "MACLORY-AIR13",
+            "native_field_name": "host",
+            "observation_id": "obs-logical-graph-mallory-constraints-step-1-0"
+          },
+          "provenance_ids": [
+            "obs-logical-graph-mallory-constraints-step-1-0"
+          ]
+        },
+        {
+          "id": "field-9a240f1bd4fe3886",
+          "node_type": "field_fact",
+          "payload": {
+            "id": "field-9a240f1bd4fe3886",
+            "fact_node_id": "fact-056f2017c53dc1a2",
+            "field_name": "user",
+            "value": "mallory",
+            "native_field_name": "user",
+            "observation_id": "obs-logical-graph-mallory-constraints-step-1-0"
+          },
+          "provenance_ids": [
+            "obs-logical-graph-mallory-constraints-step-1-0"
+          ]
+        },
+        {
+          "id": "observation:obs-logical-graph-mallory-constraints-step-2-0",
+          "node_type": "observation",
+          "payload": {
+            "timestamp": "1970-01-01T00:00:00Z",
+            "native_type": "",
+            "provider_id": "mock-edr",
+            "provider_scope": "scope-1",
+            "query_id": "logical-graph-mallory-constraints-step-2",
+            "native_fields": {
+              "file": "sensitive_doc.pdf",
+              "host": "MACLORY-AIR13",
+              "action": "modified"
+            },
+            "raw_ref": null
+          },
+          "provenance_ids": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ]
+        },
+        {
+          "id": "fact-c96a2f815489a3f4",
+          "node_type": "fact",
+          "payload": {
+            "fact_type": "generic_telemetry",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "primary_entity": "Host(kind=<EntityKind.HOST: 'host'>, name='MACLORY-AIR13')",
+            "fields": {
+              "file": "sensitive_doc.pdf",
+              "host": "MACLORY-AIR13",
+              "action": "modified"
+            }
+          },
+          "provenance_ids": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ]
+        },
+        {
+          "id": "field-70c5d17ec03ccdef",
+          "node_type": "field_fact",
+          "payload": {
+            "id": "field-70c5d17ec03ccdef",
+            "fact_node_id": "fact-c96a2f815489a3f4",
+            "field_name": "file",
+            "value": "sensitive_doc.pdf",
+            "native_field_name": "file",
+            "observation_id": "obs-logical-graph-mallory-constraints-step-2-0"
+          },
+          "provenance_ids": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ]
+        },
+        {
+          "id": "field-789d3df0f06e3189",
+          "node_type": "field_fact",
+          "payload": {
+            "id": "field-789d3df0f06e3189",
+            "fact_node_id": "fact-c96a2f815489a3f4",
+            "field_name": "host",
+            "value": "MACLORY-AIR13",
+            "native_field_name": "host",
+            "observation_id": "obs-logical-graph-mallory-constraints-step-2-0"
+          },
+          "provenance_ids": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ]
+        },
+        {
+          "id": "field-d6a8a95c56fd7ea9",
+          "node_type": "field_fact",
+          "payload": {
+            "id": "field-d6a8a95c56fd7ea9",
+            "fact_node_id": "fact-c96a2f815489a3f4",
+            "field_name": "action",
+            "value": "modified",
+            "native_field_name": "action",
+            "observation_id": "obs-logical-graph-mallory-constraints-step-2-0"
+          },
+          "provenance_ids": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-e16553d58411eb31",
+          "source_id": "observation:obs-logical-graph-mallory-constraints-step-1-0",
+          "target_id": "fact-056f2017c53dc1a2",
+          "edge_type": "contains_fact",
+          "edge_class": "provenance_dependency",
+          "observation_ids": [
+            "obs-logical-graph-mallory-constraints-step-1-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-86d85c3eae2c69fe",
+          "source_id": "fact-056f2017c53dc1a2",
+          "target_id": "field-c087c49fd9e26fdb",
+          "edge_type": "has_field",
+          "edge_class": "provenance_dependency",
+          "observation_ids": [
+            "obs-logical-graph-mallory-constraints-step-1-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-54ca407719866b5b",
+          "source_id": "fact-056f2017c53dc1a2",
+          "target_id": "field-9a240f1bd4fe3886",
+          "edge_type": "has_field",
+          "edge_class": "provenance_dependency",
+          "observation_ids": [
+            "obs-logical-graph-mallory-constraints-step-1-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-dcfcf2d6ffad97c7",
+          "source_id": "observation:obs-logical-graph-mallory-constraints-step-2-0",
+          "target_id": "fact-c96a2f815489a3f4",
+          "edge_type": "contains_fact",
+          "edge_class": "provenance_dependency",
+          "observation_ids": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-2d7bf275d2e46f6a",
+          "source_id": "fact-c96a2f815489a3f4",
+          "target_id": "field-70c5d17ec03ccdef",
+          "edge_type": "has_field",
+          "edge_class": "provenance_dependency",
+          "observation_ids": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-0614622e2d948d6c",
+          "source_id": "fact-c96a2f815489a3f4",
+          "target_id": "field-789d3df0f06e3189",
+          "edge_type": "has_field",
+          "edge_class": "provenance_dependency",
+          "observation_ids": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-ec49b90cfd042513",
+          "source_id": "fact-c96a2f815489a3f4",
+          "target_id": "field-d6a8a95c56fd7ea9",
+          "edge_type": "has_field",
+          "edge_class": "provenance_dependency",
+          "observation_ids": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        }
+      ],
+      "field_facts": [
+        {
+          "id": "field-c087c49fd9e26fdb",
+          "fact_node_id": "fact-056f2017c53dc1a2",
+          "field_name": "host",
+          "value": "MACLORY-AIR13",
+          "native_field_name": "host",
+          "observation_id": "obs-logical-graph-mallory-constraints-step-1-0"
+        },
+        {
+          "id": "field-9a240f1bd4fe3886",
+          "fact_node_id": "fact-056f2017c53dc1a2",
+          "field_name": "user",
+          "value": "mallory",
+          "native_field_name": "user",
+          "observation_id": "obs-logical-graph-mallory-constraints-step-1-0"
+        },
+        {
+          "id": "field-70c5d17ec03ccdef",
+          "fact_node_id": "fact-c96a2f815489a3f4",
+          "field_name": "file",
+          "value": "sensitive_doc.pdf",
+          "native_field_name": "file",
+          "observation_id": "obs-logical-graph-mallory-constraints-step-2-0"
+        },
+        {
+          "id": "field-789d3df0f06e3189",
+          "fact_node_id": "fact-c96a2f815489a3f4",
+          "field_name": "host",
+          "value": "MACLORY-AIR13",
+          "native_field_name": "host",
+          "observation_id": "obs-logical-graph-mallory-constraints-step-2-0"
+        },
+        {
+          "id": "field-d6a8a95c56fd7ea9",
+          "fact_node_id": "fact-c96a2f815489a3f4",
+          "field_name": "action",
+          "value": "modified",
+          "native_field_name": "action",
+          "observation_id": "obs-logical-graph-mallory-constraints-step-2-0"
+        }
+      ],
+      "observation_ids": [
+        "obs-logical-graph-mallory-constraints-step-1-0",
+        "obs-logical-graph-mallory-constraints-step-2-0"
+      ],
+      "proof_note": "Graph proximity and co-occurrence are not proof."
+    },
+    "agenda": {
+      "items": [],
+      "dispatched": [
+        "step-1",
+        "step-2"
+      ]
+    },
+    "workspace": {
+      "run_id": "req-mallory-c1",
+      "observation_ids": [
+        "obs-logical-graph-mallory-constraints-step-1-0",
+        "obs-logical-graph-mallory-constraints-step-2-0"
+      ],
+      "evidence_graph": {
+        "observation_ids": [
+          "obs-logical-graph-mallory-constraints-step-1-0",
+          "obs-logical-graph-mallory-constraints-step-2-0"
+        ],
+        "proof": false
+      },
+      "goal_graph": {
+        "id": "graph-mallory-constraints",
+        "request_id": "req-mallory-c1",
+        "objective": "Find sensitive files on Mallory's MacBook",
+        "variables": [
+          {
+            "id": "var_user",
+            "entity_type": "account",
+            "value": "mallory",
+            "constraints": [],
+            "value_origin": "request",
+            "verification_status": "UNVERIFIED"
+          },
+          {
+            "id": "var_endpoint",
+            "entity_type": "endpoint",
+            "value": null,
+            "constraints": [
+              {
+                "key": "hardware_form_factor",
+                "operator": "equals",
+                "value": "MacBook"
+              }
+            ],
+            "value_origin": "llm_proposal",
+            "verification_status": "UNVERIFIED"
+          },
+          {
+            "id": "var_file",
+            "entity_type": "file",
+            "value": null,
+            "constraints": [],
+            "value_origin": "llm_proposal",
+            "verification_status": "UNVERIFIED"
+          }
+        ],
+        "relations": [
+          {
+            "id": "rel_user_host",
+            "subject": "var_user",
+            "relation": "associated_with",
+            "object": "var_endpoint",
+            "required": true,
+            "description": "",
+            "atomic_obligation": "",
+            "provenance_span": "",
+            "dependencies": [],
+            "dependency_operator": "AND",
+            "gate_condition": null
+          },
+          {
+            "id": "rel_host_file",
+            "subject": "var_endpoint",
+            "relation": "modified",
+            "object": "var_file",
+            "required": true,
+            "description": "",
+            "atomic_obligation": "",
+            "provenance_span": "",
+            "dependencies": [],
+            "dependency_operator": "AND",
+            "gate_condition": null
+          }
+        ],
+        "qualifiers": [],
+        "answers": [
+          {
+            "variable_id": "var_file",
+            "answer_type": "file",
+            "required": true
+          }
+        ],
+        "answer_contracts": [
+          {
+            "slot_name": "var_file",
+            "value_type": "file",
+            "target_variable_id": "var_file",
+            "required_qualifiers": [],
+            "min_citations": 1,
+            "acceptable_aliases": [],
+            "acceptance_rule": "",
+            "description": ""
+          }
+        ],
+        "dependencies": {},
+        "dependency_kinds": {
+          "rel_user_host": "AND",
+          "rel_host_file": "AND"
+        },
+        "provenance_spans": {},
+        "assumptions": [],
+        "uncertainties": [],
+        "forbidden_inferences": [],
+        "clarification_triggers": [],
+        "clarification_predicates": [],
+        "clarification_evaluations": [],
+        "validation_diagnostics": [],
+        "graph_revision": "G0",
+        "revision_history": [],
+        "outcome_contract": {
+          "contract_kind": "FACTUAL_ANSWER",
+          "slots": [
+            "var_file"
+          ],
+          "types": {
+            "var_file": "file"
+          },
+          "cardinality": {},
+          "qualifiers": [],
+          "citations": []
+        }
+      },
+      "query_audit": [
+        {
+          "query_id": "logical-graph-mallory-constraints-step-1",
+          "operation_id": "resolve-user-host",
+          "c3_invoked": false,
+          "advances_goal_ids": [
+            "rel_user_host"
+          ],
+          "relation": "associated_with",
+          "reason": "advances goals ['rel_user_host'] via operation resolve-user-host",
+          "complete": true,
+          "retrieval_stage": "narrow"
+        },
+        {
+          "query_id": "logical-graph-mallory-constraints-step-2",
+          "operation_id": "find-files-on-host",
+          "c3_invoked": false,
+          "advances_goal_ids": [
+            "rel_host_file"
+          ],
+          "relation": "modified",
+          "reason": "advances goals ['rel_host_file'] via operation find-files-on-host",
+          "complete": true,
+          "retrieval_stage": "narrow"
+        }
+      ],
+      "analyst_decisions": [],
+      "unexamined_routes": [],
+      "limitations": [],
+      "timeline": [
+        {
+          "observation_id": "obs-logical-graph-mallory-constraints-step-1-0",
+          "timestamp": "1970-01-01T00:00:00Z",
+          "query_id": "logical-graph-mallory-constraints-step-1",
+          "fields": {
+            "host": "MACLORY-AIR13",
+            "user": "mallory"
+          },
+          "native_fields": {
+            "host": "MACLORY-AIR13",
+            "user": "mallory"
+          }
+        },
+        {
+          "observation_id": "obs-logical-graph-mallory-constraints-step-2-0",
+          "timestamp": "1970-01-01T00:00:00Z",
+          "query_id": "logical-graph-mallory-constraints-step-2",
+          "fields": {
+            "file": "sensitive_doc.pdf",
+            "host": "MACLORY-AIR13",
+            "action": "modified"
+          },
+          "native_fields": {
+            "file": "sensitive_doc.pdf",
+            "host": "MACLORY-AIR13",
+            "action": "modified"
+          }
+        }
+      ],
+      "tags": [],
+      "comments": [],
+      "saved_searches": [],
+      "entity_pivot": [
+        {
+          "entity_type": "action",
+          "value": "modified",
+          "observation_ids": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ],
+          "query_ids": [
+            "logical-graph-mallory-constraints-step-2"
+          ]
+        },
+        {
+          "entity_type": "file",
+          "value": "sensitive_doc.pdf",
+          "observation_ids": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ],
+          "query_ids": [
+            "logical-graph-mallory-constraints-step-2"
+          ]
+        },
+        {
+          "entity_type": "host",
+          "value": "MACLORY-AIR13",
+          "observation_ids": [
+            "obs-logical-graph-mallory-constraints-step-1-0",
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ],
+          "query_ids": [
+            "logical-graph-mallory-constraints-step-1",
+            "logical-graph-mallory-constraints-step-2"
+          ]
+        },
+        {
+          "entity_type": "user",
+          "value": "mallory",
+          "observation_ids": [
+            "obs-logical-graph-mallory-constraints-step-1-0"
+          ],
+          "query_ids": [
+            "logical-graph-mallory-constraints-step-1"
+          ]
+        }
+      ],
+      "native_events": [
+        {
+          "observation_id": "obs-logical-graph-mallory-constraints-step-1-0",
+          "timestamp": "1970-01-01T00:00:00Z",
+          "query_id": "logical-graph-mallory-constraints-step-1",
+          "native_fields": {
+            "host": "MACLORY-AIR13",
+            "user": "mallory"
+          },
+          "raw_event": {}
+        },
+        {
+          "observation_id": "obs-logical-graph-mallory-constraints-step-2-0",
+          "timestamp": "1970-01-01T00:00:00Z",
+          "query_id": "logical-graph-mallory-constraints-step-2",
+          "native_fields": {
+            "file": "sensitive_doc.pdf",
+            "host": "MACLORY-AIR13",
+            "action": "modified"
+          },
+          "raw_event": {}
+        }
+      ],
+      "proof_obligations": [
+        {
+          "goal_id": "rel_user_host",
+          "relation": "associated_with",
+          "status": "INCONCLUSIVE",
+          "contract_id": "method-rel_user_host-1",
+          "verified": false,
+          "satisfied_obligations": [],
+          "missing_obligations": [],
+          "citations": [],
+          "query_ids": [
+            "logical-graph-mallory-constraints-step-1"
+          ]
+        },
+        {
+          "goal_id": "rel_host_file",
+          "relation": "modified",
+          "status": "SUPPORTED",
+          "contract_id": "method-rel_host_file-1",
+          "verified": true,
+          "satisfied_obligations": [
+            "endpoint",
+            "file"
+          ],
+          "missing_obligations": [],
+          "citations": [
+            "obs-logical-graph-mallory-constraints-step-2-0"
+          ],
+          "query_ids": [
+            "logical-graph-mallory-constraints-step-2"
+          ]
+        }
+      ],
+      "stop_explanation": {
+        "decision": "STOP_INCONCLUSIVE",
+        "taxonomy": "StoppingTaxonomyState.INCONCLUSIVE",
+        "unresolved_reasons": {},
+        "needs_user_decision": false,
+        "residuals": [],
+        "query_count": 2,
+        "llm_calls": {
+          "model": "stub",
+          "max_calls_budget": 5,
+          "calls_made": 0,
+          "is_exhausted": false,
+          "total_prompt_tokens": 0,
+          "total_completion_tokens": 0,
+          "total_tokens": 0,
+          "estimated_cost_usd": 0,
+          "token_accounting_mode": "ESTIMATED",
+          "is_estimate": true,
+          "calls": []
+        }
+      },
+      "coverage_view": {
+        "coverage_bound": {},
+        "coverage_gaps": [],
+        "unexamined_routes": [],
+        "query_completeness": [
+          {
+            "query_id": "logical-graph-mallory-constraints-step-1",
+            "complete": true
+          },
+          {
+            "query_id": "logical-graph-mallory-constraints-step-2",
+            "complete": true
+          }
+        ]
+      },
+      "binding_reviews": []
+    },
+    "package_versions": [],
+    "stop_explanation": {
+      "decision": "STOP_INCONCLUSIVE",
+      "taxonomy": "StoppingTaxonomyState.INCONCLUSIVE",
+      "unresolved_reasons": {},
+      "needs_user_decision": false,
+      "residuals": [],
+      "query_count": 2,
+      "llm_calls": {
+        "model": "stub",
+        "max_calls_budget": 5,
+        "calls_made": 0,
+        "is_exhausted": false,
+        "total_prompt_tokens": 0,
+        "total_completion_tokens": 0,
+        "total_tokens": 0,
+        "estimated_cost_usd": 0,
+        "token_accounting_mode": "ESTIMATED",
+        "is_estimate": true,
+        "calls": []
+      }
+    },
+    "proof_obligations": [
+      {
+        "goal_id": "rel_user_host",
+        "relation": "associated_with",
+        "status": "INCONCLUSIVE",
+        "contract_id": "method-rel_user_host-1",
+        "verified": false,
+        "satisfied_obligations": [],
+        "missing_obligations": [],
+        "citations": [],
+        "query_ids": [
+          "logical-graph-mallory-constraints-step-1"
+        ]
+      },
+      {
+        "goal_id": "rel_host_file",
+        "relation": "modified",
+        "status": "SUPPORTED",
+        "contract_id": "method-rel_host_file-1",
+        "verified": true,
+        "satisfied_obligations": [
+          "endpoint",
+          "file"
+        ],
+        "missing_obligations": [],
+        "citations": [
+          "obs-logical-graph-mallory-constraints-step-2-0"
+        ],
+        "query_ids": [
+          "logical-graph-mallory-constraints-step-2"
+        ]
+      }
+    ]
+  },
+  "source_profile_audit": {},
+  "runtime_capabilities": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "rel_user_host",
+      "relation": "associated_with",
+      "status": "CANDIDATE_OBSERVED",
+      "execution_complete": true,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "RETRIEVAL_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-1",
+          "goal_id": "rel_user_host",
+          "operation_id": "resolve-user-host",
+          "source_id": "scope-1",
+          "schema_fingerprint": "",
+          "stage_id": "narrow",
+          "query_id": "logical-graph-mallory-constraints-step-1",
+          "result_complete": true,
+          "row_count": 1,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('resolve-user-host', 'scope-1', (('subject', ('mallory',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+          "alternatives_considered": [],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [
+        "relation_or_constraint_proof_missing"
+      ],
+      "capability_gaps": [],
+      "terminal_cause": null
+    },
+    {
+      "goal_id": "rel_host_file",
+      "relation": "modified",
+      "status": "VERIFIED",
+      "execution_complete": true,
+      "proof_complete": true,
+      "route_exhausted": false,
+      "readiness": "PROOF_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-2",
+          "goal_id": "rel_host_file",
+          "operation_id": "find-files-on-host",
+          "source_id": "scope-1",
+          "schema_fingerprint": "",
+          "stage_id": "narrow",
+          "query_id": "logical-graph-mallory-constraints-step-2",
+          "result_complete": true,
+          "row_count": 1,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('find-files-on-host', 'scope-1', (('subject', ('MACLORY-AIR13',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+          "alternatives_considered": [],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [],
+      "capability_gaps": [],
+      "terminal_cause": null
+    }
+  ]
+}

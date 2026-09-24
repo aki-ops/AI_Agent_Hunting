@@ -57,6 +57,7 @@ def test_stopping_taxonomy_nine_states_and_decision_mapping() -> None:
         "ANSWER_PROVED",
         "BOUNDED_NOT_FOUND",
         "NEEDS_DISAMBIGUATION",
+        "INCONCLUSIVE",
         "COVERAGE_EXHAUSTED",
         "BUDGET_EXHAUSTED",
         "BACKEND_DEGRADED",
@@ -70,6 +71,7 @@ def test_stopping_taxonomy_nine_states_and_decision_mapping() -> None:
     assert StoppingDecision.STOP_REFUTED.to_taxonomy_state() == StoppingTaxonomyState.BOUNDED_NOT_FOUND
     assert StoppingDecision.STOP_NEEDS_USER_DECISION.to_taxonomy_state() == StoppingTaxonomyState.NEEDS_DISAMBIGUATION
     assert StoppingDecision.STOP_INCONCLUSIVE_IDENTITY_UNRESOLVED.to_taxonomy_state() == StoppingTaxonomyState.NEEDS_DISAMBIGUATION
+    assert StoppingDecision.STOP_INCONCLUSIVE.to_taxonomy_state() == StoppingTaxonomyState.INCONCLUSIVE
     assert StoppingDecision.STOP_INCONCLUSIVE_COVERAGE_GAP.to_taxonomy_state() == StoppingTaxonomyState.COVERAGE_EXHAUSTED
     assert StoppingDecision.STOP_UNSUPPORTED.to_taxonomy_state() == StoppingTaxonomyState.COVERAGE_EXHAUSTED
     assert StoppingDecision.STOP_UNSUPPORTED_CAPABILITY.to_taxonomy_state() == StoppingTaxonomyState.COVERAGE_EXHAUSTED

@@ -1,0 +1,85 @@
+{
+  "nodes": {
+    "node-endpoint": {
+      "id": "node-endpoint",
+      "type": "endpoint",
+      "value": "?",
+      "status": "UNKNOWN",
+      "confidence": 1.0,
+      "field_role": null,
+      "source": "input",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {}
+    },
+    "node-exploit-proc": {
+      "id": "node-exploit-proc",
+      "type": "process",
+      "value": "python",
+      "status": "UNKNOWN",
+      "confidence": 1.0,
+      "field_role": null,
+      "source": "input",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {}
+    },
+    "node-webshell-file": {
+      "id": "node-webshell-file",
+      "type": "file",
+      "value": "?",
+      "status": "UNKNOWN",
+      "confidence": 1.0,
+      "field_role": null,
+      "source": "input",
+      "timestamp": null,
+      "origin_query_id": null,
+      "metadata": {}
+    }
+  },
+  "edges": {
+    "edge-CVE-2024-21887-spawn": {
+      "id": "edge-CVE-2024-21887-spawn",
+      "source_id": "node-endpoint",
+      "source_entity_type": "endpoint",
+      "relation_type": "spawned",
+      "target_id": "node-exploit-proc",
+      "target_entity_type": "process",
+      "required_field_roles": {},
+      "source_field_bindings": {},
+      "required_native_types": [],
+      "acceptance_predicate": {},
+      "time_constraints": {},
+      "acceptable_operations": [
+        "find_process_from_endpoint"
+      ],
+      "status": "UNPROVEN",
+      "confidence": 1.0,
+      "citations": [],
+      "origin_query_id": null,
+      "metadata": {}
+    },
+    "edge-CVE-2024-21887-write": {
+      "id": "edge-CVE-2024-21887-write",
+      "source_id": "node-exploit-proc",
+      "source_entity_type": "process",
+      "relation_type": "wrote",
+      "target_id": "node-webshell-file",
+      "target_entity_type": "file",
+      "required_field_roles": {},
+      "source_field_bindings": {},
+      "required_native_types": [],
+      "acceptance_predicate": {},
+      "time_constraints": {},
+      "acceptable_operations": [
+        "find_file_change_from_process"
+      ],
+      "status": "UNPROVEN",
+      "confidence": 1.0,
+      "citations": [],
+      "origin_query_id": null,
+      "metadata": {}
+    }
+  },
+  "proofs": {}
+}

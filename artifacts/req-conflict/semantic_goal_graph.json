@@ -1,0 +1,134 @@
+{
+  "id": "goal-req-conflict",
+  "request_id": "req-conflict",
+  "objective": "Identify an event observed on server-01",
+  "variables": [
+    {
+      "id": "host",
+      "entity_type": "host",
+      "value": "server-01",
+      "constraints": [],
+      "value_origin": "request",
+      "verification_status": "UNVERIFIED"
+    },
+    {
+      "id": "event",
+      "entity_type": "event",
+      "value": null,
+      "constraints": [
+        {
+          "key": "action",
+          "operator": "equals",
+          "value": "login"
+        },
+        {
+          "key": "action",
+          "operator": "equals",
+          "value": "reboot"
+        }
+      ],
+      "value_origin": "llm_proposal",
+      "verification_status": "UNVERIFIED"
+    }
+  ],
+  "relations": [
+    {
+      "id": "goal-event",
+      "subject": "host",
+      "relation": "observed_transition",
+      "object": "event",
+      "required": true,
+      "description": "",
+      "atomic_obligation": "",
+      "provenance_span": "server-01",
+      "dependencies": [],
+      "dependency_operator": "AND",
+      "gate_condition": null
+    }
+  ],
+  "qualifiers": [],
+  "answers": [
+    {
+      "variable_id": "event",
+      "answer_type": "event",
+      "required": true
+    }
+  ],
+  "answer_contracts": [
+    {
+      "slot_name": "event",
+      "value_type": "event",
+      "target_variable_id": "event",
+      "required_qualifiers": [],
+      "min_citations": 1,
+      "acceptable_aliases": [],
+      "acceptance_rule": "observed event",
+      "description": ""
+    }
+  ],
+  "dependencies": {},
+  "dependency_kinds": {
+    "goal-event": "AND"
+  },
+  "provenance_spans": {
+    "goal-event": "server-01"
+  },
+  "assumptions": [],
+  "uncertainties": [],
+  "forbidden_inferences": [],
+  "clarification_triggers": [],
+  "clarification_predicates": [
+    {
+      "id": "clarify-event-action",
+      "kind": "CONFLICTING_EQUALS",
+      "operator": "HAS_CONFLICT",
+      "variable_id": "event",
+      "constraint_key": "action",
+      "expected_cardinality": null,
+      "quantifier": null,
+      "operands": [],
+      "provenance_span": "event",
+      "schema_version": "1.0",
+      "rule_version": "1.0"
+    }
+  ],
+  "clarification_evaluations": [
+    {
+      "predicate_id": "clarify-event-action",
+      "result": "TRUE",
+      "deterministic_inputs": {
+        "variable_id": "event",
+        "constraint_key": "action",
+        "normalized_values": [
+          "login",
+          "reboot"
+        ],
+        "distinct_value_count": 2
+      },
+      "reason_codes": [
+        "CONFLICTING_EQUALITY_VALUES"
+      ],
+      "state_version": "G0",
+      "evaluated_at_step_id": "SEMANTIC_ACCEPTANCE_STAGE_6",
+      "schema_version": "1.0",
+      "rule_version": "1.0"
+    }
+  ],
+  "validation_diagnostics": [
+    "Variable 'event' has conflicting equality constraints for key 'action': ['login', 'reboot']"
+  ],
+  "graph_revision": "G0",
+  "revision_history": [],
+  "outcome_contract": {
+    "contract_kind": "FACTUAL_ANSWER",
+    "slots": [
+      "event"
+    ],
+    "types": {
+      "event": "event"
+    },
+    "cardinality": {},
+    "qualifiers": [],
+    "citations": []
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "id": "capability-graph:runtime",
+  "census_version": "2026.1.0",
+  "providers": [
+    {
+      "provider_id": "mock-edr",
+      "status": "ONLINE",
+      "indices": [],
+      "sourcetypes": {},
+      "supported_evidence_types": [],
+      "observable_fields": [],
+      "retention_days": 4000,
+      "details": {},
+      "scopes": [],
+      "operations": [
+        "resolve-user-host",
+        "find-files-on-host"
+      ],
+      "permissions": [],
+      "completeness_semantics": "provider-defined",
+      "partitions": {},
+      "schemas": {},
+      "aliases": {},
+      "source_profiles": []
+    }
+  ],
+  "operations": [
+    {
+      "id": "resolve-user-host",
+      "provider_id": "mock-edr",
+      "scope_ids": [
+        "scope-1"
+      ],
+      "params_schema": {},
+      "pagination": "none",
+      "limit_semantics": "provider-defined",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "account"
+      ],
+      "output_entity_kinds": [
+        "host"
+      ],
+      "output_fields": [],
+      "output_fact_kinds": [],
+      "guaranteed_relations": [
+        "associated_with"
+      ],
+      "input_roles": [
+        "person",
+        "account"
+      ],
+      "output_roles": [
+        "endpoint",
+        "host"
+      ],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "host"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    },
+    {
+      "id": "find-files-on-host",
+      "provider_id": "mock-edr",
+      "scope_ids": [
+        "scope-1"
+      ],
+      "params_schema": {},
+      "pagination": "none",
+      "limit_semantics": "provider-defined",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "host"
+      ],
+      "output_entity_kinds": [
+        "file"
+      ],
+      "output_fields": [],
+      "output_fact_kinds": [],
+      "guaranteed_relations": [
+        "modified"
+      ],
+      "input_roles": [
+        "endpoint",
+        "host"
+      ],
+      "output_roles": [
+        "file"
+      ],
+      "native_field_bindings": {},
+      "output_value_bindings": {
+        "object": [
+          "file"
+        ]
+      },
+      "query_builder": "",
+      "completeness": "",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    }
+  ],
+  "audit": [
+    {
+      "provider_id": "mock-edr",
+      "selected": true,
+      "reason": "provider has an admitted executable F0/F1 route",
+      "status": "ONLINE",
+      "claim_id": ""
+    }
+  ]
+}

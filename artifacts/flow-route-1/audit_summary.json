@@ -1,0 +1,158 @@
+{
+  "hunt_id": "flow-route-1",
+  "outcome": "UNKNOWN",
+  "stopping_decision": "STOP_INCONCLUSIVE",
+  "answer": {
+    "status": "INCONCLUSIVE",
+    "reason": "NO_VERIFIED_ANSWER_CANDIDATE",
+    "value": null,
+    "explanation": "No verified answer candidate was found, but semantic absence is not licensed by the current execution, proof, and route state.",
+    "answer_type": "value",
+    "card_ids": [],
+    "required_fields": [],
+    "available_fields": [],
+    "missing_fields": [],
+    "artifact_detected": false,
+    "claim": "No verified answer candidate was found, but semantic absence is not licensed until every required route is exhausted with complete-empty results under an explicit provider contract.",
+    "citations": [],
+    "citation_text": ""
+  },
+  "llm_usage": {
+    "model": "stub",
+    "max_calls_budget": 5,
+    "calls_made": 0,
+    "is_exhausted": false,
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "total_tokens": 0,
+    "estimated_cost_usd": 0,
+    "token_accounting_mode": "ESTIMATED",
+    "is_estimate": true,
+    "calls": []
+  },
+  "total_observations": 0,
+  "total_cards": 0,
+  "total_queries": 0,
+  "semantic_graph_id": "goal-graph-flow-route-1",
+  "proof_plan_id": "logical-goal-graph-flow-route-1",
+  "semantic_analysis": {
+    "compiler_trace": {},
+    "goal_verdicts": [
+      {
+        "goal_id": "req-CVE-2024-21887-exploit",
+        "relation": "spawned",
+        "status": "INCONCLUSIVE",
+        "query_ids": [],
+        "proof_method_id": "method-req-CVE-2024-21887-exploit-2",
+        "unverified_restrictions": [],
+        "proof_results": []
+      },
+      {
+        "goal_id": "req-CVE-2024-21887-post",
+        "relation": "wrote",
+        "status": "INCONCLUSIVE",
+        "query_ids": [],
+        "proof_method_id": "method-req-CVE-2024-21887-post-1",
+        "unverified_restrictions": [],
+        "proof_results": []
+      }
+    ],
+    "proof_state": {
+      "req-CVE-2024-21887-exploit": "INCONCLUSIVE",
+      "req-CVE-2024-21887-post": "INCONCLUSIVE"
+    },
+    "executed_steps": [],
+    "unresolved_steps": [
+      "step-1",
+      "step-2",
+      "step-3"
+    ],
+    "unresolved_goals": [],
+    "unresolved_reasons": {
+      "step-1": "required typed binding is unavailable: var_endpoint",
+      "step-2": "required typed binding is unavailable: __intermediate_1",
+      "step-3": "required typed binding is unavailable: var_exploit_proc"
+    },
+    "candidate_input_warnings": {},
+    "needs_user_decision": false,
+    "binding_provenance": {},
+    "page_trace": [],
+    "continuations": {},
+    "unverified_restrictions": {},
+    "binding_events": [],
+    "route_assessments": [
+      {
+        "goal_id": "req-CVE-2024-21887-exploit",
+        "relation": "spawned",
+        "status": "CAPABILITY_GAP",
+        "execution_complete": false,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "CAPABILITY_GAP",
+        "attempts": [],
+        "proof_gaps": [
+          "relation_or_constraint_proof_missing"
+        ],
+        "capability_gaps": [
+          "no_provider_attempt"
+        ],
+        "terminal_cause": null
+      },
+      {
+        "goal_id": "req-CVE-2024-21887-post",
+        "relation": "wrote",
+        "status": "CAPABILITY_GAP",
+        "execution_complete": false,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "CAPABILITY_GAP",
+        "attempts": [],
+        "proof_gaps": [
+          "relation_or_constraint_proof_missing"
+        ],
+        "capability_gaps": [
+          "no_provider_attempt"
+        ],
+        "terminal_cause": null
+      }
+    ]
+  },
+  "source_profile_audit": {},
+  "runtime_capabilities": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "req-CVE-2024-21887-exploit",
+      "relation": "spawned",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [
+        "relation_or_constraint_proof_missing"
+      ],
+      "capability_gaps": [
+        "no_provider_attempt"
+      ],
+      "terminal_cause": null
+    },
+    {
+      "goal_id": "req-CVE-2024-21887-post",
+      "relation": "wrote",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [
+        "relation_or_constraint_proof_missing"
+      ],
+      "capability_gaps": [
+        "no_provider_attempt"
+      ],
+      "terminal_cause": null
+    }
+  ]
+}

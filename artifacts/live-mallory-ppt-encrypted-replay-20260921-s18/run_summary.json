@@ -1,0 +1,914 @@
+[
+  {
+    "phase": "initial",
+    "request_id": "hunt-req-20260921-085100",
+    "stopping": "STOP_NEEDS_USER_DECISION",
+    "outcome": "INCONCLUSIVE",
+    "answer": {
+      "status": "INCONCLUSIVE",
+      "reason": "USER_DECISION_REQUIRED",
+      "explanation": "Candidate bindings were discovered, but no downstream query was executed because an analyst must select the intended binding.",
+      "candidates": [],
+      "card_ids": [],
+      "observation_ids": []
+    },
+    "candidates": [
+      {
+        "variable_id": "mallory_person",
+        "entity_type": "person",
+        "value": "Mallory"
+      },
+      {
+        "variable_id": "mallory_macbook",
+        "entity_type": "endpoint",
+        "value": "MACLORY-AIR13"
+      },
+      {
+        "variable_id": "mallory_macbook",
+        "entity_type": "endpoint",
+        "value": "kutekitten"
+      },
+      {
+        "variable_id": "mallory_macbook",
+        "entity_type": "endpoint",
+        "value": "matar"
+      },
+      {
+        "variable_id": "mallory_macbook",
+        "entity_type": "endpoint",
+        "value": "jupiter"
+      },
+      {
+        "variable_id": "mallory_macbook",
+        "entity_type": "endpoint",
+        "value": "venus"
+      },
+      {
+        "variable_id": "mallory_macbook",
+        "entity_type": "endpoint",
+        "value": "mercury"
+      }
+    ],
+    "query_count": 1,
+    "queries": [
+      {
+        "query_id": "logical-goal-graph-hunt-req-20260921-085100-step-1",
+        "operation_id": "resolve_person_to_endpoint",
+        "native_query": "search index=\"botsv2\" \"Mallory\" | rex field=_raw \"Workstation Name:\\s*(?<WorkstationName>[^\\r\\n\\s]+)\" | rex field=_raw \"New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)\" | eval _host_candidate=coalesce(host,ComputerName) | where isnotnull(_host_candidate) AND _host_candidate!=\"\" AND _host_candidate!=\"-\" | dedup _host_candidate | head 101 | rename _host_candidate as host | table _time, host, ComputerName, TargetUserName, user, IpAddress, WorkstationName, LogonType, sourcetype",
+        "row_count": 5
+      }
+    ],
+    "taxonomy": "NEEDS_DISAMBIGUATION",
+    "binding_provenance": {
+      "mallory_person": [
+        {
+          "value": "Mallory",
+          "source": "request",
+          "query_id": "",
+          "status": "VERIFIED"
+        }
+      ],
+      "mallory_macbook": [
+        {
+          "value": "MACLORY-AIR13",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-step-1",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "kutekitten",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-step-1",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "matar",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-step-1",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "jupiter",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-step-1",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "venus",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-step-1",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "mercury",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-step-1",
+          "status": "CANDIDATE"
+        }
+      ]
+    }
+  },
+  {
+    "phase": "resume_prior_host_selection",
+    "selected": {
+      "variable_id": "mallory_macbook",
+      "value": "MACLORY-AIR13"
+    },
+    "request_id": "hunt-req-20260921-085100",
+    "stopping": "STOP_NEEDS_USER_DECISION",
+    "outcome": "INCONCLUSIVE",
+    "answer": {
+      "status": "INCONCLUSIVE",
+      "reason": "USER_DECISION_REQUIRED",
+      "explanation": "Candidate bindings were discovered, but no downstream query was executed because an analyst must select the intended binding.",
+      "candidates": [],
+      "card_ids": [],
+      "observation_ids": []
+    },
+    "candidates": [
+      {
+        "variable_id": "mallory_person",
+        "entity_type": "person",
+        "value": "Mallory"
+      },
+      {
+        "variable_id": "mallory_macbook",
+        "entity_type": "endpoint",
+        "value": "MACLORY-AIR13"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/.BAH.oOdz9"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/GoT.S7E2.BOTS.BOTS.BOTS.mkv.torrent."
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/GoT.S7E2.BOTS.BOTS.BOTS.mkv.torrent.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/.DS_Store"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/GoT.S7E2.BOTS.BOTS.BOTS.mkv.torrent.zip"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/.DS_Store"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/README__.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/README_.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/README_!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/README.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/README-!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/README!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/README!!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT__.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT_.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT_!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT!!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/DECRYPT__.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/DECRYPT_.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/DECRYPT_!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/DECRYPT.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/DECRYPT!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/DECRYPT!!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/.localized.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/.DS_Store.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/.DS_Store"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/.localized"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/.localized.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/ziMJMsMN"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/Frothly_marketing_campaign_Q317.pptx"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/Frothly_marketing_campaign_Q317.pptx.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/ziqbqar2"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/mk_old_files.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/Q88V5cY.jpg.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/ziDBmoRR"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/Q88V5cY.jpg"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/ziS4fsQS"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/.DS_Store.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/ziXye89x"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/.localized"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/.localized.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/zi32SZT4"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/d19b903adbd0f8c119d0d8f25b194bdd24b737357a517f23ca5cdc6c75b35038.zip"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/d19b903adbd0f8c119d0d8f25b194bdd24b737357a517f23ca5cdc6c75b35038.zip.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/GoT.S07E02.BOTS.BOTS.BOTS.mkv.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/zippUqU8"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/GoT.S07E02.BOTS.BOTS.BOTS.mkv"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/ziiOhaKu"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/GoT.S7E2.BOTS.BOTS.BOTS.mkv.torrent"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/zib86lJJ"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/Office 2016 Patcher.app.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/zi7A3jFQ"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/Office2016_Patcher_For_OSX.torrent"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/Office2016_Patcher_For_OSX.torrent.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/GoT.S1-07.BOTS.BOTS.BOTS.mkv.torrent"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/.BAH.rx5oJ"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/Office 2016 Patcher.app"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/README!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Downloads/README!.txt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/zifgCTc3"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/ziQ0rr1z"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Desktop/.localized"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/ziSvFzni"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/.DS_Store.crypt"
+      },
+      {
+        "variable_id": "encrypted_file",
+        "entity_type": "file",
+        "value": "/Users/mallorykraeusen/Documents/zihuoUJx"
+      }
+    ],
+    "query_count": 2,
+    "queries": [
+      {
+        "query_id": "logical-goal-graph-hunt-req-20260921-085100-step-1",
+        "operation_id": "resolve_person_to_endpoint",
+        "native_query": "search index=\"botsv2\" \"Mallory\" | rex field=_raw \"Workstation Name:\\s*(?<WorkstationName>[^\\r\\n\\s]+)\" | rex field=_raw \"New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)\" | eval _host_candidate=coalesce(host,ComputerName) | where isnotnull(_host_candidate) AND _host_candidate!=\"\" AND _host_candidate!=\"-\" | dedup _host_candidate | head 101 | rename _host_candidate as host | table _time, host, ComputerName, TargetUserName, user, IpAddress, WorkstationName, LogonType, sourcetype",
+        "row_count": 5
+      },
+      {
+        "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+        "operation_id": "find_file_change_from_endpoint",
+        "native_query": "search index=\"botsv2\" (host=\"MACLORY-AIR13\" OR ComputerName=\"MACLORY-AIR13\") (\"target_path\" OR \"TargetFilename\" OR \"file_path\") | rex field=_raw \"(?i)<Data Name=[\\\"']ProductVersion[\\\"']>(?<ProductVersion>[^<]+)</Data>\" | rex field=_raw \"(?i)<Data Name=[\\\"']FileVersion[\\\"']>(?<FileVersion>[^<]+)</Data>\" | rex field=_raw \"(?i)ProductVersion[:= ]+(?<ProductVersion>[^\\r\\n,]+)\" | rex field=_raw \"(?i)FileVersion[:= ]+(?<FileVersion>[^\\r\\n,]+)\" | rex field=_raw \"(?i)version[\\\"':= ]+(?<Version>[0-9]+(\\.[0-9]+)+)\" | head 101 | table _time, host, ComputerName, sourcetype, TargetFilename, file_path, path, target_path, filename, name, action, Image, ProcessId, ProductVersion, FileVersion, Version, _raw",
+        "row_count": 5
+      }
+    ],
+    "taxonomy": "NEEDS_DISAMBIGUATION",
+    "binding_provenance": {
+      "mallory_person": [
+        {
+          "value": "Mallory",
+          "source": "request",
+          "query_id": "",
+          "status": "VERIFIED"
+        }
+      ],
+      "mallory_macbook": [
+        {
+          "value": "MACLORY-AIR13",
+          "source": "user_selection",
+          "query_id": "",
+          "status": "VERIFIED"
+        }
+      ],
+      "encrypted_file": [
+        {
+          "value": "/Users/mallorykraeusen/Downloads/.BAH.oOdz9",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/GoT.S7E2.BOTS.BOTS.BOTS.mkv.torrent.",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/GoT.S7E2.BOTS.BOTS.BOTS.mkv.torrent.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/.DS_Store",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/GoT.S7E2.BOTS.BOTS.BOTS.mkv.torrent.zip",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/.DS_Store",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/README__.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/README_.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/README_!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/README.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/README-!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/README!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/README!!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT__.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT_.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT_!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/HOW_TO_DECRYPT!!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/DECRYPT__.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/DECRYPT_.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/DECRYPT_!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/DECRYPT.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/DECRYPT!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/DECRYPT!!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/.localized.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/.DS_Store.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/.DS_Store",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/.localized",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/.localized.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/ziMJMsMN",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/Frothly_marketing_campaign_Q317.pptx",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/Frothly_marketing_campaign_Q317.pptx.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/ziqbqar2",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/mk_old_files.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/Q88V5cY.jpg.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/ziDBmoRR",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/Q88V5cY.jpg",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/ziS4fsQS",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/.DS_Store.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/ziXye89x",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/.localized",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/.localized.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/zi32SZT4",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/d19b903adbd0f8c119d0d8f25b194bdd24b737357a517f23ca5cdc6c75b35038.zip",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/d19b903adbd0f8c119d0d8f25b194bdd24b737357a517f23ca5cdc6c75b35038.zip.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/GoT.S07E02.BOTS.BOTS.BOTS.mkv.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/zippUqU8",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/GoT.S07E02.BOTS.BOTS.BOTS.mkv",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/ziiOhaKu",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/GoT.S7E2.BOTS.BOTS.BOTS.mkv.torrent",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/zib86lJJ",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/Office 2016 Patcher.app.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/zi7A3jFQ",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/Office2016_Patcher_For_OSX.torrent",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/Office2016_Patcher_For_OSX.torrent.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/GoT.S1-07.BOTS.BOTS.BOTS.mkv.torrent",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/.BAH.rx5oJ",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/Office 2016 Patcher.app",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/README!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Downloads/README!.txt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/zifgCTc3",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/ziQ0rr1z",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Desktop/.localized",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/ziSvFzni",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/.DS_Store.crypt",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        },
+        {
+          "value": "/Users/mallorykraeusen/Documents/zihuoUJx",
+          "source": "query",
+          "query_id": "logical-goal-graph-hunt-req-20260921-085100-resumed-step-2",
+          "status": "CANDIDATE"
+        }
+      ]
+    }
+  }
+]

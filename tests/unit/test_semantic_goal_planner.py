@@ -2,6 +2,7 @@ from hunting.contracts.queries import ProviderOperation
 from hunting.contracts.semantic_graph import (
     SemanticAnswerGoal,
     SemanticGoalGraph,
+    SemanticQualifierGoal,
     SemanticRelationGoal,
     SemanticVariable,
 )
@@ -51,6 +52,35 @@ def test_composes_multiple_steps_without_operation_name_heuristics() -> None:
     assert plan.steps[1].depends_on == ("step-1",)
     selected_host_domain = next(method for method in plan.proof_methods if method.goal_id == "host-domain")
     assert selected_host_domain.prerequisite_goal_ids == ("person-host",)
+
+
+def test_relation_qualifier_retrieval_terms_reach_plan() -> None:
+    graph = SemanticGoalGraph(
+        id="goal-qualifier-plan",
+        request_id="req-qualifier-plan",
+        objective="Find a presentation file",
+        variables=[
+            SemanticVariable("host", "host", "HOST-1"),
+            SemanticVariable("file", "file"),
+        ],
+        relations=[SemanticRelationGoal("r1", "host", "modified", "file")],
+        qualifiers=[SemanticQualifierGoal(
+            "q1", "r1", "file_type", "PowerPoint presentation", True, (".pptx", ".pptm")
+        )],
+        answers=[SemanticAnswerGoal("file", "file_name")],
+    )
+    operation = ProviderOperation(
+        id="find-file",
+        provider_id="p",
+        scope_ids=("scope",),
+        input_entity_kinds=("host",),
+        output_entity_kinds=("file",),
+        output_value_bindings={"object": ("file_path",)},
+        output_binding_entity_kinds={"object": "file"},
+        guaranteed_relations=("modified",),
+    )
+    plan = SemanticGoalPlanner((operation,), "p").compose(graph)
+    assert plan.steps[0].constraint_retrieval_terms == ()
 
 
 def test_unavailable_relation_is_explicitly_unresolved() -> None:

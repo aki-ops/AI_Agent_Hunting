@@ -1,0 +1,8 @@
+{
+  "id": "S02_tor_artifact_identity",
+  "kind": "QUESTION",
+  "content": "Was Tor Browser installed on the user MacBook?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

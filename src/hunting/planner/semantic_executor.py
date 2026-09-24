@@ -5,11 +5,15 @@ import inspect
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from hunting.contracts.cells import ProviderScope
 from hunting.contracts.agenda import AgendaItem, BoundedAgenda
+from hunting.contracts.cells import ProviderScope
 from hunting.contracts.entities import Account, Domain, File, Host, IPAddress, Process
 from hunting.contracts.observations import EpistemicType, Observation
-from hunting.contracts.ontology import roles_are_compatible
+from hunting.contracts.ontology import (
+    native_field_compatible_with_kind,
+    roles_are_compatible,
+    types_are_compatible,
+)
 from hunting.contracts.proof_contract import ProofResult
 from hunting.contracts.queries import (
     Diagnostic,
@@ -26,7 +30,53 @@ from hunting.contracts.semantic_route import (
     SemanticRouteAssessment,
     SemanticRouteStatus,
 )
-from hunting.planner.semantic_query_compiler import query_plan_from_step
+from hunting.contracts.transforms import (
+    evaluate_constraint_against_row,
+    get_transform_for_constraint,
+    is_literal_telemetry_token,
+)
+from hunting.planner.semantic_query_compiler import query_plan_from_step, split_time_window
+
+
+def _constraint_pairs(step: Any) -> tuple[tuple[str, Any], ...]:
+    pairs: list[tuple[str, Any]] = []
+    for text in getattr(step, "constraints", ()) or ():
+        raw = str(text)
+        if "=" not in raw:
+            continue
+        key, value = raw.split("=", 1)
+        pairs.append((key.strip(), value.strip()))
+    for item in getattr(step, "constraint_metadata", ()) or ():
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        if key:
+            pairs.append((key, item.get("value")))
+    return tuple(pairs)
+
+
+def _rows_matching_transform_constraints(
+    rows: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None,
+    step: Any,
+    removed_keys: set[str] | frozenset[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Apply registered transforms before treating multiple values as ambiguous."""
+    skipped = {str(key).strip().casefold() for key in (removed_keys or ()) if str(key).strip()}
+    filtered = [dict(row) for row in (rows or ())]
+    for key, value in _constraint_pairs(step):
+        if str(key).strip().casefold() in skipped:
+            continue
+        if get_transform_for_constraint(key, value) is None:
+            continue
+        filtered = [
+            row for row in filtered
+            if evaluate_constraint_against_row(
+                {str(field): str(item) for field, item in row.items() if item not in (None, "")},
+                key,
+                value,
+            )
+        ]
+    return filtered
 
 
 @dataclass(frozen=True)
@@ -88,6 +138,9 @@ class SemanticExecutionResult:
     # steps so a valid downstream search is not silently skipped.
     candidate_input_warnings: dict[str, str] = field(default_factory=dict)
     ambiguous_candidates: dict[str, list[str]] = field(default_factory=dict)
+    candidate_groups: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    candidate_census: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    winning_facets: dict[str, str] = field(default_factory=dict)
     agenda: dict[str, Any] = field(default_factory=dict)
 
 
@@ -110,18 +163,6 @@ class SemanticPlanExecutor:
         self.proof_engine = proof_engine
 
     @staticmethod
-    def _type_compatible(actual: str, declared: str) -> bool:
-        left = str(actual or "").casefold()
-        right = str(declared or "").casefold()
-        if left == right:
-            return True
-        endpoint_types = {"device", "endpoint", "host", "workstation", "computer"}
-        if left in endpoint_types and right in endpoint_types:
-            return True
-        artifact_types = {"file", "artifact", "document", "file_artifact"}
-        return left in artifact_types and right in artifact_types
-
-    @staticmethod
     def _typed_entity(value: str, entity_type: str | None) -> Any:
         """Preserve the semantic type at the provider boundary."""
         kind = str(entity_type or "").casefold()
@@ -136,7 +177,9 @@ class SemanticPlanExecutor:
         if kind == "file":
             return File(path=str(value))
         if kind == "process":
-            return Process(pid=int(value) if str(value).isdigit() else 0)
+            if str(value).isdigit():
+                return Process(pid=int(value))
+            return value
         # Person and opaque semantic values must remain strings because they
         # are not provider entities until a declared operation resolves them.
         return value
@@ -193,6 +236,7 @@ class SemanticPlanExecutor:
         route_exhausted: set[str] = set()
         no_progress_signatures: set[str] = set()
         agenda = BoundedAgenda()
+        selected_methods = dict(getattr(plan, "selected_method_ids", {}) or {})
         agenda.extend(
             AgendaItem(
                 goal_id=(step.advances_goal_ids[0] if step.advances_goal_ids else step.id),
@@ -201,6 +245,9 @@ class SemanticPlanExecutor:
                 mode=step.mode,
                 depends_on=tuple(step.depends_on),
                 cost=float(step.expected_cost or 1),
+                proof_method_id=str(selected_methods.get(step.advances_goal_ids[0] if step.advances_goal_ids else "", "")),
+                route_id=f"route:{(step.advances_goal_ids[0] if step.advances_goal_ids else step.id)}:{step.operation_id}",
+                bindings=tuple(sorted((str(role), str(var)) for role, var in step.input_bindings.items())),
             )
             for step in plan.steps
         )
@@ -279,6 +326,7 @@ class SemanticPlanExecutor:
                         outputs=selected_values,
                         status="USER_SELECTED",
                         proof_result=pr,
+                        goal_id=next(iter(step.advances_goal_ids), ""),
                     ))
                     agenda.dispatch(step.id)
                     remaining.remove(step)
@@ -332,31 +380,44 @@ class SemanticPlanExecutor:
                         )
                     )
                     continue
-                if step.requires_complete_inputs:
-                    unverified_inputs = [
-                        variable_id
-                        for variable_id in step.input_bindings.values()
-                        if any(
-                            item.get("status") != "VERIFIED"
-                            for item in binding_provenance.get(variable_id, [])
-                        )
-                    ]
-                    if unverified_inputs:
-                        warning = (
-                            "upstream candidate binding requires explicit user "
-                            "selection before this downstream step: "
-                            + ", ".join(unverified_inputs)
-                        )
-                        candidate_input_warnings[step.id] = warning
-                        if not allow_candidate_inputs:
-                            needs_user_decision = True
-                            unresolved_reasons[step.id] = warning
-                            continue
+                unverified_inputs = [
+                    variable_id
+                    for variable_id in step.input_bindings.values()
+                    if any(
+                        item.get("status") != "VERIFIED"
+                        for item in binding_provenance.get(variable_id, [])
+                    )
+                ]
+                if unverified_inputs and step.mode == "PROVE":
+                    unresolved_reasons[step.id] = (
+                        "proof-required downstream step requires verified bindings: "
+                        + ", ".join(unverified_inputs)
+                    )
+                    continue
+                if step.requires_complete_inputs and unverified_inputs:
+                    warning = (
+                        "upstream candidate binding requires explicit user "
+                        "selection before this downstream step: "
+                        + ", ".join(unverified_inputs)
+                    )
+                    candidate_input_warnings[step.id] = warning
+                    if not allow_candidate_inputs:
+                        needs_user_decision = True
+                        unresolved_reasons[step.id] = warning
+                        continue
                 primary_operation = self.operations.get(step.operation_id)
                 if primary_operation is None:
                     agenda.dispatch(step.id)
                     remaining.remove(step)
                     unresolved_reasons[step.id] = f"operation '{step.operation_id}' is not declared by the provider"
+                    continue
+                if step.mode == "DISCRIMINATE" and not tuple(
+                    getattr(primary_operation, "discriminator_fields", ()) or ()
+                ):
+                    unresolved_reasons[step.id] = (
+                        "DISCRIMINATE requires declared differentiating evidence on the operation"
+                    )
+                    remaining.remove(step)
                     continue
                 # Restrictions do not block retrieval of the base relation.
                 # The adapter may use explicitly declared searchable keys as
@@ -442,6 +503,7 @@ class SemanticPlanExecutor:
                             for text in step.constraints
                             if "=" in text
                             and text.split("=", 1)[0].strip().casefold() in searchable
+                            and is_literal_telemetry_token(text.split("=", 1)[1].strip())
                         ]
                         retrieval_terms = query.parameters.get("constraint_retrieval_terms", [])
                         if isinstance(retrieval_terms, (list, tuple)):
@@ -450,7 +512,7 @@ class SemanticPlanExecutor:
                                 for item in retrieval_terms
                                 if isinstance(item, dict)
                                 and str(item.get("key", "")).strip().casefold() in searchable
-                                and str(item.get("term", "")).strip()
+                                and is_literal_telemetry_token(item.get("term", ""))
                             )
                         if constraint_terms:
                             query.parameters["constraint_search_terms"] = list(dict.fromkeys(constraint_terms))
@@ -477,12 +539,23 @@ class SemanticPlanExecutor:
                             page_results: list[QueryResult] = []
                             offset = 0
                             seen_page_signatures: set[tuple[str, ...]] = set()
+                            pending_windows: list[str] = [time_window]
+                            window_index = 0
                             for page in range(max(1, max_pages)):
+                                current_window = pending_windows[min(window_index, len(pending_windows) - 1)]
                                 suffix = "" if candidate_index == 0 and page == 0 else f"-binding-{candidate_index + 1}-page-{page + 1}"
+                                logical_payload = query.parameters.get("logical_query_plan")
+                                if isinstance(logical_payload, dict):
+                                    logical_payload["cursor"] = str(offset) if operation.pagination in {"offset", "cursor"} else str(logical_payload.get("cursor") or "")
+                                    logical_payload["time_window"] = current_window
+                                replay_payload = query.parameters.get("query_replay")
+                                if isinstance(replay_payload, dict):
+                                    replay_payload["cursor"] = str(offset) if operation.pagination in {"offset", "cursor"} else replay_payload.get("cursor")
+                                    replay_payload["time_window"] = current_window
                                 kwargs: dict[str, Any] = {
                                     "operation_id": query.operation_id,
                                     "entity": entity_value,
-                                    "window": time_window,
+                                    "window": current_window,
                                     "limit": limit,
                                     "query_id": f"{query.id}{suffix}",
                                 }
@@ -492,6 +565,63 @@ class SemanticPlanExecutor:
                                     kwargs["query_intent"] = dict(query.parameters.get("query_intent", {}))
                                 if "offset" in accepted:
                                     kwargs["offset"] = offset
+                                if "cursor" in accepted and operation.pagination == "cursor":
+                                    kwargs["cursor"] = str(offset)
+                                candidate_raw = query.parameters.get("native_query_candidate")
+                                if candidate_raw:
+                                    from hunting.contracts.hunt import LogicalQueryPlan as _LogicalQueryPlan
+                                    from hunting.contracts.native_query import NativeQueryCandidate
+                                    from hunting.query_safety.c3_admission import admit_c3_candidate
+
+                                    if isinstance(candidate_raw, NativeQueryCandidate):
+                                        candidate = candidate_raw
+                                    else:
+                                        payload = dict(candidate_raw)
+                                        candidate = NativeQueryCandidate(
+                                            provider=str(payload.get("provider", plan.provider_id)),
+                                            query_text=str(payload.get("query_text", "")),
+                                            source_ids=tuple(payload.get("source_ids", ())),
+                                            time_window=str(payload.get("time_window", current_window)),
+                                            expected_fields=tuple(payload.get("expected_fields", ())),
+                                            max_rows=int(payload.get("max_rows", limit) or limit),
+                                        )
+                                    blocked_plan = (
+                                        _LogicalQueryPlan(
+                                            id="c3-blocked",
+                                            requirement_id="c3-blocked",
+                                            provider=plan.provider_id,
+                                            scope=scope.scope_id,
+                                        )
+                                        if query.parameters.get("logical_query_plan")
+                                        else None
+                                    )
+                                    gate = admit_c3_candidate(
+                                        candidate,
+                                        admitted=True,
+                                        deterministic_plan=blocked_plan,
+                                        known_sources=(getattr(scope, "scope_id", ""),),
+                                        known_fields=tuple(
+                                            (query.parameters.get("query_intent") or {}).get("projection_roles") or ()
+                                        ),
+                                    )
+                                    if not gate.accepted:
+                                        result_page = QueryResult(
+                                            query_id=kwargs["query_id"],
+                                            outcome=QueryOutcome.UNKNOWN,
+                                            executed_ok=False,
+                                            complete=False,
+                                            diagnostic=Diagnostic.PARSE_FAILED,
+                                            truncation_reason=";".join(gate.reasons),
+                                        )
+                                        page_results.append(result_page)
+                                        page_trace.append({
+                                            "step_id": step.id,
+                                            "operation_id": operation_id,
+                                            "query_id": result_page.query_id,
+                                            "c3_rejected": True,
+                                            "reasons": list(gate.reasons),
+                                        })
+                                        break
                                 result_page = self.adapter.execute_query(**kwargs)
                                 page_results.append(result_page)
                                 page_trace.append({
@@ -507,27 +637,49 @@ class SemanticPlanExecutor:
                                     "candidate_index": candidate_index,
                                     "page": page + 1,
                                     "offset": offset,
+                                    "window": current_window,
+                                    "cursor": (
+                                        str(offset)
+                                        if operation.pagination in {"offset", "cursor"}
+                                        else result_page.cursor
+                                    ),
                                     "rows": len(result_page.rows or []),
                                     "complete": bool(result_page.complete),
-                                    "cursor": result_page.cursor,
                                     "executed_ok": bool(result_page.executed_ok),
                                     "diagnostic": getattr(result_page.diagnostic, "value", result_page.diagnostic),
+                                    "time_split": current_window != time_window,
                                 })
-                                if result_page.complete or not result_page.executed_ok:
+                                if not result_page.executed_ok:
+                                    break
+                                if result_page.complete:
+                                    if current_window != time_window and window_index + 1 < len(pending_windows):
+                                        window_index += 1
+                                        continue
                                     break
                                 signature = tuple(str(row) for row in (result_page.rows or ()))
                                 if signature and signature in seen_page_signatures:
                                     break
                                 seen_page_signatures.add(signature)
-                                if operation.pagination not in {"offset", "cursor"}:
-                                    break
-                                try:
-                                    next_offset = int(result_page.cursor or (offset + len(result_page.rows or [])))
-                                except (TypeError, ValueError):
-                                    next_offset = offset + len(result_page.rows or [])
-                                if next_offset <= offset or not result_page.rows:
-                                    break
-                                offset = next_offset
+                                if operation.pagination in {"offset", "cursor"}:
+                                    try:
+                                        next_offset = int(result_page.cursor or (offset + len(result_page.rows or [])))
+                                    except (TypeError, ValueError):
+                                        next_offset = offset + len(result_page.rows or [])
+                                    if next_offset <= offset or not result_page.rows:
+                                        break
+                                    offset = next_offset
+                                    continue
+                                if current_window == time_window:
+                                    halves = split_time_window(current_window)
+                                    if halves is None:
+                                        break
+                                    pending_windows = list(halves)
+                                    window_index = 0
+                                    continue
+                                if window_index + 1 < len(pending_windows):
+                                    window_index += 1
+                                    continue
+                                break
 
                             if page_results and not page_results[-1].complete and page_results[-1].executed_ok:
                                 next_offset = page_results[-1].cursor
@@ -727,14 +879,24 @@ class SemanticPlanExecutor:
                     outputs: dict[str, list[str]] = {}
                     outputs_verified = True
                     ambiguous_output = False
+                    incomplete_output = False
+                    proven_values: set[str] = set()
+                    binding_status = "CANDIDATE"
                     for binding_name, variable_id in step.output_bindings.items():
                         expected_type = variable_types.get(variable_id)
                         declared_type = operation.output_binding_entity_kinds.get(binding_name)
-                        if expected_type and declared_type and not self._type_compatible(expected_type, declared_type):
+                        if not declared_type:
                             continue
-                        fields = operation.output_value_bindings.get(binding_name, ())
+                        if expected_type and not types_are_compatible(expected_type, declared_type):
+                            continue
+                        fields = tuple(
+                            field_name
+                            for field_name in operation.output_value_bindings.get(binding_name, ())
+                            if native_field_compatible_with_kind(str(field_name), declared_type)
+                        )
+                        binding_rows = _rows_matching_transform_constraints(result.rows, step, removed_keys)
                         values = []
-                        for row in result.rows or []:
+                        for row in binding_rows:
                             for field_name in fields:
                                 value = row.get(field_name)
                                 if value not in (None, "", [], {}):
@@ -755,6 +917,39 @@ class SemanticPlanExecutor:
                             or (len(deduped) > max_bindings)
                         )
                         if is_ambiguous_binding:
+                            if not result.complete:
+                                incomplete_output = True
+                                needs_user_decision = True
+                                reason = (
+                                    f"incomplete retrieval for '{variable_id}' has "
+                                    f"{len(deduped)} values; census groups from this bag; pagination remains open"
+                                )
+                                unresolved_reasons[step.id] = reason
+                                ambiguous_candidates[variable_id] = list(deduped)
+                                binding_provenance.setdefault(variable_id, [])
+                                for value in deduped:
+                                    binding_provenance[variable_id].append({
+                                        "value": str(value),
+                                        "source": "query",
+                                        "query_id": query.id,
+                                        "status": "CANDIDATE",
+                                    })
+                                executions.append(StepExecution(
+                                    step_id=step.id,
+                                    query_id=query.id,
+                                    result=result,
+                                    operation_id=operation_id,
+                                    outputs={},
+                                    inputs=bound_values,
+                                    status="PARTIAL",
+                                    blocked_reason=reason,
+                                    stage_id=stage.stage_id,
+                                    removed_retrieval_keys=tuple(sorted(removed_keys)),
+                                    goal_id=advances_goal,
+                                    proof_result=step_pr,
+                                    observations=step_observations,
+                                ))
+                                break
                             ambiguous_output = True
                             needs_user_decision = True
                             reason = (
@@ -919,7 +1114,7 @@ class SemanticPlanExecutor:
                             for value in deduped
                         ]
 
-                    if ambiguous_output:
+                    if ambiguous_output or incomplete_output:
                         break
 
                     if input_variable_id and not variables.get(input_variable_id):
@@ -928,8 +1123,11 @@ class SemanticPlanExecutor:
                             if isinstance(field_names, (list, tuple)):
                                 in_fields.extend(str(f) for f in field_names)
                         if not in_fields:
-                            for role_name, field_id in getattr(operation, "input_roles", {}).items():
-                                in_fields.append(str(field_id))
+                            raw_input_roles = getattr(operation, "input_roles", ())
+                            if isinstance(raw_input_roles, dict):
+                                in_fields.extend(str(field_id) for field_id in raw_input_roles.values())
+                            else:
+                                in_fields.extend(str(field_id) for field_id in raw_input_roles or ())
                         in_values = []
                         for row in result.rows or []:
                             for fn in in_fields:
@@ -989,7 +1187,7 @@ class SemanticPlanExecutor:
                         or (result.complete and not outputs and result.rows)
                     ):
                         break
-                    if ambiguous_output:
+                    if ambiguous_output or incomplete_output:
                         # The ``break`` above exits the output-binding loop;
                         # this one exits the alternative-operation loop.
                         break
@@ -1027,6 +1225,27 @@ class SemanticPlanExecutor:
                     for execution in executions
                 )
                 execution_complete = False
+                user_selected = any(
+                    execution.step_id == step.id and execution.status == "USER_SELECTED"
+                    for execution in executions
+                )
+                if user_selected:
+                    execution_complete = True
+                    status = SemanticRouteStatus.CANDIDATE_OBSERVED
+                    readiness = CapabilityReadiness.RETRIEVAL_CAPABLE
+                    route_assessments[goal_id] = SemanticRouteAssessment(
+                        goal_id=goal_id,
+                        relation=step.relation,
+                        status=status,
+                        execution_complete=True,
+                        proof_complete=False,
+                        route_exhausted=False,
+                        readiness=readiness,
+                        attempts=list(attempts),
+                        proof_gaps=["relation_or_constraint_proof_missing"],
+                        capability_gaps=[],
+                    )
+                    continue
                 if proof_complete:
                     execution_complete = True
                     status = SemanticRouteStatus.VERIFIED
@@ -1088,6 +1307,21 @@ class SemanticPlanExecutor:
 
         for unresolved_goal_id in plan.unresolved_goal_ids:
             if unresolved_goal_id not in route_assessments:
+                reason = str((getattr(plan, "unresolved_reasons", {}) or {}).get(unresolved_goal_id, ""))
+                if reason == "blocked_on_dependency":
+                    route_assessments[unresolved_goal_id] = SemanticRouteAssessment(
+                        goal_id=unresolved_goal_id,
+                        relation="unresolved",
+                        status=SemanticRouteStatus.UNPLANNED,
+                        execution_complete=False,
+                        proof_complete=False,
+                        route_exhausted=False,
+                        readiness=CapabilityReadiness.RETRIEVAL_CAPABLE,
+                        attempts=[],
+                        proof_gaps=["relation_or_constraint_proof_missing"],
+                        capability_gaps=["blocked_on_dependency"],
+                    )
+                    continue
                 route_assessments[unresolved_goal_id] = SemanticRouteAssessment(
                     goal_id=unresolved_goal_id,
                     relation="unresolved",
@@ -1098,7 +1332,7 @@ class SemanticPlanExecutor:
                     readiness=CapabilityReadiness.CAPABILITY_GAP,
                     attempts=[],
                     proof_gaps=["relation_or_constraint_proof_missing"],
-                    capability_gaps=["no_provider_attempt"],
+                    capability_gaps=["no_typed_reachable_route" if reason == "no_typed_reachable_route" else "no_provider_attempt"],
                 )
 
         return SemanticExecutionResult(

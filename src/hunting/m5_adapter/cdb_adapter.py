@@ -27,6 +27,7 @@ from hunting.contracts.capabilities import CapabilityDescriptor, ProviderCapabil
 from hunting.contracts.cells import ProviderScope
 from hunting.contracts.entities import ANY, Account, Domain, EntityRef, File, Host, IPAddress, Process
 from hunting.contracts.expectations import EvidenceRequirement, FieldOp, FieldPredicate
+from hunting.contracts.ontology import infer_object_port_kinds
 from hunting.contracts.queries import (
     CapabilityBinding,
     ControlResult,
@@ -34,6 +35,7 @@ from hunting.contracts.queries import (
     ProviderOperation,
     QueryOutcome,
     QueryResult,
+    is_scope_observation_fact_kinds,
 )
 from hunting.contracts.source_profile import ProbeSpec, TelemetrySourceProfile
 from hunting.contracts.transforms import get_transform_for_constraint
@@ -235,6 +237,8 @@ class CdbAdapter:
             supported_constraints: tuple[str, ...] = (),
             searchable_constraints: tuple[str, ...] = (),
             query_builder: str = "",
+            discriminator_fields: tuple[str, ...] = (),
+            discriminator_constraint_bindings: dict[str, str] | None = None,
         ) -> ProviderOperation:
             relation_by_fact = {
                 "identity_binding": ("associated_with", "logged_on_to"),
@@ -268,18 +272,25 @@ class CdbAdapter:
                 field_name for field_name in output_fields
                 if field_name.casefold() not in {"timestamp", "host", "user", "native_type", "sourcetype"}
             )
-            derived_output_kinds = tuple(dict.fromkeys(
-                kind for field_name in output_fields
-                for kind, markers in {
-                    "account": ("user", "username"),
-                    "host": ("host", "computer"),
-                    "ip": ("ip", "client_ip", "server_ip", "source_ip", "destination_ip"),
-                    "domain": ("domain", "site", "query", "cs_host"),
-                    "process": ("image", "process", "cmdline"),
-                    "file": ("file_path", "path", "targetfilename"),
-                    "version": ("version", "productversion", "fileversion"),
-                }.items() if field_name.casefold() in {marker.casefold() for marker in markers}
-            ))
+            scope_observation = (
+                not output_entity_kinds
+                and is_scope_observation_fact_kinds(fact_kinds)
+            )
+            if scope_observation:
+                derived_output_kinds = ()
+            else:
+                derived_output_kinds = tuple(dict.fromkeys(
+                    kind for field_name in output_fields
+                    for kind, markers in {
+                        "account": ("user", "username"),
+                        "host": ("host", "computer"),
+                        "ip": ("ip", "client_ip", "server_ip", "source_ip", "destination_ip"),
+                        "domain": ("domain", "site", "query", "cs_host"),
+                        "process": ("image", "process", "cmdline"),
+                        "file": ("file_path", "path", "targetfilename"),
+                        "version": ("version", "productversion", "fileversion"),
+                    }.items() if field_name.casefold() in {marker.casefold() for marker in markers}
+                ))
             if operation_id == "resolve_person_to_account" and output_value_bindings is None:
                 output_value_bindings = {"object": ("user",)}
             valid_cols = {
@@ -291,6 +302,23 @@ class CdbAdapter:
                 f for f in output_fields if f.casefold() in valid_cols and f.casefold() not in {"timestamp", "raw_ref"}
             ))
             final_supported = supported_constraints or derived_supported
+            if not discriminator_fields and operation_id in {
+                "cdb_file_search", "find_file_change_from_endpoint", "find_file_change_from_process",
+            }:
+                discriminator_fields = ("file_path", "action")
+            if not discriminator_constraint_bindings and operation_id in {
+                "cdb_file_search", "find_file_change_from_endpoint", "find_file_change_from_process",
+            }:
+                discriminator_constraint_bindings = {
+                    "file_path": "file_path",
+                    "file_name": "file_path",
+                    "action": "action",
+                }
+            final_bindings = (
+                {} if scope_observation and output_value_bindings is None
+                else (output_value_bindings or ({"object": value_fields} if value_fields else {}))
+            )
+            final_kinds = () if scope_observation else (output_entity_kinds or derived_output_kinds)
             return ProviderOperation(
                 operation_id,
                 "cdb",
@@ -299,32 +327,37 @@ class CdbAdapter:
                 pagination="offset",
                 limit_semantics="complete only on EOF",
                 input_entity_kinds=input_kinds,
-                output_entity_kinds=output_entity_kinds or derived_output_kinds,
+                output_entity_kinds=final_kinds,
                 output_fields=output_fields,
                 output_fact_kinds=fact_kinds,
                 input_roles=input_roles,
                 output_roles=output_roles,
                 native_field_bindings=native_field_bindings or {},
                 guaranteed_relations=declared_relations,
-                output_value_bindings=output_value_bindings or ({"object": value_fields} if value_fields else {}),
-                output_binding_entity_kinds=output_binding_entity_kinds or {},
+                output_value_bindings=final_bindings,
+                output_binding_entity_kinds=infer_object_port_kinds(
+                    output_binding_entity_kinds=output_binding_entity_kinds,
+                    output_entity_kinds=final_kinds,
+                ),
                 supported_constraints=final_supported,
                 searchable_constraints=searchable_constraints,
                 query_builder=query_builder,
+                discriminator_fields=discriminator_fields,
+                discriminator_constraint_bindings=discriminator_constraint_bindings or {},
                 completeness="limit+1 EOF proof",
             )
 
         operations = (
             operation("cdb_scope_scan", ("scope_records", "operational_baseline"), ("ANY",), ("native_type", "timestamp")),
             operation("search_text", ("scope_records", "operational_baseline"), ("ANY",), ("raw_ref", "native_type"), {"terms": "list[string]", "window": "interval"}),
-            operation("cdb_process_search", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), ("host", "user", "pid", "ppid", "cmdline", "image")),
+            operation("cdb_process_search", ("process_ancestry", "server_side_execution"), ("host", "account", "process"), ("host", "user", "pid", "ppid", "cmdline", "image"), output_entity_kinds=("process",), output_value_bindings={"object": ("image", "cmdline")}, output_binding_entity_kinds={"object": "process"}),
             operation("cdb_auth_search", ("authentication_activity", "remote_authentication"), ("host", "account"), ("host", "user", "event_id", "status")),
             operation("cdb_net_search", ("network_connection",), ("host", "ip", "process"), ("host", "ip", "port")),
             operation("cdb_persistence_search", ("persistence_change",), ("host", "account"), ("host", "action", "file_path")),
-            operation("cdb_file_search", ("file_modification", "file_artifact"), ("host", "process", "file"), ("host", "image", "file_path", "action")),
-            operation("cdb_dns_search", ("dns_activity",), ("host", "ip", "domain"), ("host", "ip", "domain")),
-            operation("cdb_web_requests", ("web_request", "web_request_activity", "web_navigation"), ("host", "ip", "domain"), ("host", "ip", "domain", "native_type")),
-            operation("cdb_web_search", ("web_request", "web_request_activity", "web_navigation"), ("host", "ip", "domain"), ("host", "ip", "domain", "native_type")),
+            operation("cdb_file_search", ("file_modification", "file_artifact"), ("host", "process", "file"), ("host", "image", "file_path", "action"), output_entity_kinds=("file",), output_value_bindings={"object": ("file_path",)}, output_binding_entity_kinds={"object": "file"}),
+            operation("cdb_dns_search", ("dns_activity",), ("host", "ip", "domain"), ("host", "ip", "domain"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain",)}, output_binding_entity_kinds={"object": "domain"}),
+            operation("cdb_web_requests", ("web_request", "web_request_activity", "web_navigation"), ("host", "ip", "domain"), ("host", "ip", "domain", "native_type"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain",)}, output_binding_entity_kinds={"object": "domain"}),
+            operation("cdb_web_search", ("web_request", "web_request_activity", "web_navigation"), ("host", "ip", "domain"), ("host", "ip", "domain", "native_type"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain",)}, output_binding_entity_kinds={"object": "domain"}),
             operation("resolve_person_to_account", ("identity_binding",), ("person",), ("user",), output_roles=("subject_identity", "account_identity"), native_field_bindings={"subject_identity": ("user",), "account_identity": ("user",)}, query_builder="cdb.identity.person_to_account.v1"),
             operation(
                 "resolve_account_to_endpoint", ("identity_binding",), ("account",),
@@ -338,12 +371,12 @@ class CdbAdapter:
                 guaranteed_relations=("associated_with",),
             ),
             operation("resolve_endpoint_to_client_ip", ("identity_binding",), ("host",), ("host", "ip")),
-            operation("find_web_activity_from_client_ip", ("web_request", "web_request_activity", "web_navigation"), ("ip",), ("ip", "domain", "native_type")),
-            operation("find_dns_activity_from_client_ip", ("dns_activity",), ("ip",), ("ip", "domain")),
-            operation("find_web_activity_from_endpoint", ("web_request", "web_request_activity", "web_navigation"), ("host",), ("host", "domain", "native_type")),
-            operation("find_process_from_endpoint", ("process_ancestry", "server_side_execution"), ("host",), ("host", "pid", "ppid", "image", "cmdline")),
-            operation("find_file_change_from_endpoint", ("file_modification", "file_artifact"), ("host",), ("host", "file_path", "action")),
-            operation("find_file_change_from_process", ("file_modification", "file_artifact"), ("process",), ("host", "image", "file_path", "action")),
+            operation("find_web_activity_from_client_ip", ("web_request", "web_request_activity", "web_navigation"), ("ip",), ("ip", "domain", "native_type"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain",)}, output_binding_entity_kinds={"object": "domain"}),
+            operation("find_dns_activity_from_client_ip", ("dns_activity",), ("ip",), ("ip", "domain"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain",)}, output_binding_entity_kinds={"object": "domain"}),
+            operation("find_web_activity_from_endpoint", ("web_request", "web_request_activity", "web_navigation"), ("host",), ("host", "domain", "native_type"), output_entity_kinds=("domain",), output_value_bindings={"object": ("domain",)}, output_binding_entity_kinds={"object": "domain"}),
+            operation("find_process_from_endpoint", ("process_ancestry", "server_side_execution"), ("host",), ("host", "pid", "ppid", "image", "cmdline"), output_entity_kinds=("process",), output_value_bindings={"object": ("image", "cmdline")}, output_binding_entity_kinds={"object": "process"}),
+            operation("find_file_change_from_endpoint", ("file_modification", "file_artifact"), ("host",), ("host", "file_path", "action"), output_entity_kinds=("file",), output_value_bindings={"object": ("file_path",)}, output_binding_entity_kinds={"object": "file"}),
+            operation("find_file_change_from_process", ("file_modification", "file_artifact"), ("process",), ("host", "image", "file_path", "action"), output_entity_kinds=("file",), output_value_bindings={"object": ("file_path",)}, output_binding_entity_kinds={"object": "file"}),
         )
 
         bindings = (
@@ -433,7 +466,7 @@ class CdbAdapter:
                 if entity.host:
                     conditions.append("host = ?")
                     sql_params.append(entity.host)
-                if entity.pid is not None:
+                if entity.pid:
                     conditions.append("pid = ?")
                     sql_params.append(entity.pid)
             elif isinstance(entity, IPAddress):

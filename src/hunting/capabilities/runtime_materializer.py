@@ -105,7 +105,7 @@ def materialize_runtime_operation(
         input_entity_kinds=("ANY",) if allow_scope_explore and not input_bindings else (subject_type,),
         output_entity_kinds=(object_type,),
         output_fields=output_fields,
-        guaranteed_relations=(proposal.relation,),
+        guaranteed_relations=(),
         input_roles=tuple(input_bindings),
         output_roles=tuple(output_bindings),
         native_field_bindings=input_bindings,

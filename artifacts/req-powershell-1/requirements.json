@@ -1,0 +1,9 @@
+[
+  {
+    "id": "goal-1",
+    "description": "powershell process executed on host",
+    "evidence_type": "executed_on",
+    "status": "DEFINED",
+    "necessity": "CRITICAL"
+  }
+]

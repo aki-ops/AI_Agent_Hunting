@@ -15,11 +15,12 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from hunting.capabilities.binder import CapabilityBinder
 from hunting.capabilities.census import ProviderCensusService
@@ -27,7 +28,6 @@ from hunting.capabilities.models import VersionedCapabilityDescriptor
 from hunting.capabilities.probe_executor import BoundedProbeExecutor
 from hunting.capabilities.profile_cache import RuntimeCapabilityCache
 from hunting.capabilities.registry import build_default_capability_registry
-from hunting.capabilities.retriever import CapabilityBatcher
 from hunting.capabilities.route_resolver import CapabilityRouteResolver
 from hunting.capabilities.runtime_materializer import materialize_runtime_operation
 from hunting.capabilities.source_mapping_validator import SourceMappingValidator
@@ -93,9 +93,11 @@ from hunting.contracts.search_envelope import (
 )
 from hunting.contracts.semantic_graph import (
     ClarificationEvaluationResult,
+    SemanticConstraint,
     goal_graph_from_claim_graph,
 )
 from hunting.contracts.step_trace import HuntStepName, StepTrace
+from hunting.contracts.transforms import get_transform_for_constraint, is_literal_telemetry_token
 from hunting.controller.action_planner import InvestigationAction, InvestigationActionPlanner
 from hunting.controller.controller import CanonicalActionController
 from hunting.controller.cost import LLMUsageTracker
@@ -132,6 +134,458 @@ SYSTEM_USERS = {
 }
 
 
+_INCOMPLETE_C2_STATUSES = {
+    "RELATION_DEFERRED_BY_BUDGET",
+    "LLM_BUDGET_EXHAUSTED_BEFORE_PROFILING",
+    "PROVIDER_UNAVAILABLE",
+    "MALFORMED_OUTPUT",
+    "PROFILING_FAILED",
+    "NO_LLM_CALLER",
+    "NO_PROFILE_BATCHES",
+}
+
+
+def _operation_covers_constraint_keys(operation: Any, required_keys: set[str]) -> bool:
+    if not required_keys:
+        return True
+    declared = {
+        str(key).strip().casefold()
+        for key in (
+            *tuple(getattr(operation, "supported_constraints", ()) or ()),
+            *tuple(getattr(operation, "searchable_constraints", ()) or ()),
+        )
+        if str(key).strip()
+    }
+    return required_keys <= declared
+
+
+def _executable_route_covers_goal(
+    *,
+    goal_id: str,
+    routes: tuple[Any, ...],
+    operations: Iterable[Any],
+    required_keys: set[str],
+) -> bool:
+    operation_by_id = {getattr(item, "id", ""): item for item in operations}
+    for route in routes:
+        if not bool(getattr(route, "executable", False)):
+            continue
+        operation = operation_by_id.get(str(getattr(route, "operation_id", "") or ""))
+        if operation is None:
+            continue
+        if _operation_covers_constraint_keys(operation, required_keys):
+            return True
+    return False
+
+
+def _restriction_key(text: str) -> str:
+    return str(text).split("=", 1)[0].split(":", 1)[0].strip().casefold()
+
+
+def _proof_obligation_keys(
+    *,
+    required_texts: Iterable[str],
+    supported_keys: frozenset[str],
+) -> set[str]:
+    """Only keys the operation can prove are proof obligations.
+
+    Compiler-proposed descriptive qualifiers are limitations, not unverified proof.
+    """
+    keys: set[str] = set()
+    supported = {str(key).strip().casefold() for key in supported_keys if str(key).strip()}
+    for restriction in required_texts:
+        key = _restriction_key(restriction)
+        if key and key in supported:
+            keys.add(key)
+    return keys
+
+
+def _is_request_grounded_constraint(variable: Any, item: Any) -> bool:
+    origin = str(getattr(variable, "value_origin", "") or "").casefold()
+    if origin != "request":
+        return False
+    item_value = getattr(item, "value", None)
+    if is_literal_telemetry_token(item_value):
+        return True
+    var_value = str(getattr(variable, "value", "") or "").strip()
+    text = str(item_value or "").strip()
+    return bool(var_value) and bool(text) and var_value.casefold() == text.casefold()
+
+
+def _cover_constraint_keys(constraints: Iterable[Any]) -> set[str]:
+    """C2 cover keys: transform-backed or literal tokens, not compiler phrases."""
+    keys: set[str] = set()
+    for item in constraints:
+        if isinstance(item, dict):
+            key = str(item.get("key", "")).strip().casefold()
+            value = item.get("value")
+        else:
+            key = str(getattr(item, "key", "")).strip().casefold()
+            value = getattr(item, "value", None)
+        if not key:
+            continue
+        if get_transform_for_constraint(key, value) is not None or is_literal_telemetry_token(value):
+            keys.add(key)
+    return keys
+
+
+def _observed_path_suffix(value: str) -> str:
+    text = str(value or "")
+    if "/" not in text and "\\" not in text:
+        return ""
+    name = text.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if "." not in name or name.startswith("."):
+        return ""
+    return "." + name.rsplit(".", 1)[-1].casefold()
+
+
+def _token_appears_in_candidate_bag(
+    token: Any,
+    candidate_values: Iterable[str],
+    rows: Iterable[dict[str, Any]] | None = None,
+) -> bool:
+    needle = str(token or "").strip()
+    if not needle:
+        return False
+    folded = needle.casefold()
+    for value in candidate_values:
+        if folded in str(value).casefold():
+            return True
+    for row in rows or ():
+        for item in dict(row).values():
+            if item not in (None, "", [], {}) and folded in str(item).casefold():
+                return True
+    return False
+
+
+def _filter_request_grounded_discriminator_predicates(
+    predicates: Iterable[dict[str, Any]],
+    *,
+    goal_graph: Any,
+    variable_id: str,
+    candidate_values: Iterable[str],
+    rows: Iterable[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Keep only request-grounded literal tokens that already appear in the bag."""
+    variable = next(
+        (item for item in getattr(goal_graph, "variables", ()) if item.id == variable_id),
+        None,
+    )
+    grounded_keys = {
+        str(constraint.key).strip().casefold()
+        for constraint in getattr(variable, "constraints", ()) if variable
+        if _is_request_grounded_constraint(variable, constraint)
+    }
+    kept: list[dict[str, Any]] = []
+    for predicate in predicates or ():
+        if not isinstance(predicate, dict):
+            continue
+        semantic_key = str(predicate.get("semantic_key") or "").strip().casefold()
+        value = predicate.get("value")
+        if semantic_key not in grounded_keys:
+            continue
+        if str(predicate.get("operator") or "equals").strip().casefold() != "exists":
+            if not is_literal_telemetry_token(value) and get_transform_for_constraint(semantic_key, value) is None:
+                continue
+            if not _token_appears_in_candidate_bag(value, candidate_values, rows):
+                continue
+        kept.append(dict(predicate))
+    return tuple(kept)
+
+
+def _reduce_candidates_with_predicates(
+    candidate_values: Iterable[str],
+    predicates: Iterable[dict[str, Any]],
+) -> list[str]:
+    values = [str(value) for value in candidate_values if str(value).strip()]
+    if not predicates:
+        return values
+    kept: list[str] = []
+    for value in values:
+        text = value.casefold()
+        matched = True
+        for predicate in predicates:
+            operator = str(predicate.get("operator") or "equals").strip().casefold()
+            token = str(predicate.get("value") or "").strip()
+            if operator == "exists":
+                continue
+            if not token or token.casefold() not in text:
+                matched = False
+                break
+        if matched:
+            kept.append(value)
+    return kept
+
+
+def _candidate_census_groups(
+    rows: Iterable[dict[str, Any]] | None,
+    candidate_values: Iterable[str],
+    *,
+    candidate_fields: Iterable[str] = (),
+    discriminator_fields: Iterable[str] = (),
+) -> list[dict[str, Any]]:
+    """Group EXPLORE values by declared census fields that actually vary."""
+    values = [str(value) for value in candidate_values if str(value).strip()]
+    if len(values) <= 1:
+        return []
+    identity = {str(field).strip().casefold() for field in candidate_fields if str(field).strip()}
+    declared = [str(field).strip() for field in discriminator_fields if str(field).strip()]
+    row_list = [dict(row) for row in (rows or ())]
+    lookup_fields = tuple(candidate_fields) or ("file_path", "target_path", "path", "TargetFilename")
+
+    def rows_for(candidate: str) -> list[dict[str, Any]]:
+        needle = candidate.casefold()
+        matched: list[dict[str, Any]] = []
+        for row in row_list:
+            hit = False
+            for field in lookup_fields:
+                raw = row.get(field)
+                if raw not in (None, "", [], {}) and str(raw).casefold() == needle:
+                    hit = True
+                    break
+            if not hit:
+                hit = any(
+                    str(raw).casefold() == needle
+                    for raw in row.values()
+                    if raw not in (None, "", [], {})
+                )
+            if hit:
+                matched.append(row)
+        return matched
+
+    groups: list[dict[str, Any]] = []
+    for field in declared:
+        if field.casefold() in identity:
+            continue
+        buckets: dict[str, list[str]] = {}
+        for candidate in values:
+            observed = ""
+            for row in rows_for(candidate):
+                raw = row.get(field)
+                if raw not in (None, "", [], {}):
+                    observed = str(raw)
+                    break
+            if not observed:
+                continue
+            buckets.setdefault(observed, []).append(candidate)
+        if len(buckets) <= 1:
+            continue
+        for key, members in buckets.items():
+            groups.append({
+                "field": field,
+                "value": key,
+                "count": len(members),
+                "candidates": list(members),
+            })
+
+    suffix_buckets: dict[str, list[str]] = {}
+    for candidate in values:
+        suffix = _observed_path_suffix(candidate)
+        if suffix:
+            suffix_buckets.setdefault(suffix, []).append(candidate)
+    if len(suffix_buckets) > 1:
+        for key, members in suffix_buckets.items():
+            groups.append({
+                "field": "path_suffix",
+                "value": key,
+                "count": len(members),
+                "candidates": list(members),
+            })
+    return groups
+
+
+def _facet_information_gain(n_candidates: int, bucket_sizes: Iterable[int]) -> float:
+    n = int(n_candidates)
+    sizes = [int(size) for size in bucket_sizes if int(size) > 0]
+    if n <= 1 or not sizes:
+        return 0.0
+    entropy = math.log2(n)
+    conditional = 0.0
+    for size in sizes:
+        conditional += (size / n) * math.log2(size)
+    return entropy - conditional
+
+
+def _select_winning_facet(
+    groups: Iterable[dict[str, Any]],
+    n_candidates: int,
+) -> str | None:
+    """Pick the census field with the most useful split, not identity listing."""
+    by_field: dict[str, list[int]] = {}
+    for item in groups or ():
+        field = str(item.get("field") or "").strip()
+        if not field:
+            continue
+        count = int(item.get("count") or len(item.get("candidates") or ()))
+        by_field.setdefault(field, []).append(count)
+    n = int(n_candidates)
+    grouped = {
+        field: sizes
+        for field, sizes in by_field.items()
+        if len(sizes) > 1 and any(size > 1 for size in sizes)
+    }
+    if grouped:
+        winner = None
+        best = 0.0
+        for field, sizes in grouped.items():
+            covered = sum(sizes)
+            if covered < n:
+                sizes = [*sizes, n - covered]
+            gain = _facet_information_gain(n, sizes)
+            if gain > best:
+                best = gain
+                winner = field
+        return winner if best > 1e-12 else None
+    suffixes = by_field.get("path_suffix") or []
+    if len(suffixes) > 1:
+        return "path_suffix"
+    return None
+
+
+def apply_facet_bucket_selection(
+    groups: Iterable[dict[str, Any]],
+    *,
+    field: str,
+    value: str,
+) -> list[str]:
+    wanted_field = str(field or "").strip().casefold()
+    wanted_value = str(value or "").strip().casefold()
+    for item in groups or ():
+        if str(item.get("field") or "").strip().casefold() != wanted_field:
+            continue
+        if str(item.get("value") or "").strip().casefold() != wanted_value:
+            continue
+        return [str(member).strip() for member in (item.get("candidates") or ()) if str(member).strip()]
+    return []
+
+
+def apply_resume_bindings(
+    goal_graph: Any,
+    *,
+    initial_bindings: dict[str, str | list[str]] | None = None,
+    facet_constraints: dict[str, tuple[str, str]] | None = None,
+) -> tuple[Any, dict[str, tuple[str, str]]]:
+    """Apply an analyst choice. One value binds; a facet only adds a constraint."""
+    updated = []
+    selections: dict[str, tuple[str, str]] = {}
+    bindings = dict(initial_bindings or {})
+    facets = dict(facet_constraints or {})
+    for variable in getattr(goal_graph, "variables", ()) or ():
+        matched_val = None
+        for bind_k, bind_v in bindings.items():
+            if not (
+                bind_k == variable.id
+                or bind_k.casefold() == variable.id.casefold()
+                or bind_k.casefold() == variable.entity_type.casefold()
+                or roles_are_compatible(bind_k, variable.entity_type)
+            ):
+                continue
+            if isinstance(bind_v, (list, tuple)):
+                if len(bind_v) == 1:
+                    matched_val = str(bind_v[0])
+            else:
+                matched_val = str(bind_v)
+            break
+        facet_match = None
+        for key, pair in facets.items():
+            if (
+                key == variable.id
+                or key.casefold() == variable.id.casefold()
+                or key.casefold() == variable.entity_type.casefold()
+                or roles_are_compatible(key, variable.entity_type)
+            ):
+                facet_match = pair
+                break
+        if matched_val is not None:
+            updated.append(replace(
+                variable,
+                value=matched_val,
+                value_origin="user_selection",
+                verification_status="VERIFIED",
+            ))
+        elif facet_match is not None:
+            field, value = facet_match
+            extra = SemanticConstraint(str(field), str(value))
+            selections[variable.id] = (str(field), str(value))
+            updated.append(replace(variable, constraints=(*variable.constraints, extra)))
+        else:
+            updated.append(variable)
+    return replace(goal_graph, variables=updated), selections
+
+
+def execution_requires_user_decision(execution: Any) -> bool:
+    """Pagination does not cancel an analyst decision about the retrieved bag."""
+    return bool(getattr(execution, "needs_user_decision", False))
+
+
+def _cardinality_by_variable(graph: Any, outcome_contract: Any | None) -> dict[str, str]:
+    """Map OutcomeContract slot cardinality onto SemanticAnswerGoal variable ids."""
+    mapped: dict[str, str] = {}
+    raw = dict(getattr(outcome_contract, "cardinality", None) or {})
+    types_map = dict(getattr(outcome_contract, "types", None) or {})
+    kind = str(getattr(outcome_contract, "contract_kind", "") or "")
+    default = "plural" if kind == "POPULATION_DISCOVERY" else "singular"
+    by_type = {
+        str(typ).casefold(): str(raw.get(slot) or default)
+        for slot, typ in types_map.items()
+    }
+    for key, value in raw.items():
+        mapped[str(key)] = str(value or default)
+    for answer in list(getattr(graph, "answers", ()) or ()):
+        var_id = str(getattr(answer, "variable_id", "") or "").strip()
+        if not var_id:
+            continue
+        answer_type = str(getattr(answer, "answer_type", "") or "").strip()
+        mapped[var_id] = (
+            raw.get(var_id)
+            or raw.get(answer_type)
+            or by_type.get(answer_type.casefold())
+            or next(
+                (
+                    raw[slot]
+                    for slot in raw
+                    if str(slot).casefold() in {var_id.casefold(), answer_type.casefold()}
+                ),
+                None,
+            )
+            or default
+        )
+    for variable in list(getattr(graph, "variables", ()) or ()):
+        var_id = str(getattr(variable, "id", "") or "").strip()
+        if var_id:
+            mapped.setdefault(var_id, default)
+    return mapped
+
+
+def _capability_census_incomplete(audit: Any) -> bool:
+    """True when F1 was skipped or F2 is deferred/unavailable — not a completed census."""
+    if not isinstance(audit, dict) or not audit:
+        return True
+    status = str(audit.get("status", "")).upper()
+    if status in _INCOMPLETE_C2_STATUSES:
+        return True
+    manifests = audit.get("coverage_manifests", {}) if isinstance(audit.get("coverage_manifests"), dict) else {}
+    if any(
+        bool(item.get("unexamined_source_ids")) or str(item.get("f2_status", "")).upper() in _INCOMPLETE_C2_STATUSES
+        for item in manifests.values()
+        if isinstance(item, dict)
+    ):
+        return True
+    if not audit.get("retrieval") and status not in {
+        "STATIC_TYPED_CAPABILITIES",
+        "CACHE_HIT",
+        "F1_EXECUTABLE_ROUTES",
+        "RELATION_SCOPED_PROFILING",
+        "PARTIAL_RELATION_SCOPED_PROFILING",
+    }:
+        if status in {"", "RETRIEVAL_COMPLETE"}:
+            return True
+    for item in audit.get("relation_calls") or ():
+        if isinstance(item, dict) and str(item.get("status", "")).upper() in _INCOMPLETE_C2_STATUSES:
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class HuntExecutionResult:
     """Immutable result of an orchestrated threat hunting execution."""
@@ -161,6 +615,9 @@ class HypothesisHuntEngine:
         runtime_capability_cache: RuntimeCapabilityCache | None = None,
         capability_shortlist_size: int = 8,
         capability_context_fields: int = 6,
+        enable_legacy_execution: bool = False,
+        content_registry: Any | None = None,
+        workspace: Any | None = None,
     ) -> None:
         self.compiler = compiler if compiler is not None else KnowledgeBehaviorCompiler()
         self.registry = registry if registry is not None else build_default_capability_registry()
@@ -180,6 +637,9 @@ class HypothesisHuntEngine:
             raise ValueError("capability_context_fields must be positive")
         self.capability_shortlist_size = capability_shortlist_size
         self.capability_context_fields = capability_context_fields
+        self.enable_legacy_execution = bool(enable_legacy_execution)
+        self.content_registry = content_registry
+        self.workspace = workspace
         self.adaptive_planner = (
             adaptive_planner
             if adaptive_planner is not None
@@ -204,6 +664,241 @@ class HypothesisHuntEngine:
         # selecting a candidate cannot trigger a second semantic compilation
         # or produce a different graph on the retry.
         self._semantic_compilation_cache: dict[str, tuple[str, Any, Any, Any]] = {}
+
+    def _package_operations(self, provider_id: str) -> tuple[Any, ...]:
+        if self.content_registry is None:
+            return ()
+        from hunting.registry.package_f0 import f0_operations_from_registry
+        return f0_operations_from_registry(self.content_registry, provider_id)
+
+    def _with_package_operations(self, operations: Any, provider_id: str) -> list[Any]:
+        from hunting.registry.package_f0 import merge_f0_operations
+        return list(merge_f0_operations(tuple(operations or ()), self.content_registry, provider_id))
+
+    def _record_package_usage(self, state: HuntState, operations: Any = None) -> None:
+        used: list[dict[str, Any]] = list(getattr(state, "package_versions", []) or [])
+        seen = {(item.get("id"), item.get("version"), item.get("operation_id")) for item in used}
+        records = []
+        for operation in operations or ():
+            provenance = tuple(getattr(operation, "discovery_provenance", ()) or ())
+            if provenance and str(provenance[0]) == "F0_PACKAGE":
+                records.append({
+                    "id": provenance[1] if len(provenance) > 1 else getattr(operation, "id", ""),
+                    "version": provenance[2] if len(provenance) > 2 else "",
+                    "operation_id": getattr(operation, "id", ""),
+                    "compiler_ref": getattr(operation, "query_builder", ""),
+                    "schema_version": getattr(operation, "schema_fingerprint", ""),
+                    "parser_version": "",
+                    "frontier": "F0_CERTIFIED",
+                })
+        for goal_routes in (getattr(state, "candidate_routes", {}) or {}).values():
+            for route in goal_routes:
+                payload = route if isinstance(route, dict) else (route.to_dict() if hasattr(route, "to_dict") else {})
+                provenance = tuple(payload.get("discovery_provenance") or ())
+                if provenance and str(provenance[0]) == "F0_PACKAGE":
+                    records.append({
+                        "id": provenance[1] if len(provenance) > 1 else payload.get("operation_id", ""),
+                        "version": provenance[2] if len(provenance) > 2 else "",
+                        "operation_id": payload.get("operation_id", ""),
+                        "compiler_ref": "",
+                        "schema_version": payload.get("schema_fingerprint", ""),
+                        "parser_version": "",
+                        "frontier": payload.get("frontier_stage", "F0_CERTIFIED"),
+                    })
+        for record in records:
+            key = (record.get("id"), record.get("version"), record.get("operation_id"))
+            if key in seen:
+                continue
+            seen.add(key)
+            used.append(record)
+        state.package_versions = used
+        analysis = dict(getattr(state, "semantic_analysis", {}) or {})
+        analysis["package_versions"] = list(used)
+        state.semantic_analysis = analysis
+
+    def record_workspace_event(self, event: Any) -> None:
+        from hunting.contracts.lifecycle import WorkspaceRole
+        from hunting.workspace import InvestigationWorkspace, WorkspaceEvent
+        if self.workspace is None:
+            self.workspace = InvestigationWorkspace(
+                str(getattr(event, "run_id", "") or ""),
+                roles={"analyst": WorkspaceRole.ANALYST, "reviewer": WorkspaceRole.REVIEWER},
+            )
+        if isinstance(event, WorkspaceEvent):
+            self.workspace.append_annotation(event)
+            return
+        raise ValueError("workspace events must be WorkspaceEvent records")
+
+    def apply_binding_review(
+        self,
+        state: HuntState,
+        review: Any,
+        **resume_kwargs: Any,
+    ) -> HuntExecutionResult:
+        from hunting.contracts.lifecycle import BindingReview
+        if not isinstance(review, BindingReview):
+            raise ValueError("binding review must be a BindingReview record")
+        if self.workspace is None:
+            from hunting.contracts.lifecycle import WorkspaceRole
+            from hunting.workspace import InvestigationWorkspace
+            self.workspace = InvestigationWorkspace(
+                review.run_id,
+                roles={"analyst": WorkspaceRole.ANALYST, "reviewer": WorkspaceRole.REVIEWER},
+            )
+        candidate_set = (getattr(state, "candidate_sets", {}) or {}).get(review.variable_id)
+        if candidate_set is not None and getattr(candidate_set, "is_ambiguous", False):
+            if getattr(candidate_set, "cardinality", "singular") == "singular" and len(review.selected_values) != 1:
+                raise ValueError("singular ambiguous binding requires exactly one explicit selection")
+            valid = {str(item.value) for item in getattr(candidate_set, "valid_candidates", ()) or ()}
+            if valid and any(value not in valid for value in review.selected_values):
+                raise ValueError("binding review cannot invent a candidate")
+        if not review.selected_values:
+            raise ValueError("ambiguous singular binding must not auto-select")
+        self.workspace.append_binding_review(review)
+        return self.resume_hunt(
+            state,
+            initial_bindings={review.variable_id: list(review.selected_values)},
+            **resume_kwargs,
+        )
+
+    def emit_action(
+        self,
+        state: HuntState,
+        *,
+        action_id: str,
+        kind: str,
+        actor: str,
+        evidence_refs: tuple[str, ...] = (),
+        limitations: tuple[str, ...] = (),
+        outcome_ref: str = "",
+    ) -> Any:
+        from hunting.lifecycle.acts import ActEmitter
+        request_id = ""
+        if state.objective is not None:
+            request_id = str(getattr(state.objective, "request_id", "") or "")
+        item = ActEmitter.emit(
+            action_id=action_id,
+            kind=kind,
+            source_run_id=request_id or action_id,
+            actor=actor,
+            evidence_refs=evidence_refs,
+            limitations=limitations,
+            outcome_ref=outcome_ref,
+        )
+        items = list(getattr(state, "action_items", []) or [])
+        items.append(item)
+        state.action_items = items
+        return item
+
+    def propose_knowledge(
+        self,
+        state: HuntState,
+        *,
+        candidate_id: str,
+        kind: str,
+        actor: str,
+        evidence_refs: tuple[str, ...],
+        required_tests: tuple[str, ...],
+        scope: dict[str, Any],
+        temporal_validity: dict[str, Any],
+        confidence_class: str = "UNASSESSED",
+    ) -> Any:
+        from hunting.lifecycle.acts import KnowledgeProposalGate
+        request_id = ""
+        if state.objective is not None:
+            request_id = str(getattr(state.objective, "request_id", "") or "")
+        candidate = KnowledgeProposalGate.propose(
+            candidate_id=candidate_id,
+            kind=kind,
+            source_run_id=request_id or candidate_id,
+            actor=actor,
+            evidence_refs=evidence_refs,
+            required_tests=required_tests,
+            scope=scope,
+            temporal_validity=temporal_validity,
+            confidence_class=confidence_class,
+        )
+        pending = list(getattr(state, "knowledge_candidates", []) or [])
+        pending.append(candidate)
+        state.knowledge_candidates = pending
+        if self.content_registry is not None and hasattr(self.content_registry, "register_knowledge"):
+            self.content_registry.register_knowledge(candidate)
+        return candidate
+
+    def _ensure_act_output(self, state: HuntState, request_id: str) -> None:
+        from hunting.contracts.lifecycle import HuntLifecycleRecord
+        from hunting.lifecycle.acts import ActEmitter
+        items = list(getattr(state, "action_items", []) or [])
+        if not items:
+            items.append(ActEmitter.explicit_no_action(
+                action_id=f"act-none:{request_id}",
+                source_run_id=request_id,
+                actor="runtime",
+                limitations=tuple(getattr(state, "residuals", []) or ("no durable act selected",)),
+            ))
+            state.action_items = items
+        snapshot = getattr(state, "workspace_snapshot", None)
+        state.lifecycle_record = HuntLifecycleRecord(
+            run_id=request_id,
+            execution_run_account={
+                "stopping_decision": str(getattr(getattr(state, "stopping_decision", None), "value", getattr(state, "stopping_decision", "")) or ""),
+                "package_versions": list(getattr(state, "package_versions", []) or []),
+            },
+            action_items=tuple(items),
+            knowledge_candidates=tuple(getattr(state, "knowledge_candidates", []) or []),
+            analyst_decisions=tuple(getattr(snapshot, "analyst_decisions", ()) or ()),
+        )
+
+    def _attach_workspace_snapshot(self, state: HuntState, request_id: str) -> None:
+        from hunting.contracts.lifecycle import WorkspaceRole
+        from hunting.workspace import InvestigationWorkspace
+        from hunting.workspace.views import (
+            build_coverage_view,
+            build_entity_pivot,
+            build_native_events,
+            build_proof_obligations,
+            build_query_audit,
+            build_stop_explanation,
+            build_timeline,
+        )
+        workspace = self.workspace
+        if workspace is None or str(getattr(workspace, "run_id", "")) != str(request_id):
+            workspace = InvestigationWorkspace(
+                request_id,
+                roles={"analyst": WorkspaceRole.ANALYST, "reviewer": WorkspaceRole.REVIEWER},
+            )
+            self.workspace = workspace
+        goal = getattr(state, "semantic_goal_graph", None)
+        evidence_graph = {
+            "observation_ids": [getattr(obs, "id", "") for obs in getattr(state, "observations", []) or []],
+            "proof": False,
+        }
+        unexamined: list[str] = []
+        for goal_id, routes in (getattr(state, "candidate_routes", {}) or {}).items():
+            if not routes:
+                unexamined.append(str(goal_id))
+        snapshot = workspace.snapshot(
+            observation_ids=tuple(getattr(obs, "id", "") for obs in getattr(state, "observations", []) or []),
+            evidence_graph=evidence_graph,
+            goal_graph=goal.to_dict() if goal is not None and hasattr(goal, "to_dict") else {},
+            query_audit=build_query_audit(state),
+            unexamined_routes=tuple(unexamined),
+            limitations=tuple(getattr(state, "residuals", []) or []),
+            timeline=build_timeline(state),
+            entity_pivot=build_entity_pivot(state),
+            native_events=build_native_events(state),
+            proof_obligations=build_proof_obligations(state),
+            stop_explanation=build_stop_explanation(state),
+            coverage_view=build_coverage_view(state),
+        )
+        state.workspace_snapshot = snapshot
+        analysis = dict(getattr(state, "semantic_analysis", {}) or {})
+        analysis["workspace"] = snapshot.to_dict()
+        analysis["package_versions"] = list(getattr(state, "package_versions", []) or [])
+        analysis["stop_explanation"] = dict(snapshot.stop_explanation)
+        analysis["proof_obligations"] = [dict(item) for item in snapshot.proof_obligations]
+        state.semantic_analysis = analysis
+        self._ensure_act_output(state, request_id)
 
     def execute_semantic_plan(
         self,
@@ -271,12 +966,19 @@ class HypothesisHuntEngine:
                 outputs_summary={"bound_variable_count": len(initial_variables)},
             )
 
-        operations = tuple(getattr(getattr(state, "capability_catalog", None), "operations", ()) or ())
+        accepted_obligations = tuple(
+            (str(rel.id), str(rel.relation), bool(getattr(rel, "required", False)))
+            for rel in getattr(goal_graph, "relations", ())
+        )
+        operations = self._with_package_operations(
+            tuple(getattr(getattr(state, "capability_catalog", None), "operations", ()) or ()),
+            str(getattr(getattr(state, "capability_catalog", None), "provider_id", "") or getattr(active_adapter, "provider_id", "")),
+        )
         target_outcome_contract = getattr(state.objective, "outcome_contract", None) if state.objective else None
         if target_outcome_contract is None and state.objective and getattr(state.objective, "answer_spec", None):
             from hunting.contracts.outcome import outcome_contract_from_legacy_answer_contract
             target_outcome_contract = outcome_contract_from_legacy_answer_contract(state.objective.answer_spec)
-        target_cardinality = getattr(target_outcome_contract, "cardinality", None)
+        target_cardinality = _cardinality_by_variable(goal_graph, target_outcome_contract)
         max_bindings = state.search_envelope.max_candidate_fanout if getattr(state, "search_envelope", None) else 32
         engine_proof_evaluator = ProofEngine()
         execution = SemanticPlanExecutor(active_adapter, operations, proof_engine=engine_proof_evaluator).execute(
@@ -478,7 +1180,7 @@ class HypothesisHuntEngine:
         }
         for k, v in getattr(execution, "variables", {}).items():
             if v:
-                goal_bindings[k] = v[0] if isinstance(v, list) else str(v)
+                goal_bindings[k] = list(v) if isinstance(v, (list, tuple)) else str(v)
 
         for goal in goal_graph.relations:
             executions = executed_by_goal.get(goal.id, [])
@@ -540,10 +1242,22 @@ class HypothesisHuntEngine:
                     operation_id=item.operation_id,
                     source_id=getattr(scope, "provider_id", ""),
                 )
+                step = next((s for s in logical_plan.steps if s.id == item.step_id), None)
+                step_mode = str(getattr(step, "mode", "EXPLORE") or "EXPLORE").upper()
+                output_var_ids = list((getattr(step, "output_bindings", {}) or {}).values()) if step else []
+                step_cardinality = "singular"
+                for output_var in output_var_ids:
+                    if str((target_cardinality or {}).get(output_var, "")).casefold() == "plural":
+                        step_cardinality = "plural"
+                        break
+                current_op = operation_by_id.get(item.operation_id)
+                declared_disc = bool(tuple(getattr(current_op, "discriminator_fields", ()) or ()))
+                has_proof_route = bool(getattr(current_op, "proof_contract_id", None))
                 obs_class = self.recovery_controller.classify(
                     attempt=attempt,
                     envelope=state.search_envelope,
                     extracted_candidates=attempt.candidate_delta,
+                    cardinality=step_cardinality,
                 )
                 next_action = self.recovery_controller.choose_next_action(
                     classification=obs_class,
@@ -551,17 +1265,24 @@ class HypothesisHuntEngine:
                     loop_guard=self.loop_guard,
                     current_route=(getattr(scope, "provider_id", ""), item.operation_id),
                     candidates=attempt.candidate_delta,
+                    mode=step_mode,
+                    has_proof_capable_route=has_proof_route and step_mode == "PROVE",
+                    declared_discriminator=declared_disc,
+                    cardinality=step_cardinality,
                 )
                 item.observation_class = obs_class.value
                 item.next_action_reason = next_action.reason
                 action_sig = ActionSignature.from_params(
-                    goal_id=getattr(item, "step_id", goal.id),
+                    goal_id=goal.id,
                     op_id=item.operation_id,
                     scope=getattr(scope, "scope_id", ""),
                     source_id=getattr(scope, "provider_id", ""),
                     stage="TEST",
                     bindings=step_bindings,
                     time_window=state.objective.time_window if state.objective else "",
+                    mode=step_mode,
+                    method_id=str(getattr(logical_plan, "selected_method_ids", {}).get(goal.id, "")),
+                    provider_id=getattr(scope, "provider_id", ""),
                 )
                 self.loop_guard.record_action(
                     signature=action_sig,
@@ -593,6 +1314,8 @@ class HypothesisHuntEngine:
                 )
                 if not is_upstream_grounded:
                     required_restrictions.extend(item.text() for item in subject.constraints)
+            else:
+                is_upstream_grounded = True
             required_restrictions.extend(
                 qualifier.qualifier if qualifier.expected_value is None
                 else f"{qualifier.qualifier}={qualifier.value_text()}"
@@ -603,10 +1326,26 @@ class HypothesisHuntEngine:
                 str(key).strip().casefold()
                 for item in executions
                 for key in getattr(operation_by_id.get(item.operation_id), "supported_constraints", ())
+                if str(key).strip()
             }
+            proof_restriction_texts: list[str] = []
+            if target:
+                proof_restriction_texts.extend(
+                    item.text() for item in target.constraints
+                    if _is_request_grounded_constraint(target, item)
+                )
+            if subject and not is_upstream_grounded:
+                proof_restriction_texts.extend(
+                    item.text() for item in subject.constraints
+                    if _is_request_grounded_constraint(subject, item)
+                )
+            obligation_keys = _proof_obligation_keys(
+                required_texts=proof_restriction_texts,
+                supported_keys=frozenset(proof_keys),
+            )
             unverified_restrictions = [
-                restriction for restriction in required_restrictions
-                if restriction.split("=", 1)[0].split(":", 1)[0].strip().casefold() not in proof_keys
+                restriction for restriction in proof_restriction_texts
+                if _restriction_key(restriction) not in (proof_keys | obligation_keys)
             ]
             # Only ProofEngine verification satisfies proof obligations.
             # A user-selected binding resumes the graph; it does not prove the relation.
@@ -616,7 +1355,7 @@ class HypothesisHuntEngine:
             status = (
                 "SUPPORTED" if supported
                 else "BINDING_SELECTED" if user_selected_only
-                else "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED" if (relation_proven or base_relation_proven) and required_restrictions
+                else "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED" if (relation_proven or base_relation_proven) and unverified_restrictions
                 else "PARTIAL" if partial
                 else "INCONCLUSIVE"
             )
@@ -627,6 +1366,9 @@ class HypothesisHuntEngine:
                 "query_ids": [item.query_id for item in executions],
                 "proof_method_id": getattr(logical_plan, "selected_method_ids", {}).get(goal.id),
                 "unverified_restrictions": unverified_restrictions if (relation_proven or base_relation_proven) else [],
+                "compiler_limitations": [
+                    text for text in required_restrictions if text not in proof_restriction_texts
+                ],
                 "proof_results": [pr.to_dict() for pr in proof_results],
             })
         self.controller.set_semantic_analysis(state, {
@@ -637,12 +1379,35 @@ class HypothesisHuntEngine:
             "goal_verdicts": goal_verdicts,
             "proof_state": {item["goal_id"]: item["status"] for item in goal_verdicts},
             "executed_steps": [item.step_id for item in execution.executions],
+            "step_actions": [
+                {
+                    "step_id": item.step_id,
+                    "observation_class": getattr(item, "observation_class", ""),
+                    "next_action_reason": getattr(item, "next_action_reason", ""),
+                }
+                for item in execution.executions
+            ],
             "unresolved_steps": list(execution.unresolved_step_ids),
             "unresolved_goals": list(getattr(logical_plan, "unresolved_goal_ids", [])),
             "unresolved_reasons": dict(execution.unresolved_reasons),
             "candidate_input_warnings": dict(getattr(execution, "candidate_input_warnings", {})),
             "needs_user_decision": execution.needs_user_decision,
+            "retrieval_incomplete": bool(getattr(execution, "continuations", {})),
+            "compiler_limitations": [
+                text
+                for item in goal_verdicts
+                for text in item.get("compiler_limitations") or []
+            ],
+            "winning_facets": dict(getattr(execution, "winning_facets", {}) or {}),
             "binding_provenance": dict(execution.binding_provenance),
+            "candidate_groups": {
+                key: [dict(item) for item in value]
+                for key, value in dict(getattr(execution, "candidate_groups", {}) or {}).items()
+            },
+            "candidate_census": {
+                key: [dict(item) for item in value]
+                for key, value in dict(getattr(execution, "candidate_census", {}) or {}).items()
+            },
             "page_trace": [dict(page) for page in getattr(execution, "page_trace", [])],
             "continuations": {
                 key: dict(value)
@@ -667,6 +1432,11 @@ class HypothesisHuntEngine:
             # The evidence graph is a read-only projection of immutable native
             # observations.  It is deliberately separate from the semantic
             # goal graph and never upgrades proof status by proximity.
+            "observations": [
+                observation.to_dict()
+                for observation in list(getattr(state, "observations", []) or [])
+                if hasattr(observation, "to_dict")
+            ],
             "evidence_graph": EvidenceGraph.from_observations(
                 list(getattr(state, "observations", []) or [])
             ).to_dict(),
@@ -731,7 +1501,10 @@ class HypothesisHuntEngine:
         is_outcome_verified = bool(
             outcome_result
             and outcome_result.verified
-            and any(v not in (None, "", "?", []) for v in outcome_result.slot_values.values())
+            and (
+                any(v not in (None, "", "?", []) for v in outcome_result.slot_values.values())
+                or outcome_result.status in ("SUPPORTED", "REFUTED", "ANSWERED")
+            )
         ) if outcome_result is not None else (
             bool(required_goals and set(required_goals).issubset(set(verified_goals)))
         )
@@ -751,7 +1524,7 @@ class HypothesisHuntEngine:
             contradictions=[],
             budgets=state.search_envelope.budgets if state.search_envelope else self.budget_ledger,
             routes_exhausted=bool(getattr(execution, "route_exhausted", False)),
-            needs_user_decision=bool(execution.needs_user_decision),
+            needs_user_decision=execution_requires_user_decision(execution),
             outcome_verified=is_outcome_verified,
             unexamined_sources=has_unexamined,
         )
@@ -781,6 +1554,16 @@ class HypothesisHuntEngine:
                     "route_exhausted": list(execution.route_exhausted),
                     "unresolved_steps": len(execution.unresolved_step_ids),
                 },
+            )
+
+        live_obligations = tuple(
+            (str(rel.id), str(rel.relation), bool(getattr(rel, "required", False)))
+            for rel in getattr(state.semantic_goal_graph, "relations", ())
+        )
+        if live_obligations != accepted_obligations:
+            raise RuntimeError(
+                "adjacent exploration mutated accepted semantic obligations; "
+                "material graph changes require accept_graph_revision"
             )
 
         state.semantic_plan_executed = True
@@ -814,7 +1597,7 @@ class HypothesisHuntEngine:
                 cset.add_candidate(CandidateBinding(
                     value=str(v_val),
                     entity_type=v_type,
-                    status="VERIFIED_BINDING" if p_status == "VERIFIED" else "ACTIVE",
+                    status="VERIFIED_BINDING" if p_status == "VERIFIED" else "CANDIDATE",
                     provenance=prov_match.get("query_id", ""),
                     supporting_fact_ids=(prov_match.get("query_id"),) if prov_match.get("query_id") else (),
                 ))
@@ -947,34 +1730,33 @@ class HypothesisHuntEngine:
         target_cardinality: dict[str, str] | None,
         time_window: str,
     ) -> Any:
-        """Run one catalog discriminator before asking the user, never auto-bind."""
-        ambiguous_items = [item for item in execution.executions if item.status == "AMBIGUOUS"]
-        if not ambiguous_items or not execution.needs_user_decision:
+        """Census retrieved candidates. Never auto-bind. Native DISCRIMINATE only on EOF."""
+        census_items = [
+            item for item in execution.executions
+            if item.status in {"AMBIGUOUS", "PARTIAL"}
+            and bool(getattr(getattr(item, "result", None), "rows", None))
+        ]
+        if not census_items or not execution.needs_user_decision:
             return execution
+        complete_items = [
+            item for item in census_items
+            if bool(getattr(getattr(item, "result", None), "complete", False))
+        ]
+        if getattr(execution, "candidate_groups", None) is None:
+            execution.candidate_groups = {}
+        if getattr(execution, "candidate_census", None) is None:
+            execution.candidate_census = {}
+        if getattr(execution, "winning_facets", None) is None:
+            execution.winning_facets = {}
         envelope = state.search_envelope or SearchEnvelope()
         clarifier = ClarificationController(interactive=False, max_discriminator_attempts=1)
+        facet_selections = dict(getattr(state, "facet_selections", {}) or {})
         for var_id, values in list(getattr(execution, "ambiguous_candidates", {}).items()):
-            if len(values) <= 1:
-                continue
-            cands = [{"role": var_id, "value": value} for value in values]
-            next_action = self.recovery_controller.choose_next_action(
-                classification=ObservationClass.AMBIGUOUS,
-                envelope=envelope,
-                loop_guard=self.loop_guard,
-                candidates=cands,
-            )
-            for item in ambiguous_items:
-                item.next_action_reason = next_action.reason
-            if next_action.action_type != "DISCRIMINATE":
-                continue
-            v_type = next((v.entity_type for v in goal_graph.variables if v.id == var_id), "opaque")
-            cset = state.candidate_sets.get(var_id)
-            if cset is None:
-                continue
             source_item = next(
-                (item for item in ambiguous_items if var_id in getattr(execution, "ambiguous_candidates", {})),
-                ambiguous_items[0],
+                (item for item in census_items if getattr(item, "operation_id", "")),
+                census_items[0],
             )
+            source_complete = bool(getattr(getattr(source_item, "result", None), "complete", False))
             source_operation = next(
                 (
                     candidate
@@ -983,161 +1765,233 @@ class HypothesisHuntEngine:
                 ),
                 None,
             )
-            excluded_native_signatures = ()
+            candidate_fields: tuple[str, ...] = ()
+            disc_fields: tuple[str, ...] = ()
             if source_operation is not None:
-                source_signature = ClarificationController.operation_native_signature(source_operation)
-                if source_signature:
-                    excluded_native_signatures = (source_signature,)
-            action, spec = clarifier.resolve_candidate_set(
-                cset,
-                request_id=getattr(getattr(state, "objective", None), "request_id", "") or "req",
-            )
-            if action != DisambiguationAction.DISCRIMINATE:
-                continue
-            operation = ClarificationController.select_discriminator_operation(
-                operations,
-                spec,
-                v_type,
-                exclude_native_signatures=excluded_native_signatures,
-                exclude_operation_ids=tuple(
-                    item.operation_id for item in ambiguous_items if item.operation_id
-                ),
-            )
-            if operation is None:
-                continue
-            discriminator_predicates = self._discriminator_predicates_for_goal(
-                goal_graph,
-                var_id,
-                operation,
-            )
-            if not discriminator_predicates:
-                for item in ambiguous_items:
-                    item.next_action_reason = (
-                        "no graph qualifier maps to an approved discriminator field; user decision required"
-                    )
-                continue
-            input_values = []
-            for vals in (source_item.inputs or {}).values():
-                input_values.extend(vals if isinstance(vals, list) else [vals])
-            entity_value = next((value for value in input_values if value not in (None, "")), None)
-            if entity_value is None:
-                continue
-            query_id = f"discriminate-{var_id}-{operation.id}"
-            parameters = {
-                "query_intent": {"mode": "DISCRIMINATE", "target_variable": var_id},
-                "candidate_values": list(values),
-                "candidate_field": spec.discriminator_field,
-                "discriminator_field": spec.discriminator_field,
-                "discriminator_relation": spec.discriminator_relation,
-                "discriminator_fields": list(getattr(operation, "discriminator_fields", ()) or ()),
-                "discriminator_predicates": [dict(item) for item in discriminator_predicates],
-            }
-            source_query = getattr(getattr(source_item, "result", None), "native_query", "")
-            preview = self._preview_discriminator_query(
-                active_adapter,
-                operation=operation,
-                entity=entity_value,
-                window=time_window,
-                parameters=parameters,
-            )
-            preview_query = (preview or {}).get("native_query") if preview else None
-            if not preview_query:
-                for item in ambiguous_items:
-                    item.next_action_reason = (
-                        "discriminator preview unavailable; user decision required"
-                    )
-                continue
-            if self._normalize_native_query(preview_query) == self._normalize_native_query(source_query):
-                for item in ambiguous_items:
-                    item.next_action_reason = (
-                        "compiled discriminator is identical to source query; user decision required"
-                    )
-                continue
-            if not bool((preview or {}).get("has_secondary_predicate")):
-                for item in ambiguous_items:
-                    item.next_action_reason = (
-                        "compiled discriminator adds no secondary predicate; user decision required"
-                    )
-                continue
-
-            accepted = inspect.signature(active_adapter.execute_query).parameters
-            kwargs: dict[str, Any] = {
-                "operation_id": operation.id,
-                "entity": entity_value,
-                "window": time_window,
-                "limit": 100,
-                "query_id": query_id,
-            }
-            if "parameters" in accepted:
-                kwargs["parameters"] = parameters
-            result = active_adapter.execute_query(**kwargs)
-            fields: tuple[str, ...] = ()
-            for binding_fields in (operation.output_value_bindings or {}).values():
-                fields = tuple(binding_fields)
-                break
-            if not fields:
-                fields = (spec.discriminator_field,)
-            extracted: list[str] = []
-            for row in result.rows or []:
-                for field_name in fields:
-                    value = row.get(field_name)
-                    if value not in (None, "", [], {}):
-                        extracted.append(str(value))
-                        break
-            extracted = list(dict.fromkeys(extracted))
-            reduced = [value for value in values if value in set(extracted)] if extracted else []
-            narrowed = (
-                bool(result.executed_ok)
-                and bool(result.complete)
-                and 0 < len(reduced) < len(values)
-            )
-            if narrowed:
-                execution.ambiguous_candidates[var_id] = reduced
-                provenance = execution.binding_provenance.setdefault(var_id, [])
-                for value in reduced:
-                    provenance.append({
-                        "value": str(value),
-                        "source": "discriminator",
-                        "query_id": result.query_id,
-                        "status": "CANDIDATE",
-                    })
-            else:
-                # A discriminator that returns the same candidate set has no
-                # information gain. Keep the original provenance untouched
-                # and leave the decision to the analyst.
-                for item in ambiguous_items:
-                    item.next_action_reason = (
-                        "discriminator returned no candidate reduction; user decision required"
-                    )
-            plan = QueryPlan(
-                id=query_id,
-                requirement_id=source_item.step_id,
-                provider_id=getattr(scope, "provider_id", "") or "unassigned",
-                scope_id=getattr(scope, "scope_id", "") or "unassigned",
-                operation_id=operation.id,
-                parameters={
-                    **parameters,
-                    "bound_values": dict(source_item.inputs or {}),
-                },
-            )
-            self.controller.record_query_execution(state, plan, result)
-            if state.search_envelope is not None:
-                state.search_envelope.budgets.consume(discriminators=1)
-            execution.executions.append(
-                source_item.__class__(
-                    step_id=source_item.step_id,
-                    query_id=result.query_id,
-                    result=result,
-                    operation_id=operation.id,
-                    outputs={},
-                    inputs=source_item.inputs,
-                    status="AMBIGUOUS",
-                    blocked_reason="discriminator does not auto-bind; user decision required",
-                    goal_id=source_item.goal_id,
-                    observation_class=ObservationClass.AMBIGUOUS.value,
-                    next_action_reason=next_action.reason,
+                for binding_fields in (source_operation.output_value_bindings or {}).values():
+                    candidate_fields = tuple(binding_fields)
+                    break
+                disc_fields = tuple(getattr(source_operation, "discriminator_fields", ()) or ())
+            rows = getattr(getattr(source_item, "result", None), "rows", None)
+            current_values = list(values)
+            if var_id in facet_selections:
+                field, wanted = facet_selections[var_id]
+                census = _candidate_census_groups(
+                    rows,
+                    current_values,
+                    candidate_fields=candidate_fields,
+                    discriminator_fields=disc_fields,
                 )
+                reduced = apply_facet_bucket_selection(census, field=field, value=wanted)
+                if reduced:
+                    current_values = reduced
+                    execution.ambiguous_candidates[var_id] = reduced
+            if len(current_values) <= 1:
+                continue
+            declared_disc = bool(disc_fields)
+            cands = [{"role": var_id, "value": value} for value in current_values]
+            next_action = self.recovery_controller.choose_next_action(
+                classification=ObservationClass.AMBIGUOUS,
+                envelope=envelope,
+                loop_guard=self.loop_guard,
+                candidates=cands,
+                declared_discriminator=declared_disc,
+                cardinality="singular",
             )
+            for item in census_items:
+                item.next_action_reason = next_action.reason
+            v_type = next((v.entity_type for v in goal_graph.variables if v.id == var_id), "opaque")
+            cset = state.candidate_sets.get(var_id)
+            if (
+                next_action.action_type == "DISCRIMINATE"
+                and cset is not None
+                and source_complete
+            ):
+                excluded_native_signatures = ()
+                if source_operation is not None:
+                    source_signature = ClarificationController.operation_native_signature(source_operation)
+                    if source_signature:
+                        excluded_native_signatures = (source_signature,)
+                action, spec = clarifier.resolve_candidate_set(
+                    cset,
+                    request_id=getattr(getattr(state, "objective", None), "request_id", "") or "req",
+                )
+                if action == DisambiguationAction.DISCRIMINATE:
+                    operation = ClarificationController.select_discriminator_operation(
+                        operations,
+                        spec,
+                        v_type,
+                        exclude_native_signatures=excluded_native_signatures,
+                        exclude_operation_ids=tuple(
+                            item.operation_id for item in census_items if item.operation_id
+                        ),
+                    )
+                    discriminator_predicates = self._discriminator_predicates_for_goal(
+                        goal_graph,
+                        var_id,
+                        operation,
+                    ) if operation is not None else ()
+                    input_values: list[Any] = []
+                    for vals in (source_item.inputs or {}).values():
+                        input_values.extend(vals if isinstance(vals, list) else [vals])
+                    entity_value = next((value for value in input_values if value not in (None, "")), None)
+                    if operation is not None and discriminator_predicates and entity_value is not None:
+                        query_id = f"discriminate-{var_id}-{operation.id}"
+                        parameters = {
+                            "query_intent": {"mode": "DISCRIMINATE", "target_variable": var_id},
+                            "candidate_values": list(values),
+                            "candidate_field": spec.discriminator_field,
+                            "discriminator_field": spec.discriminator_field,
+                            "discriminator_relation": spec.discriminator_relation,
+                            "discriminator_fields": list(getattr(operation, "discriminator_fields", ()) or ()),
+                            "discriminator_predicates": [dict(item) for item in discriminator_predicates],
+                        }
+                        source_query = getattr(getattr(source_item, "result", None), "native_query", "")
+                        preview = self._preview_discriminator_query(
+                            active_adapter,
+                            operation=operation,
+                            entity=entity_value,
+                            window=time_window,
+                            parameters=parameters,
+                        )
+                        preview_query = (preview or {}).get("native_query") if preview else None
+                        preview_ok = bool(preview_query) and (
+                            self._normalize_native_query(preview_query)
+                            != self._normalize_native_query(source_query)
+                        ) and bool((preview or {}).get("has_secondary_predicate"))
+                        if preview_ok:
+                            accepted = inspect.signature(active_adapter.execute_query).parameters
+                            kwargs: dict[str, Any] = {
+                                "operation_id": operation.id,
+                                "entity": entity_value,
+                                "window": time_window,
+                                "limit": 100,
+                                "query_id": query_id,
+                            }
+                            if "parameters" in accepted:
+                                kwargs["parameters"] = parameters
+                            result = active_adapter.execute_query(**kwargs)
+                            fields: tuple[str, ...] = ()
+                            for binding_fields in (operation.output_value_bindings or {}).values():
+                                fields = tuple(binding_fields)
+                                break
+                            if not fields:
+                                fields = (spec.discriminator_field,)
+                            extracted: list[str] = []
+                            for row in result.rows or []:
+                                for field_name in fields:
+                                    value = row.get(field_name)
+                                    if value not in (None, "", [], {}):
+                                        extracted.append(str(value))
+                                        break
+                            extracted = list(dict.fromkeys(extracted))
+                            reduced = [value for value in values if value in set(extracted)] if extracted else []
+                            narrowed = (
+                                bool(result.executed_ok)
+                                and bool(result.complete)
+                                and 0 < len(reduced) < len(values)
+                            )
+                            if narrowed:
+                                execution.ambiguous_candidates[var_id] = reduced
+                                provenance = execution.binding_provenance.setdefault(var_id, [])
+                                for value in reduced:
+                                    provenance.append({
+                                        "value": str(value),
+                                        "source": "discriminator",
+                                        "query_id": result.query_id,
+                                        "status": "CANDIDATE",
+                                    })
+                                values = reduced
+                            else:
+                                for item in complete_items:
+                                    item.next_action_reason = (
+                                        "discriminator returned no candidate reduction; user decision required"
+                                    )
+                            plan = QueryPlan(
+                                id=query_id,
+                                requirement_id=source_item.step_id,
+                                provider_id=getattr(scope, "provider_id", "") or "unassigned",
+                                scope_id=getattr(scope, "scope_id", "") or "unassigned",
+                                operation_id=operation.id,
+                                parameters={
+                                    **parameters,
+                                    "bound_values": dict(source_item.inputs or {}),
+                                },
+                            )
+                            self.controller.record_query_execution(state, plan, result)
+                            if state.search_envelope is not None:
+                                state.search_envelope.budgets.consume(discriminators=1)
+                            execution.executions.append(
+                                source_item.__class__(
+                                    step_id=source_item.step_id,
+                                    query_id=result.query_id,
+                                    result=result,
+                                    operation_id=operation.id,
+                                    outputs={},
+                                    inputs=source_item.inputs,
+                                    status="AMBIGUOUS",
+                                    blocked_reason="discriminator does not auto-bind; user decision required",
+                                    goal_id=source_item.goal_id,
+                                    observation_class=ObservationClass.AMBIGUOUS.value,
+                                    next_action_reason=next_action.reason,
+                                )
+                            )
+                        elif not preview_query:
+                            for item in complete_items:
+                                item.next_action_reason = (
+                                    "discriminator preview unavailable; user decision required"
+                                )
+                        elif self._normalize_native_query(preview_query) == self._normalize_native_query(source_query):
+                            for item in complete_items:
+                                item.next_action_reason = (
+                                    "compiled discriminator is identical to source query; user decision required"
+                                )
+                        else:
+                            for item in complete_items:
+                                item.next_action_reason = (
+                                    "compiled discriminator adds no secondary predicate; user decision required"
+                                )
+
+            if disc_fields or any("/" in str(value) or "\\" in str(value) for value in current_values):
+                current_values = list(execution.ambiguous_candidates.get(var_id, current_values))
+                predicates = _filter_request_grounded_discriminator_predicates(
+                    self._discriminator_predicates_for_goal(goal_graph, var_id, source_operation),
+                    goal_graph=goal_graph,
+                    variable_id=var_id,
+                    candidate_values=current_values,
+                    rows=rows,
+                )
+                reduced_values = _reduce_candidates_with_predicates(current_values, predicates)
+                if 0 < len(reduced_values) < len(current_values):
+                    execution.ambiguous_candidates[var_id] = reduced_values
+                    provenance = execution.binding_provenance.setdefault(var_id, [])
+                    for value in reduced_values:
+                        provenance.append({
+                            "value": str(value),
+                            "source": "discriminator",
+                            "query_id": str(getattr(getattr(source_item, "result", None), "query_id", "") or ""),
+                            "status": "CANDIDATE",
+                        })
+                    current_values = reduced_values
+                all_groups = _candidate_census_groups(
+                    rows,
+                    current_values,
+                    candidate_fields=candidate_fields,
+                    discriminator_fields=disc_fields,
+                )
+                execution.candidate_census[var_id] = all_groups
+                winner = _select_winning_facet(all_groups, len(current_values))
+                if winner:
+                    execution.winning_facets[var_id] = winner
+                    execution.candidate_groups[var_id] = [
+                        item for item in all_groups if item.get("field") == winner
+                    ]
+                else:
+                    execution.candidate_groups[var_id] = []
+                source_item.next_action_reason = (
+                    "census groups from declared discriminator fields; user decision required"
+                )
+                source_item.observation_class = ObservationClass.AMBIGUOUS.value
         execution.needs_user_decision = True
         return execution
 
@@ -1645,12 +2499,11 @@ class HypothesisHuntEngine:
         if graph is None or not getattr(graph, "relations", None):
             return
 
-        from hunting.capabilities.catalog_index import CatalogIndex
         from hunting.capabilities.admission import CapabilityAdmissionGate
-        from hunting.capabilities.semantic_index import SemanticCapabilityIndex
         from hunting.capabilities.payload_key_census import discover_payload_fields
-        from hunting.contracts.source_profile import SourceCapabilityProposal
+        from hunting.capabilities.semantic_index import SemanticCapabilityIndex
         from hunting.contracts.capability_query import build_capability_queries
+        from hunting.contracts.source_profile import SourceCapabilityProposal
         from hunting.contracts.state import GoalRuntimeState
         from hunting.planner.semantic_goal_planner import SemanticGoalPlanner
 
@@ -1762,22 +2615,27 @@ class HypothesisHuntEngine:
                 profile.source_id: profile
                 for profile in getattr(catalog, "source_profiles", [])
             }
-            if not active_profiles:
+            if not active_profiles and not self._package_operations(catalog.provider_id):
                 continue
 
-            canonical_descriptor_operations = [
-                operation
-                for operation in catalog.operations
-                if not getattr(operation, "legacy_alias", False)
-                and operation.query_builder != "runtime.source_profile.v1"
-                and operation.guaranteed_relations
-            ]
+            canonical_descriptor_operations = self._with_package_operations(
+                [
+                    operation
+                    for operation in catalog.operations
+                    if not getattr(operation, "legacy_alias", False)
+                    and operation.query_builder != "runtime.source_profile.v1"
+                ],
+                catalog.provider_id,
+            )
 
             route_resolution = CapabilityRouteResolver().resolve(
                 graph,
                 canonical_descriptor_operations,
                 catalog.provider_id,
+                profiles=active_profiles.values(),
+                content_registry=self.content_registry,
             )
+            self._record_package_usage(state, canonical_descriptor_operations)
             if canonical_descriptor_operations:
                 static_semantic_plan = SemanticGoalPlanner(
                     canonical_descriptor_operations,
@@ -1802,22 +2660,48 @@ class HypothesisHuntEngine:
                 static_semantic_plan,
                 canonical_descriptor_operations,
                 prior_assessments=tuple(getattr(state, "semantic_route_assessments", ()) or ()),
+                candidate_routes=route_resolution.routes_by_goal,
             )
             proof_ready_goal_ids = {
                 assessment.goal_id
                 for assessment in static_assessments
                 if assessment.readiness.value == "PROOF_CAPABLE"
             }
+            executable_goal_ids = {
+                goal.id
+                for goal in graph.relations
+                if any(route.executable for route in route_resolution.routes_by_goal.get(goal.id, ()))
+            }
+            operations_by_goal_cover = {
+                goal.id: _executable_route_covers_goal(
+                    goal_id=goal.id,
+                    routes=route_resolution.routes_by_goal.get(goal.id, ()),
+                    operations=canonical_descriptor_operations,
+                    required_keys=_cover_constraint_keys(
+                        requirements_by_goal_id.get(goal.id, {}).get("constraints") or ()
+                    ),
+                )
+                for goal in graph.relations
+            }
             profiling_goal_ids = {
                 assessment.goal_id
                 for assessment in static_assessments
                 if assessment.goal_id in required_goal_ids
-                and assessment.readiness.value in {"CAPABILITY_GAP", "RETRIEVAL_CAPABLE"}
+                and not operations_by_goal_cover.get(assessment.goal_id, False)
+                and assessment.readiness.value != "ROUTE_EXHAUSTED"
+                and "blocked_on_dependency" not in assessment.capability_gaps
             }
             state.semantic_route_assessments = static_assessments
+            setattr(state, "candidate_routes", {
+                goal_id: [route.to_dict() for route in routes]
+                for goal_id, routes in route_resolution.routes_by_goal.items()
+            })
 
             static_plan_ready = bool(
-                all(not goal.required or goal.id in proof_ready_goal_ids for goal in graph.relations)
+                all(
+                    not goal.required or goal.id in proof_ready_goal_ids or goal.id in executable_goal_ids
+                    for goal in graph.relations
+                )
             )
 
             # If all required relations are statically covered, no profiling needed for this provider
@@ -1894,18 +2778,27 @@ class HypothesisHuntEngine:
                 relation = req["relation"]
                 capability_query = capability_queries_by_goal.get(req["goal_id"])
                 if capability_query is None:
-                    coverage_manifests[relation] = {
+                    coverage_manifests[req["goal_id"]] = {
+                        "goal_id": req["goal_id"],
+                        "relation": relation,
                         "total_sources": len(active_profiles),
                         "considered_source_ids": [],
                         "examined_source_ids": [],
                         "unexamined_source_ids": sorted(active_profiles),
+                        "f0_complete": False,
+                        "f1_complete": False,
+                        "f2_status": "NOT_RUN",
                         "stage_audit": [{"stage": "F1_METADATA", "count": 0, "status": "NO_CAPABILITY_QUERY"}],
                     }
                     retrieval_by_goal[req["goal_id"]] = ()
                     continue
                 f1_result = f1_index.retrieve(capability_query, k=shortlist_size)
                 compact_shortlist: list[Any] = []
-                for hit in f1_result.hits:
+                # F1 rank is not relevance.  Zero-score hits remain visible in
+                # the audit and deferred frontier, but they must not be sent to
+                # C2 or materialized as executable source context.
+                eligible_hits = tuple(hit for hit in f1_result.hits if hit.relevant)
+                for hit in eligible_hits:
                     profile = active_profiles[hit.source_id]
                     answer_role = str(req.get("answer_role", capability_query.answer_role)).strip().casefold()
                     flat_names = {
@@ -1919,17 +2812,19 @@ class HypothesisHuntEngine:
                         if callable(sampler):
                             sample_id = f"payload-census-{objective.request_id}-{len(nested_census_audit) + 1}"
                             sample_terms: list[str] = []
-                            for item in req.get("constraint_hints", ()):
-                                if isinstance(item, dict):
-                                    if item.get("value") not in (None, ""):
-                                        sample_terms.append(str(item["value"]))
+                            for item in req.get("constraints") or ():
+                                if not isinstance(item, dict):
+                                    continue
+                                key = item.get("key")
+                                value = item.get("value")
+                                if value not in (None, "") and is_literal_telemetry_token(value):
+                                    sample_terms.append(str(value))
+                                if get_transform_for_constraint(key, value) is not None:
                                     sample_terms.extend(
-                                        str(term) for term in (item.get("retrieval_terms") or ())
-                                        if str(term).strip()
+                                        str(term).strip()
+                                        for term in (item.get("retrieval_terms") or ())
+                                        if str(term).strip() and " " not in str(term).strip()
                                     )
-                            for item in req.get("qualifier_hints", ()):
-                                if isinstance(item, dict) and item.get("value") not in (None, ""):
-                                    sample_terms.append(str(item["value"]))
                             sample = sampler(
                                 profile=profile,
                                 max_rows=20,
@@ -2049,39 +2944,49 @@ class HypothesisHuntEngine:
                     "k": shortlist_size,
                     "hits": [hit.to_dict() for hit in f1_result.hits],
                     "unexamined_ids": list(f1_result.unexamined_ids),
+                    "deferred_ids": list(f1_result.deferred_ids),
                     "nested_census": [
                         item for item in nested_census_audit
-                        if item.get("source_id") in {hit.source_id for hit in f1_result.hits}
+                        if item.get("source_id") in {hit.source_id for hit in eligible_hits}
                     ],
                     "total_documents": f1_result.total_documents,
                     "proof": False,
                 })
-                coverage_manifests[relation] = {
+                coverage_manifests[req["goal_id"]] = {
+                    "goal_id": req["goal_id"],
+                    "relation": relation,
                     "total_sources": f1_result.total_documents,
-                    "considered_source_ids": [hit.source_id for hit in f1_result.hits],
+                    "considered_source_ids": [hit.source_id for hit in eligible_hits],
                     "examined_source_ids": [hit.source_id for hit in f1_result.hits],
-                    "rejected_source_ids": {},
-                    "unexamined_source_ids": list(f1_result.unexamined_ids),
+                    "rejected_source_ids": {
+                        hit.source_id: "F1_ZERO_SCORE"
+                        for hit in f1_result.hits if not hit.relevant
+                    },
+                    "unexamined_source_ids": sorted(set(f1_result.unexamined_ids) | set(f1_result.deferred_ids)),
+                    "f0_complete": True,
+                    "f1_complete": True,
+                    "f2_status": "NOT_RUN",
+                    "operation_hits": [hit.to_dict() for hit in getattr(f1_result, "operation_hits", ())],
                     "stage_audit": [{
                         "stage": "F1_METADATA",
-                        "count": len(f1_result.hits),
+                        "count": len(eligible_hits),
                         "k": shortlist_size,
-                        "complete": not bool(f1_result.unexamined_ids),
+                        "complete": not bool(f1_result.unexamined_ids or f1_result.deferred_ids),
                     }, {
                         "stage": "NESTED_PAYLOAD_CENSUS",
-                        "count": len([item for item in nested_census_audit if item.get("source_id") in {hit.source_id for hit in f1_result.hits}]),
+                        "count": len([item for item in nested_census_audit if item.get("source_id") in {hit.source_id for hit in eligible_hits}]),
                         "complete": all(
                             bool(item.get("complete"))
                             for item in nested_census_audit
-                            if item.get("source_id") in {hit.source_id for hit in f1_result.hits}
+                            if item.get("source_id") in {hit.source_id for hit in eligible_hits}
                         ),
                     }],
                 }
                 goal_runtime_state = getattr(state, "goal_runtime_states", {}).setdefault(
                     req["goal_id"], GoalRuntimeState(req["goal_id"])
                 )
-                goal_runtime_state.coverage = dict(coverage_manifests[relation])
-                goal_runtime_state.active_methods = tuple(hit.source_id for hit in f1_result.hits)
+                goal_runtime_state.coverage = dict(coverage_manifests[req["goal_id"]])
+                goal_runtime_state.active_methods = tuple(hit.source_id for hit in eligible_hits)
             source_profile_audit: dict[str, Any] = {
                 "status": "STATIC_TYPED_CAPABILITIES" if static_plan_ready else "RETRIEVAL_COMPLETE",
                 "readiness": [assessment.to_dict() for assessment in static_assessments],
@@ -2110,13 +3015,16 @@ class HypothesisHuntEngine:
 
             accepted_source_proposals = list(cached_proposals)
 
-            # Check if static capabilities already cover all goal relations for this catalog
+            # Typed EXECUTABLE is enough only when it also covers required
+            # constraint keys.  A wide process op that admits executed_on
+            # but cannot observe encoding still needs C2 mapping.
             all_relations_covered = bool(
                 graph
                 and getattr(graph, "relations", None)
                 and all(
-                    any(route.executable for route in route_resolution.routes_by_goal.get(rel.id, ()))
+                    operations_by_goal_cover.get(rel.id, False)
                     for rel in graph.relations
+                    if rel.required
                 )
             )
 
@@ -2140,7 +3048,7 @@ class HypothesisHuntEngine:
                             "status": "NO_PROFILE_BATCHES",
                         })
                         continue
-                    for batch_index, compact_profiles in enumerate(batches, start=1):
+                    for batch_index, compact_profiles in enumerate(batches[:1], start=1):
                         can_sched, sched_reason = (True, "OK")
                         if hasattr(self.llm_tracker, "can_schedule"):
                             can_sched, sched_reason = self.llm_tracker.can_schedule("C2_SOURCE_PROFILER")
@@ -2407,7 +3315,10 @@ class HypothesisHuntEngine:
                 if operation is not None:
                     runtime_operations.append(operation)
                     state.runtime_capabilities.append(runtime_capability.to_dict())
-                    cache_key = cache_keys.get((proposal.source_id, proposal.relation))
+                    cache_key = cache_keys.get((
+                        proposal.source_id,
+                        str(getattr(proposal, "goal_id", "") or requirement["goal_id"]),
+                    ))
                     if cache_key:
                         self.runtime_capability_cache.put(cache_key, (runtime_capability,))
 
@@ -2469,9 +3380,12 @@ class HypothesisHuntEngine:
                 objective=objective,
                 hypotheses=hypotheses,
                 requirements=requirements,
-                stopping_decision=StoppingDecision.STOP_UNSUPPORTED,
                 step_trace=step_trace,
                 residuals=["Provider absence: No telemetry provider configured."],
+            )
+            self.controller.set_stopping_decision(
+                state,
+                self.recovery_controller.evaluate_stop(unsupported=True),
             )
             state.capability_graph = CapabilityGraph(
                 id=f"capability-graph:{request.id}",
@@ -2479,6 +3393,7 @@ class HypothesisHuntEngine:
                 providers=[],
                 operations=[],
             )
+            self._attach_workspace_snapshot(state, request.id)
             account = build_final_hunt_account(state)
             report = render_final_hunt_account(account)
             hunt_id = account.request_id or f"hunt-{int(datetime.now(timezone.utc).timestamp())}"
@@ -2676,46 +3591,29 @@ class HypothesisHuntEngine:
                 active_catalog = None
                 active_provider_id = ""
                 profiling_audit = getattr(state, "source_profile_audit", {}) or {}
-                manifests = profiling_audit.get("coverage_manifests", {}) if isinstance(profiling_audit, dict) else {}
-                relation_calls = profiling_audit.get("relation_calls", ()) if isinstance(profiling_audit, dict) else ()
-                unresolved_frontier = any(
-                    bool(item.get("unexamined_source_ids"))
-                    for item in manifests.values()
-                    if isinstance(item, dict)
-                )
-                unresolved_c2 = any(
-                    str(item.get("status", "")).upper() in {
-                        "RELATION_DEFERRED_BY_BUDGET",
-                        "LLM_BUDGET_EXHAUSTED_BEFORE_PROFILING",
-                        "PROVIDER_UNAVAILABLE",
-                        "MALFORMED_OUTPUT",
-                        "PROFILING_FAILED",
-                    }
-                    for item in relation_calls
-                    if isinstance(item, dict)
-                )
+                census_incomplete = _capability_census_incomplete(profiling_audit)
                 online_providers = [
                     provider
                     for provider in capability_graph.providers
                     if provider.status == "ONLINE"
                 ]
                 if not state.stopping_decision:
-                    if unresolved_frontier or unresolved_c2:
+                    if not online_providers:
+                        stop_decision = self.recovery_controller.evaluate_stop(unreachable=True)
+                        reason = "Backend degradation: All configured providers are offline or unreachable."
+                    elif census_incomplete:
                         stop_decision = self.recovery_controller.evaluate_stop(
                             budgets=state.search_envelope.budgets if state.search_envelope else None,
                             unsupported=False,
                             unexamined_sources=True,
                         )
                         reason = (
-                            "Capability route unresolved: source frontier or C2 admission remains incomplete; "
+                            "Capability route unresolved: F1 remainder or C2 admission remains incomplete; "
                             "no provider route may be declared unsupported yet."
                         )
-                    elif online_providers:
+                    else:
                         stop_decision = self.recovery_controller.evaluate_stop(unsupported=True)
                         reason = "Unsupported capability: No eligible provider route exists for the required goals among online providers."
-                    else:
-                        stop_decision = self.recovery_controller.evaluate_stop(unreachable=True)
-                        reason = "Backend degradation: All configured providers are offline or unreachable."
                     self.controller.set_stopping_decision(state, stop_decision)
                     state.residuals.append(reason)
         elif len(selected_adapters) > 1:
@@ -2773,17 +3671,20 @@ class HypothesisHuntEngine:
                     for op in active_catalog.operations
                     if getattr(op, "query_builder", None) == "runtime.source_profile.v1"
                 }
-                planner_operations = [
-                    operation
-                    for operation in active_catalog.operations
-                    if (
-                        not getattr(operation, "legacy_alias", False)
-                        and (
-                            operation.query_builder != "runtime.source_profile.v1"
-                            or operation.id in runtime_op_ids
+                planner_operations = self._with_package_operations(
+                    [
+                        operation
+                        for operation in active_catalog.operations
+                        if (
+                            not getattr(operation, "legacy_alias", False)
+                            and (
+                                operation.query_builder != "runtime.source_profile.v1"
+                                or operation.id in runtime_op_ids
+                            )
                         )
-                    )
-                ]
+                    ],
+                    active_provider_id,
+                )
                 state.semantic_logical_plan = SemanticGoalPlanner(
                     planner_operations,
                     active_provider_id,
@@ -2794,9 +3695,12 @@ class HypothesisHuntEngine:
                         state.semantic_goal_graph,
                         planner_operations,
                         active_provider_id,
+                        profiles=getattr(active_catalog, "source_profiles", ()) or (),
+                        content_registry=self.content_registry,
                     ).routes_by_goal,
                     legacy_relation_matching=False,
                 )
+                self._record_package_usage(state, planner_operations)
         # Bind only against the operations of the adapter that will execute
         # the plan.  CapabilityGraph may contain several providers; selecting
         # an operation from provider B and executing it on adapter A would be
@@ -3006,31 +3910,11 @@ class HypothesisHuntEngine:
             # capability.  ``STOP_UNSUPPORTED`` is reserved for a completed
             # capability census with no approved route.
             audit = getattr(state, "source_profile_audit", {}) or {}
-            manifests = audit.get("coverage_manifests", {}) if isinstance(audit, dict) else {}
-            frontier_incomplete = any(
-                bool(item.get("unexamined_source_ids"))
-                for item in manifests.values()
-                if isinstance(item, dict)
-            )
-            # F1 completion is not enough to declare a capability absent.  If
-            # the single C2 admission call was deferred or failed, the route
-            # is unresolved even when the provider has <= k sources.
-            relation_calls = audit.get("relation_calls", ()) if isinstance(audit, dict) else ()
-            c2_incomplete = any(
-                str(item.get("status", "")).upper() in {
-                    "RELATION_DEFERRED_BY_BUDGET",
-                    "LLM_BUDGET_EXHAUSTED_BEFORE_PROFILING",
-                    "PROVIDER_UNAVAILABLE",
-                    "MALFORMED_OUTPUT",
-                    "PROFILING_FAILED",
-                }
-                for item in relation_calls
-                if isinstance(item, dict)
-            )
+            census_incomplete = _capability_census_incomplete(audit)
             stop_decision = self.recovery_controller.evaluate_stop(
-                unsupported=not frontier_incomplete and not c2_incomplete,
+                unsupported=not census_incomplete,
                 routes_exhausted=False,
-                unexamined_sources=frontier_incomplete or c2_incomplete,
+                unexamined_sources=census_incomplete,
             )
             self.controller.set_stopping_decision(state, stop_decision)
 
@@ -3042,13 +3926,24 @@ class HypothesisHuntEngine:
             stop_decision = self.recovery_controller.evaluate_stop()
             self.controller.set_stopping_decision(state, stop_decision)
 
+        if (
+            not self.enable_legacy_execution
+            and not native_semantic_graph
+            and not state.stopping_decision
+        ):
+            stop_decision = self.recovery_controller.evaluate_stop()
+            self.controller.set_stopping_decision(state, stop_decision)
+            state.residuals.append(
+                "Legacy ClaimGraph, cell and adaptive loops are isolated from the default production path."
+            )
+
         # A validated ClaimGraph already contains the semantic observation
         # contract.  It must go directly through capability binding and claim
         # verification; the older adaptive discovery loop would re-interpret
         # the request from answer-type heuristics and could add unrelated
         # queries.  Discovery remains the compatibility path for requests
         # compiled without a ClaimGraph.
-        if not state.stopping_decision and not use_claim_graph and (not native_semantic_graph or legacy_explicit_adapter or is_legacy_untyped):
+        if self.enable_legacy_execution and not state.stopping_decision and not use_claim_graph and (not native_semantic_graph or legacy_explicit_adapter or is_legacy_untyped):
             self._run_semantic_discovery(
                 state=state,
                 active_adapter=active_adapter,
@@ -3059,7 +3954,8 @@ class HypothesisHuntEngine:
 
         descriptor = getattr(active_adapter, "get_versioned_descriptor", lambda: None)()
         if (
-            not state.stopping_decision
+            self.enable_legacy_execution
+            and not state.stopping_decision
             and not use_claim_graph
             and not native_semantic_graph
             and state.hunt_spec is not None
@@ -3392,7 +4288,7 @@ class HypothesisHuntEngine:
             and state.case.graph.edges
         )
 
-        if (claim_graph_active or legacy_graph_active) and not native_semantic_graph:
+        if self.enable_legacy_execution and (claim_graph_active or legacy_graph_active) and not native_semantic_graph:
             while not state.stopping_decision:
                 self.budget_ledger.record_turn()
                 self.controller.advance_turn(state)
@@ -3733,7 +4629,7 @@ class HypothesisHuntEngine:
             if not state.stopping_decision:
                 self.controller.evaluate_stopping(state)
 
-        while not state.stopping_decision and not native_semantic_graph:
+        while self.enable_legacy_execution and not state.stopping_decision and not native_semantic_graph:
             self.budget_ledger.record_turn()
             self.controller.advance_turn(state)
 
@@ -4647,6 +5543,7 @@ class HypothesisHuntEngine:
             final_analysis.setdefault("compiler_trace", dict(state.compiler_trace))
             self.controller.set_semantic_analysis(state, final_analysis)
 
+        self._attach_workspace_snapshot(state, request.id)
         account = build_final_hunt_account(state, ledger=ledger)
         # The CLI report is intentionally concise. Full observations, raw
         # references and diagnostics remain available in persisted artifacts.
@@ -4681,6 +5578,7 @@ class HypothesisHuntEngine:
         self,
         state: HuntState,
         initial_bindings: dict[str, str | list[str]] | None = None,
+        facet_constraints: dict[str, tuple[str, str]] | None = None,
         adapter: Any | None = None,
         adapters: list[Any] | tuple[Any, ...] | None = None,
         time_window: str | None = None,
@@ -4731,8 +5629,9 @@ class HypothesisHuntEngine:
             for obs in getattr(state, "observations", []) or []:
                 ledger.add_observation(obs)
 
-        # Clear stopping decision so execution resumes
-        state.stopping_decision = None
+        # Clear stopping decision through the controller authority so resume
+        # cannot bypass the single terminal-state mutation boundary.
+        self.controller.clear_stopping_decision(state)
 
         if initial_bindings:
             if getattr(state, "search_envelope", None) and getattr(state.search_envelope, "hard_constraints", None):
@@ -4740,53 +5639,44 @@ class HypothesisHuntEngine:
                 for k, v in initial_bindings.items():
                     if isinstance(v, str):
                         pinned.add(v)
-                    elif isinstance(v, (list, tuple)):
-                        pinned.update(str(x) for x in v)
+                    elif isinstance(v, (list, tuple)) and len(v) == 1:
+                        pinned.add(str(v[0]))
                 hard_constraints = replace(state.search_envelope.hard_constraints, pinned_entities=frozenset(pinned))
                 state.search_envelope = replace(state.search_envelope, hard_constraints=hard_constraints)
 
-            if state.semantic_goal_graph is not None:
-                updated_vars = []
-                for variable in state.semantic_goal_graph.variables:
-                    matched_val = None
-                    for bind_k, bind_v in initial_bindings.items():
-                        if (
-                            bind_k == variable.id
-                            or bind_k.casefold() == variable.id.casefold()
-                            or bind_k.casefold() == variable.entity_type.casefold()
-                            or roles_are_compatible(bind_k, variable.entity_type)
-                        ):
-                            matched_val = bind_v[0] if isinstance(bind_v, (list, tuple)) and bind_v else str(bind_v)
-                            break
-                    if matched_val is not None:
-                        updated_vars.append(replace(
-                            variable,
-                            value=matched_val,
-                            value_origin="user_selection",
-                            verification_status="VERIFIED",
-                        ))
-                    else:
-                        updated_vars.append(variable)
-                state.semantic_goal_graph = replace(state.semantic_goal_graph, variables=updated_vars)
+        if state.semantic_goal_graph is not None and (initial_bindings or facet_constraints):
+            updated_graph, selections = apply_resume_bindings(
+                state.semantic_goal_graph,
+                initial_bindings=initial_bindings,
+                facet_constraints=facet_constraints,
+            )
+            state.semantic_goal_graph = updated_graph
+            if selections:
+                current = dict(getattr(state, "facet_selections", {}) or {})
+                current.update(selections)
+                state.facet_selections = current
 
-            if state.semantic_goal_graph is not None and getattr(state, "capability_catalog", None) is not None:
+        if (initial_bindings or facet_constraints) and state.semantic_goal_graph is not None and getattr(state, "capability_catalog", None) is not None:
                 catalog = state.capability_catalog
                 runtime_op_ids = {
                     op.id
                     for op in catalog.operations
                     if getattr(op, "query_builder", None) == "runtime.source_profile.v1"
                 }
-                planner_operations = [
-                    operation
-                    for operation in catalog.operations
-                    if (
-                        not getattr(operation, "legacy_alias", False)
-                        and (
-                            operation.query_builder != "runtime.source_profile.v1"
-                            or operation.id in runtime_op_ids
+                planner_operations = self._with_package_operations(
+                    [
+                        operation
+                        for operation in catalog.operations
+                        if (
+                            not getattr(operation, "legacy_alias", False)
+                            and (
+                                operation.query_builder != "runtime.source_profile.v1"
+                                or operation.id in runtime_op_ids
+                            )
                         )
-                    )
-                ]
+                    ],
+                    catalog.provider_id,
+                )
                 state.semantic_logical_plan = SemanticGoalPlanner(
                     planner_operations,
                     catalog.provider_id,
@@ -4797,9 +5687,12 @@ class HypothesisHuntEngine:
                         state.semantic_goal_graph,
                         planner_operations,
                         catalog.provider_id,
+                        profiles=getattr(catalog, "source_profiles", ()) or (),
+                        content_registry=self.content_registry,
                     ).routes_by_goal,
                     legacy_relation_matching=False,
                 )
+                self._record_package_usage(state, planner_operations)
 
         if getattr(state, "step_trace", None) is not None and initial_bindings:
             state.step_trace.record_step(
@@ -4847,6 +5740,12 @@ class HypothesisHuntEngine:
             final_analysis.setdefault("compiler_trace", dict(state.compiler_trace))
             self.controller.set_semantic_analysis(state, final_analysis)
 
+        resume_id = str(getattr(self.workspace, "run_id", "") or "")
+        if not resume_id and getattr(state, "objective", None) is not None:
+            resume_id = str(getattr(state.objective, "request_id", "") or "")
+        if not resume_id:
+            resume_id = str(getattr(state, "workspace_snapshot", None) and getattr(state.workspace_snapshot, "run_id", "") or "")
+        self._attach_workspace_snapshot(state, resume_id or "resumed")
         account = build_final_hunt_account(state, ledger=ledger)
         report = render_analyst_report(account)
 

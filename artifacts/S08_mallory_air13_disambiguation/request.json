@@ -1,0 +1,8 @@
+{
+  "id": "S08_mallory_air13_disambiguation",
+  "kind": "QUESTION",
+  "content": "Which endpoint host did Mallory use on 2017-08-18?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

@@ -131,13 +131,16 @@ class ActionSignature:
     time_window: str
     hints_hash: str
     cursor: str | None = None
-    mode: str = "retrieval"
+    mode: str = "EXPLORE"
+    method_id: str = ""
+    provider_id: str = ""
 
     def compute_hash(self) -> str:
         """Compute SHA256 fingerprint of the canonical tuple."""
         canonical_str = (
             f"{self.goal_id}|{self.op_id}|{self.scope}|{self.source_id}|{self.stage}|"
-            f"{self.binding_hash}|{self.time_window}|{self.hints_hash}|{self.cursor}|{self.mode}"
+            f"{self.binding_hash}|{self.time_window}|{self.hints_hash}|{self.cursor}|{self.mode}|"
+            f"{self.method_id}|{self.provider_id}"
         )
         return hashlib.sha256(canonical_str.encode("utf-8")).hexdigest()
 
@@ -153,7 +156,9 @@ class ActionSignature:
         time_window: str = "",
         hints: list[str] | None = None,
         cursor: str | None = None,
-        mode: str = "retrieval",
+        mode: str = "EXPLORE",
+        method_id: str = "",
+        provider_id: str = "",
     ) -> ActionSignature:
         """Construct from raw parameters with canonicalized hashes."""
         b_str = json.dumps(bindings or {}, sort_keys=True, default=str)
@@ -171,6 +176,8 @@ class ActionSignature:
             hints_hash=h_hash,
             cursor=cursor,
             mode=mode,
+            method_id=str(method_id or ""),
+            provider_id=str(provider_id or source_id or ""),
         )
 
 

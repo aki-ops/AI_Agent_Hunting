@@ -133,11 +133,9 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
         for u in c.entity_summary.get("users", []):
             all_users.add(str(u))
 
-    if not compromised_hosts and all_hosts:
-        compromised_hosts = set(all_hosts)
-
     hosts_str = ", ".join(f"`{h}`" for h in sorted(all_hosts)) if all_hosts else "`None detected`"
     comp_hosts_str = ", ".join(f"`{h}`" for h in sorted(compromised_hosts)) if compromised_hosts else "`None detected`"
+    candidate_hosts = sorted(all_hosts - compromised_hosts)
     pure_sensor_hosts = sorted(sensor_hosts - compromised_hosts)
     sensor_hosts_str = ", ".join(f"`{h}`" for h in pure_sensor_hosts) if pure_sensor_hosts else None
     users_str = ", ".join(f"`{u}`" for u in sorted(all_users)) if all_users else "`None detected`"
@@ -154,6 +152,8 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
         f"- **Target Entities:** {entity_str}",
         f"- **Compromised Target Host(s):** {comp_hosts_str}",
     ]
+    if candidate_hosts:
+        lines.append(f"- **Candidate Host(s) — not proof:** {', '.join(f'`{h}`' for h in candidate_hosts)}")
     if sensor_hosts_str:
         lines.append(f"- **Telemetry Capture / Sensor Host(s):** {sensor_hosts_str}")
     lines.extend([
@@ -721,7 +721,8 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
             name = d.get("name", "Unknown")
             diag_class = d.get("diagnostic_class", "Info")
             details = d.get("details", "")
-            lines.append(f"- **{name}** (`{diag_class}`): {details}")
+            details_str = "; ".join(f"{k}={v}" for k, v in details.items()) if isinstance(details, dict) else str(details)
+            lines.append(f"- **{name}** (`{diag_class}`): {details_str}")
     else:
         lines.append("- Clean: No query diagnostics or execution warnings recorded.")
 
@@ -872,6 +873,59 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
     if answer.get("explanation") and answer.get("status") not in ("PARTIALLY_SUPPORTED", "VERSION_UNAVAILABLE"):
         lines.extend(["", f"**Answer explanation:** {answer['explanation']}"])
 
+    analysis = account.semantic_analysis or {}
+    if analysis.get("retrieval_incomplete") or analysis.get("continuations"):
+        lines.extend(["", "**Retrieval incomplete;** groups from retrieved bag only."])
+    limitations: list[str] = []
+    for text in analysis.get("compiler_limitations") or ():
+        if str(text).strip():
+            limitations.append(str(text).strip())
+    for verdict in analysis.get("goal_verdicts") or ():
+        if not isinstance(verdict, dict):
+            continue
+        for text in verdict.get("compiler_limitations") or ():
+            if str(text).strip():
+                limitations.append(str(text).strip())
+    unique_limitations = list(dict.fromkeys(limitations))
+    if unique_limitations:
+        lines.extend(["", "**Unverified request descriptors (pick a group; not search tokens):**"])
+        lines.extend(f"- `{text}`" for text in unique_limitations[:6])
+
+    candidates_by_var = (account.semantic_analysis or {}).get("binding_provenance") or {}
+    candidate_lines: list[str] = []
+    for variable_id, values in candidates_by_var.items():
+        for item in values or ():
+            if not isinstance(item, dict):
+                continue
+            val = str(item.get("value") or "").strip()
+            status = str(item.get("status") or "CANDIDATE")
+            if val:
+                candidate_lines.append(f"- `{variable_id}`: `{val}` ({status})")
+    groups_by_var = (account.semantic_analysis or {}).get("candidate_groups") or {}
+    group_lines: list[str] = []
+    for variable_id, group_list in dict(groups_by_var).items():
+        for item in group_list or ():
+            if not isinstance(item, dict):
+                continue
+            field = str(item.get("field") or "").strip()
+            value = str(item.get("value") or "").strip()
+            count = item.get("count")
+            members = [str(member).strip() for member in (item.get("candidates") or ()) if str(member).strip()]
+            if not field or not value:
+                continue
+            group_lines.append(f"- `{variable_id}` `{field}`=`{value}` ({count if count is not None else len(members)})")
+            total = int(count or len(members))
+            if total <= 3:
+                group_lines.extend(f"  - `{member}`" for member in members[:total])
+            elif members:
+                group_lines.append(f"  - `{members[0]}`")
+                group_lines.append(f"  - … {total - 1} more")
+    if group_lines:
+        lines.extend(["", "**Candidate groups:**"])
+        lines.extend(group_lines)
+    elif candidate_lines:
+        lines.extend(["", "**Candidates:**"])
+        lines.extend(candidate_lines[:12])
     all_hosts: set[str] = set()
     compromised_hosts: set[str] = set()
     sensor_hosts: set[str] = set()
@@ -880,7 +934,7 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         c_hosts = [str(h) for h in c.entity_summary.get("hosts", []) if str(h).strip()]
         for h in c_hosts:
             all_hosts.add(h)
-        if c.fact_type in ("process_execution", "file_modification", "persistence_change"):
+        if c.fact_type in ("process_execution", "file_modification", "persistence_change") and str(c.confidence).upper() == "HIGH":
             for h in c_hosts:
                 compromised_hosts.add(h)
         elif c.fact_type in ("web_request", "web_activity", "network_connection", "dns_activity"):
@@ -888,12 +942,13 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
                 sensor_hosts.add(h)
         for u in c.entity_summary.get("users", []):
             all_users.add(str(u))
-    if not compromised_hosts and all_hosts:
-        compromised_hosts = set(all_hosts)
     if all_hosts or all_users:
         lines.append("")
         if compromised_hosts:
             lines.append(f"- **Impacted Host(s):** {', '.join(f'`{h}`' for h in sorted(compromised_hosts))}")
+        candidate_hosts = sorted(all_hosts - compromised_hosts)
+        if candidate_hosts:
+            lines.append(f"- **Candidate Host(s) — not proof:** {', '.join(f'`{h}`' for h in candidate_hosts)}")
         pure_sensor = sorted(sensor_hosts - compromised_hosts)
         if pure_sensor:
             lines.append(f"- **Sensor / Network Host(s):** {', '.join(f'`{h}`' for h in pure_sensor)}")
@@ -960,15 +1015,27 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             "they become executable capabilities."
         )
         retrieval_audit = source_profile_audit.get("retrieval", []) or []
+        coverage_manifests = source_profile_audit.get("coverage_manifests", {}) or {}
+        if coverage_manifests:
+            lines.append("- Source coverage manifests (shortlist never implies absence):")
+            for relation, manifest in coverage_manifests.items():
+                if not isinstance(manifest, dict):
+                    continue
+                total = int(manifest.get("total_sources", 0) or 0)
+                considered = len(manifest.get("considered_source_ids", []) or [])
+                examined = len(manifest.get("examined_source_ids", []) or [])
+                unexamined = list(manifest.get("unexamined_source_ids", []) or [])
+                rejected = manifest.get("rejected_source_ids", {}) or {}
+                lines.append(
+                    f"  - `{relation}`: total=`{total}`, considered=`{considered}`, "
+                    f"examined=`{examined}`, unexamined=`{len(unexamined)}`, "
+                    f"rejected=`{len(rejected)}`"
+                )
+            lines.append("  - Full source IDs and stage audit are stored in `source_profile_audit.json`.")
         if retrieval_audit:
             lines.append("- Relation-scoped source retrieval:")
             for item in retrieval_audit:
                 candidates = item.get("candidates", []) or []
-                rendered_candidates = ", ".join(
-                    f"{candidate.get('source_id', 'unknown')} "
-                    f"(score={candidate.get('score', 0)}, rank={candidate.get('rank', '?')})"
-                    for candidate in candidates
-                ) or "none"
                 profile_discovery = source_profile_audit.get("census_profile_discovery", {}) or {}
                 gap_count = len(profile_discovery.get("unprofiled_source_types", []) or [])
                 completeness = "complete" if profile_discovery.get("complete", True) else f"incomplete ({gap_count} source gap(s))"
@@ -976,7 +1043,7 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
                     f"  - `{item.get('relation', 'unknown')}`: "
                     f"batches=`{item.get('batch_count', 0)}`, "
                     f"ordering_only=`{item.get('ordering_only', False)}`, "
-                    f"candidates={rendered_candidates}; census profiles=`{completeness}`"
+                    f"candidates=`{len(candidates)}`; census profiles=`{completeness}`"
                 )
         if source_profile_audit.get("error"):
             lines.append(f"- Profiling error: `{source_profile_audit['error']}`")
@@ -1078,15 +1145,21 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             lines.append(f"- `{step_id}` chưa chạy/hoàn tất: {reason}")
 
     binding_provenance = (account.semantic_analysis or {}).get("binding_provenance", {})
+    groups_present = bool((account.semantic_analysis or {}).get("candidate_groups"))
     if binding_provenance:
         lines.extend(["", "### Runtime bindings", ""])
-        for variable_id, values in binding_provenance.items():
-            rendered = ", ".join(
-                f"`{item.get('value', '')}` ({item.get('status', 'UNVERIFIED')}) "
-                f"from `{item.get('query_id') or item.get('source', '')}`"
-                for item in values
-            )
-            lines.append(f"- `{variable_id}`: {rendered}")
+        if groups_present:
+            for variable_id, values in binding_provenance.items():
+                count = sum(1 for item in values or () if isinstance(item, dict) and str(item.get("value") or "").strip())
+                lines.append(f"- `{variable_id}`: {count} candidate(s); see candidate groups")
+        else:
+            for variable_id, values in binding_provenance.items():
+                rendered = ", ".join(
+                    f"`{item.get('value', '')}` ({item.get('status', 'UNVERIFIED')}) "
+                    f"from `{item.get('query_id') or item.get('source', '')}`"
+                    for item in values
+                )
+                lines.append(f"- `{variable_id}`: {rendered}")
 
     # ---------------------------------------------------------
     # 4. Evidence and Proof Decisions
@@ -1438,6 +1511,114 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             f"- **Wildcard Scope Coverage:** `{w_pct:.1f}%` ({cb.explored_cells_wildcard}/{cb.known_cells_wildcard} broadsweep cells)",
             f"- **Instance Cell Coverage:** `{i_pct:.1f}%` ({cb.explored_cells_instance}/{cb.known_cells_instance} concrete entity cells)",
         ])
+
+    # Route and Frontier Coverage (Disclose examined vs. unexamined routes)
+    lines.extend(["", "### Route and Frontier Coverage", ""])
+
+    source_profile_audit = getattr(account, "source_profile_audit", {}) or {}
+    coverage_manifests = source_profile_audit.get("coverage_manifests", {}) or {}
+    semantic_routes = list(getattr(account, "semantic_route_assessments", ()) or ())
+    semantic_plan = getattr(account, "semantic_logical_plan", None)
+
+    # 1. Examined routes
+    examined_lines: list[str] = []
+    for route in semantic_routes:
+        goal_id = getattr(route, "goal_id", "")
+        rel = getattr(route, "relation", "")
+        for attempt in getattr(route, "attempts", ()) or ():
+            op = getattr(attempt, "operation_id", "unknown")
+            src = getattr(attempt, "source_id", "unknown")
+            qid = getattr(attempt, "query_id", "none")
+            rows = getattr(attempt, "row_count", 0)
+            comp = getattr(attempt, "result_complete", False)
+            examined_lines.append(
+                f"  - `{goal_id}` (`{rel}`): operation=`{op}`, source=`{src}`, query=`{qid}`, rows=`{rows}`, complete=`{comp}`"
+            )
+    if not examined_lines and account.queries:
+        for q in account.queries:
+            qid = q.get("query_id", "unknown")
+            rid = q.get("requirement_id", "unknown")
+            op = q.get("operation_id", "unknown")
+            pid = q.get("provider_id", "unknown")
+            rows = len(q.get("sample_rows", []) or [])
+            comp = q.get("executed_ok", False)
+            examined_lines.append(
+                f"  - `{rid}`: operation=`{op}`, source=`{pid}`, query=`{qid}`, rows=`{rows}`, complete=`{comp}`"
+            )
+
+    if examined_lines:
+        lines.append("- **Examined routes:**")
+        lines.extend(examined_lines)
+    else:
+        lines.append("- **Examined routes:** None")
+
+    # 2. Unexamined routes / frontier sources
+    unexamined_sources: list[str] = []
+    for rel, manifest in coverage_manifests.items():
+        if isinstance(manifest, dict):
+            unex = list(manifest.get("unexamined_source_ids", []) or [])
+            if unex:
+                unexamined_sources.append(
+                    f"`{rel}`: `{len(unex)}` sources (see `source_profile_audit.json`)"
+                )
+
+    unattempted_methods: list[str] = []
+    if semantic_plan is not None:
+        selected_method_ids = getattr(semantic_plan, "selected_method_ids", {}) or {}
+        proof_methods = getattr(semantic_plan, "proof_methods", []) or []
+        attempted_ops = {
+            getattr(attempt, "operation_id", "")
+            for r in semantic_routes
+            for attempt in (getattr(r, "attempts", ()) or ())
+        }
+        if not attempted_ops and account.queries:
+            attempted_ops = {q.get("operation_id", "") for q in account.queries}
+
+        for method in proof_methods:
+            mid = getattr(method, "id", "")
+            mgid = getattr(method, "goal_id", "")
+            mops = getattr(method, "operation_ids", ()) or ()
+            is_selected = selected_method_ids.get(mgid) == mid
+            if not is_selected or not any(op in attempted_ops for op in mops):
+                unattempted_methods.append(f"`{mid}` (`{mgid}` via `{', '.join(mops)}`)")
+
+    has_unexamined = bool(unexamined_sources or unattempted_methods)
+    lines.append("- **Unexamined routes & frontier sources:**")
+    if unexamined_sources:
+        for unex_s in unexamined_sources:
+            lines.append(f"  - Unexamined sources for {unex_s}")
+    if unattempted_methods:
+        for unex_m in unattempted_methods:
+            lines.append(f"  - Unattempted candidate method: {unex_m}")
+    if not unexamined_sources and not unattempted_methods:
+        lines.append("  - None (frontier and candidate proof methods exhausted)")
+
+    # 3. Route exhaustion rationale
+    all_routes_exhausted = (
+        bool(semantic_routes)
+        and all(getattr(r, "route_exhausted", False) for r in semantic_routes)
+    )
+    stop_dec = account.stopping_decision
+    stop_val = stop_dec.value if hasattr(stop_dec, "value") else str(stop_dec)
+
+    if stop_val == "STOP_ROUTES_EXHAUSTED" or (all_routes_exhausted and not has_unexamined):
+        exhaustion_rationale = (
+            "All candidate routes and provider capabilities for the target goals were executed "
+            "with complete coverage; zero matching evidence was returned and no unexamined sources remain in the candidate frontier."
+        )
+    elif stop_val == "STOP_RESOLVED":
+        exhaustion_rationale = (
+            "Target goal was verified through admissible evidence; remaining alternative routes and unexamined frontier sources were not required."
+        )
+    elif has_unexamined:
+        exhaustion_rationale = (
+            f"Execution halted before exhaustion with unexamined frontier elements remaining. "
+            f"Stopping decision: `{stop_val}`."
+        )
+    else:
+        exhaustion_rationale = f"Stopping decision: `{stop_val}`."
+
+    lines.append(f"- **Route Exhaustion Rationale:** {exhaustion_rationale}")
     gap_breakdown = account.gap_breakdown or {}
     if gap_breakdown and any(gap_breakdown.values()):
         lines.extend(["", "### Visibility and Gap Breakdown", ""])
@@ -1460,6 +1641,8 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         "### Cost Accounting",
         "",
         f"- Model: `{usage.get('model', 'unknown')}`",
+        f"- Configured model(s): `{', '.join(sorted({str(item.get('configured_model') or item.get('model') or 'unknown') for item in usage.get('calls', [])})) or usage.get('model', 'unknown')}`",
+        f"- Actual model(s): `{', '.join(sorted({str(item.get('actual_model')) for item in usage.get('calls', []) if item.get('actual_model')})) or 'not reported by gateway'}`",
         f"- Calls: `{usage.get('calls_made', 0)}`",
         f"- Physical API attempts: `{sum(int(item.get('physical_attempts', 0) or 0) for item in usage.get('calls', []))}`",
         f"- Failed calls: `{sum(1 for item in usage.get('calls', []) if item.get('status') == 'FAILED')}`",
@@ -1474,8 +1657,8 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             "",
             "### LLM Touchpoint Trace",
             "",
-            "| Phase | Reason | Payload | Tokens | Latency (ms) | Status | Validation | Accounting |",
-            "|---|---|---|---|---|---|---|---|",
+            "| Phase | Configured / actual model | Reason | Payload | Tokens | TTFB / latency (ms) | HTTP | Status | Validation | Accounting |",
+            "|---|---|---|---|---|---|---|---|---|---|",
         ])
         for c in calls:
             p = c.get("phase") or c.get("component") or "unknown"
@@ -1486,7 +1669,14 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
             st = c.get("status", "SUCCESS")
             val = c.get("validation_status", c.get("validation_result", "VALID"))
             est = "Estimated" if c.get("is_estimate", True) else "Actual"
-            lines.append(f"| `{p}` | `{r}` | `{pay}` | `{tok}` | `{lat:.1f}` | `{st}` | `{val}` | `{est}` |")
+            configured = c.get("configured_model") or c.get("model") or "unknown"
+            actual = c.get("actual_model") or "?"
+            ttfb = c.get("first_byte_ms")
+            latency = f"{float(ttfb):.1f} / {lat:.1f}" if ttfb is not None else f"- / {lat:.1f}"
+            http = c.get("http_status") or "-"
+            error_class = c.get("error_class") or ""
+            status_text = f"{st}/{error_class}" if error_class and st == "FAILED" else st
+            lines.append(f"| `{p}` | `{configured} / {actual}` | `{r}` | `{pay}` | `{tok}` | `{latency}` | `{http}` | `{status_text}` | `{val}` | `{est}` |")
 
     deferred_actions = getattr(account, "deferred_actions", []) or []
     if deferred_actions:

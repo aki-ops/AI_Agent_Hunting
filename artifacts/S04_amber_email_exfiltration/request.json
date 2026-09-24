@@ -1,0 +1,8 @@
+{
+  "id": "S04_amber_email_exfiltration",
+  "kind": "QUESTION",
+  "content": "What personal email address did Amber Turing use to send corporate files?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

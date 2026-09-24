@@ -1,0 +1,13 @@
+{
+  "id": "logical-goal-graph-x",
+  "goal_graph_id": "goal-graph-x",
+  "provider_id": "cdb",
+  "steps": [],
+  "unresolved_goal_ids": [
+    "req-CVE-2024-21887-exploit",
+    "req-CVE-2024-21887-post"
+  ],
+  "proof_methods": [],
+  "selected_method_ids": {},
+  "graph_revision": "G0"
+}

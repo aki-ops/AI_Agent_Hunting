@@ -1,0 +1,572 @@
+{
+  "hunt_id": "post-commit-evidence-graph-flow",
+  "outcome": "INCONCLUSIVE",
+  "stopping_decision": "STOP_INCONCLUSIVE",
+  "answer": {
+    "status": "INCONCLUSIVE",
+    "reason": "NO_VERIFIED_ANSWER_CANDIDATE",
+    "value": null,
+    "explanation": "No verified answer candidate was found, but semantic absence is not licensed by the current execution, proof, and route state.",
+    "answer_type": "value",
+    "card_ids": [],
+    "required_fields": [],
+    "available_fields": [
+      "cmdline",
+      "command_line",
+      "host",
+      "id",
+      "image",
+      "native_type",
+      "pid",
+      "process_name",
+      "timestamp"
+    ],
+    "missing_fields": [],
+    "artifact_detected": true,
+    "claim": "No verified answer candidate was found, but semantic absence is not licensed until every required route is exhausted with complete-empty results under an explicit provider contract.",
+    "citations": [
+      {
+        "claim": "Target Artifact executed on HOST-1",
+        "observation_ids": [
+          "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+        ],
+        "query_ids": [
+          "logical-goal-graph-post-commit-evidence-graph-flow-step-1"
+        ],
+        "fields": [
+          "Image"
+        ]
+      }
+    ],
+    "citation_text": "Target Artifact executed on HOST-1 Evidence: obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0 Query: logical-goal-graph-post-commit-evidence-graph-flow-step-1 Fields: Image"
+  },
+  "llm_usage": {
+    "model": "stub",
+    "max_calls_budget": 5,
+    "calls_made": 0,
+    "is_exhausted": false,
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "total_tokens": 0,
+    "estimated_cost_usd": 0,
+    "token_accounting_mode": "ESTIMATED",
+    "is_estimate": true,
+    "calls": []
+  },
+  "total_observations": 1,
+  "total_cards": 1,
+  "total_queries": 2,
+  "semantic_graph_id": "goal-graph-post-commit-evidence-graph-flow",
+  "proof_plan_id": "logical-goal-graph-post-commit-evidence-graph-flow",
+  "semantic_analysis": {
+    "compiler_trace": {},
+    "goal_verdicts": [
+      {
+        "goal_id": "req-CVE-2024-21887-exploit",
+        "relation": "spawned",
+        "status": "SUPPORTED",
+        "query_ids": [
+          "logical-goal-graph-post-commit-evidence-graph-flow-step-1"
+        ],
+        "proof_method_id": "method-req-CVE-2024-21887-exploit-2",
+        "unverified_restrictions": [],
+        "proof_results": [
+          {
+            "contract_id": "proof-process-spawned-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "evaluate_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": true,
+            "verdict": "PROVEN",
+            "status": "VERIFIED",
+            "reason_codes": [
+              "contract_requirements_satisfied"
+            ],
+            "subject_binding": "HOST-1",
+            "object_binding": "7",
+            "bindings": {
+              "endpoint": "HOST-1",
+              "process": "7",
+              "proved_object_0": "7",
+              "proved_subject_0": "HOST-1"
+            },
+            "satisfied_obligations": [
+              "endpoint",
+              "process"
+            ],
+            "missing_obligations": [],
+            "satisfied_constraints": [
+              "cmdline=python"
+            ],
+            "unsatisfied_constraints": [],
+            "citations": [
+              "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+            ],
+            "cited_fields": {
+              "endpoint": "host",
+              "process": "pid"
+            },
+            "completeness_satisfied": true,
+            "coverage_satisfied": true,
+            "limitations": [],
+            "diagnostic": "Proof established for relation 'spawned' via contract 'proof-process-spawned-v1'."
+          }
+        ]
+      },
+      {
+        "goal_id": "req-CVE-2024-21887-post",
+        "relation": "wrote",
+        "status": "INCONCLUSIVE",
+        "query_ids": [
+          "logical-goal-graph-post-commit-evidence-graph-flow-step-2"
+        ],
+        "proof_method_id": "method-req-CVE-2024-21887-post-1",
+        "unverified_restrictions": [],
+        "proof_results": [
+          {
+            "contract_id": "proof-file-wrote-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "generic_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": false,
+            "verdict": "PROOF_GAP",
+            "status": "PROOF_GAP",
+            "reason_codes": [
+              "no_observations_or_rows"
+            ],
+            "subject_binding": null,
+            "object_binding": null,
+            "bindings": {},
+            "satisfied_obligations": [],
+            "missing_obligations": [
+              "observed_events"
+            ],
+            "satisfied_constraints": [],
+            "unsatisfied_constraints": [],
+            "citations": [],
+            "cited_fields": {},
+            "completeness_satisfied": false,
+            "coverage_satisfied": false,
+            "limitations": [],
+            "diagnostic": "Zero events or rows provided to verify proof contract."
+          }
+        ]
+      }
+    ],
+    "proof_state": {
+      "req-CVE-2024-21887-exploit": "SUPPORTED",
+      "req-CVE-2024-21887-post": "INCONCLUSIVE"
+    },
+    "executed_steps": [
+      "step-1",
+      "step-2"
+    ],
+    "unresolved_steps": [],
+    "unresolved_goals": [],
+    "unresolved_reasons": {},
+    "candidate_input_warnings": {
+      "step-2": "upstream candidate binding requires explicit user selection before this downstream step: var_exploit_proc"
+    },
+    "needs_user_decision": false,
+    "binding_provenance": {
+      "var_endpoint": [
+        {
+          "value": "HOST-1",
+          "source": "user_selection",
+          "query_id": "",
+          "status": "VERIFIED"
+        }
+      ],
+      "var_exploit_proc": [
+        {
+          "value": "7",
+          "source": "step-1",
+          "query_id": "logical-goal-graph-post-commit-evidence-graph-flow-step-1",
+          "status": "CANDIDATE"
+        }
+      ]
+    },
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "find_process_from_endpoint",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-post-commit-evidence-graph-flow-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 1,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      },
+      {
+        "step_id": "step-2",
+        "operation_id": "find_file_change_from_process",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-post-commit-evidence-graph-flow-step-2",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 0,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuations": {},
+    "unverified_restrictions": {},
+    "binding_events": [],
+    "route_assessments": [
+      {
+        "goal_id": "req-CVE-2024-21887-exploit",
+        "relation": "spawned",
+        "status": "VERIFIED",
+        "execution_complete": true,
+        "proof_complete": true,
+        "route_exhausted": false,
+        "readiness": "PROOF_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-1",
+            "goal_id": "req-CVE-2024-21887-exploit",
+            "operation_id": "find_process_from_endpoint",
+            "source_id": "cdb_security",
+            "schema_fingerprint": "",
+            "stage_id": "narrow",
+            "query_id": "logical-goal-graph-post-commit-evidence-graph-flow-step-1",
+            "result_complete": true,
+            "row_count": 1,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('find_process_from_endpoint', 'cdb_security', (('subject', ('HOST-1',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+            "alternatives_considered": [
+              "cdb_process_search"
+            ],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [],
+        "capability_gaps": [],
+        "terminal_cause": null
+      },
+      {
+        "goal_id": "req-CVE-2024-21887-post",
+        "relation": "wrote",
+        "status": "ATTEMPTED_EMPTY",
+        "execution_complete": true,
+        "proof_complete": false,
+        "route_exhausted": true,
+        "readiness": "RETRIEVAL_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-2",
+            "goal_id": "req-CVE-2024-21887-post",
+            "operation_id": "find_file_change_from_process",
+            "source_id": "cdb_security",
+            "schema_fingerprint": "",
+            "stage_id": "narrow",
+            "query_id": "logical-goal-graph-post-commit-evidence-graph-flow-step-2",
+            "result_complete": true,
+            "row_count": 0,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('find_file_change_from_process', 'cdb_security', (('subject', ('7',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+            "alternatives_considered": [],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [
+          "relation_or_constraint_proof_missing"
+        ],
+        "capability_gaps": [],
+        "terminal_cause": null
+      }
+    ],
+    "evidence_graph": {
+      "nodes": [
+        {
+          "id": "observation:obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0",
+          "node_type": "observation",
+          "payload": {
+            "timestamp": "2026-02-01T10:00:00Z",
+            "native_type": "process_creation",
+            "provider_scope": "cdb_security",
+            "query_id": "logical-goal-graph-post-commit-evidence-graph-flow-step-1",
+            "native_fields": {
+              "id": 1,
+              "timestamp": "2026-02-01T10:00:00Z",
+              "event_id": null,
+              "native_type": "process_creation",
+              "host": "HOST-1",
+              "user": null,
+              "pid": 7,
+              "ppid": null,
+              "cmdline": "python -c id",
+              "image": "/bin/sh",
+              "ip": null,
+              "port": null,
+              "domain": null,
+              "file_path": null,
+              "action": null,
+              "status": null,
+              "raw_ref": null
+            },
+            "raw_ref": null
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ]
+        },
+        {
+          "id": "fact-406be9582b7ff378",
+          "node_type": "fact",
+          "payload": {
+            "fact_type": "process_execution",
+            "timestamp": "2026-02-01T10:00:00Z",
+            "primary_entity": "Process(kind=<EntityKind.PROCESS: 'process'>, host='HOST-1', pid=7, time='2026-02-01T10:00:00Z')",
+            "fields": {
+              "cmdline": "python -c id",
+              "image": "/bin/sh",
+              "process_name": "/bin/sh"
+            }
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ]
+        },
+        {
+          "id": "field-3d21cb6873d41372",
+          "node_type": "field_fact",
+          "payload": {
+            "id": "field-3d21cb6873d41372",
+            "fact_node_id": "fact-406be9582b7ff378",
+            "field_name": "cmdline",
+            "value": "python -c id",
+            "native_field_name": "cmdline",
+            "observation_id": "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ]
+        },
+        {
+          "id": "field-1d5da63a286280b6",
+          "node_type": "field_fact",
+          "payload": {
+            "id": "field-1d5da63a286280b6",
+            "fact_node_id": "fact-406be9582b7ff378",
+            "field_name": "image",
+            "value": "/bin/sh",
+            "native_field_name": "image",
+            "observation_id": "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ]
+        },
+        {
+          "id": "field-acb9172bfec73f4c",
+          "node_type": "field_fact",
+          "payload": {
+            "id": "field-acb9172bfec73f4c",
+            "fact_node_id": "fact-406be9582b7ff378",
+            "field_name": "process_name",
+            "value": "/bin/sh",
+            "native_field_name": "process_name",
+            "observation_id": "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ]
+        },
+        {
+          "id": "entity-2674236384e99409",
+          "node_type": "entity",
+          "payload": {
+            "entity": "Host(kind=<EntityKind.HOST: 'host'>, name='HOST-1')"
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ]
+        },
+        {
+          "id": "entity-ae81869bf262e253",
+          "node_type": "entity",
+          "payload": {
+            "entity": "Process(kind=<EntityKind.PROCESS: 'process'>, host='HOST-1', pid=7, time='2026-02-01T10:00:00Z')"
+          },
+          "provenance_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-ac981b2d441e0bf1",
+          "source_id": "observation:obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0",
+          "target_id": "fact-406be9582b7ff378",
+          "edge_type": "contains_fact",
+          "observation_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-0cacd4b41682d757",
+          "source_id": "fact-406be9582b7ff378",
+          "target_id": "field-3d21cb6873d41372",
+          "edge_type": "has_field",
+          "observation_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-c19d23e9634b0da4",
+          "source_id": "fact-406be9582b7ff378",
+          "target_id": "field-1d5da63a286280b6",
+          "edge_type": "has_field",
+          "observation_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-614ca1725d76eb6f",
+          "source_id": "fact-406be9582b7ff378",
+          "target_id": "field-acb9172bfec73f4c",
+          "edge_type": "has_field",
+          "observation_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {}
+        },
+        {
+          "id": "edge-ca574cdec6c82f50",
+          "source_id": "entity-2674236384e99409",
+          "target_id": "entity-ae81869bf262e253",
+          "edge_type": "observed_transition",
+          "observation_ids": [
+            "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+          ],
+          "proof_status": "NOT_PROOF",
+          "attributes": {
+            "relation_type": "executed_process"
+          }
+        }
+      ],
+      "field_facts": [
+        {
+          "id": "field-3d21cb6873d41372",
+          "fact_node_id": "fact-406be9582b7ff378",
+          "field_name": "cmdline",
+          "value": "python -c id",
+          "native_field_name": "cmdline",
+          "observation_id": "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+        },
+        {
+          "id": "field-1d5da63a286280b6",
+          "fact_node_id": "fact-406be9582b7ff378",
+          "field_name": "image",
+          "value": "/bin/sh",
+          "native_field_name": "image",
+          "observation_id": "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+        },
+        {
+          "id": "field-acb9172bfec73f4c",
+          "fact_node_id": "fact-406be9582b7ff378",
+          "field_name": "process_name",
+          "value": "/bin/sh",
+          "native_field_name": "process_name",
+          "observation_id": "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+        }
+      ],
+      "observation_ids": [
+        "obs-logical-goal-graph-post-commit-evidence-graph-flow-step-1-0"
+      ],
+      "proof_note": "Graph proximity and co-occurrence are not proof."
+    },
+    "agenda": {
+      "items": [],
+      "dispatched": [
+        "step-1",
+        "step-2"
+      ]
+    }
+  },
+  "source_profile_audit": {},
+  "runtime_capabilities": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "req-CVE-2024-21887-exploit",
+      "relation": "spawned",
+      "status": "VERIFIED",
+      "execution_complete": true,
+      "proof_complete": true,
+      "route_exhausted": false,
+      "readiness": "PROOF_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-1",
+          "goal_id": "req-CVE-2024-21887-exploit",
+          "operation_id": "find_process_from_endpoint",
+          "source_id": "cdb_security",
+          "schema_fingerprint": "",
+          "stage_id": "narrow",
+          "query_id": "logical-goal-graph-post-commit-evidence-graph-flow-step-1",
+          "result_complete": true,
+          "row_count": 1,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('find_process_from_endpoint', 'cdb_security', (('subject', ('HOST-1',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+          "alternatives_considered": [
+            "cdb_process_search"
+          ],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [],
+      "capability_gaps": [],
+      "terminal_cause": null
+    },
+    {
+      "goal_id": "req-CVE-2024-21887-post",
+      "relation": "wrote",
+      "status": "ATTEMPTED_EMPTY",
+      "execution_complete": true,
+      "proof_complete": false,
+      "route_exhausted": true,
+      "readiness": "RETRIEVAL_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-2",
+          "goal_id": "req-CVE-2024-21887-post",
+          "operation_id": "find_file_change_from_process",
+          "source_id": "cdb_security",
+          "schema_fingerprint": "",
+          "stage_id": "narrow",
+          "query_id": "logical-goal-graph-post-commit-evidence-graph-flow-step-2",
+          "result_complete": true,
+          "row_count": 0,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('find_file_change_from_process', 'cdb_security', (('subject', ('7',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+          "alternatives_considered": [],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [
+        "relation_or_constraint_proof_missing"
+      ],
+      "capability_gaps": [],
+      "terminal_cause": null
+    }
+  ]
+}

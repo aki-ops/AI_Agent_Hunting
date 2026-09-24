@@ -1,18 +1,254 @@
 {
   "analysis": {
-    "source_profile": {
-      "status": "NO_LLM_CALLER",
-      "readiness": [],
-      "profiling_goal_ids": [],
-      "retrieval": [],
-      "coverage_manifests": {},
-      "census_profile_discovery": {},
-      "proposals": [],
-      "rejected": [],
-      "relation_calls": [],
-      "runtime_capabilities": [],
-      "runtime_operation_ids": []
-    }
+    "workspace": {
+      "run_id": "test-adaptive-hunt-success",
+      "observation_ids": [
+        "obs-discovery-1",
+        "obs-adaptive-2"
+      ],
+      "evidence_graph": {
+        "observation_ids": [
+          "obs-discovery-1",
+          "obs-adaptive-2"
+        ],
+        "proof": false
+      },
+      "goal_graph": {},
+      "query_audit": [
+        {
+          "query_id": "qp-discovery-0",
+          "operation_id": "search_text",
+          "c3_invoked": false,
+          "advances_goal_ids": [],
+          "relation": "",
+          "reason": "advances goals ['unspecified'] via operation search_text",
+          "complete": true,
+          "retrieval_stage": ""
+        },
+        {
+          "query_id": "qp-adaptive-0-1",
+          "operation_id": "find_file_version",
+          "c3_invoked": false,
+          "advances_goal_ids": [],
+          "relation": "",
+          "reason": "advances goals ['unspecified'] via operation find_file_version",
+          "complete": true,
+          "retrieval_stage": ""
+        }
+      ],
+      "analyst_decisions": [],
+      "unexamined_routes": [],
+      "limitations": [],
+      "timeline": [
+        {
+          "observation_id": "obs-discovery-1",
+          "timestamp": "2026-09-02T10:00:00Z",
+          "query_id": "qp-discovery-0",
+          "fields": {
+            "host": "wrk-amber",
+            "user": "amber",
+            "timestamp": "2026-09-02T10:00:00Z"
+          },
+          "native_fields": {
+            "host": "wrk-amber",
+            "user": "amber",
+            "timestamp": "2026-09-02T10:00:00Z"
+          }
+        },
+        {
+          "observation_id": "obs-adaptive-2",
+          "timestamp": "2026-09-02T10:05:00Z",
+          "query_id": "qp-adaptive-0-1",
+          "fields": {
+            "host": "wrk-amber",
+            "Path": "C:\\Tor\\firefox.exe",
+            "ProductVersion": "13.5.2",
+            "timestamp": "2026-09-02T10:05:00Z",
+            "file_path": "C:\\Tor\\firefox.exe",
+            "software_version": "13.5.2"
+          },
+          "native_fields": {
+            "host": "wrk-amber",
+            "Path": "C:\\Tor\\firefox.exe",
+            "ProductVersion": "13.5.2",
+            "timestamp": "2026-09-02T10:05:00Z"
+          }
+        }
+      ],
+      "tags": [],
+      "comments": [],
+      "saved_searches": [],
+      "entity_pivot": [
+        {
+          "entity_type": "Path",
+          "value": "C:\\Tor\\firefox.exe",
+          "observation_ids": [
+            "obs-adaptive-2"
+          ],
+          "query_ids": [
+            "qp-adaptive-0-1"
+          ]
+        },
+        {
+          "entity_type": "ProductVersion",
+          "value": "13.5.2",
+          "observation_ids": [
+            "obs-adaptive-2"
+          ],
+          "query_ids": [
+            "qp-adaptive-0-1"
+          ]
+        },
+        {
+          "entity_type": "file_path",
+          "value": "C:\\Tor\\firefox.exe",
+          "observation_ids": [
+            "obs-adaptive-2"
+          ],
+          "query_ids": [
+            "qp-adaptive-0-1"
+          ]
+        },
+        {
+          "entity_type": "host",
+          "value": "wrk-amber",
+          "observation_ids": [
+            "obs-discovery-1",
+            "obs-adaptive-2"
+          ],
+          "query_ids": [
+            "qp-discovery-0",
+            "qp-adaptive-0-1"
+          ]
+        },
+        {
+          "entity_type": "software_version",
+          "value": "13.5.2",
+          "observation_ids": [
+            "obs-adaptive-2"
+          ],
+          "query_ids": [
+            "qp-adaptive-0-1"
+          ]
+        },
+        {
+          "entity_type": "timestamp",
+          "value": "2026-09-02T10:00:00Z",
+          "observation_ids": [
+            "obs-discovery-1"
+          ],
+          "query_ids": [
+            "qp-discovery-0"
+          ]
+        },
+        {
+          "entity_type": "timestamp",
+          "value": "2026-09-02T10:05:00Z",
+          "observation_ids": [
+            "obs-adaptive-2"
+          ],
+          "query_ids": [
+            "qp-adaptive-0-1"
+          ]
+        },
+        {
+          "entity_type": "user",
+          "value": "amber",
+          "observation_ids": [
+            "obs-discovery-1"
+          ],
+          "query_ids": [
+            "qp-discovery-0"
+          ]
+        }
+      ],
+      "native_events": [
+        {
+          "observation_id": "obs-discovery-1",
+          "timestamp": "2026-09-02T10:00:00Z",
+          "query_id": "qp-discovery-0",
+          "native_fields": {
+            "host": "wrk-amber",
+            "user": "amber",
+            "timestamp": "2026-09-02T10:00:00Z"
+          },
+          "raw_event": {}
+        },
+        {
+          "observation_id": "obs-adaptive-2",
+          "timestamp": "2026-09-02T10:05:00Z",
+          "query_id": "qp-adaptive-0-1",
+          "native_fields": {
+            "host": "wrk-amber",
+            "Path": "C:\\Tor\\firefox.exe",
+            "ProductVersion": "13.5.2",
+            "timestamp": "2026-09-02T10:05:00Z"
+          },
+          "raw_event": {}
+        }
+      ],
+      "proof_obligations": [],
+      "stop_explanation": {
+        "decision": "STOP_NOT_FOUND_BOUNDED",
+        "taxonomy": "StoppingTaxonomyState.BOUNDED_NOT_FOUND",
+        "unresolved_reasons": {},
+        "needs_user_decision": false,
+        "residuals": [],
+        "query_count": 2,
+        "llm_calls": {
+          "model": "stub",
+          "max_calls_budget": 5,
+          "calls_made": 0,
+          "is_exhausted": false,
+          "total_prompt_tokens": 0,
+          "total_completion_tokens": 0,
+          "total_tokens": 0,
+          "estimated_cost_usd": 0,
+          "token_accounting_mode": "ESTIMATED",
+          "is_estimate": true,
+          "calls": []
+        }
+      },
+      "coverage_view": {
+        "coverage_bound": {},
+        "coverage_gaps": [],
+        "unexamined_routes": [],
+        "query_completeness": [
+          {
+            "query_id": "qp-discovery-0",
+            "complete": true
+          },
+          {
+            "query_id": "qp-adaptive-0-1",
+            "complete": true
+          }
+        ]
+      },
+      "binding_reviews": []
+    },
+    "package_versions": [],
+    "stop_explanation": {
+      "decision": "STOP_NOT_FOUND_BOUNDED",
+      "taxonomy": "StoppingTaxonomyState.BOUNDED_NOT_FOUND",
+      "unresolved_reasons": {},
+      "needs_user_decision": false,
+      "residuals": [],
+      "query_count": 2,
+      "llm_calls": {
+        "model": "stub",
+        "max_calls_budget": 5,
+        "calls_made": 0,
+        "is_exhausted": false,
+        "total_prompt_tokens": 0,
+        "total_completion_tokens": 0,
+        "total_tokens": 0,
+        "estimated_cost_usd": 0,
+        "token_accounting_mode": "ESTIMATED",
+        "is_estimate": true,
+        "calls": []
+      }
+    },
+    "proof_obligations": []
   },
   "assessments": [],
   "semantic_route_assessments": []

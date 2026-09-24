@@ -1,0 +1,8 @@
+{
+  "id": "audit-replay-plan-20260917",
+  "kind": "HYPOTHESIS",
+  "content": "Mallory's critical PowerPoint presentation on her MacBook gets encrypted by ransomware on August 18. What is the name of this file after it was encrypted?",
+  "entities": [],
+  "time_window": "2017-08-01T00:00:00Z/2018-10-29T18:03:43Z",
+  "answer_spec": {}
+}

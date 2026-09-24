@@ -43,6 +43,23 @@ from hunting.planner.planner import CanonicalQueryPlanner
 from hunting.registry.loader import load_registry
 
 
+def _apply_dotenv_setdefault(path: str | None = None) -> None:
+    """Load `.env` into os.environ without overriding an already-set variable."""
+    from hunting.m2_abduction.provider import load_dotenv
+
+    env_path = path or os.getenv("HUNTING_DOTENV") or ".env"
+    for key, value in load_dotenv(env_path).items():
+        if key:
+            os.environ.setdefault(key, value)
+
+
+def _cli_splunk_verify_ssl(args: argparse.Namespace | None = None) -> bool:
+    if args is not None and getattr(args, "splunk_insecure", False):
+        return False
+    raw = os.getenv("SPLUNK_VERIFY_SSL", "true").strip().lower()
+    return raw not in {"0", "false", "no"}
+
+
 def parse_alert_from_file_or_content(content_or_path: str) -> Alert:
     """Parse Alert from file path or JSON/YAML string."""
     data: dict[str, Any]
@@ -502,6 +519,7 @@ def build_parser() -> argparse.ArgumentParser:
     hunt_group.add_argument("--threat-actor", type=str, help="Hunt for threat actor campaign/profile")
     hunt_group.add_argument("--campaign", type=str, help="Hunt for specific adversary campaign")
     hunt_group.add_argument("--query", "-q", type=str, help="Natural language hunting question")
+    hunt_group.add_argument("--poc", type=str, help="Hunt from a proof-of-concept or exploit description")
     hunt_group.add_argument("--time-window", type=str, help="Explicit search time window ISO interval (e.g. 2026-02-01T00:00:00Z/P1D)")
 
     # Alert inputs (Legacy compatibility)
@@ -514,6 +532,7 @@ def build_parser() -> argparse.ArgumentParser:
     alert_group.add_argument("--source", type=str, default="EDR", help="Alert source name [default: EDR]")
     alert_group.add_argument("--time", type=str, help="Alert timestamp ISO 8601 [default: current UTC]")
     alert_group.add_argument("-i", "--interactive", action="store_true", help="Interactive prompt mode for alert setup")
+    alert_group.add_argument("--legacy", action="store_true", help="Opt-in to legacy alert investigation loop")
 
     # Environment & Backend
     env_group = parser.add_argument_group("Environment & Backend")
@@ -522,6 +541,7 @@ def build_parser() -> argparse.ArgumentParser:
     env_group.add_argument("--splunk-url", type=str, default=os.getenv("SPLUNK_URL", "https://localhost:8089"), help="Splunk management REST API endpoint [default: https://localhost:8089]")
     env_group.add_argument("--splunk-user", type=str, default=os.getenv("SPLUNK_USER", "admin"), help="Splunk admin username [default: admin]")
     env_group.add_argument("--splunk-pass", type=str, default=os.getenv("SPLUNK_PASSWORD", "12345678"), help="Splunk password [default: 12345678]")
+    env_group.add_argument("--splunk-insecure", action="store_true", help="Disable TLS certificate verification for Splunk (lab/self-signed only)")
     env_group.add_argument("--splunk-index", type=str, default=os.getenv("SPLUNK_INDEX", "auto"), help="Target Splunk index name or 'auto' for automated discovery [default: auto]")
     env_group.add_argument("--splunk-manifest", type=str, default=None, help="Path to declarative YAML mapping manifest [default: configs/splunk_botsv2.yaml]")
     env_group.add_argument("--manifest", "-m", type=str, default="tests/fixtures/registry_cdb.yaml", help="Path to ProviderScope registry YAML")
@@ -531,6 +551,11 @@ def build_parser() -> argparse.ArgumentParser:
     # LLM & Human Loop
     loop_group = parser.add_argument_group("LLM & Human-in-the-Loop")
     loop_group.add_argument("--llm", choices=["stub", "api"], default="api", help="LLM engine: 'api' (default, external HTTP) or 'stub' (explicit offline test mode)")
+    loop_group.add_argument(
+        "--unbounded-llm",
+        action="store_true",
+        help="Diagnostic E2E mode: use high LLM ceilings so token optimisation does not block flow testing",
+    )
     loop_group.add_argument("--llm-model", type=str, default=None, help="LLM model name (e.g. gemini-2.5-flash, gpt-4o, 1/grok-4.6) [default: from env or config]")
     loop_group.add_argument("--llm-endpoint", type=str, default=None, help="LLM REST endpoint URL [default: from env or config]")
     loop_group.add_argument("--api-key", type=str, default=None, help="LLM API authorization key [default: from env]")
@@ -560,6 +585,76 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _collect_facet_bucket_options(result: Any) -> list[tuple[str, str, str, list[str]]]:
+    """Return winning-facet buckets instead of dumping every entity value."""
+    analysis = getattr(result.account, "semantic_analysis", {}) or {}
+    groups = analysis.get("candidate_groups") if isinstance(analysis, dict) else {}
+    options: list[tuple[str, str, str, list[str]]] = []
+    for variable_id, items in dict(groups or {}).items():
+        if variable_id == "subject":
+            continue
+        for item in items or ():
+            if not isinstance(item, dict):
+                continue
+            field = str(item.get("field") or "").strip()
+            value = str(item.get("value") or "").strip()
+            members = [str(member).strip() for member in (item.get("candidates") or ()) if str(member).strip()]
+            if field and value:
+                options.append((str(variable_id), field, value, members))
+    return options
+
+
+def _collect_semantic_candidate_options(result: Any, variable_types: dict[str, str]) -> list[tuple[str, str, str]]:
+    """Return unique candidate bindings, preferring canonical CandidateSets.
+
+    Older artifacts may not have materialized CandidateSets yet.  In that
+    case the auditable binding provenance is a compatibility fallback, never
+    an additional source to concatenate with the canonical set.
+    """
+    candidate_sets = getattr(result.state, "candidate_sets", {}) or getattr(result.account, "candidate_sets", {}) or {}
+    options: list[tuple[str, str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for variable_id, candidate_set in candidate_sets.items():
+        if variable_id == "subject":
+            continue
+        entity_type = getattr(candidate_set, "entity_type", None) or variable_types.get(variable_id, "entity")
+        for candidate in getattr(candidate_set, "candidates", ()):
+            value = str(getattr(candidate, "value", "")).strip()
+            key = (str(variable_id), value)
+            if not value or key in seen:
+                continue
+            seen.add(key)
+            options.append((str(variable_id), value, str(entity_type)))
+    if options:
+        return options
+
+    analysis = getattr(result.account, "semantic_analysis", {}) or {}
+    provenance = analysis.get("binding_provenance", {}) if isinstance(analysis, dict) else {}
+    for variable_id, entries in (provenance or {}).items():
+        if variable_id == "subject":
+            continue
+        entity_type = variable_types.get(str(variable_id), "entity")
+        for entry in entries or ():
+            if not isinstance(entry, dict):
+                continue
+            value = str(entry.get("value", "")).strip()
+            key = (str(variable_id), value)
+            if not value or key in seen:
+                continue
+            seen.add(key)
+            options.append((str(variable_id), value, str(entity_type)))
+    return options
+
+
+def _read_candidate_choice(prompt: str) -> str:
+    """Read an analyst candidate choice; EOF/interrupt means no selection."""
+    try:
+        return input(prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\n[*] No candidate selected; preserving STOP_NEEDS_USER_DECISION.")
+        return ""
+
+
 def run_cli(args: argparse.Namespace) -> int:
     """Execute investigation or hypothesis-driven hunt workflow based on parsed arguments."""
     if hasattr(sys.stdout, "reconfigure"):
@@ -569,8 +664,7 @@ def run_cli(args: argparse.Namespace) -> int:
         except Exception:
             pass
 
-    # Check if hypothesis threat hunting mode is triggered
-    is_hypothesis_hunt = bool(
+    has_explicit_request_kind = bool(
         getattr(args, "cve", None)
         or getattr(args, "ttp", None)
         or getattr(args, "ioc", None)
@@ -579,7 +673,10 @@ def run_cli(args: argparse.Namespace) -> int:
         or getattr(args, "query", None)
         or getattr(args, "hypothesis", None)
         or getattr(args, "hypothesis_file", None)
+        or getattr(args, "poc", None)
     )
+    is_legacy_mode = bool(getattr(args, "legacy", False) and not has_explicit_request_kind)
+    is_hypothesis_hunt = not is_legacy_mode
 
     # 0. Handle forensic subcommands / lookup flags
     subcmd = getattr(args, "subcommand", None)
@@ -613,7 +710,7 @@ def run_cli(args: argparse.Namespace) -> int:
             splunk_url=args.splunk_url,
             auth=(args.splunk_user, args.splunk_pass),
             index=args.splunk_index,
-            verify_ssl=False,
+            verify_ssl=_cli_splunk_verify_ssl(args),
         )
         try:
             indexes = adapter.list_indexes()
@@ -636,8 +733,7 @@ def run_cli(args: argparse.Namespace) -> int:
         print()
         return 0
 
-    # Check if hypothesis threat hunting mode is triggered
-    is_hypothesis_hunt = bool(args.cve or args.ttp or args.ioc or args.threat_actor or args.campaign or args.query or args.hypothesis or args.hypothesis_file)
+
 
     # 1. Pure Plan / Dry-run Mode (Offline - No telemetry provider contacted)
     if is_hypothesis_hunt and getattr(args, "plan_only", False):
@@ -688,6 +784,9 @@ def run_cli(args: argparse.Namespace) -> int:
         elif args.query:
             kind = HuntRequestKind.NL_QUESTION
             content = args.query
+        elif getattr(args, "poc", None):
+            kind = HuntRequestKind.POC
+            content = args.poc
         else:
             kind = HuntRequestKind.HYPOTHESIS
             content = args.threat_actor or args.campaign or "Adversary Campaign"
@@ -705,8 +804,7 @@ def run_cli(args: argparse.Namespace) -> int:
         render_hunt_playbook(req, objective, hypotheses, requirements, time_win, args.output)
         return 0
 
-    # Determine if hypothesis threat hunting mode is triggered
-    is_hypothesis_hunt = bool(args.cve or args.ttp or args.ioc or args.threat_actor or args.campaign or args.query or args.hypothesis or args.hypothesis_file)
+
 
     # Initialize Telemetry Provider Adapter with Automated Environment Audit
     selected_provider = getattr(args, "provider", "auto")
@@ -718,7 +816,7 @@ def run_cli(args: argparse.Namespace) -> int:
             splunk_alive = SplunkLiveAdapter.is_available(
                 splunk_url=args.splunk_url,
                 auth=(args.splunk_user, args.splunk_pass),
-                verify_ssl=False,
+                verify_ssl=_cli_splunk_verify_ssl(args),
                 timeout=2,
             )
             if splunk_alive:
@@ -747,7 +845,7 @@ def run_cli(args: argparse.Namespace) -> int:
                 auto_discovered_index_info = SplunkLiveAdapter.auto_select_index(
                     splunk_url=args.splunk_url,
                     auth=(args.splunk_user, args.splunk_pass),
-                    verify_ssl=False,
+                    verify_ssl=_cli_splunk_verify_ssl(args),
                 )
                 selected_index = auto_discovered_index_info["name"]
             except Exception as auto_err:
@@ -772,7 +870,7 @@ def run_cli(args: argparse.Namespace) -> int:
             auth=(args.splunk_user, args.splunk_pass),
             index=selected_index,
             manifest_path=manifest_file,
-            verify_ssl=False,
+            verify_ssl=_cli_splunk_verify_ssl(args),
         )
         try:
             adapter.validate_index()
@@ -841,6 +939,29 @@ def run_cli(args: argparse.Namespace) -> int:
         elif args.query:
             kind = HuntRequestKind.NL_QUESTION
             content = args.query
+        elif getattr(args, "poc", None):
+            kind = HuntRequestKind.POC
+            content = args.poc
+        elif getattr(args, "alert", None):
+            alert = parse_alert_from_file_or_content(args.alert)
+            kind = HuntRequestKind.ALERT
+            alert_desc = getattr(alert, "raw", None) or getattr(alert, "source", None) or "Observed activity"
+            content = f"Investigate alert {alert.id}: {alert_desc}"
+            for f_key, f_val in (alert.fields or {}).items():
+                if not f_val or str(f_key).casefold() == "timestamp":
+                    continue
+                k_norm = str(f_key).casefold()
+                if k_norm in ("host", "hostname", "computer_name") and not any(isinstance(e, Host) and e.name == str(f_val) for e in entities):
+                    entities.append(Host(name=str(f_val)))
+                elif k_norm in ("user", "username", "account") and not any(isinstance(e, Account) and e.username == str(f_val) for e in entities):
+                    entities.append(Account(username=str(f_val)))
+                elif k_norm in ("ip", "ip_address", "src_ip", "dest_ip") and not any(isinstance(e, IPAddress) and e.address == str(f_val) for e in entities):
+                    entities.append(IPAddress(address=str(f_val)))
+                elif k_norm in ("domain", "site") and not any(isinstance(e, Domain) and e.name == str(f_val) for e in entities):
+                    entities.append(Domain(name=str(f_val)))
+        elif entities:
+            kind = HuntRequestKind.HYPOTHESIS
+            content = f"Investigate observed entities: {', '.join(getattr(e, 'name', getattr(e, 'username', getattr(e, 'address', str(e)))) for e in entities)}"
         else:
             kind = HuntRequestKind.HYPOTHESIS
             content = args.threat_actor or args.campaign or "Adversary Campaign"
@@ -864,7 +985,13 @@ def run_cli(args: argparse.Namespace) -> int:
                     api_key=args.api_key or config.api_key,
                 )
             llm_provider = ApiLLMProvider(config)
-            policy = LLMBudgetPolicy(model_name=config.model)
+            policy = (
+                LLMBudgetPolicy.unbounded_for_testing(model_name=config.model)
+                if args.unbounded_llm
+                else LLMBudgetPolicy(model_name=config.model)
+            )
+            if args.unbounded_llm:
+                print("[!] [AI SUB-SYSTEM] Diagnostic unbounded LLM budget enabled; optimise token usage after E2E validation.")
             llm_tracker = LLMUsageTracker(policy=policy)
             compiler_caller = create_llm_caller(llm_provider, llm_tracker, "compiler")
             source_profiler_caller = create_llm_caller(llm_provider, llm_tracker, "source_profiler")
@@ -1016,13 +1143,21 @@ def run_cli(args: argparse.Namespace) -> int:
             if gate_type == "CONFIRM_DISCOVERED_TARGETS":
                 hosts = data.get("hosts", [])
                 print(f"\n[?] [HUMAN DECISION GATE] Discovered candidate target(s): {hosts}")
-                ans = input("[?] Authorize targeted deep-dive investigation into these hosts? [Y/n]: ").strip().lower()
+                try:
+                    ans = input("[?] Authorize targeted deep-dive investigation into these hosts? [Y/n]: ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    print("\n[*] No authorization received; preserving the bounded stop.")
+                    return False
                 return ans in {"", "y", "yes"}
             elif gate_type == "AUTHORIZE_FINAL_REPORT":
                 decision = data.get("decision", "")
                 cards_count = data.get("cards_count", 0)
                 print(f"\n[?] [HUMAN DECISION GATE] Investigation concluded with disposition `{decision}` ({cards_count} evidence cards).")
-                ans = input("[?] Confirm disposition and authorize final report emission? [Y/n]: ").strip().lower()
+                try:
+                    ans = input("[?] Confirm disposition and authorize final report emission? [Y/n]: ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    print("\n[*] No authorization received; preserving the bounded stop.")
+                    return False
                 return ans in {"", "y", "yes"}
             return True
 
@@ -1055,58 +1190,93 @@ def run_cli(args: argparse.Namespace) -> int:
         # from an entity's name.  ``--auto-confirm`` confirms report gates but
         # deliberately does not select an ambiguous entity.
         semantic_analysis = result.account.semantic_analysis or {}
-        if result.account.stopping_decision == StoppingDecision.STOP_NEEDS_USER_DECISION:
+        can_prompt_for_selection = bool(getattr(sys.stdin, "isatty", lambda: False)())
+        decision_rounds = 0
+        while (
+            result.account.stopping_decision in (
+                StoppingDecision.STOP_NEEDS_USER_DECISION,
+                StoppingDecision.STOP_NEEDS_CLARIFICATION,
+            )
+            and can_prompt_for_selection
+            and decision_rounds < 8
+        ):
+            decision_rounds += 1
+            semantic_analysis = result.account.semantic_analysis or {}
             graph = result.account.semantic_goal_graph
             variable_types = {
                 variable.id: variable.entity_type
                 for variable in getattr(graph, "variables", ())
             }
-            candidate_options: list[tuple[str, str, str]] = []
-            for variable_id, provenance in (semantic_analysis.get("binding_provenance", {}) or {}).items():
-                if variable_id == "subject":
-                    continue
-                for item in provenance or ():
-                    if str(item.get("status", "")).upper() == "CANDIDATE":
-                        candidate_options.append((variable_id, str(item.get("value", "")), variable_types.get(variable_id, "entity")))
-            # Candidate selection is a different gate from final report
-            # sign-off.  It must remain interactive even when
-            # ``--auto-confirm`` is enabled; auto-confirm may authorize a
-            # disposition but can never authorize choosing a host/account by
-            # result ordering.  In a pipe/CI run there is no safe choice, so
-            # retain STOP_NEEDS_USER_DECISION and exit without downstream
-            # queries.
-            can_prompt_for_selection = bool(
-                getattr(sys.stdin, "isatty", lambda: False)()
-            )
-            if candidate_options and can_prompt_for_selection:
+            facet_options = _collect_facet_bucket_options(result)
+            candidate_options = _collect_semantic_candidate_options(result, variable_types)
+
+            clarification_questions = list(semantic_analysis.get("clarification_questions", []) or [])
+            if graph and hasattr(graph, "validation_diagnostics"):
+                for diag in graph.validation_diagnostics:
+                    if "conflicting equality" in str(diag).lower() and str(diag) not in clarification_questions:
+                        clarification_questions.append(str(diag))
+            if clarification_questions and decision_rounds == 1:
+                print("\n[?] [SEMANTIC CLARIFICATION GATE] Clarification required:")
+                for q in clarification_questions:
+                    print(f"    - {q}")
+            if semantic_analysis.get("retrieval_incomplete") or semantic_analysis.get("continuations"):
+                print("\n[*] Retrieval incomplete; groups are from the retrieved bag only.")
+
+            resume_kwargs: dict[str, Any] = {
+                "adapter": adapter,
+                "time_window": time_win,
+                "step_callback": cli_step_logger,
+                "analyst_confirm_callback": cli_analyst_confirm,
+            }
+            selected = False
+            if facet_options:
+                print("\n[?] [SEMANTIC DECISION GATE] Pick a group (not every entity):")
+                for index, (variable_id, field, value, members) in enumerate(facet_options, start=1):
+                    count = len(members)
+                    extra = ""
+                    if count <= 3:
+                        extra = " [" + ", ".join(members) + "]"
+                    elif members:
+                        extra = f" e.g. {members[0]} (+{count - 1} more)"
+                    print(f"    {index}. {variable_id} {field}={value} ({count}){extra}")
+                choice = _read_candidate_choice("[?] Select one group number to continue, or press Enter to stop: ")
+                if choice.isdigit() and 1 <= int(choice) <= len(facet_options):
+                    variable_id, field, value, members = facet_options[int(choice) - 1]
+                    print(f"[*] [SEMANTIC DECISION] User selected {variable_id} {field}={value}")
+                    if len(members) == 1:
+                        resume_kwargs["initial_bindings"] = {variable_id: members[0]}
+                    else:
+                        resume_kwargs["facet_constraints"] = {variable_id: (field, value)}
+                    selected = True
+            elif candidate_options:
                 print("\n[?] [SEMANTIC DECISION GATE] Candidate binding is ambiguous:")
-                for index, (variable_id, value, entity_type) in enumerate(candidate_options, start=1):
+                shown = candidate_options[:12]
+                for index, (variable_id, value, entity_type) in enumerate(shown, start=1):
                     print(f"    {index}. {variable_id} ({entity_type}) = {value}")
-                choice = input("[?] Select one candidate number to continue, or press Enter to stop: ").strip()
-                if choice.isdigit() and 1 <= int(choice) <= len(candidate_options):
-                    variable_id, value, _ = candidate_options[int(choice) - 1]
+                if len(candidate_options) > 12:
+                    print(f"    … {len(candidate_options) - 12} more not listed")
+                choice = _read_candidate_choice("[?] Select one candidate number to continue, or press Enter to stop: ")
+                if choice.isdigit() and 1 <= int(choice) <= len(shown):
+                    variable_id, value, _ = shown[int(choice) - 1]
                     print(f"[*] [SEMANTIC DECISION] User selected {variable_id}={value}; resuming graph execution...")
-                    try:
-                        result = engine.execute_hunt(
-                            req,
-                            adapter=adapter,
-                            time_window=time_win,
-                            step_callback=cli_step_logger,
-                            analyst_confirm_callback=cli_analyst_confirm,
-                            initial_bindings={variable_id: value},
-                        )
-                    except (LLMTimeoutError, TimeoutError) as te:
-                        print(f"\n[-] Error while resuming after analyst selection: LLM API request timed out: {te}", file=sys.stderr)
-                        write_hunt_abort_artifact(req, args.output, f"LLM API timeout while resuming: {te}")
-                        return 1
-                    except PermissionError as pe:
-                        print(f"\n[-] Investigation halted while resuming: {pe}", file=sys.stderr)
-                        write_hunt_abort_artifact(req, args.output, f"Permission error while resuming: {pe}")
-                        return 2
-                    except Exception as e:
-                        print(f"\n[-] Threat hunt resume failed: {e}", file=sys.stderr)
-                        write_hunt_abort_artifact(req, args.output, f"Resume execution error: {e}")
-                        return 1
+                    resume_kwargs["initial_bindings"] = {variable_id: value}
+                    selected = True
+            if not selected:
+                break
+            try:
+                result = engine.resume_hunt(result.state, **resume_kwargs)
+            except (LLMTimeoutError, TimeoutError) as te:
+                print(f"\n[-] Error while resuming after analyst selection: LLM API request timed out: {te}", file=sys.stderr)
+                write_hunt_abort_artifact(req, args.output, f"LLM API timeout while resuming: {te}")
+                return 1
+            except PermissionError as pe:
+                print(f"\n[-] Investigation halted while resuming: {pe}", file=sys.stderr)
+                write_hunt_abort_artifact(req, args.output, f"Permission error while resuming: {pe}")
+                return 2
+            except Exception as e:
+                print(f"\n[-] Threat hunt resume failed: {e}", file=sys.stderr)
+                write_hunt_abort_artifact(req, args.output, f"Resume execution error: {e}")
+                return 1
 
         if args.output:
             out_file = Path(args.output)
@@ -1192,6 +1362,7 @@ def run_cli(args: argparse.Namespace) -> int:
 
 
 def main() -> None:
+    _apply_dotenv_setdefault()
     parser = build_parser()
     args = parser.parse_args()
     sys.exit(run_cli(args))

@@ -1,0 +1,49 @@
+[
+  {
+    "id": "card-a40307bc17aa",
+    "summary": "Process: /usr/bin/python3 Host: WEB-IVANTI-01",
+    "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
+    "fact_type": "process_execution",
+    "count": 1,
+    "confidence": "MEDIUM",
+    "hypotheses": [],
+    "requirements": [],
+    "query_ids": [
+      "logical-goal-graph-route-e2e-step-1"
+    ],
+    "replay": {
+      "artifact": "observations.jsonl",
+      "query_ids": [
+        "logical-goal-graph-route-e2e-step-1"
+      ],
+      "command": "python -m hunting.cli show-observation --observation-id obs-logical-goal-graph-route-e2e-step-1-0"
+    },
+    "entity_summary": {
+      "hosts": [
+        "WEB-IVANTI-01"
+      ],
+      "users": [
+        "root"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2026-02-01T10:00:00Z",
+      "latest": "2026-02-01T10:00:00Z",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "python -c x"
+      ],
+      "images": [
+        "/usr/bin/python3"
+      ],
+      "process_names": [
+        "/usr/bin/python3"
+      ]
+    },
+    "representative_observation_ids": [
+      "obs-logical-goal-graph-route-e2e-step-1-0"
+    ]
+  }
+]

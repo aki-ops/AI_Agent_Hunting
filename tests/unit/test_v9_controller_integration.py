@@ -331,20 +331,34 @@ def test_outcome_verifier_factual_and_hypothesis() -> None:
     assert not res_ambiguous.verified
     assert res_ambiguous.status == "AMBIGUOUS"
 
-    # 3. FactualAnswerContract: Verified single slot with citation
-    class MockObs:
-        id = "obs-101"
-
+    # 3. FactualAnswerContract: Verified single slot with verified ProofResult
+    pr_ok = ProofResult(
+        contract_id="contract-version",
+        verified=True,
+        subject_binding="macbook-1",
+        object_binding="12.0.1",
+        citations=("obs-101",),
+    )
     res_ok = OutcomeVerifier.verify(
         contract=contract_factual,
         bound_variables={"host": "macbook-1", "version": "12.0.1"},
-        observations=[MockObs()],
+        proof_results=[pr_ok],
         coverage_complete=True,
     )
     assert res_ok.verified
     assert res_ok.status == "ANSWERED"
     assert res_ok.slot_values["version"] == "12.0.1"
     assert "obs-101" in res_ok.citations
+
+    # 3b. Counterexample 2: Invented value without ProofResult/CandidateSet is UNPROVEN
+    res_invented = OutcomeVerifier.verify(
+        contract=contract_factual,
+        bound_variables={"host": "macbook-1", "version": "invented.pptx"},
+        coverage_complete=True,
+    )
+    assert not res_invented.verified
+    assert res_invented.status == "UNPROVEN"
+    assert any("not verified" in d for d in res_invented.diagnostics)
 
     # 4. HypothesisVerdictContract: Support obligations check
     contract_hyp = HypothesisVerdictContract(

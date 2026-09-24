@@ -1,0 +1,135 @@
+{
+  "analysis": {
+    "source_profile": {
+      "status": "NO_LLM_CALLER",
+      "readiness": [
+        {
+          "goal_id": "rel-1",
+          "relation": "process_execution",
+          "status": "CAPABILITY_GAP",
+          "execution_complete": false,
+          "proof_complete": false,
+          "route_exhausted": false,
+          "readiness": "CAPABILITY_GAP",
+          "attempts": [],
+          "proof_gaps": [],
+          "capability_gaps": [
+            "no_typed_reachable_route"
+          ],
+          "terminal_cause": null
+        }
+      ],
+      "profiling_goal_ids": [
+        "rel-1"
+      ],
+      "retrieval": [
+        {
+          "relation": "process_execution",
+          "query_terms": [
+            "execution",
+            "host",
+            "process"
+          ],
+          "profile_count": 1,
+          "candidate_count": 1,
+          "candidates": [
+            {
+              "relation": "process_execution",
+              "source_id": "sensor_provider:source:default",
+              "score": 0.0,
+              "matched_terms": [],
+              "matched_field_ids": [],
+              "rank": 1,
+              "low_confidence": true
+            }
+          ],
+          "selected_source_ids": [
+            "sensor_provider:source:default"
+          ],
+          "source_coverage": {
+            "discovered": 1,
+            "scheduled": 1,
+            "complete": true
+          },
+          "field_coverage": {
+            "discovered": 1,
+            "scheduled": 1,
+            "complete": true
+          },
+          "batch_count": 1,
+          "max_profiles_per_batch": 8,
+          "max_fields_per_source_per_batch": 48,
+          "ordering_only": true
+        }
+      ],
+      "coverage_manifests": {
+        "process_execution": {
+          "total_sources": 1,
+          "considered_source_ids": [
+            "sensor_provider:source:default"
+          ],
+          "examined_source_ids": [
+            "sensor_provider:source:default"
+          ],
+          "rejected_source_ids": {},
+          "unexamined_source_ids": [],
+          "stage_audit": [
+            {
+              "stage": "F0_CERTIFIED",
+              "discovered_sources": [],
+              "count": 0
+            },
+            {
+              "stage": "F1_METADATA",
+              "discovered_sources": [],
+              "count": 0
+            },
+            {
+              "stage": "F2_ADJACENT",
+              "discovered_sources": [],
+              "count": 0
+            },
+            {
+              "stage": "F3_BOUNDED_PROFILING",
+              "discovered_sources": [
+                "sensor_provider:source:default"
+              ],
+              "count": 1
+            }
+          ]
+        }
+      },
+      "census_profile_discovery": {},
+      "proposals": [],
+      "rejected": [],
+      "relation_calls": [],
+      "runtime_capabilities": [],
+      "runtime_operation_ids": []
+    },
+    "compiler_trace": {
+      "prompt_hash": "156b4cf7cd2da7cf",
+      "response_length": 705,
+      "response_text": "{\"id\": \"graph-mock\", \"objective\": \"Test objective\", \"claims\": [{\"id\": \"claim-1\", \"fact_type\": \"process_execution\", \"target_entity_type\": \"host\", \"required_roles\": [\"host\"], \"observation_requirements\": [{\"id\": \"req-1\", \"fact_kind\": \"process_execution\", \"required_roles\": [\"host\"], \"field_roles\": {\"host\": \"host\"}}]}], \"variables\": [{\"id\": \"host\", \"entity_type\": \"host\", \"value\": \"host-1\"}], \"relations\": [{\"id\": \"rel-1\", \"subject\": \"host\", \"relation\": \"process_execution\", \"object\": \"host\", \"required\": true}], \"qualifiers\": [], \"answers\": [{\"variable_id\": \"host\", \"answer_type\": \"value\", \"required\": true}], \"assumptions\": [], \"uncertainties\": [], \"forbidden_inferences\": [], \"clarification_triggers\": []}",
+      "validation_result": "VALID",
+      "output_kind": "semantic_goal_graph"
+    }
+  },
+  "assessments": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "rel-1",
+      "relation": "process_execution",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [],
+      "capability_gaps": [
+        "no_typed_reachable_route"
+      ],
+      "terminal_cause": null
+    }
+  ]
+}

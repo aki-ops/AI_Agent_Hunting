@@ -1,0 +1,295 @@
+{
+  "analysis": {
+    "compiler_trace": {},
+    "goal_verdicts": [
+      {
+        "goal_id": "req-CVE-2024-21887-exploit",
+        "relation": "spawned",
+        "status": "SUPPORTED",
+        "query_ids": [
+          "logical-goal-graph-flow-route-4-step-1"
+        ],
+        "proof_method_id": "method-req-CVE-2024-21887-exploit-2",
+        "unverified_restrictions": [],
+        "proof_results": [
+          {
+            "contract_id": "proof-process-spawned-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "evaluate_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": true,
+            "verdict": "PROVEN",
+            "status": "VERIFIED",
+            "reason_codes": [
+              "contract_requirements_satisfied"
+            ],
+            "subject_binding": "HOST-1",
+            "object_binding": "7",
+            "bindings": {
+              "endpoint": "HOST-1",
+              "process": "7",
+              "proved_object_0": "7",
+              "proved_subject_0": "HOST-1"
+            },
+            "satisfied_obligations": [
+              "endpoint",
+              "process"
+            ],
+            "missing_obligations": [],
+            "satisfied_constraints": [
+              "cmdline=python"
+            ],
+            "unsatisfied_constraints": [],
+            "citations": [
+              "obs-logical-goal-graph-flow-route-4-step-1-0"
+            ],
+            "cited_fields": {
+              "endpoint": "host",
+              "process": "pid"
+            },
+            "completeness_satisfied": true,
+            "coverage_satisfied": true,
+            "limitations": [],
+            "diagnostic": "Proof established for relation 'spawned' via contract 'proof-process-spawned-v1'."
+          }
+        ]
+      },
+      {
+        "goal_id": "req-CVE-2024-21887-post",
+        "relation": "wrote",
+        "status": "INCONCLUSIVE",
+        "query_ids": [
+          "logical-goal-graph-flow-route-4-step-2"
+        ],
+        "proof_method_id": "method-req-CVE-2024-21887-post-1",
+        "unverified_restrictions": [],
+        "proof_results": [
+          {
+            "contract_id": "proof-file-wrote-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "generic_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": false,
+            "verdict": "PROOF_GAP",
+            "status": "PROOF_GAP",
+            "reason_codes": [
+              "no_observations_or_rows"
+            ],
+            "subject_binding": null,
+            "object_binding": null,
+            "bindings": {},
+            "satisfied_obligations": [],
+            "missing_obligations": [
+              "observed_events"
+            ],
+            "satisfied_constraints": [],
+            "unsatisfied_constraints": [],
+            "citations": [],
+            "cited_fields": {},
+            "completeness_satisfied": false,
+            "coverage_satisfied": false,
+            "limitations": [],
+            "diagnostic": "Zero events or rows provided to verify proof contract."
+          }
+        ]
+      }
+    ],
+    "proof_state": {
+      "req-CVE-2024-21887-exploit": "SUPPORTED",
+      "req-CVE-2024-21887-post": "INCONCLUSIVE"
+    },
+    "executed_steps": [
+      "step-1",
+      "step-2"
+    ],
+    "unresolved_steps": [],
+    "unresolved_goals": [],
+    "unresolved_reasons": {},
+    "candidate_input_warnings": {},
+    "needs_user_decision": false,
+    "binding_provenance": {
+      "var_endpoint": [
+        {
+          "value": "HOST-1",
+          "source": "user_selection",
+          "query_id": "",
+          "status": "VERIFIED"
+        }
+      ],
+      "var_exploit_proc": [
+        {
+          "value": "7",
+          "source": "step-1",
+          "query_id": "logical-goal-graph-flow-route-4-step-1",
+          "status": "VERIFIED"
+        }
+      ]
+    },
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "find_process_from_endpoint",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-flow-route-4-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 1,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      },
+      {
+        "step_id": "step-2",
+        "operation_id": "find_file_change_from_process",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-flow-route-4-step-2",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 0,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuations": {},
+    "unverified_restrictions": {},
+    "binding_events": [],
+    "route_assessments": [
+      {
+        "goal_id": "req-CVE-2024-21887-exploit",
+        "relation": "spawned",
+        "status": "VERIFIED",
+        "execution_complete": true,
+        "proof_complete": true,
+        "route_exhausted": false,
+        "readiness": "PROOF_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-1",
+            "goal_id": "req-CVE-2024-21887-exploit",
+            "operation_id": "find_process_from_endpoint",
+            "source_id": "cdb_security",
+            "schema_fingerprint": "",
+            "stage_id": "narrow",
+            "query_id": "logical-goal-graph-flow-route-4-step-1",
+            "result_complete": true,
+            "row_count": 1,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('find_process_from_endpoint', 'cdb_security', (('subject', ('HOST-1',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+            "alternatives_considered": [
+              "cdb_process_search"
+            ],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [],
+        "capability_gaps": [],
+        "terminal_cause": null
+      },
+      {
+        "goal_id": "req-CVE-2024-21887-post",
+        "relation": "wrote",
+        "status": "ATTEMPTED_EMPTY",
+        "execution_complete": true,
+        "proof_complete": false,
+        "route_exhausted": true,
+        "readiness": "RETRIEVAL_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-2",
+            "goal_id": "req-CVE-2024-21887-post",
+            "operation_id": "find_file_change_from_process",
+            "source_id": "cdb_security",
+            "schema_fingerprint": "",
+            "stage_id": "narrow",
+            "query_id": "logical-goal-graph-flow-route-4-step-2",
+            "result_complete": true,
+            "row_count": 0,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('find_file_change_from_process', 'cdb_security', (('subject', ('7',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+            "alternatives_considered": [],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [
+          "relation_or_constraint_proof_missing"
+        ],
+        "capability_gaps": [],
+        "terminal_cause": null
+      }
+    ]
+  },
+  "assessments": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "req-CVE-2024-21887-exploit",
+      "relation": "spawned",
+      "status": "VERIFIED",
+      "execution_complete": true,
+      "proof_complete": true,
+      "route_exhausted": false,
+      "readiness": "PROOF_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-1",
+          "goal_id": "req-CVE-2024-21887-exploit",
+          "operation_id": "find_process_from_endpoint",
+          "source_id": "cdb_security",
+          "schema_fingerprint": "",
+          "stage_id": "narrow",
+          "query_id": "logical-goal-graph-flow-route-4-step-1",
+          "result_complete": true,
+          "row_count": 1,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('find_process_from_endpoint', 'cdb_security', (('subject', ('HOST-1',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+          "alternatives_considered": [
+            "cdb_process_search"
+          ],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [],
+      "capability_gaps": [],
+      "terminal_cause": null
+    },
+    {
+      "goal_id": "req-CVE-2024-21887-post",
+      "relation": "wrote",
+      "status": "ATTEMPTED_EMPTY",
+      "execution_complete": true,
+      "proof_complete": false,
+      "route_exhausted": true,
+      "readiness": "RETRIEVAL_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-2",
+          "goal_id": "req-CVE-2024-21887-post",
+          "operation_id": "find_file_change_from_process",
+          "source_id": "cdb_security",
+          "schema_fingerprint": "",
+          "stage_id": "narrow",
+          "query_id": "logical-goal-graph-flow-route-4-step-2",
+          "result_complete": true,
+          "row_count": 0,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('find_file_change_from_process', 'cdb_security', (('subject', ('7',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+          "alternatives_considered": [],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [
+        "relation_or_constraint_proof_missing"
+      ],
+      "capability_gaps": [],
+      "terminal_cause": null
+    }
+  ]
+}

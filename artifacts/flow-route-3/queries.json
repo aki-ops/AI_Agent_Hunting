@@ -1,0 +1,127 @@
+[
+  {
+    "query_id": "logical-goal-graph-flow-route-3-step-1",
+    "requirement_id": "req-CVE-2024-21887-exploit",
+    "hypothesis_ids": [
+      "hypo-CVE-2024-21887-exploited"
+    ],
+    "semantic_intent": "process_ancestry",
+    "purpose": "Evidence of exploitation attempts targeting CVE-2024-21887: POST request containing command injection tokens in /api/v1/cav/client/status/path parameter; Execution of python/sh subprocesses by web server daemons",
+    "entity_binding": "subject=HOST-1",
+    "binding_provenance": {
+      "subject": {
+        "variable_id": "var_endpoint",
+        "provenance": "logical_plan",
+        "trust_class": "runtime_binding_required"
+      }
+    },
+    "expected_fields": [
+      "host",
+      "pid",
+      "ppid",
+      "image",
+      "cmdline"
+    ],
+    "retrieval_stage": "narrow",
+    "removed_retrieval_keys": [],
+    "provider": "cdb",
+    "provider_id": "cdb",
+    "native_language": "sql",
+    "native_query": "SELECT * FROM events WHERE timestamp >= ? AND timestamp <= ? AND host = ? AND cmdline LIKE ? AND (pid IS NOT NULL OR image IS NOT NULL OR cmdline IS NOT NULL) ORDER BY timestamp ASC LIMIT ? OFFSET ?",
+    "rows_count": 0,
+    "raw_count": null,
+    "observed_fields": [],
+    "sample_rows": [],
+    "complete": true,
+    "executed_ok": true,
+    "diagnostic": null,
+    "truncation_reason": null,
+    "result_summary": "0 rows returned; complete=True",
+    "completeness_contract": "provider-declared",
+    "is_targeted": true,
+    "operation_id": "find_process_from_endpoint",
+    "scope_id": "cdb_security",
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "find_process_from_endpoint",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-flow-route-3-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 0,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuation": {}
+  },
+  {
+    "query_id": "logical-goal-graph-flow-route-3-step-1-alternative-1",
+    "requirement_id": "req-CVE-2024-21887-exploit",
+    "hypothesis_ids": [
+      "hypo-CVE-2024-21887-exploited"
+    ],
+    "semantic_intent": "process_ancestry",
+    "purpose": "Evidence of exploitation attempts targeting CVE-2024-21887: POST request containing command injection tokens in /api/v1/cav/client/status/path parameter; Execution of python/sh subprocesses by web server daemons",
+    "entity_binding": "subject=HOST-1",
+    "binding_provenance": {
+      "subject": {
+        "variable_id": "var_endpoint",
+        "provenance": "logical_plan",
+        "trust_class": "runtime_binding_required"
+      }
+    },
+    "expected_fields": [
+      "host",
+      "user",
+      "pid",
+      "ppid",
+      "cmdline",
+      "image"
+    ],
+    "retrieval_stage": "narrow",
+    "removed_retrieval_keys": [],
+    "provider": "cdb",
+    "provider_id": "cdb",
+    "native_language": "sql",
+    "native_query": "SELECT * FROM events WHERE timestamp >= ? AND timestamp <= ? AND host = ? AND cmdline LIKE ? AND (pid IS NOT NULL OR image IS NOT NULL OR cmdline IS NOT NULL) ORDER BY timestamp ASC LIMIT ? OFFSET ?",
+    "rows_count": 0,
+    "raw_count": null,
+    "observed_fields": [],
+    "sample_rows": [],
+    "complete": true,
+    "executed_ok": true,
+    "diagnostic": null,
+    "truncation_reason": null,
+    "result_summary": "0 rows returned; complete=True",
+    "completeness_contract": "provider-declared",
+    "is_targeted": true,
+    "operation_id": "cdb_process_search",
+    "scope_id": "cdb_security",
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "cdb_process_search",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-flow-route-3-step-1-alternative-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 0,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuation": {}
+  }
+]

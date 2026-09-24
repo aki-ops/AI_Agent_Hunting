@@ -49,9 +49,9 @@ Status legend:
 - [x] Ensure a simple lookup may remain one atomic goal.
 - [x] Prevent operation IDs, source names, field names and scenario keywords from defining graph shape.
 - [x] Add tests where changing AND/OR/GATE changes the executed plan.
-- [ ] Match unresolved goals with a `CapabilityQuery` (types, constraint keys, relation text), not exact `guaranteed_relations` equality.
-- [ ] F1 dense retrieve of operations/sources/fields with no LLM; C2 at most one call on that shortlist.
-- [ ] Admission gate before execute; C2 deferred must not set `examined=100` or `STOP_UNSUPPORTED`.
+- [x] Match unresolved goals with a `CapabilityQuery` (types, constraint keys, relation text), not exact `guaranteed_relations` equality.
+- [x] F1 dense retrieve of operations/sources/fields with no LLM; C2 at most one call on that shortlist.
+- [x] Admission gate before execute; C2 deferred must not set `examined=100` or `STOP_UNSUPPORTED`.
 
 ## Phase 4 — Candidate binding and human control
 
@@ -122,26 +122,26 @@ Status legend:
 
 ## Phase 10 — Executable evaluation
 
-- [x] Candidate prediction comes from actual pipeline execution when a provider/fixture is supplied, but some layer metrics still need independent replay-derived labels; synthetic ablations are now rejected instead of scored.
+- [x] Candidate prediction comes from actual pipeline execution when a provider/fixture is supplied. Layer metrics include request→graph, query, proof, binding, outcome, abstention, cost and `wrong_path` when the answer is correct without an admissible verified proof.
 - [x] Keep expected graphs, answers, forbidden inferences and evidence labels independent of candidate code.
-- [~] Execute B0, B1 and v9 candidate baselines with independent replay fixtures rather than assign fixed scores. A reviewed S01 CDB B0/B1 slice is executable; the full corpus is not yet configured in the current runner.
+- [~] Execute B0, B1 and v9 candidate baselines with independent replay fixtures rather than assign fixed scores. A reviewed S01 CDB B0/B1/candidate matched envelope is executable; the full corpus is not yet configured in the current runner.
 - [x] Evaluate factual, hypothesis and population OutcomeContracts.
 - [x] Evaluate semantic graph accuracy separately from evidence/proof accuracy using execution artifacts.
 - [x] Run mock-provider tests without provider/query optimization confounds.
-- [ ] Run non-skipped BOTS v2 Splunk acceptance tests when the live provider is reachable.
+- [ ] Run non-skipped BOTS v2 Splunk acceptance tests when the live provider is reachable. Probe 2026-09-21: `https://localhost:8089` connection refused; `SPLUNK_*` unset.
 - [x] Remove or archive the stale BOTS v1 live test.
-- [x] Measure answer quality, abstention risk/coverage, wrong-binding rate, query/runtime cost and LLM cost from real run accounts.
+- [x] Measure answer quality, abstention, wrong-binding, proof-gap, query/runtime cost and LLM cost from real run accounts. Analyst-effort-saved is not invented.
 
-Current implementation gate: reasoning contracts and the semantic default path exist, but open-vocabulary capability matching (Phase 3 F0–F2) is not done. Exact relation-name misses plus deferred C2 still emit `STOP_UNSUPPORTED` with zero queries. That is not a completed capability census.
+Current implementation gate: Phases 1–7 production contracts for M1–M5/M7 are on the default path. Gate M6 remains open (no UI/pilot). Gate M8 remains open. Live BOTS v2 is not claimed as readiness.
 
 ## Status correction — 2026-09-20
 
 The broad completion claims in this legacy checklist are superseded by
 `10-THREAT-HUNTING-EVOLUTION-CHECKLIST.md`. The current implementation has a
-goal-scoped route/mode slice and one executable reviewed S01 CDB baseline, but
-does not yet have full B0/B1 corpus coverage or non-skipped live BOTS v2
-evidence. The remaining M2–M8 gates therefore stay open until execution
-artifacts exist.
+goal-scoped F0/F1 route/mode slice on the default path and one executable
+reviewed S01 CDB baseline, but does not yet have full B0/B1 corpus coverage
+or non-skipped live BOTS v2 evidence. The remaining M2–M8 gates therefore
+stay open until execution artifacts exist.
 
 ## Definition of done
 

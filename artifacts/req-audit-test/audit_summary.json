@@ -1,0 +1,39 @@
+{
+  "hunt_id": "req-audit-test",
+  "outcome": "UNKNOWN",
+  "stopping_decision": "STOP_NEEDS_CLARIFICATION",
+  "answer": {
+    "status": "INCONCLUSIVE",
+    "answer_type": "value",
+    "card_ids": [],
+    "required_fields": [],
+    "available_fields": [],
+    "missing_fields": [],
+    "artifact_detected": false,
+    "claim": "",
+    "citations": [],
+    "citation_text": ""
+  },
+  "llm_usage": {
+    "model": "stub",
+    "max_calls_budget": 5,
+    "calls_made": 0,
+    "is_exhausted": false,
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "total_tokens": 0,
+    "estimated_cost_usd": 0,
+    "token_accounting_mode": "ESTIMATED",
+    "is_estimate": true,
+    "calls": []
+  },
+  "total_observations": 0,
+  "total_cards": 0,
+  "total_queries": 0,
+  "semantic_graph_id": null,
+  "proof_plan_id": null,
+  "semantic_analysis": {},
+  "source_profile_audit": {},
+  "runtime_capabilities": [],
+  "semantic_route_assessments": []
+}

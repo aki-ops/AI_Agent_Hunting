@@ -1,0 +1,12 @@
+{
+  "id": "logical-graph-mock",
+  "goal_graph_id": "graph-mock",
+  "provider_id": "sensor_provider",
+  "steps": [],
+  "unresolved_goal_ids": [
+    "rel-1"
+  ],
+  "proof_methods": [],
+  "selected_method_ids": {},
+  "graph_revision": "G0"
+}

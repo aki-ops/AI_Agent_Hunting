@@ -1,5 +1,6 @@
 {
   "analysis": {
+    "package_versions": [],
     "source_profile": {
       "status": "NO_LLM_CALLER",
       "readiness": [
@@ -25,48 +26,80 @@
       "retrieval": [
         {
           "relation": "observed_process",
-          "query_terms": [
-            "asks",
-            "entity",
-            "observed",
-            "process",
-            "request"
-          ],
-          "profile_count": 1,
-          "candidate_count": 1,
-          "candidates": [
+          "goal_id": "claim-process",
+          "stage": "F1_METADATA",
+          "query": {
+            "goal_id": "claim-process",
+            "subject_type": "entity",
+            "object_type": "process",
+            "answer_role": "",
+            "constraint_keys": [],
+            "relation_text": "observed_process",
+            "canonical_relation": null,
+            "proposed_unregistered": true,
+            "constraint_hints": [],
+            "qualifier_hints": [],
+            "query_key": [
+              "entity",
+              "process",
+              "",
+              [],
+              null
+            ]
+          },
+          "k": 8,
+          "hits": [
             {
-              "relation": "observed_process",
               "source_id": "cdb:source:events",
-              "score": 0.0,
-              "matched_terms": [],
-              "matched_field_ids": [],
+              "score": 18.693569,
+              "matched_terms": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "matched_field_ids": [
+                "cdb:events:field:cmdline",
+                "cdb:events:field:image",
+                "cdb:events:field:domain",
+                "cdb:events:field:file_path",
+                "cdb:events:field:user"
+              ],
               "rank": 1,
-              "low_confidence": true
+              "relevant": true,
+              "document_kind": "source",
+              "document_id": "cdb:source:events",
+              "operation_id": null,
+              "field_id": null,
+              "features": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "index_version": "f1-dense-v1",
+              "route_class": "MAPPING_REQUIRED",
+              "frontier_stage": "F1_METADATA"
             }
           ],
-          "selected_source_ids": [
-            "cdb:source:events"
-          ],
-          "source_coverage": {
-            "discovered": 1,
-            "scheduled": 1,
-            "complete": true
-          },
-          "field_coverage": {
-            "discovered": 17,
-            "scheduled": 17,
-            "complete": true
-          },
-          "batch_count": 1,
-          "max_profiles_per_batch": 8,
-          "max_fields_per_source_per_batch": 48,
-          "ordering_only": true
+          "unexamined_ids": [],
+          "deferred_ids": [],
+          "nested_census": [],
+          "total_documents": 35,
+          "proof": false
         }
       ],
       "coverage_manifests": {
-        "observed_process": {
-          "total_sources": 1,
+        "claim-process": {
+          "goal_id": "claim-process",
+          "relation": "observed_process",
+          "total_sources": 35,
           "considered_source_ids": [
             "cdb:source:events"
           ],
@@ -75,46 +108,639 @@
           ],
           "rejected_source_ids": {},
           "unexamined_source_ids": [],
+          "f0_complete": true,
+          "f1_complete": true,
+          "f2_status": "NOT_RUN",
+          "operation_hits": [
+            {
+              "source_id": "cdb_process_search",
+              "score": 16.560559,
+              "matched_terms": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "matched_field_ids": [],
+              "rank": 1,
+              "relevant": true,
+              "document_kind": "operation",
+              "document_id": "cdb_process_search",
+              "operation_id": "cdb_process_search",
+              "field_id": null,
+              "features": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "index_version": "f1-dense-v1",
+              "route_class": "EXECUTABLE",
+              "frontier_stage": "F1_METADATA"
+            },
+            {
+              "source_id": "find_process_from_endpoint",
+              "score": 16.40999,
+              "matched_terms": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "matched_field_ids": [],
+              "rank": 2,
+              "relevant": true,
+              "document_kind": "operation",
+              "document_id": "find_process_from_endpoint",
+              "operation_id": "find_process_from_endpoint",
+              "field_id": null,
+              "features": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "index_version": "f1-dense-v1",
+              "route_class": "EXECUTABLE",
+              "frontier_stage": "F1_METADATA"
+            },
+            {
+              "source_id": "find_file_change_from_process",
+              "score": 13.168932,
+              "matched_terms": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "matched_field_ids": [],
+              "rank": 3,
+              "relevant": true,
+              "document_kind": "operation",
+              "document_id": "find_file_change_from_process",
+              "operation_id": "find_file_change_from_process",
+              "field_id": null,
+              "features": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "index_version": "f1-dense-v1",
+              "route_class": "EXECUTABLE",
+              "frontier_stage": "F1_METADATA"
+            },
+            {
+              "source_id": "cdb_file_search",
+              "score": 13.098993,
+              "matched_terms": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "matched_field_ids": [],
+              "rank": 4,
+              "relevant": true,
+              "document_kind": "operation",
+              "document_id": "cdb_file_search",
+              "operation_id": "cdb_file_search",
+              "field_id": null,
+              "features": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "index_version": "f1-dense-v1",
+              "route_class": "EXECUTABLE",
+              "frontier_stage": "F1_METADATA"
+            },
+            {
+              "source_id": "cdb_net_search",
+              "score": 12.865004,
+              "matched_terms": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "matched_field_ids": [],
+              "rank": 5,
+              "relevant": true,
+              "document_kind": "operation",
+              "document_id": "cdb_net_search",
+              "operation_id": "cdb_net_search",
+              "field_id": null,
+              "features": [
+                "cmdline",
+                "command",
+                "commandline",
+                "execution",
+                "image",
+                "name",
+                "process"
+              ],
+              "index_version": "f1-dense-v1",
+              "route_class": "EXECUTABLE",
+              "frontier_stage": "F1_METADATA"
+            },
+            {
+              "source_id": "resolve_person_to_account",
+              "score": 2.520145,
+              "matched_terms": [
+                "name"
+              ],
+              "matched_field_ids": [],
+              "rank": 6,
+              "relevant": true,
+              "document_kind": "operation",
+              "document_id": "resolve_person_to_account",
+              "operation_id": "resolve_person_to_account",
+              "field_id": null,
+              "features": [
+                "name"
+              ],
+              "index_version": "f1-dense-v1",
+              "route_class": "EXECUTABLE",
+              "frontier_stage": "F1_METADATA"
+            },
+            {
+              "source_id": "resolve_account_to_endpoint",
+              "score": 2.514557,
+              "matched_terms": [
+                "name"
+              ],
+              "matched_field_ids": [],
+              "rank": 7,
+              "relevant": true,
+              "document_kind": "operation",
+              "document_id": "resolve_account_to_endpoint",
+              "operation_id": "resolve_account_to_endpoint",
+              "field_id": null,
+              "features": [
+                "name"
+              ],
+              "index_version": "f1-dense-v1",
+              "route_class": "EXECUTABLE",
+              "frontier_stage": "F1_METADATA"
+            },
+            {
+              "source_id": "cdb_auth_search",
+              "score": 2.420877,
+              "matched_terms": [
+                "name"
+              ],
+              "matched_field_ids": [],
+              "rank": 8,
+              "relevant": true,
+              "document_kind": "operation",
+              "document_id": "cdb_auth_search",
+              "operation_id": "cdb_auth_search",
+              "field_id": null,
+              "features": [
+                "name"
+              ],
+              "index_version": "f1-dense-v1",
+              "route_class": "EXECUTABLE",
+              "frontier_stage": "F1_METADATA"
+            }
+          ],
           "stage_audit": [
             {
-              "stage": "F0_CERTIFIED",
-              "discovered_sources": [],
-              "count": 0
-            },
-            {
               "stage": "F1_METADATA",
-              "discovered_sources": [],
-              "count": 0
+              "count": 1,
+              "k": 8,
+              "complete": true
             },
             {
-              "stage": "F2_ADJACENT",
-              "discovered_sources": [],
-              "count": 0
-            },
-            {
-              "stage": "F3_BOUNDED_PROFILING",
-              "discovered_sources": [
-                "cdb:source:events"
-              ],
-              "count": 1
+              "stage": "NESTED_PAYLOAD_CENSUS",
+              "count": 0,
+              "complete": true
             }
           ]
         }
+      },
+      "f1": {
+        "shortlist_size": 8,
+        "llm_calls": 0,
+        "proof": false
       },
       "census_profile_discovery": {},
       "proposals": [],
       "rejected": [],
       "relation_calls": [],
+      "nested_payload_census": [],
       "runtime_capabilities": [],
       "runtime_operation_ids": []
     },
     "compiler_trace": {
-      "prompt_hash": "021b8babf23d97a7",
+      "prompt_hash": "6aa5a23821e029f0",
       "response_length": 1011,
       "response_text": "{\"id\": \"graph-process-lookup\", \"request_id\": \"req-process-lookup\", \"objective\": \"Find the process observed on SRV-01\", \"answer_contract\": {\"mode\": \"lookup\", \"answer_type\": \"process\", \"required_fields\": [\"image\"], \"question\": \"Which process was observed on SRV-01?\"}, \"claims\": [{\"id\": \"claim-process\", \"claim_type\": \"attribute\", \"subject\": \"host:SRV-01\", \"predicate\": \"observed_process\", \"object_or_value\": null, \"value_type\": \"process\", \"provenance\": \"request\", \"source_request_id\": \"req-process-lookup\", \"dependencies\": [], \"evidence_requirements\": [], \"observation_requirements\": [{\"id\": \"req-process\", \"fact_kind\": \"process_ancestry\", \"required_fields\": [\"image\"], \"field_roles\": [\"endpoint_host\", \"process_name\"], \"completeness_required\": true}], \"acceptance_rule\": {\"min_observations\": 1, \"required_fields\": [\"image\"], \"requires_query_complete\": true, \"value_must_match\": null}, \"refutation_rule\": null, \"optional\": false, \"is_prerequisite\": false, \"reason\": \"The request asks for the observed process\"}]}",
       "validation_result": "VALID",
       "output_kind": "claim_graph"
-    }
+    },
+    "workspace": {
+      "run_id": "req-process-lookup",
+      "observation_ids": [
+        "obs-1"
+      ],
+      "evidence_graph": {
+        "observation_ids": [
+          "obs-1"
+        ],
+        "proof": false
+      },
+      "goal_graph": {
+        "id": "semantic-graph-process-lookup",
+        "request_id": "req-process-lookup",
+        "objective": "Find the process observed on SRV-01",
+        "variables": [
+          {
+            "id": "host_srv_01",
+            "entity_type": "entity",
+            "value": "host:SRV-01",
+            "constraints": [],
+            "value_origin": "request",
+            "verification_status": "UNVERIFIED"
+          },
+          {
+            "id": "object_1",
+            "entity_type": "process",
+            "value": null,
+            "constraints": [],
+            "value_origin": "request",
+            "verification_status": "UNVERIFIED"
+          }
+        ],
+        "relations": [
+          {
+            "id": "claim-process",
+            "subject": "host_srv_01",
+            "relation": "observed_process",
+            "object": "object_1",
+            "required": true,
+            "description": "The request asks for the observed process",
+            "atomic_obligation": "",
+            "provenance_span": "",
+            "dependencies": [],
+            "dependency_operator": "AND",
+            "gate_condition": null
+          }
+        ],
+        "qualifiers": [],
+        "answers": [],
+        "answer_contracts": [],
+        "dependencies": {},
+        "dependency_kinds": {
+          "claim-process": "AND"
+        },
+        "provenance_spans": {},
+        "assumptions": [],
+        "uncertainties": [
+          "Bridge generated from legacy ClaimGraph; semantic compiler migration pending"
+        ],
+        "forbidden_inferences": [],
+        "clarification_triggers": [],
+        "clarification_predicates": [],
+        "clarification_evaluations": [],
+        "validation_diagnostics": [],
+        "graph_revision": "G0",
+        "revision_history": []
+      },
+      "query_audit": [
+        {
+          "query_id": "qp-v5-1-cdb_process_search",
+          "operation_id": "cdb_process_search",
+          "c3_invoked": false,
+          "advances_goal_ids": [],
+          "relation": "",
+          "reason": "advances goals ['unspecified'] via operation cdb_process_search",
+          "complete": true,
+          "retrieval_stage": ""
+        }
+      ],
+      "analyst_decisions": [],
+      "unexamined_routes": [
+        "claim-process"
+      ],
+      "limitations": [],
+      "timeline": [
+        {
+          "observation_id": "obs-1",
+          "timestamp": "2026-02-01T10:00:00Z",
+          "query_id": "qp-v5-1-cdb_process_search",
+          "fields": {
+            "id": 1,
+            "timestamp": "2026-02-01T10:00:00Z",
+            "event_id": null,
+            "native_type": "process_creation",
+            "host": "SRV-01",
+            "user": null,
+            "pid": null,
+            "ppid": null,
+            "cmdline": "powershell.exe -NoProfile",
+            "image": "powershell.exe",
+            "ip": null,
+            "port": null,
+            "domain": null,
+            "file_path": null,
+            "action": null,
+            "status": null,
+            "raw_ref": null,
+            "command_line": "powershell.exe -NoProfile",
+            "process_name": "powershell.exe"
+          },
+          "native_fields": {
+            "id": 1,
+            "timestamp": "2026-02-01T10:00:00Z",
+            "event_id": null,
+            "native_type": "process_creation",
+            "host": "SRV-01",
+            "user": null,
+            "pid": null,
+            "ppid": null,
+            "cmdline": "powershell.exe -NoProfile",
+            "image": "powershell.exe",
+            "ip": null,
+            "port": null,
+            "domain": null,
+            "file_path": null,
+            "action": null,
+            "status": null,
+            "raw_ref": null
+          }
+        }
+      ],
+      "tags": [],
+      "comments": [],
+      "saved_searches": [],
+      "entity_pivot": [
+        {
+          "entity_type": "cmdline",
+          "value": "powershell.exe -NoProfile",
+          "observation_ids": [
+            "obs-1"
+          ],
+          "query_ids": [
+            "qp-v5-1-cdb_process_search"
+          ]
+        },
+        {
+          "entity_type": "command_line",
+          "value": "powershell.exe -NoProfile",
+          "observation_ids": [
+            "obs-1"
+          ],
+          "query_ids": [
+            "qp-v5-1-cdb_process_search"
+          ]
+        },
+        {
+          "entity_type": "host",
+          "value": "SRV-01",
+          "observation_ids": [
+            "obs-1"
+          ],
+          "query_ids": [
+            "qp-v5-1-cdb_process_search"
+          ]
+        },
+        {
+          "entity_type": "id",
+          "value": "1",
+          "observation_ids": [
+            "obs-1"
+          ],
+          "query_ids": [
+            "qp-v5-1-cdb_process_search"
+          ]
+        },
+        {
+          "entity_type": "image",
+          "value": "powershell.exe",
+          "observation_ids": [
+            "obs-1"
+          ],
+          "query_ids": [
+            "qp-v5-1-cdb_process_search"
+          ]
+        },
+        {
+          "entity_type": "native_type",
+          "value": "process_creation",
+          "observation_ids": [
+            "obs-1"
+          ],
+          "query_ids": [
+            "qp-v5-1-cdb_process_search"
+          ]
+        },
+        {
+          "entity_type": "process_name",
+          "value": "powershell.exe",
+          "observation_ids": [
+            "obs-1"
+          ],
+          "query_ids": [
+            "qp-v5-1-cdb_process_search"
+          ]
+        },
+        {
+          "entity_type": "timestamp",
+          "value": "2026-02-01T10:00:00Z",
+          "observation_ids": [
+            "obs-1"
+          ],
+          "query_ids": [
+            "qp-v5-1-cdb_process_search"
+          ]
+        }
+      ],
+      "native_events": [
+        {
+          "observation_id": "obs-1",
+          "timestamp": "2026-02-01T10:00:00Z",
+          "query_id": "qp-v5-1-cdb_process_search",
+          "native_fields": {
+            "id": 1,
+            "timestamp": "2026-02-01T10:00:00Z",
+            "event_id": null,
+            "native_type": "process_creation",
+            "host": "SRV-01",
+            "user": null,
+            "pid": null,
+            "ppid": null,
+            "cmdline": "powershell.exe -NoProfile",
+            "image": "powershell.exe",
+            "ip": null,
+            "port": null,
+            "domain": null,
+            "file_path": null,
+            "action": null,
+            "status": null,
+            "raw_ref": null
+          },
+          "raw_event": {}
+        }
+      ],
+      "proof_obligations": [],
+      "stop_explanation": {
+        "decision": "STOP_RESOLVED",
+        "taxonomy": "StoppingTaxonomyState.ANSWER_PROVED",
+        "unresolved_reasons": {},
+        "needs_user_decision": false,
+        "residuals": [],
+        "query_count": 1,
+        "llm_calls": {
+          "model": "stub",
+          "max_calls_budget": 5,
+          "calls_made": 1,
+          "is_exhausted": false,
+          "total_prompt_tokens": 8,
+          "total_completion_tokens": 8,
+          "total_tokens": 16,
+          "estimated_cost_usd": 0.0,
+          "token_accounting_mode": "ESTIMATED",
+          "is_estimate": true,
+          "calls": [
+            {
+              "component": "compiler",
+              "phase": "C1_COMPILER",
+              "reason": "C1_COMPILER",
+              "payload_size": 29,
+              "prompt_len": 29,
+              "response_len": 30,
+              "prompt_tokens": 8,
+              "completion_tokens": 8,
+              "total_tokens": 16,
+              "estimated_prompt_tokens": 8,
+              "estimated_completion_tokens": 8,
+              "actual_prompt_tokens": null,
+              "actual_completion_tokens": null,
+              "is_estimate": true,
+              "duration_ms": 0.0,
+              "latency_ms": 0.0,
+              "cost_usd": 0.0,
+              "timestamp": "2026-09-21T16:48:45Z",
+              "model": "stub",
+              "configured_model": "stub",
+              "actual_model": null,
+              "first_byte_ms": null,
+              "http_status": null,
+              "request_id": null,
+              "error_class": "",
+              "prompt_hash": "c61222a4ea6c8514",
+              "validation_result": "",
+              "validation_status": "VALID",
+              "selected_operation": "",
+              "search_terms": [],
+              "status": "SUCCESS",
+              "physical_attempts": 1,
+              "error": ""
+            }
+          ]
+        }
+      },
+      "coverage_view": {
+        "coverage_bound": {},
+        "coverage_gaps": [],
+        "unexamined_routes": [],
+        "query_completeness": [
+          {
+            "query_id": "qp-v5-1-cdb_process_search",
+            "complete": true
+          }
+        ]
+      },
+      "binding_reviews": []
+    },
+    "stop_explanation": {
+      "decision": "STOP_RESOLVED",
+      "taxonomy": "StoppingTaxonomyState.ANSWER_PROVED",
+      "unresolved_reasons": {},
+      "needs_user_decision": false,
+      "residuals": [],
+      "query_count": 1,
+      "llm_calls": {
+        "model": "stub",
+        "max_calls_budget": 5,
+        "calls_made": 1,
+        "is_exhausted": false,
+        "total_prompt_tokens": 8,
+        "total_completion_tokens": 8,
+        "total_tokens": 16,
+        "estimated_cost_usd": 0.0,
+        "token_accounting_mode": "ESTIMATED",
+        "is_estimate": true,
+        "calls": [
+          {
+            "component": "compiler",
+            "phase": "C1_COMPILER",
+            "reason": "C1_COMPILER",
+            "payload_size": 29,
+            "prompt_len": 29,
+            "response_len": 30,
+            "prompt_tokens": 8,
+            "completion_tokens": 8,
+            "total_tokens": 16,
+            "estimated_prompt_tokens": 8,
+            "estimated_completion_tokens": 8,
+            "actual_prompt_tokens": null,
+            "actual_completion_tokens": null,
+            "is_estimate": true,
+            "duration_ms": 0.0,
+            "latency_ms": 0.0,
+            "cost_usd": 0.0,
+            "timestamp": "2026-09-21T16:48:45Z",
+            "model": "stub",
+            "configured_model": "stub",
+            "actual_model": null,
+            "first_byte_ms": null,
+            "http_status": null,
+            "request_id": null,
+            "error_class": "",
+            "prompt_hash": "c61222a4ea6c8514",
+            "validation_result": "",
+            "validation_status": "VALID",
+            "selected_operation": "",
+            "search_terms": [],
+            "status": "SUCCESS",
+            "physical_attempts": 1,
+            "error": ""
+          }
+        ]
+      }
+    },
+    "proof_obligations": []
   },
   "assessments": [],
   "semantic_route_assessments": [

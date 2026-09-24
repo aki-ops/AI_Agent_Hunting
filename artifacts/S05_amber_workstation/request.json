@@ -1,0 +1,8 @@
+{
+  "id": "S05_amber_workstation",
+  "kind": "QUESTION",
+  "content": "Which workstation hostname belongs to Amber Turing?",
+  "entities": [],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

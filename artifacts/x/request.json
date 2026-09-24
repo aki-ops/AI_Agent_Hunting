@@ -1,0 +1,10 @@
+{
+  "id": "x",
+  "kind": "CVE",
+  "content": "CVE-2024-21887",
+  "entities": [
+    "Host(kind=<EntityKind.HOST: 'host'>, name='WEB-IVANTI-01')"
+  ],
+  "time_window": "2026-02-01T00:00:00Z/P1D",
+  "answer_spec": {}
+}

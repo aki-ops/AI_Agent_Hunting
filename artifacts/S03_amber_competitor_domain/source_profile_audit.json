@@ -1,0 +1,13 @@
+{
+  "status": "NO_LLM_CALLER",
+  "readiness": [],
+  "profiling_goal_ids": [],
+  "retrieval": [],
+  "coverage_manifests": {},
+  "census_profile_discovery": {},
+  "proposals": [],
+  "rejected": [],
+  "relation_calls": [],
+  "runtime_capabilities": [],
+  "runtime_operation_ids": []
+}

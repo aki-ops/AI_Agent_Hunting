@@ -17,11 +17,22 @@ from hunting.contracts.investigation_model import (
     NodeType,
     RelationType,
 )
+from hunting.contracts.ontology import (
+    CANONICAL_RELATION_VOCABULARY,
+    UNCONSTRAINED_RELATION_ROLES,
+    get_canonical_relation,
+    types_are_compatible,
+)
 from hunting.contracts.semantic_graph import (
+    ClarificationEvaluationResult,
+    ClarificationPredicate,
+    ClarificationPredicateKind,
+    ClarificationPredicateOperator,
     SemanticConstraint,
     SemanticGoalGraph,
     SemanticRelationGoal,
     SemanticVariable,
+    evaluate_clarification_predicate,
 )
 
 DEVICE_QUALIFIER_TERMS = {
@@ -134,33 +145,6 @@ class InvestigationValidator:
         )
 
 
-CANONICAL_RELATION_VOCABULARY: set[str] = {
-    "owns",
-    "logged_on_to",
-    "assigned_ip",
-    "originated_from",
-    "requested",
-    "resolved_to",
-    "connected_to",
-    "executed",
-    "accessed",
-    "communicated_with",
-    "spawned",
-    "modified",
-    "wrote",
-    "has_email",
-    "sent_message",
-    "received_message",
-    "holds_role",
-    "belongs_to_org",
-    "associated_with",
-    "has_attribute",
-    "visited",
-    "created",
-    "downloaded",
-    "located_at",
-    "stored_on",
-}
 
 VALIDATION_INJECTION_PATTERNS = [
     re.compile(r"ignore\s+(all\s+)?(previous\s+)?instructions", re.IGNORECASE),
@@ -382,12 +366,39 @@ class SemanticGoalGraphValidator:
         # =========================================================================
         # Stage 4: Relation Registry Status Check
         # =========================================================================
+        var_by_id = {variable.id: variable for variable in rewritten_variables}
         for rel in validated_relations:
             rel_norm = rel.relation.strip().casefold()
             if rel_norm not in CANONICAL_RELATION_VOCABULARY:
                 diagnostics.append(
                     f"Novel relation '{rel.relation}' is not in approved canonical registry; "
                     f"can be explored with retrieval_only but cannot be proven without approved contract."
+                )
+                continue
+            spec = get_canonical_relation(rel.relation)
+            if spec is None:
+                continue
+            subject = var_by_id.get(rel.subject)
+            obj = var_by_id.get(rel.object)
+            subject_role = str(spec.subject_entity_role or "").strip().casefold()
+            object_role = str(spec.object_value_role or "").strip().casefold()
+            if (
+                subject is not None
+                and subject_role not in UNCONSTRAINED_RELATION_ROLES
+                and not types_are_compatible(subject.entity_type, spec.subject_entity_role)
+            ):
+                rejections.append(
+                    f"Goal '{rel.id}' relation '{rel.relation}' subject type "
+                    f"'{subject.entity_type}' is incompatible with '{spec.subject_entity_role}'."
+                )
+            if (
+                obj is not None
+                and object_role not in UNCONSTRAINED_RELATION_ROLES
+                and not types_are_compatible(obj.entity_type, spec.object_value_role)
+            ):
+                rejections.append(
+                    f"Goal '{rel.id}' relation '{rel.relation}' object type "
+                    f"'{obj.entity_type}' is incompatible with '{spec.object_value_role}'."
                 )
         stage_results["relation_registry"] = True
 
@@ -433,29 +444,92 @@ class SemanticGoalGraphValidator:
         stage_results["semantic_risk"] = True
 
         # =========================================================================
-        # Stage 6: Clarification Triggers
+        # Stage 6: Typed Clarification Predicates
         # =========================================================================
         if graph.clarification_triggers:
-            needs_clarification = True
-            clarification_questions.extend(graph.clarification_triggers)
+            diagnostics.append(
+                "Legacy clarification trigger prose retained as advisory uncertainty; "
+                "prose is not an executable clarification predicate."
+            )
 
-        # Check for unresolved ambiguity across variables
+        predicates = list(graph.clarification_predicates)
+        predicate_ids = {predicate.id for predicate in predicates}
+
+        # Materialize the existing deterministic conflicting-equals rule as a
+        # typed predicate. This preserves programmatic graphs while ensuring the
+        # evaluation record, rather than an ad-hoc Boolean, owns authority.
         for var in final_variables:
-            if var.constraints:
-                equals_vals = [c.value for c in var.constraints if c.operator == "equals" and c.value is not None]
-                if len(set(equals_vals)) > 1:
-                    needs_clarification = True
-                    q_text = f"Variable '{var.id}' has conflicting equality constraints: {equals_vals}"
-                    clarification_questions.append(q_text)
-                    diagnostics.append(q_text)
+            vals_by_key: dict[str, set[str]] = {}
+            for constraint in var.constraints:
+                if constraint.operator == "equals" and constraint.value is not None:
+                    key = constraint.key.strip().casefold()
+                    vals_by_key.setdefault(key, set()).add(
+                        str(constraint.value).strip().casefold()
+                    )
+            for key, values in vals_by_key.items():
+                if len(values) <= 1:
+                    continue
+                predicate_id = f"clarify:{var.id}:conflicting-equals:{key}"
+                if predicate_id not in predicate_ids and not any(
+                    predicate.kind == ClarificationPredicateKind.CONFLICTING_EQUALS
+                    and predicate.operator == ClarificationPredicateOperator.HAS_CONFLICT
+                    and predicate.variable_id == var.id
+                    and predicate.constraint_key == key
+                    for predicate in predicates
+                ):
+                    predicates.append(ClarificationPredicate(
+                        id=predicate_id,
+                        kind=ClarificationPredicateKind.CONFLICTING_EQUALS,
+                        operator=ClarificationPredicateOperator.HAS_CONFLICT,
+                        variable_id=var.id,
+                        constraint_key=key,
+                        rule_version="1.0",
+                    ))
+                    predicate_ids.add(predicate_id)
 
-        stage_results["clarification"] = True
+        evaluations = [
+            evaluate_clarification_predicate(
+                predicate,
+                final_variables,
+                state_version=graph.graph_revision,
+            )
+            for predicate in predicates
+        ]
+        for predicate, evaluation in zip(predicates, evaluations):
+            if evaluation.result == ClarificationEvaluationResult.TRUE:
+                values = evaluation.deterministic_inputs.get("normalized_values", [])
+                question = (
+                    f"Variable '{predicate.variable_id}' has conflicting equality "
+                    f"constraints for key '{predicate.constraint_key}': {values}"
+                )
+                clarification_questions.append(question)
+                diagnostics.append(question)
+            elif evaluation.result == ClarificationEvaluationResult.INVALID:
+                rejections.append(
+                    f"Clarification predicate '{predicate.id}' is invalid: "
+                    f"{', '.join(evaluation.reason_codes)}"
+                )
+            elif evaluation.result == ClarificationEvaluationResult.UNKNOWN:
+                diagnostics.append(
+                    f"Clarification predicate '{predicate.id}' is unknown and non-authoritative."
+                )
+
+        needs_clarification = any(
+            evaluation.result == ClarificationEvaluationResult.TRUE
+            for evaluation in evaluations
+        )
+        stage_results["clarification"] = not any(
+            evaluation.result == ClarificationEvaluationResult.INVALID
+            for evaluation in evaluations
+        )
 
         validated_graph = replace(
             graph,
             variables=final_variables,
             relations=validated_relations,
             qualifiers=validated_qualifiers,
+            clarification_predicates=predicates,
+            clarification_evaluations=evaluations,
             validation_diagnostics=list(diagnostics),
         )
 

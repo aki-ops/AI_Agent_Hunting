@@ -1,11 +1,11 @@
 {
   "request_id": "test-adaptive-hunt-success",
-  "step_count": 5,
+  "step_count": 4,
   "steps": [
     {
       "step_name": "STEP_A_FREEZE_REQUEST",
       "step_index": 1,
-      "timestamp_iso": "2026-09-14T12:36:16Z",
+      "timestamp_iso": "2026-09-21T16:48:44Z",
       "duration_ms": 0.0,
       "status": "SUCCESS",
       "inputs_summary": {
@@ -18,7 +18,7 @@
     {
       "step_name": "STEP_B_COMPILE_GOAL_GRAPH",
       "step_index": 2,
-      "timestamp_iso": "2026-09-14T12:36:16Z",
+      "timestamp_iso": "2026-09-21T16:48:44Z",
       "duration_ms": 0.0,
       "status": "SUCCESS",
       "inputs_summary": {
@@ -30,23 +30,9 @@
       "diagnostics": []
     },
     {
-      "step_name": "STEP_C_RESOLVE_FRONTIER",
-      "step_index": 3,
-      "timestamp_iso": "2026-09-14T12:36:16Z",
-      "duration_ms": 0.0,
-      "status": "SUCCESS",
-      "inputs_summary": {
-        "profiling_requirements": 0
-      },
-      "outputs_summary": {
-        "coverage_manifests": 0
-      },
-      "diagnostics": []
-    },
-    {
       "step_name": "STEP_I_CHECK_STOPPING",
-      "step_index": 4,
-      "timestamp_iso": "2026-09-14T12:36:16Z",
+      "step_index": 3,
+      "timestamp_iso": "2026-09-21T16:48:44Z",
       "duration_ms": 0.0,
       "status": "SUCCESS",
       "inputs_summary": {
@@ -59,15 +45,15 @@
     },
     {
       "step_name": "STEP_J_REPORT_AND_ACCOUNT",
-      "step_index": 5,
-      "timestamp_iso": "2026-09-14T12:36:16Z",
+      "step_index": 4,
+      "timestamp_iso": "2026-09-21T16:48:44Z",
       "duration_ms": 0.0,
       "status": "SUCCESS",
       "inputs_summary": {
         "request_id": "test-adaptive-hunt-success"
       },
       "outputs_summary": {
-        "report_length": 4283
+        "report_length": 4586
       },
       "diagnostics": []
     }

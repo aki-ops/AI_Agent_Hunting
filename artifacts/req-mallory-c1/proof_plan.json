@@ -1,0 +1,99 @@
+{
+  "id": "logical-graph-mallory-constraints",
+  "goal_graph_id": "graph-mallory-constraints",
+  "provider_id": "mock-edr",
+  "steps": [
+    {
+      "id": "step-1",
+      "operation_id": "resolve-user-host",
+      "input_bindings": {
+        "subject": "var_user"
+      },
+      "output_bindings": {
+        "object": "var_endpoint"
+      },
+      "advances_goal_ids": [
+        "rel_user_host"
+      ],
+      "depends_on": [],
+      "expected_cost": 1,
+      "constraints": [
+        "hardware_form_factor=MacBook"
+      ],
+      "constraint_retrieval_terms": [],
+      "relation": "associated_with",
+      "constraint_metadata": [
+        {
+          "key": "hardware_form_factor",
+          "operator": "equals",
+          "value": "MacBook",
+          "variable_id": "var_endpoint",
+          "provenance": "semantic_graph",
+          "trust_class": "compiler_proposed"
+        }
+      ],
+      "alternative_operation_ids": [],
+      "requires_complete_inputs": true,
+      "dependency_operator": "AND",
+      "gate_condition": null,
+      "mode": "EXPLORE"
+    },
+    {
+      "id": "step-2",
+      "operation_id": "find-files-on-host",
+      "input_bindings": {
+        "subject": "var_endpoint"
+      },
+      "output_bindings": {
+        "object": "var_file"
+      },
+      "advances_goal_ids": [
+        "rel_host_file"
+      ],
+      "depends_on": [
+        "step-1"
+      ],
+      "expected_cost": 1,
+      "constraints": [],
+      "constraint_retrieval_terms": [],
+      "relation": "modified",
+      "constraint_metadata": [],
+      "alternative_operation_ids": [],
+      "requires_complete_inputs": true,
+      "dependency_operator": "AND",
+      "gate_condition": null,
+      "mode": "EXPLORE"
+    }
+  ],
+  "unresolved_goal_ids": [],
+  "proof_methods": [
+    {
+      "id": "method-rel_user_host-1",
+      "goal_id": "rel_user_host",
+      "prerequisite_goal_ids": [],
+      "operation_ids": [
+        "resolve-user-host"
+      ],
+      "expected_cost": 1,
+      "description": "resolve-user-host declares relation associated_with"
+    },
+    {
+      "id": "method-rel_host_file-1",
+      "goal_id": "rel_host_file",
+      "prerequisite_goal_ids": [
+        "rel_user_host"
+      ],
+      "operation_ids": [
+        "find-files-on-host"
+      ],
+      "expected_cost": 1,
+      "description": "find-files-on-host declares relation modified"
+    }
+  ],
+  "selected_method_ids": {
+    "rel_user_host": "method-rel_user_host-1",
+    "rel_host_file": "method-rel_host_file-1"
+  },
+  "graph_revision": "G0",
+  "unresolved_reasons": {}
+}

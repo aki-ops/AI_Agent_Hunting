@@ -22,6 +22,8 @@ from hunting.compiler import (
 from hunting.contracts.hunt import (
     HuntRequest,
     HuntRequestKind,
+    HypothesisStatus,
+    StoppingDecision,
 )
 from hunting.contracts.outcome import (
     FactualAnswerContract,
@@ -34,6 +36,8 @@ from hunting.contracts.semantic_graph import (
     SemanticRelationGoal,
     SemanticVariable,
 )
+from hunting.engine import HypothesisHuntEngine
+from hunting.m5_adapter import CdbAdapter
 from hunting.validator.investigation_validator import (
     SemanticAcceptanceGate,
 )
@@ -102,7 +106,7 @@ def test_all_request_archetypes_emit_semantic_goal_graph_and_outcome_contract() 
             {
                 "id": "goal-dns",
                 "subject": "var_host",
-                "relation": "resolved_to",
+                "relation": "resolved",
                 "object": "var_domain",
                 "required": True,
                 "provenance_span": "server-01",
@@ -133,6 +137,141 @@ def test_all_request_archetypes_emit_semantic_goal_graph_and_outcome_contract() 
     assert "target_domain" in prop_nl.outcome_contract.slots or "var_domain" in prop_nl.outcome_contract.slots
 
 
+def _semantic_llm_payload(*, request_id: str, conflicting: bool = False) -> dict[str, object]:
+    constraints: list[dict[str, object]] = []
+    if conflicting:
+        constraints = [
+            {"key": "action", "operator": "equals", "value": "login"},
+            {"key": "action", "operator": "equals", "value": "reboot"},
+        ]
+    return {
+        "id": f"goal-{request_id}",
+        "request_id": request_id,
+        "objective": "Identify an event observed on server-01",
+        "variables": [
+            {
+                "id": "host",
+                "entity_type": "host",
+                "value": "server-01",
+                "value_origin": "request",
+                "constraints": [],
+            },
+            {
+                "id": "name",
+                "entity_type": "domain",
+                "value": None,
+                "value_origin": "llm_proposal",
+                "constraints": constraints,
+            },
+        ],
+        "relations": [
+            {
+                "id": "goal-event",
+                "subject": "host",
+                "relation": "resolved",
+                "object": "name",
+                "required": True,
+                "provenance_span": "server-01",
+            },
+        ],
+        "answers": [
+            {"variable_id": "name", "answer_type": "domain", "required": True},
+        ],
+        "answer_contracts": [
+            {
+                "slot_name": "event",
+                "value_type": "domain",
+                "target_variable_id": "name",
+                "required_qualifiers": [],
+                "min_citations": 1,
+                "acceptance_rule": "observed event",
+            },
+        ],
+        "clarification_triggers": ["Ask if multiple events remain"],
+    }
+
+
+def test_execute_hunt_does_not_promote_advisory_prose_to_clarification(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Default production entry cannot derive stop authority from prose."""
+    payload = _semantic_llm_payload(request_id="req-advisory")
+    compiler = KnowledgeBehaviorCompiler(llm_caller=lambda _: json.dumps(payload))
+    engine = HypothesisHuntEngine(compiler=compiler)
+    calls: list[dict[str, object]] = []
+    original = engine.recovery_controller.evaluate_stop
+
+    def recording_evaluate_stop(*args, **kwargs):
+        calls.append(dict(kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(engine.recovery_controller, "evaluate_stop", recording_evaluate_stop)
+    monkeypatch.chdir(tmp_path)
+    result = engine.execute_hunt(
+        HuntRequest(
+            id="req-advisory",
+            kind=HuntRequestKind.NL_QUESTION,
+            content="Identify an event observed on server-01",
+        ),
+        adapter=CdbAdapter(":memory:"),
+    )
+
+    graph = result.state.semantic_goal_graph
+    assert graph is not None
+    assert graph.clarification_triggers == ["Ask if multiple events remain"]
+    assert graph.needs_clarification is False
+    assert all(not call.get("needs_clarification") for call in calls)
+    assert result.state.hypotheses[0].status == HypothesisStatus.LIVE
+    assert result.state.stopping_decision != StoppingDecision.STOP_NEEDS_CLARIFICATION
+
+
+def test_execute_hunt_stops_only_for_true_typed_clarification(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """A deterministic conflict reaches the controller as evaluated authority."""
+    payload = _semantic_llm_payload(request_id="req-conflict", conflicting=True)
+    payload["clarification_triggers"] = []
+    payload["clarification_predicates"] = [{
+        "id": "clarify-event-action",
+        "kind": "CONFLICTING_EQUALS",
+        "operator": "HAS_CONFLICT",
+        "variable_id": "name",
+        "constraint_key": "action",
+        "provenance_span": "name",
+        "schema_version": "1.0",
+        "rule_version": "1.0",
+    }]
+    compiler = KnowledgeBehaviorCompiler(llm_caller=lambda _: json.dumps(payload))
+    engine = HypothesisHuntEngine(compiler=compiler)
+    calls: list[dict[str, object]] = []
+    original = engine.recovery_controller.evaluate_stop
+
+    def recording_evaluate_stop(*args, **kwargs):
+        calls.append(dict(kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(engine.recovery_controller, "evaluate_stop", recording_evaluate_stop)
+    monkeypatch.chdir(tmp_path)
+    result = engine.execute_hunt(
+        HuntRequest(
+            id="req-conflict",
+            kind=HuntRequestKind.NL_QUESTION,
+            content="Identify an event observed on server-01",
+        ),
+        adapter=CdbAdapter(":memory:"),
+    )
+
+    graph = result.state.semantic_goal_graph
+    assert graph is not None
+    assert graph.needs_clarification is True
+    assert any(call.get("needs_clarification") is True for call in calls)
+    assert result.state.hypotheses[0].status == HypothesisStatus.LIVE
+    assert result.state.stopping_decision == StoppingDecision.STOP_NEEDS_CLARIFICATION
+    assert result.state.queries == []
+
+
 def test_changing_entity_names_does_not_mutate_graph_topology() -> None:
     """Acceptance Gate C: Changing entity names does not mutate graph structure except grounded values."""
     gate = SemanticAcceptanceGate()
@@ -149,7 +288,7 @@ def test_changing_entity_names_does_not_mutate_graph_topology() -> None:
                 SemanticVariable("v_file", "file", None, value_origin="llm_proposal"),
             ],
             relations=[
-                SemanticRelationGoal("r1", "v_user", "logged_on_to", "v_host", provenance_span=user_name),
+                SemanticRelationGoal("r1", "v_user", "associated_with", "v_host", provenance_span=user_name),
                 SemanticRelationGoal("r2", "v_host", "wrote", "v_file", dependencies=("r1",), dependency_operator="AND"),
             ],
             answers=[SemanticAnswerGoal("v_file", "file")],
@@ -199,11 +338,29 @@ def test_invented_proper_nouns_claiming_request_origin_are_rejected() -> None:
     assert any("Invented proper noun rejected" in r and "Bob" in r for r in res.rejections)
 
 
-def test_ambiguous_semantics_triggers_clarification() -> None:
-    """Acceptance Gate C: Ambiguous semantics or explicit triggers set needs_clarification=True."""
+def test_prose_clarification_trigger_is_advisory_only() -> None:
+    """Free-text trigger prose never becomes a clarification stop predicate."""
     gate = SemanticAcceptanceGate()
-    req_text = "Investigate the event on server-1"
+    graph = SemanticGoalGraph(
+        id="goal-prose-only",
+        request_id="req-prose-only",
+        objective="Investigate the event on server-1",
+        variables=[SemanticVariable("v_evt", "event")],
+        relations=[],
+        clarification_triggers=["Ask if multiple event types remain"],
+    )
 
+    result = gate.validate_goal_graph(graph, "Investigate the event on server-1")
+
+    assert result.valid
+    assert not result.needs_clarification
+    assert result.clarification_questions == []
+    assert any("advisory" in diagnostic.lower() for diagnostic in result.diagnostics)
+
+
+def test_conflicting_typed_constraints_trigger_clarification() -> None:
+    """A deterministic typed conflict remains a true clarification predicate."""
+    gate = SemanticAcceptanceGate()
     graph = SemanticGoalGraph(
         id="goal-ambiguous",
         request_id="req-amb",
@@ -219,12 +376,13 @@ def test_ambiguous_semantics_triggers_clarification() -> None:
             )
         ],
         relations=[],
-        clarification_triggers=["Which event type should be prioritized: login or reboot?"],
     )
-    res = gate.validate_goal_graph(graph, req_text)
-    assert res.needs_clarification
-    assert len(res.clarification_questions) >= 1
-    assert any("login" in q for q in res.clarification_questions)
+
+    result = gate.validate_goal_graph(graph, "Investigate the event on server-1")
+
+    assert result.needs_clarification
+    assert len(result.clarification_questions) == 1
+    assert "login" in result.clarification_questions[0]
 
 
 def test_acceptance_gate_rejects_cyclic_graph_and_enforces_gate_condition() -> None:
@@ -333,3 +491,60 @@ def test_novel_unregistered_relations_flagged_with_diagnostic() -> None:
         "exfiltrated_to_mars" in d and "not in approved canonical registry" in d
         for d in res.diagnostics
     )
+
+
+def test_multiple_constraints_distinct_keys_do_not_trigger_clarification() -> None:
+    """Counterexample 4a: Multiple valid constraints with different keys do not trigger clarification."""
+    gate = SemanticAcceptanceGate()
+    req_text = "Find encoded powershell command"
+    graph = SemanticGoalGraph(
+        id="g-multi-constraint",
+        request_id="req-multi",
+        objective="Find encoded powershell command",
+        variables=[
+            SemanticVariable(
+                id="v_proc",
+                entity_type="process",
+                constraints=(
+                    SemanticConstraint(key="encoding", value="encoded", operator="equals"),
+                    SemanticConstraint(key="command_language", value="PowerShell", operator="equals"),
+                ),
+            ),
+        ],
+        relations=[
+            SemanticRelationGoal(id="r1", subject="v_proc", relation="has_attribute", object="v_proc"),
+        ],
+        answers=[SemanticAnswerGoal("v_proc", "process")],
+    )
+    res = gate.validate_goal_graph(graph, req_text)
+    assert res.valid
+    assert not res.needs_clarification
+    assert not any("conflicting equality constraints" in d for d in res.diagnostics)
+
+
+def test_multiple_constraints_same_key_conflict_triggers_clarification() -> None:
+    """Counterexample 4b: Conflicting values for the SAME constraint key trigger clarification."""
+    gate = SemanticAcceptanceGate()
+    req_text = "Find encoded plain command"
+    graph = SemanticGoalGraph(
+        id="g-conflict-constraint",
+        request_id="req-conflict",
+        objective="Find command with conflicting encoding",
+        variables=[
+            SemanticVariable(
+                id="v_proc",
+                entity_type="process",
+                constraints=(
+                    SemanticConstraint(key="encoding", value="encoded", operator="equals"),
+                    SemanticConstraint(key="encoding", value="plain", operator="equals"),
+                ),
+            ),
+        ],
+        relations=[
+            SemanticRelationGoal(id="r1", subject="v_proc", relation="has_attribute", object="v_proc"),
+        ],
+        answers=[SemanticAnswerGoal("v_proc", "process")],
+    )
+    res = gate.validate_goal_graph(graph, req_text)
+    assert res.needs_clarification
+    assert any("conflicting equality constraints for key 'encoding'" in d for d in res.diagnostics)

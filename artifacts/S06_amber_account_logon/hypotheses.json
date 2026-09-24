@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-S06_amber_account_logon-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'What user account did Amber Turing use to log on to the domain controller?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

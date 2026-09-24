@@ -1,0 +1,8 @@
+{
+  "id": "S01_tor_version",
+  "kind": "QUESTION",
+  "content": "What version of Tor Browser was observed in the environment?",
+  "entities": [],
+  "time_window": "NOW-14d/NOW",
+  "answer_spec": {}
+}

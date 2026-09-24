@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-S04_amber_email_exfiltration-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'What personal email address did Amber Turing use to send corporate files?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

@@ -1,0 +1,100 @@
+{
+  "id": "capability-graph:runtime",
+  "census_version": "2026.1.0",
+  "providers": [
+    {
+      "provider_id": "sensor_provider",
+      "status": "ONLINE",
+      "indices": [],
+      "sourcetypes": {},
+      "supported_evidence_types": [],
+      "observable_fields": [
+        "sensor_status"
+      ],
+      "retention_days": 4000,
+      "details": {},
+      "scopes": [],
+      "operations": [
+        "read_health"
+      ],
+      "permissions": [
+        "read"
+      ],
+      "completeness_semantics": "cursor EOF proof",
+      "partitions": {},
+      "schemas": {},
+      "aliases": {},
+      "source_profiles": [
+        {
+          "source_id": "sensor_provider:source:default",
+          "provider_id": "sensor_provider",
+          "partition_id": "default",
+          "native_type": "unknown",
+          "event_count": null,
+          "fields": [
+            {
+              "field_id": "sensor_provider:default:field:sensor_status",
+              "name": "sensor_status",
+              "primitive_type": "unknown",
+              "coverage": null,
+              "sample_values": []
+            }
+          ],
+          "time_start": null,
+          "time_end": null,
+          "retention_days": 4000,
+          "permissions": [
+            "read"
+          ],
+          "query_primitives": [
+            "search",
+            "table",
+            "head"
+          ],
+          "schema_fingerprint": "schema-855342b9f750e85f10fa"
+        }
+      ]
+    }
+  ],
+  "operations": [
+    {
+      "id": "read_health",
+      "provider_id": "sensor_provider",
+      "scope_ids": [
+        "sensor-scope"
+      ],
+      "params_schema": {},
+      "pagination": "none",
+      "limit_semantics": "provider-defined",
+      "semantic_intents": [],
+      "input_entity_kinds": [
+        "ANY"
+      ],
+      "output_entity_kinds": [],
+      "output_fields": [
+        "sensor_status"
+      ],
+      "output_fact_kinds": [
+        "sensor_health"
+      ],
+      "guaranteed_relations": [],
+      "input_roles": [],
+      "output_roles": [],
+      "native_field_bindings": {},
+      "output_value_bindings": {},
+      "query_builder": "",
+      "completeness": "cursor EOF proof",
+      "expected_cost": null,
+      "runtime_source_id": ""
+    }
+  ],
+  "audit": [
+    {
+      "provider_id": "sensor_provider",
+      "selected": true,
+      "reason": "provider is online; no ClaimGraph was available for relevance filtering",
+      "status": "ONLINE",
+      "claim_id": ""
+    }
+  ]
+}

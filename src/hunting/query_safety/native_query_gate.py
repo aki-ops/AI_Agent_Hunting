@@ -10,7 +10,9 @@ import re
 from typing import Iterable
 
 from hunting.contracts.native_query import NativeQueryCandidate, NativeQueryValidationResult
+from hunting.contracts.query_intent import QueryIntentSpec
 from hunting.m5_adapter.allowlist import validate_time_window_format
+from hunting.query_safety.c3_admission import output_roles_match_intent
 
 _FORBIDDEN_COMMANDS = frozenset({
     "collect", "delete", "dump", "eventstats", "outputlookup", "outputcsv",
@@ -66,6 +68,7 @@ class NativeQueryGate:
         known_fields: Iterable[str],
         max_scan_cost: int = 1000,
         executed_query_signatures: Iterable[str] = (),
+        intent: QueryIntentSpec | None = None,
     ) -> NativeQueryValidationResult:
         query = candidate.query_text.strip()
         reasons: list[str] = []
@@ -148,6 +151,11 @@ class NativeQueryGate:
         estimated_cost = len(query) + 100 * len(stages)
         if estimated_cost > max_scan_cost * 10:
             reasons.append("estimated_cost_exceeds_bound")
+
+        if intent is not None:
+            roles_ok, missing_roles = output_roles_match_intent(intent, candidate.expected_fields)
+            if not roles_ok:
+                reasons.append("output_roles_not_in_intent:" + ",".join(missing_roles))
 
         accepted = not reasons
         return NativeQueryValidationResult(

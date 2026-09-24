@@ -1,0 +1,40 @@
+[
+  {
+    "id": "card-2a92a6343c91",
+    "summary": "Process execution observed on FALSE-HOST",
+    "why_it_matters": "Observed process execution providing evidence of code execution on endpoint.",
+    "fact_type": "process_execution",
+    "count": 1,
+    "confidence": "MEDIUM",
+    "hypotheses": [],
+    "requirements": [],
+    "query_ids": [
+      "logical-goal-graph-counterexample-step-1"
+    ],
+    "replay": {
+      "artifact": "observations.jsonl",
+      "query_ids": [
+        "logical-goal-graph-counterexample-step-1"
+      ],
+      "command": "python -m hunting.cli show-observation --observation-id obs-logical-goal-graph-counterexample-step-1-0"
+    },
+    "entity_summary": {
+      "hosts": [
+        "FALSE-HOST"
+      ]
+    },
+    "time_summary": {
+      "earliest": "2026-02-01T10:00:00Z",
+      "latest": "2026-02-01T10:00:00Z",
+      "span_events": 1
+    },
+    "field_summary": {
+      "cmdlines": [
+        "cmd.exe -enc NOT_POWERSHELL"
+      ]
+    },
+    "representative_observation_ids": [
+      "obs-logical-goal-graph-counterexample-step-1-0"
+    ]
+  }
+]

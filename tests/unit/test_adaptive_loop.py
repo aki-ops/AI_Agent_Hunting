@@ -69,7 +69,7 @@ def test_adaptive_planner_respects_attempted_operations():
 
 def test_engine_adaptive_loop_bounded_to_two_iterations():
     """Engine executes at most 2 adaptive loop iterations if required fields are missing."""
-    engine = HypothesisHuntEngine()
+    engine = HypothesisHuntEngine(enable_legacy_execution=True)
 
     scope = ProviderScope(provider_id="mock_splunk", scope_id="main", native_partition={"index": "test"})
     adapter = MagicMock()
@@ -170,7 +170,7 @@ def test_engine_adaptive_loop_bounded_to_two_iterations():
 
 def test_engine_adaptive_loop_stops_early_when_evidence_found():
     """Engine stops adaptive loop early if a query returns the required fields."""
-    engine = HypothesisHuntEngine()
+    engine = HypothesisHuntEngine(enable_legacy_execution=True)
 
     scope = ProviderScope(provider_id="mock_splunk", scope_id="main", native_partition={"index": "test"})
     adapter = MagicMock()

@@ -102,6 +102,58 @@ class Observation:
             raise ValueError("Inviolable constraint: TESTIMONY cannot become OBSERVED")
         self.epistemic_type = new_type
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize native observation fields for an immutable run account."""
+        scope = self.provider_scope
+        return {
+            "id": self.id,
+            "provider_scope": {
+                "provider_id": getattr(scope, "provider_id", ""),
+                "native_partition": dict(getattr(scope, "native_partition", {}) or {}),
+                "scope_id": getattr(scope, "scope_id", ""),
+                "retention_days": getattr(scope, "retention_days", None),
+            },
+            "cell_id": self.cell_id,
+            "timestamp": self.timestamp,
+            "epistemic_type": self.epistemic_type.value if hasattr(self.epistemic_type, "value") else str(self.epistemic_type),
+            "native_type": self.native_type,
+            "fields": dict(self.fields),
+            "native_fields": dict(self.native_fields or self.fields),
+            "query_id": self.query_id,
+            "raw_ref": self.raw_ref,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "Observation":
+        """Rehydrate one observation without inventing missing native fields."""
+        if not isinstance(raw, dict):
+            raise ValueError("observation must be an object")
+        scope_raw = raw.get("provider_scope") if isinstance(raw.get("provider_scope"), dict) else {}
+        partition = dict(scope_raw.get("native_partition") or {})
+        if not partition:
+            partition = {"dataset": str(raw.get("scope_id") or scope_raw.get("scope_id") or "unknown")}
+        scope = ProviderScope(
+            provider_id=str(scope_raw.get("provider_id") or raw.get("provider_id") or "unknown"),
+            native_partition=partition,
+            scope_id=str(scope_raw.get("scope_id") or raw.get("scope_id") or ""),
+            retention_days=scope_raw.get("retention_days"),
+        )
+        epistemic = raw.get("epistemic_type", EpistemicType.OBSERVED)
+        if not isinstance(epistemic, EpistemicType):
+            epistemic = EpistemicType(str(epistemic or EpistemicType.OBSERVED.value))
+        return cls(
+            id=str(raw.get("id") or raw.get("observation_id") or ""),
+            provider_scope=scope,
+            cell_id=str(raw.get("cell_id") or ""),
+            timestamp=str(raw.get("timestamp") or ""),
+            epistemic_type=epistemic,
+            native_type=raw.get("native_type"),
+            fields=dict(raw.get("fields") or {}),
+            native_fields=dict(raw.get("native_fields") or raw.get("fields") or {}),
+            query_id=raw.get("query_id"),
+            raw_ref=raw.get("raw_ref"),
+        )
+
 
 __all__ = [
     "EpistemicType",

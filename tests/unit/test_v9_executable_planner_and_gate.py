@@ -268,6 +268,7 @@ def test_gate_blocks_downstream_when_upstream_unproven_despite_rows() -> None:
         output_bindings={"object": "var_host"},
         advances_goal_ids=("goal-1",),
         relation="logged_on_to",
+        mode="PROVE",
     )
     step_2 = PlanStep(
         id="s2",
@@ -276,10 +277,11 @@ def test_gate_blocks_downstream_when_upstream_unproven_despite_rows() -> None:
         output_bindings={"object": "var_file"},
         advances_goal_ids=("goal-2",),
         depends_on=("s1",),
-        dependency_operator="GATE",
-        gate_condition="goal-1:verified",
-        relation="wrote",
-    )
+            dependency_operator="GATE",
+            gate_condition="goal-1:verified",
+            relation="wrote",
+            mode="PROVE",
+        )
 
     plan = LogicalPlan(
         id="plan-counterexample",

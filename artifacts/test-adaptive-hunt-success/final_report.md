@@ -19,17 +19,12 @@
 
 **Answer (software_version):** `13.5.2`
 
-- **Impacted Host(s):** `wrk-amber`
+- **Candidate Host(s) — not proof:** `wrk-amber`
 
 ## 2. Proposed/Accepted Graph and Assumptions
 <!-- ## 2. Hypothesis analysis -->
 
 - `SUPPORTED` — Tor installed
-
-### Source capability profiling
-
-- Status: `NO_LLM_CALLER`; accepted proposals: `0`; rejected: `0`
-- Proposals are candidates only; a provider probe is required before they become executable capabilities.
 
 ## 3. Step Trace and Binding Changes
 
@@ -39,23 +34,22 @@
 |---|---|---|---|---|
 | 1 | `STEP_A_FREEZE_REQUEST` | 0.0 | `SUCCESS` | in: request_id=test-adaptive-hunt-success; content=What versi... |
 | 2 | `STEP_B_COMPILE_GOAL_GRAPH` | 0.0 | `SUCCESS` | in: request_id=test-adaptive-hunt-success; out: has_semantic_goal_graph=False |
-| 3 | `STEP_C_RESOLVE_FRONTIER` | 0.0 | `SUCCESS` | in: profiling_requirements=0; out: coverage_manifests=0 |
 
 ## 4. Evidence and Proof Decisions
 <!-- ## 3. Evidence and explanation -->
 
 | Evidence | Why it matters | Observed values | Source |
 |---|---|---|---|
-| Process artifact observed on wrk-amber: C:\Tor\firefox.exe | Observed process execution providing evidence of code execution on endpoint. | file_paths=C:\Tor\firefox.exe; software_versions=13.5.2; software_version=13.5.2 | 1 event(s); query: `qp-adaptive-0-1`; observations: `obs-adaptive-2` |
+| File modification on wrk-amber: C:\Tor\firefox.exe | Observed disk write activity, indicating payload delivery, persistence creation, or artifact modification. | file_paths=C:\Tor\firefox.exe; software_versions=13.5.2; software_version=13.5.2 | 1 event(s); query: `qp-adaptive-0-1`; observations: `obs-adaptive-2` |
 
 ### Evidence details
 
-- `card-e5d92fdeb056` — fact=`process_execution`, count=`1`, completeness=`complete`; observed: file_paths=C:\Tor\firefox.exe; software_versions=13.5.2; software_version=13.5.2
+- `card-e5d92fdeb056` — fact=`file_modification`, count=`1`, completeness=`complete`; observed: file_paths=C:\Tor\firefox.exe; software_versions=13.5.2; software_version=13.5.2
 
 ### Explanation
 
 - **Deterministic Graph Resolution:** The target object `13.5.2` was proven through 0 verified claim relation(s).
-- Observed process execution providing evidence of code execution on endpoint.
+- Observed disk write activity, indicating payload delivery, persistence creation, or artifact modification.
 - Limitation: No definitive adversary presence or refutation established in searched frame.
 
 **Unresolved Mandatory Unknowns:**
@@ -114,6 +108,15 @@ Provider: `mock_splunk`; completeness: `complete`
 - **Wildcard Scope Coverage:** `0.0%` (0/1 broadsweep cells)
 - **Instance Cell Coverage:** `0.0%` (0/0 concrete entity cells)
 
+### Route and Frontier Coverage
+
+- **Examined routes:**
+  - `discovery`: operation=`search_text`, source=`mock_splunk`, query=`qp-discovery-0`, rows=`1`, complete=`True`
+  - `adaptive-answer`: operation=`find_file_version`, source=`mock_splunk`, query=`qp-adaptive-0-1`, rows=`1`, complete=`True`
+- **Unexamined routes & frontier sources:**
+  - None (frontier and candidate proof methods exhausted)
+- **Route Exhaustion Rationale:** Stopping decision: `STOP_NOT_FOUND_BOUNDED`.
+
 ### Visibility and Gap Breakdown
 
 - **Not Found:** 1 gap(s)
@@ -122,6 +125,8 @@ Provider: `mock_splunk`; completeness: `complete`
 ### Cost Accounting
 
 - Model: `stub`
+- Configured model(s): `stub`
+- Actual model(s): `not reported by gateway`
 - Calls: `0`
 - Physical API attempts: `0`
 - Failed calls: `0`

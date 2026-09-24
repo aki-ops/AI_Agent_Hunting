@@ -1,0 +1,103 @@
+{
+  "id": "goal-graph-flow-route-4",
+  "request_id": "flow-route-4",
+  "objective": "Evaluate exploitation of CVE-2024-21887",
+  "variables": [
+    {
+      "id": "var_endpoint",
+      "entity_type": "host",
+      "value": "HOST-1",
+      "constraints": [],
+      "value_origin": "user_selection",
+      "verification_status": "VERIFIED"
+    },
+    {
+      "id": "var_exploit_proc",
+      "entity_type": "process",
+      "value": null,
+      "constraints": [
+        {
+          "key": "cmdline",
+          "operator": "contains",
+          "value": "python"
+        }
+      ],
+      "value_origin": "request",
+      "verification_status": "UNVERIFIED"
+    },
+    {
+      "id": "var_webshell_file",
+      "entity_type": "file",
+      "value": null,
+      "constraints": [],
+      "value_origin": "request",
+      "verification_status": "UNVERIFIED"
+    }
+  ],
+  "relations": [
+    {
+      "id": "req-CVE-2024-21887-exploit",
+      "subject": "var_endpoint",
+      "relation": "spawned",
+      "object": "var_exploit_proc",
+      "required": true,
+      "description": "Evidence of exploitation attempts targeting CVE-2024-21887: POST request containing command injection tokens in /api/v1/cav/client/status/path parameter; Execution of python/sh subprocesses by web server daemons",
+      "atomic_obligation": "Detect anomalous process execution for CVE-2024-21887",
+      "provenance_span": "",
+      "dependencies": [],
+      "dependency_operator": "AND",
+      "gate_condition": null
+    },
+    {
+      "id": "req-CVE-2024-21887-post",
+      "subject": "var_exploit_proc",
+      "relation": "wrote",
+      "object": "var_webshell_file",
+      "required": true,
+      "description": "Post-exploitation indicators for CVE-2024-21887: Web shell written into /home/etc/manifest/ or static web paths; Outbound TLS connection to adversary C2 infrastructure; Tampering with internal integrity checker tool (ICT)",
+      "atomic_obligation": "Detect artifact write for CVE-2024-21887",
+      "provenance_span": "",
+      "dependencies": [
+        "req-CVE-2024-21887-exploit"
+      ],
+      "dependency_operator": "AND",
+      "gate_condition": null
+    }
+  ],
+  "qualifiers": [],
+  "answers": [],
+  "answer_contracts": [],
+  "dependencies": {
+    "req-CVE-2024-21887-post": [
+      "req-CVE-2024-21887-exploit"
+    ]
+  },
+  "dependency_kinds": {
+    "req-CVE-2024-21887-exploit": "AND",
+    "req-CVE-2024-21887-post": "AND"
+  },
+  "provenance_spans": {},
+  "assumptions": [],
+  "uncertainties": [],
+  "forbidden_inferences": [],
+  "clarification_triggers": [],
+  "clarification_predicates": [],
+  "clarification_evaluations": [],
+  "validation_diagnostics": [],
+  "graph_revision": "G0",
+  "revision_history": [],
+  "outcome_contract": {
+    "contract_kind": "HYPOTHESIS_VERDICT",
+    "support_obligations": [
+      "req-CVE-2024-21887-exploit",
+      "req-CVE-2024-21887-post"
+    ],
+    "refutation_obligations": [
+      "req-CVE-2024-21887-baseline"
+    ],
+    "falsification_conditions": [
+      "telemetry confirms zero exploitation indicators for CVE-2024-21887"
+    ],
+    "scope": "cdb_native_scope"
+  }
+}

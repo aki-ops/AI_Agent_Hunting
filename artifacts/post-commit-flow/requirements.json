@@ -1,0 +1,23 @@
+[
+  {
+    "id": "req-CVE-2024-21887-exploit",
+    "description": "Evidence of exploitation attempts targeting CVE-2024-21887: POST request containing command injection tokens in /api/v1/cav/client/status/path parameter; Execution of python/sh subprocesses by web server daemons",
+    "evidence_type": "process_ancestry",
+    "status": "DEFINED",
+    "necessity": "CRITICAL"
+  },
+  {
+    "id": "req-CVE-2024-21887-post",
+    "description": "Post-exploitation indicators for CVE-2024-21887: Web shell written into /home/etc/manifest/ or static web paths; Outbound TLS connection to adversary C2 infrastructure; Tampering with internal integrity checker tool (ICT)",
+    "evidence_type": "file_modification",
+    "status": "DEFINED",
+    "necessity": "CRITICAL"
+  },
+  {
+    "id": "req-CVE-2024-21887-baseline",
+    "description": "Verified operational telemetry showing standard application execution",
+    "evidence_type": "scope_records",
+    "status": "DEFINED",
+    "necessity": "CRITICAL"
+  }
+]

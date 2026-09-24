@@ -1,0 +1,4223 @@
+{
+  "hunt_id": "audit-replay-profiler-20260917",
+  "outcome": "INCONCLUSIVE",
+  "stopping_decision": "STOP_NEEDS_USER_DECISION",
+  "answer": {
+    "status": "INCONCLUSIVE",
+    "reason": "USER_DECISION_REQUIRED",
+    "explanation": "Candidate bindings were discovered, but no downstream query was executed because an analyst must select the intended binding.",
+    "candidates": [],
+    "card_ids": [],
+    "observation_ids": []
+  },
+  "llm_usage": {
+    "model": "stub",
+    "max_calls_budget": 5,
+    "calls_made": 0,
+    "is_exhausted": false,
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "total_tokens": 0,
+    "estimated_cost_usd": 0,
+    "token_accounting_mode": "ESTIMATED",
+    "is_estimate": true,
+    "calls": []
+  },
+  "total_observations": 6,
+  "total_cards": 0,
+  "total_queries": 1,
+  "semantic_graph_id": "goal-graph-hunt-req-20260916-034720",
+  "proof_plan_id": "logical-goal-graph-hunt-req-20260916-034720",
+  "semantic_analysis": {
+    "compiler_trace": {},
+    "goal_verdicts": [
+      {
+        "goal_id": "goal-1",
+        "relation": "owns",
+        "status": "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED",
+        "query_ids": [
+          "logical-goal-graph-hunt-req-20260916-034720-step-1"
+        ],
+        "proof_method_id": "method-goal-1-2",
+        "unverified_restrictions": [
+          "hardware_descriptor=MacBook"
+        ],
+        "proof_results": [
+          {
+            "contract_id": "proof-person-endpoint-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "evaluate_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": false,
+            "verdict": "PROOF_GAP",
+            "status": "PROOF_GAP",
+            "reason_codes": [
+              "non_conforming_rows",
+              "unsatisfied_constraints:hardware_descriptor=MacBook",
+              "unsatisfied_constraints:hardware_descriptor=MacBook",
+              "unsatisfied_constraints:hardware_descriptor=MacBook"
+            ],
+            "subject_binding": null,
+            "object_binding": null,
+            "bindings": {},
+            "satisfied_obligations": [],
+            "missing_obligations": [],
+            "satisfied_constraints": [],
+            "unsatisfied_constraints": [
+              "hardware_descriptor=MacBook"
+            ],
+            "citations": [],
+            "cited_fields": {},
+            "completeness_satisfied": false,
+            "coverage_satisfied": false,
+            "limitations": [],
+            "diagnostic": "No event conformed to proof contract 'proof-person-endpoint-v1'. Missing roles: none; Unsatisfied constraints: hardware_descriptor=MacBook; violations: ['unsatisfied_constraints:hardware_descriptor=MacBook', 'unsatisfied_constraints:hardware_descriptor=MacBook', 'unsatisfied_constraints:hardware_descriptor=MacBook', 'unsatisfied_constraints:hardware_descriptor=MacBook', 'unsatisfied_constraints:hardware_descriptor=MacBook', 'unsatisfied_constraints:hardware_descriptor=MacBook']"
+          }
+        ]
+      },
+      {
+        "goal_id": "goal-2",
+        "relation": "modified",
+        "status": "INCONCLUSIVE",
+        "query_ids": [],
+        "proof_method_id": "method-goal-2-1",
+        "unverified_restrictions": [],
+        "proof_results": []
+      }
+    ],
+    "proof_state": {
+      "goal-1": "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED",
+      "goal-2": "INCONCLUSIVE"
+    },
+    "executed_steps": [
+      "step-1"
+    ],
+    "unresolved_steps": [
+      "step-2"
+    ],
+    "unresolved_goals": [],
+    "unresolved_reasons": {
+      "step-1": "ambiguous output binding 'device' has 6 candidates; fan-out limit is 5",
+      "step-2": "required upstream proof is incomplete: step-1"
+    },
+    "candidate_input_warnings": {},
+    "needs_user_decision": true,
+    "binding_provenance": {
+      "subject": [
+        {
+          "value": "Mallory",
+          "source": "request",
+          "query_id": "",
+          "status": "VERIFIED"
+        }
+      ]
+    },
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "resolve_person_to_endpoint",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-hunt-req-20260916-034720-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 6,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuations": {},
+    "unverified_restrictions": {
+      "goal-1": [
+        "hardware_descriptor=MacBook"
+      ]
+    },
+    "binding_events": [],
+    "route_assessments": [
+      {
+        "goal_id": "goal-1",
+        "relation": "owns",
+        "status": "CANDIDATE_OBSERVED",
+        "execution_complete": true,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "RETRIEVAL_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-1",
+            "goal_id": "goal-1",
+            "operation_id": "resolve_person_to_endpoint",
+            "source_id": "splunk_botsv2",
+            "schema_fingerprint": "",
+            "stage_id": "narrow",
+            "query_id": "logical-goal-graph-hunt-req-20260916-034720-step-1",
+            "result_complete": true,
+            "row_count": 6,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('resolve_person_to_endpoint', 'splunk_botsv2', (('subject', ('Mallory',)),), '2017-08-01T00:00:00Z/2018-10-29T18:03:43Z', 'narrow')",
+            "alternatives_considered": [],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [
+          "relation_or_constraint_proof_missing"
+        ],
+        "capability_gaps": [],
+        "terminal_cause": null
+      },
+      {
+        "goal_id": "goal-2",
+        "relation": "modified",
+        "status": "CAPABILITY_GAP",
+        "execution_complete": false,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "CAPABILITY_GAP",
+        "attempts": [],
+        "proof_gaps": [
+          "relation_or_constraint_proof_missing"
+        ],
+        "capability_gaps": [
+          "no_provider_attempt"
+        ],
+        "terminal_cause": null
+      }
+    ]
+  },
+  "source_profile_audit": {
+    "status": "MALFORMED_OUTPUT",
+    "readiness": [
+      {
+        "goal_id": "goal-1",
+        "relation": "owns",
+        "status": "PROOF_GAP",
+        "execution_complete": false,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "RETRIEVAL_CAPABLE",
+        "attempts": [],
+        "proof_gaps": [
+          "constraint_not_proof_observable:hardware_descriptor"
+        ],
+        "capability_gaps": [],
+        "terminal_cause": null
+      },
+      {
+        "goal_id": "goal-2",
+        "relation": "modified",
+        "status": "PROOF_GAP",
+        "execution_complete": false,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "RETRIEVAL_CAPABLE",
+        "attempts": [],
+        "proof_gaps": [
+          "constraint_not_proof_observable:file_type",
+          "constraint_not_proof_observable:filename_observation_phase",
+          "constraint_not_proof_observable:importance",
+          "constraint_not_proof_observable:modification_cause",
+          "constraint_not_proof_observable:modification_date",
+          "constraint_not_proof_observable:owner",
+          "constraint_not_proof_observable:resulting_state"
+        ],
+        "capability_gaps": [],
+        "terminal_cause": null
+      }
+    ],
+    "profiling_goal_ids": [
+      "goal-1",
+      "goal-2"
+    ],
+    "retrieval": [
+      {
+        "relation": "owns",
+        "query_terms": [
+          "belonging",
+          "descriptor",
+          "endpoint",
+          "hardware",
+          "macbook",
+          "mallory",
+          "owns",
+          "person"
+        ],
+        "profile_count": 100,
+        "candidate_count": 100,
+        "candidates": [
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:hardware",
+            "score": 17.5,
+            "matched_terms": [
+              "hardware"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:hardware:field:eventtype",
+              "splunk:botsv2:hardware:field:host",
+              "splunk:botsv2:hardware:field:index",
+              "splunk:botsv2:hardware:field:linecount",
+              "splunk:botsv2:hardware:field:punct",
+              "splunk:botsv2:hardware:field:source",
+              "splunk:botsv2:hardware:field:sourcetype",
+              "splunk:botsv2:hardware:field:splunk_server",
+              "splunk:botsv2:hardware:field:splunk_server_group",
+              "splunk:botsv2:hardware:field:tag",
+              "splunk:botsv2:hardware:field:tag::eventtype",
+              "splunk:botsv2:hardware:field:timestamp"
+            ],
+            "rank": 1,
+            "low_confidence": false
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:arp",
+            "score": 4.0,
+            "matched_terms": [
+              "hardware"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:arp:field:hardware_size",
+              "splunk:botsv2:stream:arp:field:hardware_type"
+            ],
+            "rank": 2,
+            "low_confidence": false
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Unix:Version",
+            "score": 2.0,
+            "matched_terms": [
+              "hardware"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:Unix:Version:field:machine_hardware_name"
+            ],
+            "rank": 3,
+            "low_confidence": false
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:ActiveDirectory",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 4,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Linux:SELinuxConfig",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 5,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:MSAD:NT6:Health",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 6,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:MSAD:NT6:SiteInfo",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 7,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Perfmon:CPU",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 8,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Perfmon:LogicalDisk",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 9,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Perfmon:Memory",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 10,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Perfmon:NTDS",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 11,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Perfmon:Network",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 12,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Perfmon:Network_Interface",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 13,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Perfmon:PhysicalDisk",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 14,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Perfmon:Process",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 15,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Perfmon:Processor",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 16,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Perfmon:System",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 17,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Powershell:ScriptExecutionSummary",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 18,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Script:InstalledApps",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 19,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Script:ListeningPorts",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 20,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Unix:ListeningPorts",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 21,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Unix:Service",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 22,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Unix:Update",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 23,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Unix:Uptime",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 24,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:Unix:UserAccounts",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 25,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:WebLogic_Access_Combined",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 26,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:WinEventLog:Application",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 27,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:WinEventLog:Directory-Service",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 28,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:WinEventLog:Security",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 29,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:WinEventLog:System",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 30,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:WinHostMon",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 31,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:WinRegistry",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 32,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:WindowsUpdateLog",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 33,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 34,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:access_combined",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 35,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:apache:error",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 36,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:apache_error",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 37,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:auditd",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 38,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:bandwidth",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 39,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:bash_history-2",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 40,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:collectd",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 41,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:cpu",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 42,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:csp-violation",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 43,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:df",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 44,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:ess_content_importer",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 45,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:interfaces",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 46,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:iostat",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 47,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:lastlog",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 48,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:linux_audit",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 49,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:linux_secure",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 50,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:ms:o365:management",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 51,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:connection:stats",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 52,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:database",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 53,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:errorLog",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 54,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:instance:stats",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 55,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:server:stats",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 56,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:status",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 57,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:tableStatus",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 58,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 59,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:transaction:details",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 60,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:transaction:stats",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 61,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:user",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 62,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysql:variables",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 63,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:mysqld-8",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 64,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:netstat",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 65,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:openPorts",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 66,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:osquery_info",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 67,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:osquery_results",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 68,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:osquery_warning",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 69,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:package",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 70,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:pan:system",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 71,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:pan:threat",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 72,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:pan:traffic",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 73,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:protocol",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 74,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:ps",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 75,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:dhcp",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 76,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:dns",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 77,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:ftp",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 78,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:http",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 79,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:icmp",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 80,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:ip",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 81,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:irc",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 82,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:ldap",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 83,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:mysql",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 84,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:smb",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 85,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:smtp",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 86,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:tcp",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 87,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:stream:udp",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 88,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:suricata",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 89,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:symantec:ep:agent:file",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 90,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:symantec:ep:agt_system:file",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 91,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:symantec:ep:behavior:file",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 92,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:symantec:ep:packet:file",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 93,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:symantec:ep:scan:file",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 94,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:symantec:ep:scm_system:file",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 95,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:symantec:ep:security:file",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 96,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:symantec:ep:traffic:file",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 97,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:syslog",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 98,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:time",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 99,
+            "low_confidence": true
+          },
+          {
+            "relation": "owns",
+            "source_id": "splunk:botsv2:top",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 100,
+            "low_confidence": true
+          }
+        ],
+        "selected_source_ids": [
+          "splunk:botsv2:hardware",
+          "splunk:botsv2:stream:arp",
+          "splunk:botsv2:Unix:Version",
+          "splunk:botsv2:ActiveDirectory",
+          "splunk:botsv2:Linux:SELinuxConfig",
+          "splunk:botsv2:MSAD:NT6:Health",
+          "splunk:botsv2:MSAD:NT6:SiteInfo",
+          "splunk:botsv2:Perfmon:CPU",
+          "splunk:botsv2:Perfmon:LogicalDisk",
+          "splunk:botsv2:Perfmon:Memory",
+          "splunk:botsv2:Perfmon:NTDS",
+          "splunk:botsv2:Perfmon:Network",
+          "splunk:botsv2:Perfmon:Network_Interface",
+          "splunk:botsv2:Perfmon:PhysicalDisk",
+          "splunk:botsv2:Perfmon:Process",
+          "splunk:botsv2:Perfmon:Processor",
+          "splunk:botsv2:Perfmon:System",
+          "splunk:botsv2:Powershell:ScriptExecutionSummary",
+          "splunk:botsv2:Script:InstalledApps",
+          "splunk:botsv2:Script:ListeningPorts",
+          "splunk:botsv2:Unix:ListeningPorts",
+          "splunk:botsv2:Unix:Service",
+          "splunk:botsv2:Unix:Update",
+          "splunk:botsv2:Unix:Uptime",
+          "splunk:botsv2:Unix:UserAccounts",
+          "splunk:botsv2:WebLogic_Access_Combined",
+          "splunk:botsv2:WinEventLog:Application",
+          "splunk:botsv2:WinEventLog:Directory-Service",
+          "splunk:botsv2:WinEventLog:Security",
+          "splunk:botsv2:WinEventLog:System",
+          "splunk:botsv2:WinHostMon",
+          "splunk:botsv2:WinRegistry",
+          "splunk:botsv2:WindowsUpdateLog",
+          "splunk:botsv2:XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
+          "splunk:botsv2:access_combined",
+          "splunk:botsv2:apache:error",
+          "splunk:botsv2:apache_error",
+          "splunk:botsv2:auditd",
+          "splunk:botsv2:bandwidth",
+          "splunk:botsv2:bash_history-2",
+          "splunk:botsv2:collectd",
+          "splunk:botsv2:cpu",
+          "splunk:botsv2:csp-violation",
+          "splunk:botsv2:df",
+          "splunk:botsv2:ess_content_importer",
+          "splunk:botsv2:interfaces",
+          "splunk:botsv2:iostat",
+          "splunk:botsv2:lastlog",
+          "splunk:botsv2:linux_audit",
+          "splunk:botsv2:linux_secure",
+          "splunk:botsv2:ms:o365:management",
+          "splunk:botsv2:mysql:connection:stats",
+          "splunk:botsv2:mysql:database",
+          "splunk:botsv2:mysql:errorLog",
+          "splunk:botsv2:mysql:instance:stats",
+          "splunk:botsv2:mysql:server:stats",
+          "splunk:botsv2:mysql:status",
+          "splunk:botsv2:mysql:tableStatus",
+          "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage",
+          "splunk:botsv2:mysql:transaction:details",
+          "splunk:botsv2:mysql:transaction:stats",
+          "splunk:botsv2:mysql:user",
+          "splunk:botsv2:mysql:variables",
+          "splunk:botsv2:mysqld-8",
+          "splunk:botsv2:netstat",
+          "splunk:botsv2:openPorts",
+          "splunk:botsv2:osquery_info",
+          "splunk:botsv2:osquery_results",
+          "splunk:botsv2:osquery_warning",
+          "splunk:botsv2:package",
+          "splunk:botsv2:pan:system",
+          "splunk:botsv2:pan:threat",
+          "splunk:botsv2:pan:traffic",
+          "splunk:botsv2:protocol",
+          "splunk:botsv2:ps",
+          "splunk:botsv2:stream:dhcp",
+          "splunk:botsv2:stream:dns",
+          "splunk:botsv2:stream:ftp",
+          "splunk:botsv2:stream:http",
+          "splunk:botsv2:stream:icmp",
+          "splunk:botsv2:stream:ip",
+          "splunk:botsv2:stream:irc",
+          "splunk:botsv2:stream:ldap",
+          "splunk:botsv2:stream:mysql",
+          "splunk:botsv2:stream:smb",
+          "splunk:botsv2:stream:smtp",
+          "splunk:botsv2:stream:tcp",
+          "splunk:botsv2:stream:udp",
+          "splunk:botsv2:suricata",
+          "splunk:botsv2:symantec:ep:agent:file",
+          "splunk:botsv2:symantec:ep:agt_system:file",
+          "splunk:botsv2:symantec:ep:behavior:file",
+          "splunk:botsv2:symantec:ep:packet:file",
+          "splunk:botsv2:symantec:ep:scan:file",
+          "splunk:botsv2:symantec:ep:scm_system:file",
+          "splunk:botsv2:symantec:ep:security:file",
+          "splunk:botsv2:symantec:ep:traffic:file",
+          "splunk:botsv2:syslog",
+          "splunk:botsv2:time",
+          "splunk:botsv2:top"
+        ],
+        "source_coverage": {
+          "discovered": 100,
+          "scheduled": 100,
+          "complete": true
+        },
+        "field_coverage": {
+          "discovered": 2789,
+          "scheduled": 2789,
+          "complete": true
+        },
+        "batch_count": 14,
+        "max_profiles_per_batch": 8,
+        "max_fields_per_source_per_batch": 48,
+        "ordering_only": true
+      },
+      {
+        "relation": "modified",
+        "query_terms": [
+          "18",
+          "august",
+          "cause",
+          "critical",
+          "date",
+          "descriptor",
+          "encrypted",
+          "endpoint",
+          "file",
+          "filename",
+          "hardware",
+          "importance",
+          "it",
+          "macbook",
+          "mallory",
+          "modification",
+          "modified",
+          "observation",
+          "owner",
+          "phase",
+          "powerpoint",
+          "ppt",
+          "pptm",
+          "pptx",
+          "presentation",
+          "ransomware",
+          "resulting",
+          "state",
+          "that",
+          "type",
+          "was"
+        ],
+        "profile_count": 100,
+        "candidate_count": 100,
+        "candidates": [
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:symantec:ep:agent:file",
+            "score": 33.5,
+            "matched_terms": [
+              "date",
+              "file"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:symantec:ep:agent:file:field:date_hour",
+              "splunk:botsv2:symantec:ep:agent:file:field:date_mday",
+              "splunk:botsv2:symantec:ep:agent:file:field:date_minute",
+              "splunk:botsv2:symantec:ep:agent:file:field:date_month",
+              "splunk:botsv2:symantec:ep:agent:file:field:date_second",
+              "splunk:botsv2:symantec:ep:agent:file:field:date_wday",
+              "splunk:botsv2:symantec:ep:agent:file:field:date_year",
+              "splunk:botsv2:symantec:ep:agent:file:field:date_zone",
+              "splunk:botsv2:symantec:ep:agent:file:field:eventtype",
+              "splunk:botsv2:symantec:ep:agent:file:field:host",
+              "splunk:botsv2:symantec:ep:agent:file:field:index",
+              "splunk:botsv2:symantec:ep:agent:file:field:linecount",
+              "splunk:botsv2:symantec:ep:agent:file:field:punct",
+              "splunk:botsv2:symantec:ep:agent:file:field:source",
+              "splunk:botsv2:symantec:ep:agent:file:field:sourcetype",
+              "splunk:botsv2:symantec:ep:agent:file:field:splunk_server",
+              "splunk:botsv2:symantec:ep:agent:file:field:splunk_server_group",
+              "splunk:botsv2:symantec:ep:agent:file:field:tag",
+              "splunk:botsv2:symantec:ep:agent:file:field:tag::eventtype",
+              "splunk:botsv2:symantec:ep:agent:file:field:timeendpos",
+              "splunk:botsv2:symantec:ep:agent:file:field:timestartpos"
+            ],
+            "rank": 1,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:symantec:ep:agt_system:file",
+            "score": 33.5,
+            "matched_terms": [
+              "date",
+              "file"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:symantec:ep:agt_system:file:field:date_hour",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:date_mday",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:date_minute",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:date_month",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:date_second",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:date_wday",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:date_year",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:date_zone",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:eventtype",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:host",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:index",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:linecount",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:punct",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:source",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:sourcetype",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:splunk_server",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:splunk_server_group",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:tag",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:tag::eventtype",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:timeendpos",
+              "splunk:botsv2:symantec:ep:agt_system:file:field:timestartpos"
+            ],
+            "rank": 2,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:symantec:ep:behavior:file",
+            "score": 33.5,
+            "matched_terms": [
+              "date",
+              "file"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:symantec:ep:behavior:file:field:date_hour",
+              "splunk:botsv2:symantec:ep:behavior:file:field:date_mday",
+              "splunk:botsv2:symantec:ep:behavior:file:field:date_minute",
+              "splunk:botsv2:symantec:ep:behavior:file:field:date_month",
+              "splunk:botsv2:symantec:ep:behavior:file:field:date_second",
+              "splunk:botsv2:symantec:ep:behavior:file:field:date_wday",
+              "splunk:botsv2:symantec:ep:behavior:file:field:date_year",
+              "splunk:botsv2:symantec:ep:behavior:file:field:date_zone",
+              "splunk:botsv2:symantec:ep:behavior:file:field:eventtype",
+              "splunk:botsv2:symantec:ep:behavior:file:field:host",
+              "splunk:botsv2:symantec:ep:behavior:file:field:index",
+              "splunk:botsv2:symantec:ep:behavior:file:field:linecount",
+              "splunk:botsv2:symantec:ep:behavior:file:field:punct",
+              "splunk:botsv2:symantec:ep:behavior:file:field:source",
+              "splunk:botsv2:symantec:ep:behavior:file:field:sourcetype",
+              "splunk:botsv2:symantec:ep:behavior:file:field:splunk_server",
+              "splunk:botsv2:symantec:ep:behavior:file:field:splunk_server_group",
+              "splunk:botsv2:symantec:ep:behavior:file:field:tag",
+              "splunk:botsv2:symantec:ep:behavior:file:field:tag::eventtype",
+              "splunk:botsv2:symantec:ep:behavior:file:field:timeendpos",
+              "splunk:botsv2:symantec:ep:behavior:file:field:timestartpos"
+            ],
+            "rank": 3,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:symantec:ep:packet:file",
+            "score": 33.5,
+            "matched_terms": [
+              "date",
+              "file"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:symantec:ep:packet:file:field:date_hour",
+              "splunk:botsv2:symantec:ep:packet:file:field:date_mday",
+              "splunk:botsv2:symantec:ep:packet:file:field:date_minute",
+              "splunk:botsv2:symantec:ep:packet:file:field:date_month",
+              "splunk:botsv2:symantec:ep:packet:file:field:date_second",
+              "splunk:botsv2:symantec:ep:packet:file:field:date_wday",
+              "splunk:botsv2:symantec:ep:packet:file:field:date_year",
+              "splunk:botsv2:symantec:ep:packet:file:field:date_zone",
+              "splunk:botsv2:symantec:ep:packet:file:field:eventtype",
+              "splunk:botsv2:symantec:ep:packet:file:field:host",
+              "splunk:botsv2:symantec:ep:packet:file:field:index",
+              "splunk:botsv2:symantec:ep:packet:file:field:linecount",
+              "splunk:botsv2:symantec:ep:packet:file:field:punct",
+              "splunk:botsv2:symantec:ep:packet:file:field:source",
+              "splunk:botsv2:symantec:ep:packet:file:field:sourcetype",
+              "splunk:botsv2:symantec:ep:packet:file:field:splunk_server",
+              "splunk:botsv2:symantec:ep:packet:file:field:splunk_server_group",
+              "splunk:botsv2:symantec:ep:packet:file:field:tag",
+              "splunk:botsv2:symantec:ep:packet:file:field:tag::eventtype",
+              "splunk:botsv2:symantec:ep:packet:file:field:timeendpos",
+              "splunk:botsv2:symantec:ep:packet:file:field:timestartpos"
+            ],
+            "rank": 4,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:symantec:ep:scan:file",
+            "score": 33.5,
+            "matched_terms": [
+              "date",
+              "file"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:symantec:ep:scan:file:field:date_hour",
+              "splunk:botsv2:symantec:ep:scan:file:field:date_mday",
+              "splunk:botsv2:symantec:ep:scan:file:field:date_minute",
+              "splunk:botsv2:symantec:ep:scan:file:field:date_month",
+              "splunk:botsv2:symantec:ep:scan:file:field:date_second",
+              "splunk:botsv2:symantec:ep:scan:file:field:date_wday",
+              "splunk:botsv2:symantec:ep:scan:file:field:date_year",
+              "splunk:botsv2:symantec:ep:scan:file:field:date_zone",
+              "splunk:botsv2:symantec:ep:scan:file:field:eventtype",
+              "splunk:botsv2:symantec:ep:scan:file:field:host",
+              "splunk:botsv2:symantec:ep:scan:file:field:index",
+              "splunk:botsv2:symantec:ep:scan:file:field:linecount",
+              "splunk:botsv2:symantec:ep:scan:file:field:punct",
+              "splunk:botsv2:symantec:ep:scan:file:field:source",
+              "splunk:botsv2:symantec:ep:scan:file:field:sourcetype",
+              "splunk:botsv2:symantec:ep:scan:file:field:splunk_server",
+              "splunk:botsv2:symantec:ep:scan:file:field:splunk_server_group",
+              "splunk:botsv2:symantec:ep:scan:file:field:tag",
+              "splunk:botsv2:symantec:ep:scan:file:field:tag::eventtype",
+              "splunk:botsv2:symantec:ep:scan:file:field:timeendpos",
+              "splunk:botsv2:symantec:ep:scan:file:field:timestartpos"
+            ],
+            "rank": 5,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:symantec:ep:scm_system:file",
+            "score": 33.5,
+            "matched_terms": [
+              "date",
+              "file"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:symantec:ep:scm_system:file:field:date_hour",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:date_mday",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:date_minute",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:date_month",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:date_second",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:date_wday",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:date_year",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:date_zone",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:code",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:eventtype",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:host",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:index",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:linecount",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:punct",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:source",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:sourcetype",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:splunk_server",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:splunk_server_group",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:tag",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:tag::eventtype",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:timeendpos",
+              "splunk:botsv2:symantec:ep:scm_system:file:field:timestartpos"
+            ],
+            "rank": 6,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:symantec:ep:security:file",
+            "score": 33.5,
+            "matched_terms": [
+              "date",
+              "file"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:symantec:ep:security:file:field:date_hour",
+              "splunk:botsv2:symantec:ep:security:file:field:date_mday",
+              "splunk:botsv2:symantec:ep:security:file:field:date_minute",
+              "splunk:botsv2:symantec:ep:security:file:field:date_month",
+              "splunk:botsv2:symantec:ep:security:file:field:date_second",
+              "splunk:botsv2:symantec:ep:security:file:field:date_wday",
+              "splunk:botsv2:symantec:ep:security:file:field:date_year",
+              "splunk:botsv2:symantec:ep:security:file:field:date_zone",
+              "splunk:botsv2:symantec:ep:security:file:field:eventtype",
+              "splunk:botsv2:symantec:ep:security:file:field:host",
+              "splunk:botsv2:symantec:ep:security:file:field:index",
+              "splunk:botsv2:symantec:ep:security:file:field:linecount",
+              "splunk:botsv2:symantec:ep:security:file:field:punct",
+              "splunk:botsv2:symantec:ep:security:file:field:source",
+              "splunk:botsv2:symantec:ep:security:file:field:sourcetype",
+              "splunk:botsv2:symantec:ep:security:file:field:splunk_server",
+              "splunk:botsv2:symantec:ep:security:file:field:splunk_server_group",
+              "splunk:botsv2:symantec:ep:security:file:field:tag",
+              "splunk:botsv2:symantec:ep:security:file:field:tag::eventtype",
+              "splunk:botsv2:symantec:ep:security:file:field:timeendpos",
+              "splunk:botsv2:symantec:ep:security:file:field:timestartpos"
+            ],
+            "rank": 7,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:symantec:ep:traffic:file",
+            "score": 33.5,
+            "matched_terms": [
+              "date",
+              "file"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:symantec:ep:traffic:file:field:date_hour",
+              "splunk:botsv2:symantec:ep:traffic:file:field:date_mday",
+              "splunk:botsv2:symantec:ep:traffic:file:field:date_minute",
+              "splunk:botsv2:symantec:ep:traffic:file:field:date_month",
+              "splunk:botsv2:symantec:ep:traffic:file:field:date_second",
+              "splunk:botsv2:symantec:ep:traffic:file:field:date_wday",
+              "splunk:botsv2:symantec:ep:traffic:file:field:date_year",
+              "splunk:botsv2:symantec:ep:traffic:file:field:date_zone",
+              "splunk:botsv2:symantec:ep:traffic:file:field:eventtype",
+              "splunk:botsv2:symantec:ep:traffic:file:field:host",
+              "splunk:botsv2:symantec:ep:traffic:file:field:index",
+              "splunk:botsv2:symantec:ep:traffic:file:field:linecount",
+              "splunk:botsv2:symantec:ep:traffic:file:field:punct",
+              "splunk:botsv2:symantec:ep:traffic:file:field:source",
+              "splunk:botsv2:symantec:ep:traffic:file:field:sourcetype",
+              "splunk:botsv2:symantec:ep:traffic:file:field:splunk_server",
+              "splunk:botsv2:symantec:ep:traffic:file:field:splunk_server_group",
+              "splunk:botsv2:symantec:ep:traffic:file:field:tag",
+              "splunk:botsv2:symantec:ep:traffic:file:field:tag::eventtype",
+              "splunk:botsv2:symantec:ep:traffic:file:field:timeendpos",
+              "splunk:botsv2:symantec:ep:traffic:file:field:timestartpos"
+            ],
+            "rank": 8,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:WindowsUpdateLog",
+            "score": 18.0,
+            "matched_terms": [
+              "date",
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:WindowsUpdateLog:field:Date",
+              "splunk:botsv2:WindowsUpdateLog:field:Type",
+              "splunk:botsv2:WindowsUpdateLog:field:date_hour",
+              "splunk:botsv2:WindowsUpdateLog:field:date_mday",
+              "splunk:botsv2:WindowsUpdateLog:field:date_minute",
+              "splunk:botsv2:WindowsUpdateLog:field:date_month",
+              "splunk:botsv2:WindowsUpdateLog:field:date_second",
+              "splunk:botsv2:WindowsUpdateLog:field:date_wday",
+              "splunk:botsv2:WindowsUpdateLog:field:date_year",
+              "splunk:botsv2:WindowsUpdateLog:field:date_zone"
+            ],
+            "rank": 9,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:osquery_info",
+            "score": 18.0,
+            "matched_terms": [
+              "date",
+              "file",
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:osquery_info:field:file_type",
+              "splunk:botsv2:osquery_info:field:date_hour",
+              "splunk:botsv2:osquery_info:field:date_mday",
+              "splunk:botsv2:osquery_info:field:date_minute",
+              "splunk:botsv2:osquery_info:field:date_month",
+              "splunk:botsv2:osquery_info:field:date_second",
+              "splunk:botsv2:osquery_info:field:date_wday",
+              "splunk:botsv2:osquery_info:field:date_year",
+              "splunk:botsv2:osquery_info:field:date_zone"
+            ],
+            "rank": 10,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:arp",
+            "score": 18.0,
+            "matched_terms": [
+              "date",
+              "hardware",
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:arp:field:hardware_type",
+              "splunk:botsv2:stream:arp:field:date_hour",
+              "splunk:botsv2:stream:arp:field:date_mday",
+              "splunk:botsv2:stream:arp:field:date_minute",
+              "splunk:botsv2:stream:arp:field:date_month",
+              "splunk:botsv2:stream:arp:field:date_second",
+              "splunk:botsv2:stream:arp:field:date_wday",
+              "splunk:botsv2:stream:arp:field:date_year",
+              "splunk:botsv2:stream:arp:field:date_zone",
+              "splunk:botsv2:stream:arp:field:hardware_size",
+              "splunk:botsv2:stream:arp:field:protocol_type"
+            ],
+            "rank": 11,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:hardware",
+            "score": 17.5,
+            "matched_terms": [
+              "hardware"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:hardware:field:eventtype",
+              "splunk:botsv2:hardware:field:host",
+              "splunk:botsv2:hardware:field:index",
+              "splunk:botsv2:hardware:field:linecount",
+              "splunk:botsv2:hardware:field:punct",
+              "splunk:botsv2:hardware:field:source",
+              "splunk:botsv2:hardware:field:sourcetype",
+              "splunk:botsv2:hardware:field:splunk_server",
+              "splunk:botsv2:hardware:field:splunk_server_group",
+              "splunk:botsv2:hardware:field:tag",
+              "splunk:botsv2:hardware:field:tag::eventtype",
+              "splunk:botsv2:hardware:field:timestamp"
+            ],
+            "rank": 12,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:WebLogic_Access_Combined",
+            "score": 17.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:WebLogic_Access_Combined:field:date",
+              "splunk:botsv2:WebLogic_Access_Combined:field:date_hour",
+              "splunk:botsv2:WebLogic_Access_Combined:field:date_mday",
+              "splunk:botsv2:WebLogic_Access_Combined:field:date_minute",
+              "splunk:botsv2:WebLogic_Access_Combined:field:date_month",
+              "splunk:botsv2:WebLogic_Access_Combined:field:date_second",
+              "splunk:botsv2:WebLogic_Access_Combined:field:date_wday",
+              "splunk:botsv2:WebLogic_Access_Combined:field:date_year",
+              "splunk:botsv2:WebLogic_Access_Combined:field:date_zone"
+            ],
+            "rank": 13,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:access_combined",
+            "score": 17.0,
+            "matched_terms": [
+              "date",
+              "file"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:access_combined:field:file",
+              "splunk:botsv2:access_combined:field:date_hour",
+              "splunk:botsv2:access_combined:field:date_mday",
+              "splunk:botsv2:access_combined:field:date_minute",
+              "splunk:botsv2:access_combined:field:date_month",
+              "splunk:botsv2:access_combined:field:date_second",
+              "splunk:botsv2:access_combined:field:date_wday",
+              "splunk:botsv2:access_combined:field:date_year",
+              "splunk:botsv2:access_combined:field:date_zone"
+            ],
+            "rank": 14,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:auditd",
+            "score": 17.0,
+            "matched_terms": [
+              "date",
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:auditd:field:type",
+              "splunk:botsv2:auditd:field:date_hour",
+              "splunk:botsv2:auditd:field:date_mday",
+              "splunk:botsv2:auditd:field:date_minute",
+              "splunk:botsv2:auditd:field:date_month",
+              "splunk:botsv2:auditd:field:date_second",
+              "splunk:botsv2:auditd:field:date_wday",
+              "splunk:botsv2:auditd:field:date_year",
+              "splunk:botsv2:auditd:field:date_zone"
+            ],
+            "rank": 15,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:linux_audit",
+            "score": 17.0,
+            "matched_terms": [
+              "date",
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:linux_audit:field:type",
+              "splunk:botsv2:linux_audit:field:date_hour",
+              "splunk:botsv2:linux_audit:field:date_mday",
+              "splunk:botsv2:linux_audit:field:date_minute",
+              "splunk:botsv2:linux_audit:field:date_month",
+              "splunk:botsv2:linux_audit:field:date_second",
+              "splunk:botsv2:linux_audit:field:date_wday",
+              "splunk:botsv2:linux_audit:field:date_year",
+              "splunk:botsv2:linux_audit:field:date_zone"
+            ],
+            "rank": 16,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Linux:SELinuxConfig",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:Linux:SELinuxConfig:field:date_hour",
+              "splunk:botsv2:Linux:SELinuxConfig:field:date_mday",
+              "splunk:botsv2:Linux:SELinuxConfig:field:date_minute",
+              "splunk:botsv2:Linux:SELinuxConfig:field:date_month",
+              "splunk:botsv2:Linux:SELinuxConfig:field:date_second",
+              "splunk:botsv2:Linux:SELinuxConfig:field:date_wday",
+              "splunk:botsv2:Linux:SELinuxConfig:field:date_year",
+              "splunk:botsv2:Linux:SELinuxConfig:field:date_zone",
+              "splunk:botsv2:Linux:SELinuxConfig:field:file_hash"
+            ],
+            "rank": 17,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:MSAD:NT6:Health",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:MSAD:NT6:Health:field:date_hour",
+              "splunk:botsv2:MSAD:NT6:Health:field:date_mday",
+              "splunk:botsv2:MSAD:NT6:Health:field:date_minute",
+              "splunk:botsv2:MSAD:NT6:Health:field:date_month",
+              "splunk:botsv2:MSAD:NT6:Health:field:date_second",
+              "splunk:botsv2:MSAD:NT6:Health:field:date_wday",
+              "splunk:botsv2:MSAD:NT6:Health:field:date_year",
+              "splunk:botsv2:MSAD:NT6:Health:field:date_zone"
+            ],
+            "rank": 18,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Script:InstalledApps",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:Script:InstalledApps:field:date_hour",
+              "splunk:botsv2:Script:InstalledApps:field:date_mday",
+              "splunk:botsv2:Script:InstalledApps:field:date_minute",
+              "splunk:botsv2:Script:InstalledApps:field:date_month",
+              "splunk:botsv2:Script:InstalledApps:field:date_second",
+              "splunk:botsv2:Script:InstalledApps:field:date_wday",
+              "splunk:botsv2:Script:InstalledApps:field:date_year",
+              "splunk:botsv2:Script:InstalledApps:field:date_zone"
+            ],
+            "rank": 19,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Script:ListeningPorts",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:Script:ListeningPorts:field:date_hour",
+              "splunk:botsv2:Script:ListeningPorts:field:date_mday",
+              "splunk:botsv2:Script:ListeningPorts:field:date_minute",
+              "splunk:botsv2:Script:ListeningPorts:field:date_month",
+              "splunk:botsv2:Script:ListeningPorts:field:date_second",
+              "splunk:botsv2:Script:ListeningPorts:field:date_wday",
+              "splunk:botsv2:Script:ListeningPorts:field:date_year",
+              "splunk:botsv2:Script:ListeningPorts:field:date_zone"
+            ],
+            "rank": 20,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Unix:ListeningPorts",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:Unix:ListeningPorts:field:date_hour",
+              "splunk:botsv2:Unix:ListeningPorts:field:date_mday",
+              "splunk:botsv2:Unix:ListeningPorts:field:date_minute",
+              "splunk:botsv2:Unix:ListeningPorts:field:date_month",
+              "splunk:botsv2:Unix:ListeningPorts:field:date_second",
+              "splunk:botsv2:Unix:ListeningPorts:field:date_wday",
+              "splunk:botsv2:Unix:ListeningPorts:field:date_year",
+              "splunk:botsv2:Unix:ListeningPorts:field:date_zone",
+              "splunk:botsv2:Unix:ListeningPorts:field:file_hash"
+            ],
+            "rank": 21,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Unix:Service",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:Unix:Service:field:date_hour",
+              "splunk:botsv2:Unix:Service:field:date_mday",
+              "splunk:botsv2:Unix:Service:field:date_minute",
+              "splunk:botsv2:Unix:Service:field:date_month",
+              "splunk:botsv2:Unix:Service:field:date_second",
+              "splunk:botsv2:Unix:Service:field:date_wday",
+              "splunk:botsv2:Unix:Service:field:date_year",
+              "splunk:botsv2:Unix:Service:field:date_zone"
+            ],
+            "rank": 22,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Unix:Update",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:Unix:Update:field:date_hour",
+              "splunk:botsv2:Unix:Update:field:date_mday",
+              "splunk:botsv2:Unix:Update:field:date_minute",
+              "splunk:botsv2:Unix:Update:field:date_month",
+              "splunk:botsv2:Unix:Update:field:date_second",
+              "splunk:botsv2:Unix:Update:field:date_wday",
+              "splunk:botsv2:Unix:Update:field:date_year",
+              "splunk:botsv2:Unix:Update:field:date_zone"
+            ],
+            "rank": 23,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Unix:Uptime",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:Unix:Uptime:field:date_hour",
+              "splunk:botsv2:Unix:Uptime:field:date_mday",
+              "splunk:botsv2:Unix:Uptime:field:date_minute",
+              "splunk:botsv2:Unix:Uptime:field:date_month",
+              "splunk:botsv2:Unix:Uptime:field:date_second",
+              "splunk:botsv2:Unix:Uptime:field:date_wday",
+              "splunk:botsv2:Unix:Uptime:field:date_year",
+              "splunk:botsv2:Unix:Uptime:field:date_zone"
+            ],
+            "rank": 24,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Unix:UserAccounts",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:Unix:UserAccounts:field:date_hour",
+              "splunk:botsv2:Unix:UserAccounts:field:date_mday",
+              "splunk:botsv2:Unix:UserAccounts:field:date_minute",
+              "splunk:botsv2:Unix:UserAccounts:field:date_month",
+              "splunk:botsv2:Unix:UserAccounts:field:date_second",
+              "splunk:botsv2:Unix:UserAccounts:field:date_wday",
+              "splunk:botsv2:Unix:UserAccounts:field:date_year",
+              "splunk:botsv2:Unix:UserAccounts:field:date_zone",
+              "splunk:botsv2:Unix:UserAccounts:field:file_hash"
+            ],
+            "rank": 25,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Unix:Version",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:Unix:Version:field:date_hour",
+              "splunk:botsv2:Unix:Version:field:date_mday",
+              "splunk:botsv2:Unix:Version:field:date_minute",
+              "splunk:botsv2:Unix:Version:field:date_month",
+              "splunk:botsv2:Unix:Version:field:date_second",
+              "splunk:botsv2:Unix:Version:field:date_wday",
+              "splunk:botsv2:Unix:Version:field:date_year",
+              "splunk:botsv2:Unix:Version:field:date_zone",
+              "splunk:botsv2:Unix:Version:field:machine_hardware_name"
+            ],
+            "rank": 26,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:apache_error",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:apache_error:field:date_hour",
+              "splunk:botsv2:apache_error:field:date_mday",
+              "splunk:botsv2:apache_error:field:date_minute",
+              "splunk:botsv2:apache_error:field:date_month",
+              "splunk:botsv2:apache_error:field:date_second",
+              "splunk:botsv2:apache_error:field:date_wday",
+              "splunk:botsv2:apache_error:field:date_year",
+              "splunk:botsv2:apache_error:field:date_zone"
+            ],
+            "rank": 27,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:collectd",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:collectd:field:date_hour",
+              "splunk:botsv2:collectd:field:date_mday",
+              "splunk:botsv2:collectd:field:date_minute",
+              "splunk:botsv2:collectd:field:date_month",
+              "splunk:botsv2:collectd:field:date_second",
+              "splunk:botsv2:collectd:field:date_wday",
+              "splunk:botsv2:collectd:field:date_year",
+              "splunk:botsv2:collectd:field:date_zone"
+            ],
+            "rank": 28,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:linux_secure",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:linux_secure:field:date_hour",
+              "splunk:botsv2:linux_secure:field:date_mday",
+              "splunk:botsv2:linux_secure:field:date_minute",
+              "splunk:botsv2:linux_secure:field:date_month",
+              "splunk:botsv2:linux_secure:field:date_second",
+              "splunk:botsv2:linux_secure:field:date_wday",
+              "splunk:botsv2:linux_secure:field:date_year",
+              "splunk:botsv2:linux_secure:field:date_zone"
+            ],
+            "rank": 29,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:ms:o365:management",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:ms:o365:management:field:date_hour",
+              "splunk:botsv2:ms:o365:management:field:date_mday",
+              "splunk:botsv2:ms:o365:management:field:date_minute",
+              "splunk:botsv2:ms:o365:management:field:date_month",
+              "splunk:botsv2:ms:o365:management:field:date_second",
+              "splunk:botsv2:ms:o365:management:field:date_wday",
+              "splunk:botsv2:ms:o365:management:field:date_year",
+              "splunk:botsv2:ms:o365:management:field:date_zone"
+            ],
+            "rank": 30,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:connection:stats",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:connection:stats:field:date_hour",
+              "splunk:botsv2:mysql:connection:stats:field:date_mday",
+              "splunk:botsv2:mysql:connection:stats:field:date_minute",
+              "splunk:botsv2:mysql:connection:stats:field:date_month",
+              "splunk:botsv2:mysql:connection:stats:field:date_second",
+              "splunk:botsv2:mysql:connection:stats:field:date_wday",
+              "splunk:botsv2:mysql:connection:stats:field:date_year",
+              "splunk:botsv2:mysql:connection:stats:field:date_zone"
+            ],
+            "rank": 31,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:database",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:database:field:date_hour",
+              "splunk:botsv2:mysql:database:field:date_mday",
+              "splunk:botsv2:mysql:database:field:date_minute",
+              "splunk:botsv2:mysql:database:field:date_month",
+              "splunk:botsv2:mysql:database:field:date_second",
+              "splunk:botsv2:mysql:database:field:date_wday",
+              "splunk:botsv2:mysql:database:field:date_year",
+              "splunk:botsv2:mysql:database:field:date_zone"
+            ],
+            "rank": 32,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:errorLog",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:errorLog:field:date_hour",
+              "splunk:botsv2:mysql:errorLog:field:date_mday",
+              "splunk:botsv2:mysql:errorLog:field:date_minute",
+              "splunk:botsv2:mysql:errorLog:field:date_month",
+              "splunk:botsv2:mysql:errorLog:field:date_second",
+              "splunk:botsv2:mysql:errorLog:field:date_wday",
+              "splunk:botsv2:mysql:errorLog:field:date_year",
+              "splunk:botsv2:mysql:errorLog:field:date_zone"
+            ],
+            "rank": 33,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:instance:stats",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:instance:stats:field:date_hour",
+              "splunk:botsv2:mysql:instance:stats:field:date_mday",
+              "splunk:botsv2:mysql:instance:stats:field:date_minute",
+              "splunk:botsv2:mysql:instance:stats:field:date_month",
+              "splunk:botsv2:mysql:instance:stats:field:date_second",
+              "splunk:botsv2:mysql:instance:stats:field:date_wday",
+              "splunk:botsv2:mysql:instance:stats:field:date_year",
+              "splunk:botsv2:mysql:instance:stats:field:date_zone"
+            ],
+            "rank": 34,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:server:stats",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:server:stats:field:date_hour",
+              "splunk:botsv2:mysql:server:stats:field:date_mday",
+              "splunk:botsv2:mysql:server:stats:field:date_minute",
+              "splunk:botsv2:mysql:server:stats:field:date_month",
+              "splunk:botsv2:mysql:server:stats:field:date_second",
+              "splunk:botsv2:mysql:server:stats:field:date_wday",
+              "splunk:botsv2:mysql:server:stats:field:date_year",
+              "splunk:botsv2:mysql:server:stats:field:date_zone"
+            ],
+            "rank": 35,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:status",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:status:field:date_hour",
+              "splunk:botsv2:mysql:status:field:date_mday",
+              "splunk:botsv2:mysql:status:field:date_minute",
+              "splunk:botsv2:mysql:status:field:date_month",
+              "splunk:botsv2:mysql:status:field:date_second",
+              "splunk:botsv2:mysql:status:field:date_wday",
+              "splunk:botsv2:mysql:status:field:date_year",
+              "splunk:botsv2:mysql:status:field:date_zone"
+            ],
+            "rank": 36,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:tableStatus",
+            "score": 16.0,
+            "matched_terms": [
+              "date",
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:tableStatus:field:TABLE_TYPE",
+              "splunk:botsv2:mysql:tableStatus:field:date_hour",
+              "splunk:botsv2:mysql:tableStatus:field:date_mday",
+              "splunk:botsv2:mysql:tableStatus:field:date_minute",
+              "splunk:botsv2:mysql:tableStatus:field:date_month",
+              "splunk:botsv2:mysql:tableStatus:field:date_second",
+              "splunk:botsv2:mysql:tableStatus:field:date_wday",
+              "splunk:botsv2:mysql:tableStatus:field:date_year",
+              "splunk:botsv2:mysql:tableStatus:field:date_zone"
+            ],
+            "rank": 37,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage:field:date_hour",
+              "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage:field:date_mday",
+              "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage:field:date_minute",
+              "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage:field:date_month",
+              "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage:field:date_second",
+              "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage:field:date_wday",
+              "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage:field:date_year",
+              "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage:field:date_zone"
+            ],
+            "rank": 38,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:transaction:details",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:transaction:details:field:date_hour",
+              "splunk:botsv2:mysql:transaction:details:field:date_mday",
+              "splunk:botsv2:mysql:transaction:details:field:date_minute",
+              "splunk:botsv2:mysql:transaction:details:field:date_month",
+              "splunk:botsv2:mysql:transaction:details:field:date_second",
+              "splunk:botsv2:mysql:transaction:details:field:date_wday",
+              "splunk:botsv2:mysql:transaction:details:field:date_year",
+              "splunk:botsv2:mysql:transaction:details:field:date_zone"
+            ],
+            "rank": 39,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:transaction:stats",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:transaction:stats:field:date_hour",
+              "splunk:botsv2:mysql:transaction:stats:field:date_mday",
+              "splunk:botsv2:mysql:transaction:stats:field:date_minute",
+              "splunk:botsv2:mysql:transaction:stats:field:date_month",
+              "splunk:botsv2:mysql:transaction:stats:field:date_second",
+              "splunk:botsv2:mysql:transaction:stats:field:date_wday",
+              "splunk:botsv2:mysql:transaction:stats:field:date_year",
+              "splunk:botsv2:mysql:transaction:stats:field:date_zone"
+            ],
+            "rank": 40,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:user",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:user:field:date_hour",
+              "splunk:botsv2:mysql:user:field:date_mday",
+              "splunk:botsv2:mysql:user:field:date_minute",
+              "splunk:botsv2:mysql:user:field:date_month",
+              "splunk:botsv2:mysql:user:field:date_second",
+              "splunk:botsv2:mysql:user:field:date_wday",
+              "splunk:botsv2:mysql:user:field:date_year",
+              "splunk:botsv2:mysql:user:field:date_zone"
+            ],
+            "rank": 41,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysql:variables",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysql:variables:field:date_hour",
+              "splunk:botsv2:mysql:variables:field:date_mday",
+              "splunk:botsv2:mysql:variables:field:date_minute",
+              "splunk:botsv2:mysql:variables:field:date_month",
+              "splunk:botsv2:mysql:variables:field:date_second",
+              "splunk:botsv2:mysql:variables:field:date_wday",
+              "splunk:botsv2:mysql:variables:field:date_year",
+              "splunk:botsv2:mysql:variables:field:date_zone"
+            ],
+            "rank": 42,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:mysqld-8",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:mysqld-8:field:date_hour",
+              "splunk:botsv2:mysqld-8:field:date_mday",
+              "splunk:botsv2:mysqld-8:field:date_minute",
+              "splunk:botsv2:mysqld-8:field:date_month",
+              "splunk:botsv2:mysqld-8:field:date_second",
+              "splunk:botsv2:mysqld-8:field:date_wday",
+              "splunk:botsv2:mysqld-8:field:date_year",
+              "splunk:botsv2:mysqld-8:field:date_zone"
+            ],
+            "rank": 43,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:osquery_results",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:osquery_results:field:date_hour",
+              "splunk:botsv2:osquery_results:field:date_mday",
+              "splunk:botsv2:osquery_results:field:date_minute",
+              "splunk:botsv2:osquery_results:field:date_month",
+              "splunk:botsv2:osquery_results:field:date_second",
+              "splunk:botsv2:osquery_results:field:date_wday",
+              "splunk:botsv2:osquery_results:field:date_year",
+              "splunk:botsv2:osquery_results:field:date_zone"
+            ],
+            "rank": 44,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:osquery_warning",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:osquery_warning:field:date_hour",
+              "splunk:botsv2:osquery_warning:field:date_mday",
+              "splunk:botsv2:osquery_warning:field:date_minute",
+              "splunk:botsv2:osquery_warning:field:date_month",
+              "splunk:botsv2:osquery_warning:field:date_second",
+              "splunk:botsv2:osquery_warning:field:date_wday",
+              "splunk:botsv2:osquery_warning:field:date_year",
+              "splunk:botsv2:osquery_warning:field:date_zone"
+            ],
+            "rank": 45,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:pan:system",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:pan:system:field:date_hour",
+              "splunk:botsv2:pan:system:field:date_mday",
+              "splunk:botsv2:pan:system:field:date_minute",
+              "splunk:botsv2:pan:system:field:date_month",
+              "splunk:botsv2:pan:system:field:date_second",
+              "splunk:botsv2:pan:system:field:date_wday",
+              "splunk:botsv2:pan:system:field:date_year",
+              "splunk:botsv2:pan:system:field:date_zone"
+            ],
+            "rank": 46,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:pan:threat",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:pan:threat:field:date_hour",
+              "splunk:botsv2:pan:threat:field:date_mday",
+              "splunk:botsv2:pan:threat:field:date_minute",
+              "splunk:botsv2:pan:threat:field:date_month",
+              "splunk:botsv2:pan:threat:field:date_second",
+              "splunk:botsv2:pan:threat:field:date_wday",
+              "splunk:botsv2:pan:threat:field:date_year",
+              "splunk:botsv2:pan:threat:field:date_zone"
+            ],
+            "rank": 47,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:pan:traffic",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:pan:traffic:field:date_hour",
+              "splunk:botsv2:pan:traffic:field:date_mday",
+              "splunk:botsv2:pan:traffic:field:date_minute",
+              "splunk:botsv2:pan:traffic:field:date_month",
+              "splunk:botsv2:pan:traffic:field:date_second",
+              "splunk:botsv2:pan:traffic:field:date_wday",
+              "splunk:botsv2:pan:traffic:field:date_year",
+              "splunk:botsv2:pan:traffic:field:date_zone"
+            ],
+            "rank": 48,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:http",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:http:field:date_hour",
+              "splunk:botsv2:stream:http:field:date_mday",
+              "splunk:botsv2:stream:http:field:date_minute",
+              "splunk:botsv2:stream:http:field:date_month",
+              "splunk:botsv2:stream:http:field:date_second",
+              "splunk:botsv2:stream:http:field:date_wday",
+              "splunk:botsv2:stream:http:field:date_year",
+              "splunk:botsv2:stream:http:field:date_zone",
+              "splunk:botsv2:stream:http:field:http_content_type"
+            ],
+            "rank": 49,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:ip",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:ip:field:date_hour",
+              "splunk:botsv2:stream:ip:field:date_mday",
+              "splunk:botsv2:stream:ip:field:date_minute",
+              "splunk:botsv2:stream:ip:field:date_month",
+              "splunk:botsv2:stream:ip:field:date_second",
+              "splunk:botsv2:stream:ip:field:date_wday",
+              "splunk:botsv2:stream:ip:field:date_year",
+              "splunk:botsv2:stream:ip:field:date_zone"
+            ],
+            "rank": 50,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:mysql",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:mysql:field:date_hour",
+              "splunk:botsv2:stream:mysql:field:date_mday",
+              "splunk:botsv2:stream:mysql:field:date_minute",
+              "splunk:botsv2:stream:mysql:field:date_month",
+              "splunk:botsv2:stream:mysql:field:date_second",
+              "splunk:botsv2:stream:mysql:field:date_wday",
+              "splunk:botsv2:stream:mysql:field:date_year",
+              "splunk:botsv2:stream:mysql:field:date_zone"
+            ],
+            "rank": 51,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:tcp",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:tcp:field:date_hour",
+              "splunk:botsv2:stream:tcp:field:date_mday",
+              "splunk:botsv2:stream:tcp:field:date_minute",
+              "splunk:botsv2:stream:tcp:field:date_month",
+              "splunk:botsv2:stream:tcp:field:date_second",
+              "splunk:botsv2:stream:tcp:field:date_wday",
+              "splunk:botsv2:stream:tcp:field:date_year",
+              "splunk:botsv2:stream:tcp:field:date_zone"
+            ],
+            "rank": 52,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:udp",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:udp:field:date_hour",
+              "splunk:botsv2:stream:udp:field:date_mday",
+              "splunk:botsv2:stream:udp:field:date_minute",
+              "splunk:botsv2:stream:udp:field:date_month",
+              "splunk:botsv2:stream:udp:field:date_second",
+              "splunk:botsv2:stream:udp:field:date_wday",
+              "splunk:botsv2:stream:udp:field:date_year",
+              "splunk:botsv2:stream:udp:field:date_zone"
+            ],
+            "rank": 53,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:suricata",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:suricata:field:date_hour",
+              "splunk:botsv2:suricata:field:date_mday",
+              "splunk:botsv2:suricata:field:date_minute",
+              "splunk:botsv2:suricata:field:date_month",
+              "splunk:botsv2:suricata:field:date_second",
+              "splunk:botsv2:suricata:field:date_wday",
+              "splunk:botsv2:suricata:field:date_year",
+              "splunk:botsv2:suricata:field:date_zone",
+              "splunk:botsv2:suricata:field:event_type",
+              "splunk:botsv2:suricata:field:fileinfo.filename",
+              "splunk:botsv2:suricata:field:fileinfo.state",
+              "splunk:botsv2:suricata:field:flow.state",
+              "splunk:botsv2:suricata:field:http.http_content_type",
+              "splunk:botsv2:suricata:field:tcp.state"
+            ],
+            "rank": 54,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:syslog",
+            "score": 16.0,
+            "matched_terms": [
+              "date"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:syslog:field:date_hour",
+              "splunk:botsv2:syslog:field:date_mday",
+              "splunk:botsv2:syslog:field:date_minute",
+              "splunk:botsv2:syslog:field:date_month",
+              "splunk:botsv2:syslog:field:date_second",
+              "splunk:botsv2:syslog:field:date_wday",
+              "splunk:botsv2:syslog:field:date_year",
+              "splunk:botsv2:syslog:field:date_zone"
+            ],
+            "rank": 55,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:WinEventLog:Security",
+            "score": 7.0,
+            "matched_terms": [
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:WinEventLog:Security:field:Type",
+              "splunk:botsv2:WinEventLog:Security:field:Logon_Type",
+              "splunk:botsv2:WinEventLog:Security:field:Token_Elevation_Type"
+            ],
+            "rank": 56,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:WinHostMon",
+            "score": 6.0,
+            "matched_terms": [
+              "state",
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:WinHostMon:field:State",
+              "splunk:botsv2:WinHostMon:field:Type"
+            ],
+            "rank": 57,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:dns",
+            "score": 6.0,
+            "matched_terms": [
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:dns:field:host_type{}",
+              "splunk:botsv2:stream:dns:field:message_type{}",
+              "splunk:botsv2:stream:dns:field:query_type{}"
+            ],
+            "rank": 58,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:icmp",
+            "score": 5.0,
+            "matched_terms": [
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:icmp:field:type",
+              "splunk:botsv2:stream:icmp:field:type_string"
+            ],
+            "rank": 59,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:smtp",
+            "score": 5.0,
+            "matched_terms": [
+              "date",
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:smtp:field:date",
+              "splunk:botsv2:stream:smtp:field:content_type"
+            ],
+            "rank": 60,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:WinRegistry",
+            "score": 4.0,
+            "matched_terms": [
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:WinRegistry:field:data_type",
+              "splunk:botsv2:WinRegistry:field:registry_type"
+            ],
+            "rank": 61,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:ldap",
+            "score": 4.0,
+            "matched_terms": [
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:ldap:field:message_type",
+              "splunk:botsv2:stream:ldap:field:message_type{}"
+            ],
+            "rank": 62,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:MSAD:NT6:SiteInfo",
+            "score": 3.0,
+            "matched_terms": [
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:MSAD:NT6:SiteInfo:field:Type"
+            ],
+            "rank": 63,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:WinEventLog:Application",
+            "score": 3.0,
+            "matched_terms": [
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:WinEventLog:Application:field:Type"
+            ],
+            "rank": 64,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:WinEventLog:Directory-Service",
+            "score": 3.0,
+            "matched_terms": [
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:WinEventLog:Directory-Service:field:Type"
+            ],
+            "rank": 65,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:WinEventLog:System",
+            "score": 3.0,
+            "matched_terms": [
+              "type"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:WinEventLog:System:field:Type"
+            ],
+            "rank": 66,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:ftp",
+            "score": 3.0,
+            "matched_terms": [
+              "filename"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:ftp:field:filename"
+            ],
+            "rank": 67,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:smb",
+            "score": 3.0,
+            "matched_terms": [
+              "filename"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:stream:smb:field:filename"
+            ],
+            "rank": 68,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:csp-violation",
+            "score": 2.0,
+            "matched_terms": [
+              "file"
+            ],
+            "matched_field_ids": [
+              "splunk:botsv2:csp-violation:field:csp-report.source-file"
+            ],
+            "rank": 69,
+            "low_confidence": false
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:ActiveDirectory",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 70,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Perfmon:CPU",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 71,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Perfmon:LogicalDisk",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 72,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Perfmon:Memory",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 73,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Perfmon:NTDS",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 74,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Perfmon:Network",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 75,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Perfmon:Network_Interface",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 76,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Perfmon:PhysicalDisk",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 77,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Perfmon:Process",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 78,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Perfmon:Processor",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 79,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Perfmon:System",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 80,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:Powershell:ScriptExecutionSummary",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 81,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 82,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:apache:error",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 83,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:bandwidth",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 84,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:bash_history-2",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 85,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:cpu",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 86,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:df",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 87,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:ess_content_importer",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 88,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:interfaces",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 89,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:iostat",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 90,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:lastlog",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 91,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:netstat",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 92,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:openPorts",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 93,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:package",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 94,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:protocol",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 95,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:ps",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 96,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:dhcp",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 97,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:stream:irc",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 98,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:time",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 99,
+            "low_confidence": true
+          },
+          {
+            "relation": "modified",
+            "source_id": "splunk:botsv2:top",
+            "score": 0.0,
+            "matched_terms": [],
+            "matched_field_ids": [],
+            "rank": 100,
+            "low_confidence": true
+          }
+        ],
+        "selected_source_ids": [
+          "splunk:botsv2:symantec:ep:agent:file",
+          "splunk:botsv2:symantec:ep:agt_system:file",
+          "splunk:botsv2:symantec:ep:behavior:file",
+          "splunk:botsv2:symantec:ep:packet:file",
+          "splunk:botsv2:symantec:ep:scan:file",
+          "splunk:botsv2:symantec:ep:scm_system:file",
+          "splunk:botsv2:symantec:ep:security:file",
+          "splunk:botsv2:symantec:ep:traffic:file",
+          "splunk:botsv2:WindowsUpdateLog",
+          "splunk:botsv2:osquery_info",
+          "splunk:botsv2:stream:arp",
+          "splunk:botsv2:hardware",
+          "splunk:botsv2:WebLogic_Access_Combined",
+          "splunk:botsv2:access_combined",
+          "splunk:botsv2:auditd",
+          "splunk:botsv2:linux_audit",
+          "splunk:botsv2:Linux:SELinuxConfig",
+          "splunk:botsv2:MSAD:NT6:Health",
+          "splunk:botsv2:Script:InstalledApps",
+          "splunk:botsv2:Script:ListeningPorts",
+          "splunk:botsv2:Unix:ListeningPorts",
+          "splunk:botsv2:Unix:Service",
+          "splunk:botsv2:Unix:Update",
+          "splunk:botsv2:Unix:Uptime",
+          "splunk:botsv2:Unix:UserAccounts",
+          "splunk:botsv2:Unix:Version",
+          "splunk:botsv2:apache_error",
+          "splunk:botsv2:collectd",
+          "splunk:botsv2:linux_secure",
+          "splunk:botsv2:ms:o365:management",
+          "splunk:botsv2:mysql:connection:stats",
+          "splunk:botsv2:mysql:database",
+          "splunk:botsv2:mysql:errorLog",
+          "splunk:botsv2:mysql:instance:stats",
+          "splunk:botsv2:mysql:server:stats",
+          "splunk:botsv2:mysql:status",
+          "splunk:botsv2:mysql:tableStatus",
+          "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage",
+          "splunk:botsv2:mysql:transaction:details",
+          "splunk:botsv2:mysql:transaction:stats",
+          "splunk:botsv2:mysql:user",
+          "splunk:botsv2:mysql:variables",
+          "splunk:botsv2:mysqld-8",
+          "splunk:botsv2:osquery_results",
+          "splunk:botsv2:osquery_warning",
+          "splunk:botsv2:pan:system",
+          "splunk:botsv2:pan:threat",
+          "splunk:botsv2:pan:traffic",
+          "splunk:botsv2:stream:http",
+          "splunk:botsv2:stream:ip",
+          "splunk:botsv2:stream:mysql",
+          "splunk:botsv2:stream:tcp",
+          "splunk:botsv2:stream:udp",
+          "splunk:botsv2:suricata",
+          "splunk:botsv2:syslog",
+          "splunk:botsv2:WinEventLog:Security",
+          "splunk:botsv2:WinHostMon",
+          "splunk:botsv2:stream:dns",
+          "splunk:botsv2:stream:icmp",
+          "splunk:botsv2:stream:smtp",
+          "splunk:botsv2:WinRegistry",
+          "splunk:botsv2:stream:ldap",
+          "splunk:botsv2:MSAD:NT6:SiteInfo",
+          "splunk:botsv2:WinEventLog:Application",
+          "splunk:botsv2:WinEventLog:Directory-Service",
+          "splunk:botsv2:WinEventLog:System",
+          "splunk:botsv2:stream:ftp",
+          "splunk:botsv2:stream:smb",
+          "splunk:botsv2:csp-violation",
+          "splunk:botsv2:ActiveDirectory",
+          "splunk:botsv2:Perfmon:CPU",
+          "splunk:botsv2:Perfmon:LogicalDisk",
+          "splunk:botsv2:Perfmon:Memory",
+          "splunk:botsv2:Perfmon:NTDS",
+          "splunk:botsv2:Perfmon:Network",
+          "splunk:botsv2:Perfmon:Network_Interface",
+          "splunk:botsv2:Perfmon:PhysicalDisk",
+          "splunk:botsv2:Perfmon:Process",
+          "splunk:botsv2:Perfmon:Processor",
+          "splunk:botsv2:Perfmon:System",
+          "splunk:botsv2:Powershell:ScriptExecutionSummary",
+          "splunk:botsv2:XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
+          "splunk:botsv2:apache:error",
+          "splunk:botsv2:bandwidth",
+          "splunk:botsv2:bash_history-2",
+          "splunk:botsv2:cpu",
+          "splunk:botsv2:df",
+          "splunk:botsv2:ess_content_importer",
+          "splunk:botsv2:interfaces",
+          "splunk:botsv2:iostat",
+          "splunk:botsv2:lastlog",
+          "splunk:botsv2:netstat",
+          "splunk:botsv2:openPorts",
+          "splunk:botsv2:package",
+          "splunk:botsv2:protocol",
+          "splunk:botsv2:ps",
+          "splunk:botsv2:stream:dhcp",
+          "splunk:botsv2:stream:irc",
+          "splunk:botsv2:time",
+          "splunk:botsv2:top"
+        ],
+        "source_coverage": {
+          "discovered": 100,
+          "scheduled": 100,
+          "complete": true
+        },
+        "field_coverage": {
+          "discovered": 2789,
+          "scheduled": 2789,
+          "complete": true
+        },
+        "batch_count": 14,
+        "max_profiles_per_batch": 8,
+        "max_fields_per_source_per_batch": 48,
+        "ordering_only": true
+      }
+    ],
+    "coverage_manifests": {
+      "owns": {
+        "total_sources": 100,
+        "considered_source_ids": [
+          "splunk:botsv2:ActiveDirectory",
+          "splunk:botsv2:Linux:SELinuxConfig",
+          "splunk:botsv2:MSAD:NT6:Health",
+          "splunk:botsv2:MSAD:NT6:SiteInfo",
+          "splunk:botsv2:Perfmon:CPU",
+          "splunk:botsv2:Perfmon:LogicalDisk",
+          "splunk:botsv2:Perfmon:Memory",
+          "splunk:botsv2:Perfmon:NTDS",
+          "splunk:botsv2:Perfmon:Network",
+          "splunk:botsv2:Perfmon:Network_Interface",
+          "splunk:botsv2:Perfmon:PhysicalDisk",
+          "splunk:botsv2:Perfmon:Process",
+          "splunk:botsv2:Perfmon:Processor",
+          "splunk:botsv2:Perfmon:System",
+          "splunk:botsv2:Powershell:ScriptExecutionSummary",
+          "splunk:botsv2:Script:InstalledApps",
+          "splunk:botsv2:Script:ListeningPorts",
+          "splunk:botsv2:Unix:ListeningPorts",
+          "splunk:botsv2:Unix:Service",
+          "splunk:botsv2:Unix:Update",
+          "splunk:botsv2:Unix:Uptime",
+          "splunk:botsv2:Unix:UserAccounts",
+          "splunk:botsv2:Unix:Version",
+          "splunk:botsv2:WebLogic_Access_Combined",
+          "splunk:botsv2:WinEventLog:Application",
+          "splunk:botsv2:WinEventLog:Directory-Service",
+          "splunk:botsv2:WinEventLog:Security",
+          "splunk:botsv2:WinEventLog:System",
+          "splunk:botsv2:WinHostMon",
+          "splunk:botsv2:WinRegistry",
+          "splunk:botsv2:WindowsUpdateLog",
+          "splunk:botsv2:XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
+          "splunk:botsv2:access_combined",
+          "splunk:botsv2:apache:error",
+          "splunk:botsv2:apache_error",
+          "splunk:botsv2:auditd",
+          "splunk:botsv2:bandwidth",
+          "splunk:botsv2:bash_history-2",
+          "splunk:botsv2:collectd",
+          "splunk:botsv2:cpu",
+          "splunk:botsv2:csp-violation",
+          "splunk:botsv2:df",
+          "splunk:botsv2:ess_content_importer",
+          "splunk:botsv2:hardware",
+          "splunk:botsv2:interfaces",
+          "splunk:botsv2:iostat",
+          "splunk:botsv2:lastlog",
+          "splunk:botsv2:linux_audit",
+          "splunk:botsv2:linux_secure",
+          "splunk:botsv2:ms:o365:management",
+          "splunk:botsv2:mysql:connection:stats",
+          "splunk:botsv2:mysql:database",
+          "splunk:botsv2:mysql:errorLog",
+          "splunk:botsv2:mysql:instance:stats",
+          "splunk:botsv2:mysql:server:stats",
+          "splunk:botsv2:mysql:status",
+          "splunk:botsv2:mysql:tableStatus",
+          "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage",
+          "splunk:botsv2:mysql:transaction:details",
+          "splunk:botsv2:mysql:transaction:stats",
+          "splunk:botsv2:mysql:user",
+          "splunk:botsv2:mysql:variables",
+          "splunk:botsv2:mysqld-8",
+          "splunk:botsv2:netstat",
+          "splunk:botsv2:openPorts",
+          "splunk:botsv2:osquery_info",
+          "splunk:botsv2:osquery_results",
+          "splunk:botsv2:osquery_warning",
+          "splunk:botsv2:package",
+          "splunk:botsv2:pan:system",
+          "splunk:botsv2:pan:threat",
+          "splunk:botsv2:pan:traffic",
+          "splunk:botsv2:protocol",
+          "splunk:botsv2:ps",
+          "splunk:botsv2:stream:arp",
+          "splunk:botsv2:stream:dhcp",
+          "splunk:botsv2:stream:dns",
+          "splunk:botsv2:stream:ftp",
+          "splunk:botsv2:stream:http",
+          "splunk:botsv2:stream:icmp",
+          "splunk:botsv2:stream:ip",
+          "splunk:botsv2:stream:irc",
+          "splunk:botsv2:stream:ldap",
+          "splunk:botsv2:stream:mysql",
+          "splunk:botsv2:stream:smb",
+          "splunk:botsv2:stream:smtp",
+          "splunk:botsv2:stream:tcp",
+          "splunk:botsv2:stream:udp",
+          "splunk:botsv2:suricata",
+          "splunk:botsv2:symantec:ep:agent:file",
+          "splunk:botsv2:symantec:ep:agt_system:file",
+          "splunk:botsv2:symantec:ep:behavior:file",
+          "splunk:botsv2:symantec:ep:packet:file",
+          "splunk:botsv2:symantec:ep:scan:file",
+          "splunk:botsv2:symantec:ep:scm_system:file",
+          "splunk:botsv2:symantec:ep:security:file",
+          "splunk:botsv2:symantec:ep:traffic:file",
+          "splunk:botsv2:syslog",
+          "splunk:botsv2:time",
+          "splunk:botsv2:top"
+        ],
+        "examined_source_ids": [
+          "splunk:botsv2:ActiveDirectory",
+          "splunk:botsv2:Linux:SELinuxConfig",
+          "splunk:botsv2:MSAD:NT6:Health",
+          "splunk:botsv2:MSAD:NT6:SiteInfo",
+          "splunk:botsv2:Perfmon:CPU",
+          "splunk:botsv2:Perfmon:LogicalDisk",
+          "splunk:botsv2:Perfmon:Memory",
+          "splunk:botsv2:Perfmon:NTDS",
+          "splunk:botsv2:Perfmon:Network",
+          "splunk:botsv2:Perfmon:Network_Interface",
+          "splunk:botsv2:Perfmon:PhysicalDisk",
+          "splunk:botsv2:Perfmon:Process",
+          "splunk:botsv2:Perfmon:Processor",
+          "splunk:botsv2:Perfmon:System",
+          "splunk:botsv2:Powershell:ScriptExecutionSummary",
+          "splunk:botsv2:Script:InstalledApps",
+          "splunk:botsv2:Script:ListeningPorts",
+          "splunk:botsv2:Unix:ListeningPorts",
+          "splunk:botsv2:Unix:Service",
+          "splunk:botsv2:Unix:Update",
+          "splunk:botsv2:Unix:Uptime",
+          "splunk:botsv2:Unix:UserAccounts",
+          "splunk:botsv2:Unix:Version",
+          "splunk:botsv2:WebLogic_Access_Combined",
+          "splunk:botsv2:WinEventLog:Application",
+          "splunk:botsv2:WinEventLog:Directory-Service",
+          "splunk:botsv2:WinEventLog:Security",
+          "splunk:botsv2:WinEventLog:System",
+          "splunk:botsv2:WinHostMon",
+          "splunk:botsv2:WinRegistry",
+          "splunk:botsv2:WindowsUpdateLog",
+          "splunk:botsv2:XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
+          "splunk:botsv2:access_combined",
+          "splunk:botsv2:apache:error",
+          "splunk:botsv2:apache_error",
+          "splunk:botsv2:auditd",
+          "splunk:botsv2:bandwidth",
+          "splunk:botsv2:bash_history-2",
+          "splunk:botsv2:collectd",
+          "splunk:botsv2:cpu",
+          "splunk:botsv2:csp-violation",
+          "splunk:botsv2:df",
+          "splunk:botsv2:ess_content_importer",
+          "splunk:botsv2:hardware",
+          "splunk:botsv2:interfaces",
+          "splunk:botsv2:iostat",
+          "splunk:botsv2:lastlog",
+          "splunk:botsv2:linux_audit",
+          "splunk:botsv2:linux_secure",
+          "splunk:botsv2:ms:o365:management",
+          "splunk:botsv2:mysql:connection:stats",
+          "splunk:botsv2:mysql:database",
+          "splunk:botsv2:mysql:errorLog",
+          "splunk:botsv2:mysql:instance:stats",
+          "splunk:botsv2:mysql:server:stats",
+          "splunk:botsv2:mysql:status",
+          "splunk:botsv2:mysql:tableStatus",
+          "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage",
+          "splunk:botsv2:mysql:transaction:details",
+          "splunk:botsv2:mysql:transaction:stats",
+          "splunk:botsv2:mysql:user",
+          "splunk:botsv2:mysql:variables",
+          "splunk:botsv2:mysqld-8",
+          "splunk:botsv2:netstat",
+          "splunk:botsv2:openPorts",
+          "splunk:botsv2:osquery_info",
+          "splunk:botsv2:osquery_results",
+          "splunk:botsv2:osquery_warning",
+          "splunk:botsv2:package",
+          "splunk:botsv2:pan:system",
+          "splunk:botsv2:pan:threat",
+          "splunk:botsv2:pan:traffic",
+          "splunk:botsv2:protocol",
+          "splunk:botsv2:ps",
+          "splunk:botsv2:stream:arp",
+          "splunk:botsv2:stream:dhcp",
+          "splunk:botsv2:stream:dns",
+          "splunk:botsv2:stream:ftp",
+          "splunk:botsv2:stream:http",
+          "splunk:botsv2:stream:icmp",
+          "splunk:botsv2:stream:ip",
+          "splunk:botsv2:stream:irc",
+          "splunk:botsv2:stream:ldap",
+          "splunk:botsv2:stream:mysql",
+          "splunk:botsv2:stream:smb",
+          "splunk:botsv2:stream:smtp",
+          "splunk:botsv2:stream:tcp",
+          "splunk:botsv2:stream:udp",
+          "splunk:botsv2:suricata",
+          "splunk:botsv2:symantec:ep:agent:file",
+          "splunk:botsv2:symantec:ep:agt_system:file",
+          "splunk:botsv2:symantec:ep:behavior:file",
+          "splunk:botsv2:symantec:ep:packet:file",
+          "splunk:botsv2:symantec:ep:scan:file",
+          "splunk:botsv2:symantec:ep:scm_system:file",
+          "splunk:botsv2:symantec:ep:security:file",
+          "splunk:botsv2:symantec:ep:traffic:file",
+          "splunk:botsv2:syslog",
+          "splunk:botsv2:time",
+          "splunk:botsv2:top"
+        ],
+        "rejected_source_ids": {},
+        "unexamined_source_ids": [],
+        "stage_audit": [
+          {
+            "stage": "F0_CERTIFIED",
+            "discovered_sources": [],
+            "count": 0
+          },
+          {
+            "stage": "F1_METADATA",
+            "discovered_sources": [],
+            "count": 0
+          },
+          {
+            "stage": "F2_ADJACENT",
+            "discovered_sources": [],
+            "count": 0
+          },
+          {
+            "stage": "F3_BOUNDED_PROFILING",
+            "discovered_sources": [
+              "splunk:botsv2:Unix:Update",
+              "splunk:botsv2:Unix:Uptime",
+              "splunk:botsv2:stream:irc",
+              "splunk:botsv2:symantec:ep:behavior:file",
+              "splunk:botsv2:symantec:ep:security:file",
+              "splunk:botsv2:Unix:Version",
+              "splunk:botsv2:pan:threat",
+              "splunk:botsv2:mysqld-8"
+            ],
+            "count": 8
+          },
+          {
+            "stage": "F4_APPROVED_EXHAUSTIVE",
+            "discovered_sources": [
+              "splunk:botsv2:ActiveDirectory",
+              "splunk:botsv2:Linux:SELinuxConfig",
+              "splunk:botsv2:MSAD:NT6:Health",
+              "splunk:botsv2:MSAD:NT6:SiteInfo",
+              "splunk:botsv2:Perfmon:CPU",
+              "splunk:botsv2:Perfmon:LogicalDisk",
+              "splunk:botsv2:Perfmon:Memory",
+              "splunk:botsv2:Perfmon:NTDS",
+              "splunk:botsv2:Perfmon:Network",
+              "splunk:botsv2:Perfmon:Network_Interface",
+              "splunk:botsv2:Perfmon:PhysicalDisk",
+              "splunk:botsv2:Perfmon:Process",
+              "splunk:botsv2:Perfmon:Processor",
+              "splunk:botsv2:Perfmon:System",
+              "splunk:botsv2:Powershell:ScriptExecutionSummary",
+              "splunk:botsv2:Script:InstalledApps",
+              "splunk:botsv2:Script:ListeningPorts",
+              "splunk:botsv2:Unix:ListeningPorts",
+              "splunk:botsv2:Unix:Service",
+              "splunk:botsv2:Unix:UserAccounts",
+              "splunk:botsv2:WebLogic_Access_Combined",
+              "splunk:botsv2:WinEventLog:Application",
+              "splunk:botsv2:WinEventLog:Directory-Service",
+              "splunk:botsv2:WinEventLog:Security",
+              "splunk:botsv2:WinEventLog:System",
+              "splunk:botsv2:WinHostMon",
+              "splunk:botsv2:WinRegistry",
+              "splunk:botsv2:WindowsUpdateLog",
+              "splunk:botsv2:XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
+              "splunk:botsv2:access_combined",
+              "splunk:botsv2:apache:error",
+              "splunk:botsv2:apache_error",
+              "splunk:botsv2:auditd",
+              "splunk:botsv2:bandwidth",
+              "splunk:botsv2:bash_history-2",
+              "splunk:botsv2:collectd",
+              "splunk:botsv2:cpu",
+              "splunk:botsv2:csp-violation",
+              "splunk:botsv2:df",
+              "splunk:botsv2:ess_content_importer",
+              "splunk:botsv2:hardware",
+              "splunk:botsv2:interfaces",
+              "splunk:botsv2:iostat",
+              "splunk:botsv2:lastlog",
+              "splunk:botsv2:linux_audit",
+              "splunk:botsv2:linux_secure",
+              "splunk:botsv2:ms:o365:management",
+              "splunk:botsv2:mysql:connection:stats",
+              "splunk:botsv2:mysql:database",
+              "splunk:botsv2:mysql:errorLog",
+              "splunk:botsv2:mysql:instance:stats",
+              "splunk:botsv2:mysql:server:stats",
+              "splunk:botsv2:mysql:status",
+              "splunk:botsv2:mysql:tableStatus",
+              "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage",
+              "splunk:botsv2:mysql:transaction:details",
+              "splunk:botsv2:mysql:transaction:stats",
+              "splunk:botsv2:mysql:user",
+              "splunk:botsv2:mysql:variables",
+              "splunk:botsv2:netstat",
+              "splunk:botsv2:openPorts",
+              "splunk:botsv2:osquery_info",
+              "splunk:botsv2:osquery_results",
+              "splunk:botsv2:osquery_warning",
+              "splunk:botsv2:package",
+              "splunk:botsv2:pan:system",
+              "splunk:botsv2:pan:traffic",
+              "splunk:botsv2:protocol",
+              "splunk:botsv2:ps",
+              "splunk:botsv2:stream:arp",
+              "splunk:botsv2:stream:dhcp",
+              "splunk:botsv2:stream:dns",
+              "splunk:botsv2:stream:ftp",
+              "splunk:botsv2:stream:http",
+              "splunk:botsv2:stream:icmp",
+              "splunk:botsv2:stream:ip",
+              "splunk:botsv2:stream:ldap",
+              "splunk:botsv2:stream:mysql",
+              "splunk:botsv2:stream:smb",
+              "splunk:botsv2:stream:smtp",
+              "splunk:botsv2:stream:tcp",
+              "splunk:botsv2:stream:udp",
+              "splunk:botsv2:suricata",
+              "splunk:botsv2:symantec:ep:agent:file",
+              "splunk:botsv2:symantec:ep:agt_system:file",
+              "splunk:botsv2:symantec:ep:packet:file",
+              "splunk:botsv2:symantec:ep:scan:file",
+              "splunk:botsv2:symantec:ep:scm_system:file",
+              "splunk:botsv2:symantec:ep:traffic:file",
+              "splunk:botsv2:syslog",
+              "splunk:botsv2:time",
+              "splunk:botsv2:top"
+            ],
+            "count": 92
+          }
+        ]
+      },
+      "modified": {
+        "total_sources": 100,
+        "considered_source_ids": [
+          "splunk:botsv2:ActiveDirectory",
+          "splunk:botsv2:Linux:SELinuxConfig",
+          "splunk:botsv2:MSAD:NT6:Health",
+          "splunk:botsv2:MSAD:NT6:SiteInfo",
+          "splunk:botsv2:Perfmon:CPU",
+          "splunk:botsv2:Perfmon:LogicalDisk",
+          "splunk:botsv2:Perfmon:Memory",
+          "splunk:botsv2:Perfmon:NTDS",
+          "splunk:botsv2:Perfmon:Network",
+          "splunk:botsv2:Perfmon:Network_Interface",
+          "splunk:botsv2:Perfmon:PhysicalDisk",
+          "splunk:botsv2:Perfmon:Process",
+          "splunk:botsv2:Perfmon:Processor",
+          "splunk:botsv2:Perfmon:System",
+          "splunk:botsv2:Powershell:ScriptExecutionSummary",
+          "splunk:botsv2:Script:InstalledApps",
+          "splunk:botsv2:Script:ListeningPorts",
+          "splunk:botsv2:Unix:ListeningPorts",
+          "splunk:botsv2:Unix:Service",
+          "splunk:botsv2:Unix:Update",
+          "splunk:botsv2:Unix:Uptime",
+          "splunk:botsv2:Unix:UserAccounts",
+          "splunk:botsv2:Unix:Version",
+          "splunk:botsv2:WebLogic_Access_Combined",
+          "splunk:botsv2:WinEventLog:Application",
+          "splunk:botsv2:WinEventLog:Directory-Service",
+          "splunk:botsv2:WinEventLog:Security",
+          "splunk:botsv2:WinEventLog:System",
+          "splunk:botsv2:WinHostMon",
+          "splunk:botsv2:WinRegistry",
+          "splunk:botsv2:WindowsUpdateLog",
+          "splunk:botsv2:XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
+          "splunk:botsv2:access_combined",
+          "splunk:botsv2:apache:error",
+          "splunk:botsv2:apache_error",
+          "splunk:botsv2:auditd",
+          "splunk:botsv2:bandwidth",
+          "splunk:botsv2:bash_history-2",
+          "splunk:botsv2:collectd",
+          "splunk:botsv2:cpu",
+          "splunk:botsv2:csp-violation",
+          "splunk:botsv2:df",
+          "splunk:botsv2:ess_content_importer",
+          "splunk:botsv2:hardware",
+          "splunk:botsv2:interfaces",
+          "splunk:botsv2:iostat",
+          "splunk:botsv2:lastlog",
+          "splunk:botsv2:linux_audit",
+          "splunk:botsv2:linux_secure",
+          "splunk:botsv2:ms:o365:management",
+          "splunk:botsv2:mysql:connection:stats",
+          "splunk:botsv2:mysql:database",
+          "splunk:botsv2:mysql:errorLog",
+          "splunk:botsv2:mysql:instance:stats",
+          "splunk:botsv2:mysql:server:stats",
+          "splunk:botsv2:mysql:status",
+          "splunk:botsv2:mysql:tableStatus",
+          "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage",
+          "splunk:botsv2:mysql:transaction:details",
+          "splunk:botsv2:mysql:transaction:stats",
+          "splunk:botsv2:mysql:user",
+          "splunk:botsv2:mysql:variables",
+          "splunk:botsv2:mysqld-8",
+          "splunk:botsv2:netstat",
+          "splunk:botsv2:openPorts",
+          "splunk:botsv2:osquery_info",
+          "splunk:botsv2:osquery_results",
+          "splunk:botsv2:osquery_warning",
+          "splunk:botsv2:package",
+          "splunk:botsv2:pan:system",
+          "splunk:botsv2:pan:threat",
+          "splunk:botsv2:pan:traffic",
+          "splunk:botsv2:protocol",
+          "splunk:botsv2:ps",
+          "splunk:botsv2:stream:arp",
+          "splunk:botsv2:stream:dhcp",
+          "splunk:botsv2:stream:dns",
+          "splunk:botsv2:stream:ftp",
+          "splunk:botsv2:stream:http",
+          "splunk:botsv2:stream:icmp",
+          "splunk:botsv2:stream:ip",
+          "splunk:botsv2:stream:irc",
+          "splunk:botsv2:stream:ldap",
+          "splunk:botsv2:stream:mysql",
+          "splunk:botsv2:stream:smb",
+          "splunk:botsv2:stream:smtp",
+          "splunk:botsv2:stream:tcp",
+          "splunk:botsv2:stream:udp",
+          "splunk:botsv2:suricata",
+          "splunk:botsv2:symantec:ep:agent:file",
+          "splunk:botsv2:symantec:ep:agt_system:file",
+          "splunk:botsv2:symantec:ep:behavior:file",
+          "splunk:botsv2:symantec:ep:packet:file",
+          "splunk:botsv2:symantec:ep:scan:file",
+          "splunk:botsv2:symantec:ep:scm_system:file",
+          "splunk:botsv2:symantec:ep:security:file",
+          "splunk:botsv2:symantec:ep:traffic:file",
+          "splunk:botsv2:syslog",
+          "splunk:botsv2:time",
+          "splunk:botsv2:top"
+        ],
+        "examined_source_ids": [
+          "splunk:botsv2:ActiveDirectory",
+          "splunk:botsv2:Linux:SELinuxConfig",
+          "splunk:botsv2:MSAD:NT6:Health",
+          "splunk:botsv2:MSAD:NT6:SiteInfo",
+          "splunk:botsv2:Perfmon:CPU",
+          "splunk:botsv2:Perfmon:LogicalDisk",
+          "splunk:botsv2:Perfmon:Memory",
+          "splunk:botsv2:Perfmon:NTDS",
+          "splunk:botsv2:Perfmon:Network",
+          "splunk:botsv2:Perfmon:Network_Interface",
+          "splunk:botsv2:Perfmon:PhysicalDisk",
+          "splunk:botsv2:Perfmon:Process",
+          "splunk:botsv2:Perfmon:Processor",
+          "splunk:botsv2:Perfmon:System",
+          "splunk:botsv2:Powershell:ScriptExecutionSummary",
+          "splunk:botsv2:Script:InstalledApps",
+          "splunk:botsv2:Script:ListeningPorts",
+          "splunk:botsv2:Unix:ListeningPorts",
+          "splunk:botsv2:Unix:Service",
+          "splunk:botsv2:Unix:Update",
+          "splunk:botsv2:Unix:Uptime",
+          "splunk:botsv2:Unix:UserAccounts",
+          "splunk:botsv2:Unix:Version",
+          "splunk:botsv2:WebLogic_Access_Combined",
+          "splunk:botsv2:WinEventLog:Application",
+          "splunk:botsv2:WinEventLog:Directory-Service",
+          "splunk:botsv2:WinEventLog:Security",
+          "splunk:botsv2:WinEventLog:System",
+          "splunk:botsv2:WinHostMon",
+          "splunk:botsv2:WinRegistry",
+          "splunk:botsv2:WindowsUpdateLog",
+          "splunk:botsv2:XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
+          "splunk:botsv2:access_combined",
+          "splunk:botsv2:apache:error",
+          "splunk:botsv2:apache_error",
+          "splunk:botsv2:auditd",
+          "splunk:botsv2:bandwidth",
+          "splunk:botsv2:bash_history-2",
+          "splunk:botsv2:collectd",
+          "splunk:botsv2:cpu",
+          "splunk:botsv2:csp-violation",
+          "splunk:botsv2:df",
+          "splunk:botsv2:ess_content_importer",
+          "splunk:botsv2:hardware",
+          "splunk:botsv2:interfaces",
+          "splunk:botsv2:iostat",
+          "splunk:botsv2:lastlog",
+          "splunk:botsv2:linux_audit",
+          "splunk:botsv2:linux_secure",
+          "splunk:botsv2:ms:o365:management",
+          "splunk:botsv2:mysql:connection:stats",
+          "splunk:botsv2:mysql:database",
+          "splunk:botsv2:mysql:errorLog",
+          "splunk:botsv2:mysql:instance:stats",
+          "splunk:botsv2:mysql:server:stats",
+          "splunk:botsv2:mysql:status",
+          "splunk:botsv2:mysql:tableStatus",
+          "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage",
+          "splunk:botsv2:mysql:transaction:details",
+          "splunk:botsv2:mysql:transaction:stats",
+          "splunk:botsv2:mysql:user",
+          "splunk:botsv2:mysql:variables",
+          "splunk:botsv2:mysqld-8",
+          "splunk:botsv2:netstat",
+          "splunk:botsv2:openPorts",
+          "splunk:botsv2:osquery_info",
+          "splunk:botsv2:osquery_results",
+          "splunk:botsv2:osquery_warning",
+          "splunk:botsv2:package",
+          "splunk:botsv2:pan:system",
+          "splunk:botsv2:pan:threat",
+          "splunk:botsv2:pan:traffic",
+          "splunk:botsv2:protocol",
+          "splunk:botsv2:ps",
+          "splunk:botsv2:stream:arp",
+          "splunk:botsv2:stream:dhcp",
+          "splunk:botsv2:stream:dns",
+          "splunk:botsv2:stream:ftp",
+          "splunk:botsv2:stream:http",
+          "splunk:botsv2:stream:icmp",
+          "splunk:botsv2:stream:ip",
+          "splunk:botsv2:stream:irc",
+          "splunk:botsv2:stream:ldap",
+          "splunk:botsv2:stream:mysql",
+          "splunk:botsv2:stream:smb",
+          "splunk:botsv2:stream:smtp",
+          "splunk:botsv2:stream:tcp",
+          "splunk:botsv2:stream:udp",
+          "splunk:botsv2:suricata",
+          "splunk:botsv2:symantec:ep:agent:file",
+          "splunk:botsv2:symantec:ep:agt_system:file",
+          "splunk:botsv2:symantec:ep:behavior:file",
+          "splunk:botsv2:symantec:ep:packet:file",
+          "splunk:botsv2:symantec:ep:scan:file",
+          "splunk:botsv2:symantec:ep:scm_system:file",
+          "splunk:botsv2:symantec:ep:security:file",
+          "splunk:botsv2:symantec:ep:traffic:file",
+          "splunk:botsv2:syslog",
+          "splunk:botsv2:time",
+          "splunk:botsv2:top"
+        ],
+        "rejected_source_ids": {},
+        "unexamined_source_ids": [],
+        "stage_audit": [
+          {
+            "stage": "F0_CERTIFIED",
+            "discovered_sources": [],
+            "count": 0
+          },
+          {
+            "stage": "F1_METADATA",
+            "discovered_sources": [],
+            "count": 0
+          },
+          {
+            "stage": "F2_ADJACENT",
+            "discovered_sources": [],
+            "count": 0
+          },
+          {
+            "stage": "F3_BOUNDED_PROFILING",
+            "discovered_sources": [
+              "splunk:botsv2:Unix:Update",
+              "splunk:botsv2:Unix:Uptime",
+              "splunk:botsv2:stream:irc",
+              "splunk:botsv2:symantec:ep:behavior:file",
+              "splunk:botsv2:symantec:ep:security:file",
+              "splunk:botsv2:Unix:Version",
+              "splunk:botsv2:pan:threat",
+              "splunk:botsv2:mysqld-8"
+            ],
+            "count": 8
+          },
+          {
+            "stage": "F4_APPROVED_EXHAUSTIVE",
+            "discovered_sources": [
+              "splunk:botsv2:ActiveDirectory",
+              "splunk:botsv2:Linux:SELinuxConfig",
+              "splunk:botsv2:MSAD:NT6:Health",
+              "splunk:botsv2:MSAD:NT6:SiteInfo",
+              "splunk:botsv2:Perfmon:CPU",
+              "splunk:botsv2:Perfmon:LogicalDisk",
+              "splunk:botsv2:Perfmon:Memory",
+              "splunk:botsv2:Perfmon:NTDS",
+              "splunk:botsv2:Perfmon:Network",
+              "splunk:botsv2:Perfmon:Network_Interface",
+              "splunk:botsv2:Perfmon:PhysicalDisk",
+              "splunk:botsv2:Perfmon:Process",
+              "splunk:botsv2:Perfmon:Processor",
+              "splunk:botsv2:Perfmon:System",
+              "splunk:botsv2:Powershell:ScriptExecutionSummary",
+              "splunk:botsv2:Script:InstalledApps",
+              "splunk:botsv2:Script:ListeningPorts",
+              "splunk:botsv2:Unix:ListeningPorts",
+              "splunk:botsv2:Unix:Service",
+              "splunk:botsv2:Unix:UserAccounts",
+              "splunk:botsv2:WebLogic_Access_Combined",
+              "splunk:botsv2:WinEventLog:Application",
+              "splunk:botsv2:WinEventLog:Directory-Service",
+              "splunk:botsv2:WinEventLog:Security",
+              "splunk:botsv2:WinEventLog:System",
+              "splunk:botsv2:WinHostMon",
+              "splunk:botsv2:WinRegistry",
+              "splunk:botsv2:WindowsUpdateLog",
+              "splunk:botsv2:XmlWinEventLog:Microsoft-Windows-Sysmon/Operational",
+              "splunk:botsv2:access_combined",
+              "splunk:botsv2:apache:error",
+              "splunk:botsv2:apache_error",
+              "splunk:botsv2:auditd",
+              "splunk:botsv2:bandwidth",
+              "splunk:botsv2:bash_history-2",
+              "splunk:botsv2:collectd",
+              "splunk:botsv2:cpu",
+              "splunk:botsv2:csp-violation",
+              "splunk:botsv2:df",
+              "splunk:botsv2:ess_content_importer",
+              "splunk:botsv2:hardware",
+              "splunk:botsv2:interfaces",
+              "splunk:botsv2:iostat",
+              "splunk:botsv2:lastlog",
+              "splunk:botsv2:linux_audit",
+              "splunk:botsv2:linux_secure",
+              "splunk:botsv2:ms:o365:management",
+              "splunk:botsv2:mysql:connection:stats",
+              "splunk:botsv2:mysql:database",
+              "splunk:botsv2:mysql:errorLog",
+              "splunk:botsv2:mysql:instance:stats",
+              "splunk:botsv2:mysql:server:stats",
+              "splunk:botsv2:mysql:status",
+              "splunk:botsv2:mysql:tableStatus",
+              "splunk:botsv2:mysql:table_io_waits_summary_by_index_usage",
+              "splunk:botsv2:mysql:transaction:details",
+              "splunk:botsv2:mysql:transaction:stats",
+              "splunk:botsv2:mysql:user",
+              "splunk:botsv2:mysql:variables",
+              "splunk:botsv2:netstat",
+              "splunk:botsv2:openPorts",
+              "splunk:botsv2:osquery_info",
+              "splunk:botsv2:osquery_results",
+              "splunk:botsv2:osquery_warning",
+              "splunk:botsv2:package",
+              "splunk:botsv2:pan:system",
+              "splunk:botsv2:pan:traffic",
+              "splunk:botsv2:protocol",
+              "splunk:botsv2:ps",
+              "splunk:botsv2:stream:arp",
+              "splunk:botsv2:stream:dhcp",
+              "splunk:botsv2:stream:dns",
+              "splunk:botsv2:stream:ftp",
+              "splunk:botsv2:stream:http",
+              "splunk:botsv2:stream:icmp",
+              "splunk:botsv2:stream:ip",
+              "splunk:botsv2:stream:ldap",
+              "splunk:botsv2:stream:mysql",
+              "splunk:botsv2:stream:smb",
+              "splunk:botsv2:stream:smtp",
+              "splunk:botsv2:stream:tcp",
+              "splunk:botsv2:stream:udp",
+              "splunk:botsv2:suricata",
+              "splunk:botsv2:symantec:ep:agent:file",
+              "splunk:botsv2:symantec:ep:agt_system:file",
+              "splunk:botsv2:symantec:ep:packet:file",
+              "splunk:botsv2:symantec:ep:scan:file",
+              "splunk:botsv2:symantec:ep:scm_system:file",
+              "splunk:botsv2:symantec:ep:traffic:file",
+              "splunk:botsv2:syslog",
+              "splunk:botsv2:time",
+              "splunk:botsv2:top"
+            ],
+            "count": 92
+          }
+        ]
+      }
+    },
+    "census_profile_discovery": {
+      "discovered_source_count": 100,
+      "requested_profile_count": 100,
+      "profiled_source_count": 100,
+      "failed_source_types": [],
+      "unprofiled_source_types": [],
+      "profile_source_limit": null,
+      "complete": true
+    },
+    "proposals": [],
+    "rejected": [],
+    "relation_calls": [
+      {
+        "relation": "owns",
+        "batch_index": 1,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 2,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 3,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 4,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 5,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 6,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 7,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 8,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 9,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 10,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 11,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 12,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 13,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "owns",
+        "batch_index": 14,
+        "batch_count": 14,
+        "profile_count": 5,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 1,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 2,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 3,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 4,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 5,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 6,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 7,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 8,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 9,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 10,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 11,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 12,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 13,
+        "batch_count": 14,
+        "profile_count": 8,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      },
+      {
+        "relation": "modified",
+        "batch_index": 14,
+        "batch_count": 14,
+        "profile_count": 5,
+        "status": "MALFORMED_OUTPUT",
+        "repair_status": "REPAIR_NOT_ATTEMPTED",
+        "error": "source profiler output must contain proposals[]",
+        "proposals": [],
+        "rejected": []
+      }
+    ],
+    "runtime_capabilities": [],
+    "runtime_operation_ids": []
+  },
+  "runtime_capabilities": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "goal-1",
+      "relation": "owns",
+      "status": "CANDIDATE_OBSERVED",
+      "execution_complete": true,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "RETRIEVAL_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-1",
+          "goal_id": "goal-1",
+          "operation_id": "resolve_person_to_endpoint",
+          "source_id": "splunk_botsv2",
+          "schema_fingerprint": "",
+          "stage_id": "narrow",
+          "query_id": "logical-goal-graph-hunt-req-20260916-034720-step-1",
+          "result_complete": true,
+          "row_count": 6,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('resolve_person_to_endpoint', 'splunk_botsv2', (('subject', ('Mallory',)),), '2017-08-01T00:00:00Z/2018-10-29T18:03:43Z', 'narrow')",
+          "alternatives_considered": [],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [
+        "relation_or_constraint_proof_missing"
+      ],
+      "capability_gaps": [],
+      "terminal_cause": null
+    },
+    {
+      "goal_id": "goal-2",
+      "relation": "modified",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [
+        "relation_or_constraint_proof_missing"
+      ],
+      "capability_gaps": [
+        "no_provider_attempt"
+      ],
+      "terminal_cause": null
+    }
+  ]
+}

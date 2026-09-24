@@ -8,6 +8,8 @@ Verifies:
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from hunting.contracts.entities import Account, Host, IPAddress
 from hunting.contracts.expectations import FieldOp, FieldPredicate
 from hunting.m5_adapter.cdb_adapter import CdbAdapter
@@ -32,7 +34,7 @@ def test_splunk_adapter_field_role_validation():
 
 def test_splunk_adapter_registers_relation_operations():
     """Verify SplunkLiveAdapter capability descriptor advertises the 7 relation operations."""
-    adapter = SplunkLiveAdapter(index="botsv2")
+    adapter = SplunkLiveAdapter(index="botsv2", verify_ssl=False)
     desc = adapter.get_capability_descriptor()
     op_ids = {op.id for op in desc.operations}
 
@@ -64,7 +66,7 @@ def test_splunk_adapter_registers_relation_operations():
 
 def test_splunk_adapter_builds_relation_spl():
     """Verify SplunkLiveAdapter builds safe parameterized SPL for relation operations."""
-    adapter = SplunkLiveAdapter(index="botsv2")
+    adapter = SplunkLiveAdapter(index="botsv2", verify_ssl=False)
 
     # Person -> Account
     spl, _, _ = adapter._build_spl("resolve_person_to_account", Account(username="Amber Turing"), "2026-09-01T00:00:00Z/2026-09-02T00:00:00Z", None, 100)
@@ -135,6 +137,77 @@ def test_splunk_adapter_builds_relation_spl():
     )
     assert 'host="*venus*"' in spl_process
     assert "| head 201 | tail 101" in spl_process
+
+
+def test_splunk_discriminator_filters_candidates_and_projects_secondary_fields():
+    adapter = SplunkLiveAdapter(index="botsv2", verify_ssl=False)
+    base, _, _ = adapter._build_spl(
+        "resolve_account_to_endpoint",
+        Account("mallory"),
+        "2026-09-01T00:00:00Z/2026-09-02T00:00:00Z",
+        None,
+        100,
+    )
+    discriminator = adapter._apply_discriminator_intent(
+        base,
+        {
+            "query_intent": {"mode": "DISCRIMINATE", "target_variable": "endpoint"},
+            "candidate_field": "host",
+            "candidate_values": ["host-a", "host-b"],
+            "discriminator_fields": ["sourcetype", "LogonType"],
+            "discriminator_predicates": [
+                {"field": "sourcetype", "operator": "equals", "value": "stream:sysmon"},
+            ],
+        },
+    )
+    assert discriminator != base
+    assert 'host="host-a" OR host="host-b"' in discriminator
+    assert "| table host, sourcetype, LogonType" in discriminator
+
+
+def test_splunk_discriminator_preview_is_unchanged_without_graph_predicate():
+    adapter = SplunkLiveAdapter(index="botsv2", verify_ssl=False)
+    preview = adapter.preview_query(
+        "resolve_account_to_endpoint",
+        Account("user-a"),
+        "2026-09-01T00:00:00Z/2026-09-02T00:00:00Z",
+        parameters={
+            "query_intent": {"mode": "DISCRIMINATE"},
+            "candidate_field": "host",
+            "candidate_values": ["host-a", "host-b"],
+            "discriminator_fields": ["sourcetype"],
+        },
+    )
+    assert preview["native_query"] == preview["base_query"]
+    assert preview["has_secondary_predicate"] is False
+
+    no_fields = adapter.preview_query(
+        "resolve_account_to_endpoint",
+        Account("user-a"),
+        "2026-09-01T00:00:00Z/2026-09-02T00:00:00Z",
+        parameters={
+            "query_intent": {"mode": "DISCRIMINATE"},
+            "candidate_field": "host",
+            "candidate_values": ["host-a", "host-b"],
+            "discriminator_predicates": [
+                {"field": "sourcetype", "operator": "equals", "value": "stream:sysmon"},
+            ],
+        },
+    )
+    assert no_fields["native_query"] == no_fields["base_query"]
+
+
+def test_production_discriminator_has_no_scenario_literals():
+    root = Path(__file__).resolve().parents[2]
+    for relative in (
+        "src/hunting/engine.py",
+        "src/hunting/human_loop/clarification.py",
+        "src/hunting/m5_adapter/splunk_adapter.py",
+    ):
+        source = (root / relative).read_text(encoding="utf-8").casefold()
+        assert "mallory" not in source
+        assert "amber" not in source
+        assert "maclory" not in source
 
 
 def test_cdb_adapter_relation_operations():

@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-req-no-legacy-insufficient",
+    "statement": "Semantic compilation failed schema validation: 'Which process was observed on SRV-01?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

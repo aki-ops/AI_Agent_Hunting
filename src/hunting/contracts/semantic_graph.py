@@ -965,6 +965,7 @@ class LogicalPlan:
     proof_methods: list[ProofMethod] = field(default_factory=list)
     selected_method_ids: dict[str, str] = field(default_factory=dict)
     graph_revision: str = "G0"
+    unresolved_reasons: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.id = _clean(self.id, "LogicalPlan.id")
@@ -988,6 +989,7 @@ class LogicalPlan:
             "proof_methods": [method.to_dict() for method in self.proof_methods],
             "selected_method_ids": dict(self.selected_method_ids),
             "graph_revision": self.graph_revision,
+            "unresolved_reasons": dict(self.unresolved_reasons),
         }
 
 
@@ -1027,6 +1029,36 @@ def goal_graph_from_claim_graph(claim_graph: Any) -> SemanticGoalGraph:
     )
 
 
+def accept_graph_revision(
+    current: SemanticGoalGraph,
+    proposed: SemanticGoalGraph,
+) -> SemanticGoalGraph:
+    """Accept a proposed graph only when revision history preserves obligations.
+
+    Adjacent exploration may open routes. It cannot drop or demote accepted
+    required relations, change graph identity, or skip the revision record.
+    """
+    if proposed.id != current.id or proposed.request_id != current.request_id:
+        raise ValueError("graph revision must keep the accepted graph identity")
+    if proposed.graph_revision == current.graph_revision:
+        raise ValueError("graph revision must increment graph_revision")
+    if not proposed.revision_history:
+        raise ValueError("graph revision must record revision_history")
+    current_required = {
+        rel.id: rel for rel in current.relations if getattr(rel, "required", False)
+    }
+    proposed_by_id = {rel.id: rel for rel in proposed.relations}
+    for rel_id, rel in current_required.items():
+        match = proposed_by_id.get(rel_id)
+        if match is None:
+            raise ValueError(f"graph revision dropped accepted obligation '{rel_id}'")
+        if not getattr(match, "required", False):
+            raise ValueError(f"graph revision demoted accepted obligation '{rel_id}'")
+        if str(match.relation) != str(rel.relation):
+            raise ValueError(f"graph revision mutated obligation relation '{rel_id}'")
+    return proposed
+
+
 __all__ = [
     "AnswerContract",
     "ClarificationEvaluation",
@@ -1045,4 +1077,5 @@ __all__ = [
     "PlanStep",
     "LogicalPlan",
     "goal_graph_from_claim_graph",
+    "accept_graph_revision",
 ]

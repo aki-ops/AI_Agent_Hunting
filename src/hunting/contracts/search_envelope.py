@@ -75,6 +75,7 @@ class LLMBudgetPolicy:
     max_total_calls: int = 5
     max_total_tokens: int = 15000
     model_name: str = "stub"
+    diagnostic_unbounded: bool = False
     phase_policies: dict[str, PhaseReservationPolicy] = field(default_factory=lambda: {
         LLMPhase.C1_COMPILER.value: PhaseReservationPolicy(
             phase=LLMPhase.C1_COMPILER,
@@ -133,6 +134,34 @@ class LLMBudgetPolicy:
             description="Narrative generation (disabled)",
         ),
     })
+
+    @classmethod
+    def unbounded_for_testing(cls, model_name: str = "stub") -> "LLMBudgetPolicy":
+        """Create an explicit high-ceiling policy for live E2E diagnostics.
+
+        This is deliberately opt-in and is not used by the production default.
+        It removes token/call ceilings that can hide pipeline defects while
+        retaining a large emergency bound against an accidental infinite loop.
+        Token optimisation is revisited after the complete flow is validated.
+        """
+        policy = cls(
+            max_total_calls=64,
+            max_total_tokens=1_000_000,
+            model_name=model_name,
+            diagnostic_unbounded=True,
+        )
+        policy.phase_policies = {
+            phase: PhaseReservationPolicy(
+                phase=phase_policy.phase,
+                is_mandatory=phase_policy.is_mandatory,
+                max_calls=16,
+                max_input_tokens=100_000,
+                max_output_tokens=8_000,
+                description=f"E2E diagnostic policy: {phase_policy.description}",
+            )
+            for phase, phase_policy in policy.phase_policies.items()
+        }
+        return policy
 
     def get_phase_policy(self, phase: str | LLMPhase) -> PhaseReservationPolicy:
         norm = normalize_phase(phase)

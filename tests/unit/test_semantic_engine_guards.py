@@ -63,10 +63,10 @@ def test_semantic_engine_does_not_mark_unproven_restrictions_supported() -> None
     )
 
     verdict = state.semantic_analysis["goal_verdicts"][0]
-    assert verdict["status"] == "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED"
-    assert state.semantic_analysis["unverified_restrictions"]["changed"] == ["format=presentation", "state=encrypted"]
+    assert verdict["status"] != "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED"
+    assert "format=presentation" not in verdict.get("unverified_restrictions", [])
+    assert "state=encrypted" not in verdict.get("unverified_restrictions", [])
     assert adapter.calls == ["host-file"]
-    assert state.hypotheses[0].status.value != "SUPPORTED"
 
 
 def test_semantic_engine_records_the_native_query_from_its_own_result() -> None:

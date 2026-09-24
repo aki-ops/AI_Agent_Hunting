@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-m8-botsv2-live-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'Which process ran on an observed host?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

@@ -237,3 +237,155 @@ def test_negative_evidence_licensed_absence():
     assert res_licensed.verified
     assert res_licensed.verdict == "REFUTED"
     assert "negative_evidence_licensed_absence" in res_licensed.reason_codes
+
+
+def test_exact_subject_binding_rejects_identifier_prefix_collision():
+    """host-1 must not match host-10 by substring when proving a relation."""
+    goal = SemanticRelationGoal(
+        id="goal-visited-exact",
+        subject="var_host",
+        relation="visited",
+        object="var_domain",
+    )
+    operation = ProviderOperation(
+        id="op-proxy-exact",
+        provider_id="splunk",
+        scope_ids=("main",),
+        guaranteed_relations=("visited",),
+        proof_mode="relation_observable",
+    )
+    result = QueryResult(
+        query_id="q-prefix-collision",
+        outcome=QueryOutcome.ROWS,
+        executed_ok=True,
+        complete=True,
+        rows=[{"host": "host-10", "site": "example.com", "http_method": "GET"}],
+        row_count=1,
+    )
+
+    proof = ProofEngine().evaluate(
+        goal=goal,
+        operation=operation,
+        query_result=result,
+        bindings={"var_host": "host-1", "var_domain": "example.com"},
+    )
+
+    assert proof.verified is False
+    assert proof.verdict == "PROOF_GAP"
+    assert any(code.startswith("subject_binding_mismatch:") for code in proof.reason_codes)
+
+
+def test_operation_relation_metadata_cannot_choose_proof_semantics():
+    """Provider relation declarations cannot replace an accepted graph relation."""
+    class GoalWithoutRelation:
+        id = "goal-without-relation"
+        subject = "var_host"
+        object = "var_domain"
+
+    operation = ProviderOperation(
+        id="op-provider-claims-visited",
+        provider_id="splunk",
+        scope_ids=("main",),
+        guaranteed_relations=("visited",),
+        input_entity_kinds=("endpoint",),
+        output_entity_kinds=("domain",),
+        proof_mode="relation_observable",
+    )
+    result = QueryResult(
+        query_id="q-provider-claims-visited",
+        outcome=QueryOutcome.ROWS,
+        executed_ok=True,
+        complete=True,
+        rows=[{"host": "host-1", "site": "example.com", "http_method": "GET"}],
+        row_count=1,
+    )
+
+    proof = ProofEngine().evaluate(
+        goal=GoalWithoutRelation(),
+        operation=operation,
+        query_result=result,
+        bindings={"var_host": "host-1", "var_domain": "example.com"},
+    )
+
+    assert proof.verified is False
+    assert proof.verdict == "PROOF_GAP"
+    assert "accepted_semantic_relation" in proof.missing_obligations
+
+
+def test_operation_role_kinds_cannot_choose_proof_semantics():
+    """Matching operation role kinds cannot synthesize a ProofContract relation."""
+    class GoalWithoutRelation:
+        id = "goal-without-relation"
+        subject = "var_host"
+        object = "var_domain"
+
+    operation = ProviderOperation(
+        id="op-role-shape-only",
+        provider_id="splunk",
+        scope_ids=("main",),
+        input_entity_kinds=("endpoint",),
+        output_entity_kinds=("domain",),
+        proof_mode="relation_observable",
+    )
+    result = QueryResult(
+        query_id="q-role-shape-only",
+        outcome=QueryOutcome.ROWS,
+        executed_ok=True,
+        complete=True,
+        rows=[{"host": "host-1", "site": "example.com", "http_method": "GET"}],
+        row_count=1,
+    )
+
+    proof = ProofEngine().evaluate(
+        goal=GoalWithoutRelation(),
+        operation=operation,
+        query_result=result,
+        bindings={"var_host": "host-1", "var_domain": "example.com"},
+    )
+
+    assert proof.verified is False
+    assert proof.verdict == "PROOF_GAP"
+    assert "accepted_semantic_relation" in proof.missing_obligations
+
+
+def test_explicit_contract_must_match_accepted_graph_relation():
+    """An approved contract for another relation cannot prove the graph goal."""
+    goal = SemanticRelationGoal(
+        id="goal-logon",
+        subject="var_account",
+        relation="logged_on_to",
+        object="var_host",
+    )
+    wrong_contract = ProofContract(
+        contract_id="proof-wrong-relation",
+        version="1.0",
+        relation="visited",
+        required_entity_roles=("endpoint",),
+        required_value_roles=("domain",),
+        status=ProofContractStatus.APPROVED,
+    )
+    operation = ProviderOperation(
+        id="op-web",
+        provider_id="splunk",
+        scope_ids=("main",),
+        proof_mode="relation_observable",
+    )
+    result = QueryResult(
+        query_id="q-wrong-contract",
+        outcome=QueryOutcome.ROWS,
+        executed_ok=True,
+        complete=True,
+        rows=[{"host": "host-1", "site": "example.com", "http_method": "GET"}],
+        row_count=1,
+    )
+
+    proof = ProofEngine().evaluate(
+        goal=goal,
+        operation=operation,
+        query_result=result,
+        contract=wrong_contract,
+    )
+
+    assert proof.verified is False
+    assert proof.verdict == "PROOF_GAP"
+    assert "contract_relation_mismatch" in proof.reason_codes

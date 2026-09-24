@@ -1,0 +1,357 @@
+{
+  "hunt_id": "r",
+  "outcome": "SUPPORTED",
+  "stopping_decision": "STOP_INCONCLUSIVE",
+  "answer": {
+    "status": "ANSWERED",
+    "answer_type": "file",
+    "question": "",
+    "value": "sensitive_doc.pdf",
+    "candidates": [
+      {
+        "value": "sensitive_doc.pdf",
+        "weight": 1,
+        "card_ids": [
+          "card-3cb7db88e48b"
+        ],
+        "query_ids": [
+          "logical-g-step-2"
+        ]
+      }
+    ],
+    "card_ids": [
+      "card-3cb7db88e48b"
+    ],
+    "query_ids": [
+      "logical-g-step-2"
+    ],
+    "explanation": "Variable 'var_file' proved as 'sensitive_doc.pdf'.",
+    "required_fields": [],
+    "available_fields": [
+      "action",
+      "file",
+      "host",
+      "user"
+    ],
+    "missing_fields": [],
+    "artifact_detected": false,
+    "claim": "Variable 'var_file' proved as 'sensitive_doc.pdf'.",
+    "citations": [],
+    "citation_text": ""
+  },
+  "llm_usage": {
+    "model": "stub",
+    "max_calls_budget": 5,
+    "calls_made": 0,
+    "is_exhausted": false,
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "total_tokens": 0,
+    "estimated_cost_usd": 0,
+    "token_accounting_mode": "ESTIMATED",
+    "is_estimate": true,
+    "calls": []
+  },
+  "total_observations": 2,
+  "total_cards": 1,
+  "total_queries": 2,
+  "semantic_graph_id": "g",
+  "proof_plan_id": "logical-g",
+  "semantic_analysis": {
+    "compiler_trace": {},
+    "goal_verdicts": [
+      {
+        "goal_id": "rel_user_host",
+        "relation": "associated_with",
+        "status": "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED",
+        "query_ids": [
+          "logical-g-step-1"
+        ],
+        "proof_method_id": "method-rel_user_host-1",
+        "unverified_restrictions": [
+          "hardware_form_factor=MacBook"
+        ],
+        "proof_results": [
+          {
+            "contract_id": "proof-person-endpoint-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "evaluate_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": false,
+            "verdict": "PROOF_GAP",
+            "status": "PROOF_GAP",
+            "reason_codes": [
+              "non_conforming_rows",
+              "unsatisfied_constraints:hardware_form_factor=MacBook"
+            ],
+            "subject_binding": null,
+            "object_binding": null,
+            "bindings": {},
+            "satisfied_obligations": [],
+            "missing_obligations": [],
+            "satisfied_constraints": [],
+            "unsatisfied_constraints": [
+              "hardware_form_factor=MacBook"
+            ],
+            "citations": [],
+            "cited_fields": {},
+            "completeness_satisfied": false,
+            "coverage_satisfied": false,
+            "limitations": [],
+            "diagnostic": "No event conformed to proof contract 'proof-person-endpoint-v1'. Missing roles: none; Unsatisfied constraints: hardware_form_factor=MacBook; violations: ['unsatisfied_constraints:hardware_form_factor=MacBook']"
+          }
+        ]
+      },
+      {
+        "goal_id": "rel_host_file",
+        "relation": "modified",
+        "status": "INCONCLUSIVE",
+        "query_ids": [
+          "logical-g-step-2"
+        ],
+        "proof_method_id": "method-rel_host_file-1",
+        "unverified_restrictions": [],
+        "proof_results": [
+          {
+            "contract_id": "proof-file-modified-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "evaluate_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": false,
+            "verdict": "PROOF_GAP",
+            "status": "PROOF_GAP",
+            "reason_codes": [
+              "non_conforming_rows",
+              "unsatisfied_constraints:hardware_form_factor=MacBook"
+            ],
+            "subject_binding": null,
+            "object_binding": null,
+            "bindings": {},
+            "satisfied_obligations": [],
+            "missing_obligations": [],
+            "satisfied_constraints": [],
+            "unsatisfied_constraints": [
+              "hardware_form_factor=MacBook"
+            ],
+            "citations": [],
+            "cited_fields": {},
+            "completeness_satisfied": false,
+            "coverage_satisfied": false,
+            "limitations": [],
+            "diagnostic": "No event conformed to proof contract 'proof-file-modified-v1'. Missing roles: none; Unsatisfied constraints: hardware_form_factor=MacBook; violations: ['unsatisfied_constraints:hardware_form_factor=MacBook']"
+          }
+        ]
+      }
+    ],
+    "proof_state": {
+      "rel_user_host": "INCONCLUSIVE_RESTRICTIONS_UNVERIFIED",
+      "rel_host_file": "INCONCLUSIVE"
+    },
+    "executed_steps": [
+      "step-1",
+      "step-2"
+    ],
+    "unresolved_steps": [],
+    "unresolved_goals": [],
+    "unresolved_reasons": {},
+    "candidate_input_warnings": {},
+    "needs_user_decision": false,
+    "binding_provenance": {
+      "var_user": [
+        {
+          "value": "mallory",
+          "source": "request",
+          "query_id": "",
+          "status": "VERIFIED"
+        }
+      ],
+      "var_endpoint": [
+        {
+          "value": "MACLORY-AIR13",
+          "source": "step-1",
+          "query_id": "logical-g-step-1",
+          "status": "VERIFIED"
+        }
+      ],
+      "var_file": [
+        {
+          "value": "sensitive_doc.pdf",
+          "source": "step-2",
+          "query_id": "logical-g-step-2",
+          "status": "VERIFIED"
+        }
+      ]
+    },
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "resolve-user-host",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-g-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 1,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      },
+      {
+        "step_id": "step-2",
+        "operation_id": "find-files-on-host",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-g-step-2",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 1,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuations": {},
+    "unverified_restrictions": {
+      "rel_user_host": [
+        "hardware_form_factor=MacBook"
+      ]
+    },
+    "binding_events": [],
+    "route_assessments": [
+      {
+        "goal_id": "rel_user_host",
+        "relation": "associated_with",
+        "status": "CANDIDATE_OBSERVED",
+        "execution_complete": true,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "RETRIEVAL_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-1",
+            "goal_id": "rel_user_host",
+            "operation_id": "resolve-user-host",
+            "source_id": "scope-1",
+            "schema_fingerprint": "",
+            "stage_id": "narrow",
+            "query_id": "logical-g-step-1",
+            "result_complete": true,
+            "row_count": 1,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('resolve-user-host', 'scope-1', (('subject', ('mallory',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+            "alternatives_considered": [],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [
+          "relation_or_constraint_proof_missing"
+        ],
+        "capability_gaps": [],
+        "terminal_cause": null
+      },
+      {
+        "goal_id": "rel_host_file",
+        "relation": "modified",
+        "status": "CANDIDATE_OBSERVED",
+        "execution_complete": true,
+        "proof_complete": false,
+        "route_exhausted": false,
+        "readiness": "RETRIEVAL_CAPABLE",
+        "attempts": [
+          {
+            "attempt_id": "attempt-2",
+            "goal_id": "rel_host_file",
+            "operation_id": "find-files-on-host",
+            "source_id": "scope-1",
+            "schema_fingerprint": "",
+            "stage_id": "narrow",
+            "query_id": "logical-g-step-2",
+            "result_complete": true,
+            "row_count": 1,
+            "trigger_reason": "initial_route",
+            "no_progress_signature": "('find-files-on-host', 'scope-1', (('subject', ('MACLORY-AIR13',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+            "alternatives_considered": [],
+            "negative_evidence_capable": false
+          }
+        ],
+        "proof_gaps": [
+          "relation_or_constraint_proof_missing"
+        ],
+        "capability_gaps": [],
+        "terminal_cause": null
+      }
+    ]
+  },
+  "source_profile_audit": {},
+  "runtime_capabilities": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "rel_user_host",
+      "relation": "associated_with",
+      "status": "CANDIDATE_OBSERVED",
+      "execution_complete": true,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "RETRIEVAL_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-1",
+          "goal_id": "rel_user_host",
+          "operation_id": "resolve-user-host",
+          "source_id": "scope-1",
+          "schema_fingerprint": "",
+          "stage_id": "narrow",
+          "query_id": "logical-g-step-1",
+          "result_complete": true,
+          "row_count": 1,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('resolve-user-host', 'scope-1', (('subject', ('mallory',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+          "alternatives_considered": [],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [
+        "relation_or_constraint_proof_missing"
+      ],
+      "capability_gaps": [],
+      "terminal_cause": null
+    },
+    {
+      "goal_id": "rel_host_file",
+      "relation": "modified",
+      "status": "CANDIDATE_OBSERVED",
+      "execution_complete": true,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "RETRIEVAL_CAPABLE",
+      "attempts": [
+        {
+          "attempt_id": "attempt-2",
+          "goal_id": "rel_host_file",
+          "operation_id": "find-files-on-host",
+          "source_id": "scope-1",
+          "schema_fingerprint": "",
+          "stage_id": "narrow",
+          "query_id": "logical-g-step-2",
+          "result_complete": true,
+          "row_count": 1,
+          "trigger_reason": "initial_route",
+          "no_progress_signature": "('find-files-on-host', 'scope-1', (('subject', ('MACLORY-AIR13',)),), '2026-02-01T00:00:00Z/P1D', 'narrow')",
+          "alternatives_considered": [],
+          "negative_evidence_capable": false
+        }
+      ],
+      "proof_gaps": [
+        "relation_or_constraint_proof_missing"
+      ],
+      "capability_gaps": [],
+      "terminal_cause": null
+    }
+  ]
+}

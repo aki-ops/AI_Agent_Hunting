@@ -1,0 +1,353 @@
+[
+  {
+    "phase": "initial",
+    "request_id": "hunt-req-20260921-101439",
+    "stopping": "STOP_NEEDS_USER_DECISION",
+    "taxonomy": "NEEDS_DISAMBIGUATION",
+    "answer": {
+      "status": "INCONCLUSIVE",
+      "reason": "USER_DECISION_REQUIRED",
+      "explanation": "Candidate bindings were discovered, but no downstream query was executed because an analyst must select the intended binding.",
+      "candidates": [],
+      "card_ids": [],
+      "observation_ids": []
+    },
+    "candidates": [
+      {
+        "variable_id": "var_mallory",
+        "entity_type": "person",
+        "value": "Mallory"
+      },
+      {
+        "variable_id": "var_macbook",
+        "entity_type": "endpoint",
+        "value": "MACLORY-AIR13"
+      },
+      {
+        "variable_id": "var_macbook",
+        "entity_type": "endpoint",
+        "value": "kutekitten"
+      },
+      {
+        "variable_id": "var_macbook",
+        "entity_type": "endpoint",
+        "value": "matar"
+      },
+      {
+        "variable_id": "var_macbook",
+        "entity_type": "endpoint",
+        "value": "jupiter"
+      },
+      {
+        "variable_id": "var_macbook",
+        "entity_type": "endpoint",
+        "value": "venus"
+      },
+      {
+        "variable_id": "var_macbook",
+        "entity_type": "endpoint",
+        "value": "mercury"
+      }
+    ],
+    "candidate_groups": {
+      "var_macbook": [
+        {
+          "field": "sourcetype",
+          "value": "usersWithLoginPrivs",
+          "count": 2,
+          "candidates": [
+            "MACLORY-AIR13",
+            "kutekitten"
+          ]
+        },
+        {
+          "field": "sourcetype",
+          "value": "stream:smtp",
+          "count": 1,
+          "candidates": [
+            "matar"
+          ]
+        },
+        {
+          "field": "sourcetype",
+          "value": "suricata",
+          "count": 1,
+          "candidates": [
+            "jupiter"
+          ]
+        },
+        {
+          "field": "sourcetype",
+          "value": "WinEventLog:Security",
+          "count": 2,
+          "candidates": [
+            "venus",
+            "mercury"
+          ]
+        }
+      ]
+    },
+    "continuations": {},
+    "query_count": 1,
+    "queries": [
+      {
+        "query_id": "logical-goal-graph-hunt-req-20260921-101439-step-1",
+        "operation_id": "resolve_person_to_endpoint",
+        "native_query": "search index=\"botsv2\" \"Mallory\" | rex field=_raw \"Workstation Name:\\s*(?<WorkstationName>[^\\r\\n\\s]+)\" | rex field=_raw \"New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)\" | eval _host_candidate=coalesce(host,ComputerName) | where isnotnull(_host_candidate) AND _host_candidate!=\"\" AND _host_candidate!=\"-\" | dedup _host_candidate | head 101 | rename _host_candidate as host | table _time, host, ComputerName, TargetUserName, user, IpAddress, WorkstationName, LogonType, sourcetype",
+        "row_count": 5,
+        "complete": true
+      }
+    ],
+    "goal_verdicts": [
+      {
+        "goal_id": "goal-1",
+        "relation": "associated_with",
+        "status": "INCONCLUSIVE",
+        "query_ids": [
+          "logical-goal-graph-hunt-req-20260921-101439-step-1"
+        ],
+        "proof_method_id": "method-goal-1-2",
+        "unverified_restrictions": [],
+        "compiler_limitations": [
+          "device_model=MacBook"
+        ],
+        "proof_results": [
+          {
+            "contract_id": "proof-person-endpoint-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "evaluate_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": false,
+            "verdict": "PROOF_GAP",
+            "status": "PROOF_GAP",
+            "reason_codes": [
+              "non_conforming_rows",
+              "unsatisfied_constraints:device_model=MacBook",
+              "unsatisfied_constraints:device_model=MacBook",
+              "unsatisfied_constraints:device_model=MacBook"
+            ],
+            "subject_binding": null,
+            "object_binding": null,
+            "bindings": {},
+            "satisfied_obligations": [],
+            "missing_obligations": [],
+            "satisfied_constraints": [],
+            "unsatisfied_constraints": [
+              "device_model=MacBook"
+            ],
+            "citations": [],
+            "cited_fields": {},
+            "completeness_satisfied": false,
+            "coverage_satisfied": false,
+            "limitations": [],
+            "diagnostic": "No event conformed to proof contract 'proof-person-endpoint-v1'. Missing roles: none; Unsatisfied constraints: device_model=MacBook; violations: ['unsatisfied_constraints:device_model=MacBook', 'unsatisfied_constraints:device_model=MacBook', 'unsatisfied_constraints:device_model=MacBook', 'unsatisfied_constraints:device_model=MacBook', 'unsatisfied_constraints:device_model=MacBook', 'unsatisfied_constraints:device_model=MacBook']"
+          }
+        ]
+      },
+      {
+        "goal_id": "goal-2",
+        "relation": "modified",
+        "status": "INCONCLUSIVE",
+        "query_ids": [],
+        "proof_method_id": "method-goal-2-3",
+        "unverified_restrictions": [],
+        "compiler_limitations": [
+          "file_type=PowerPoint presentation",
+          "importance=critical",
+          "state=encrypted",
+          "event_date=August 18",
+          "cause=ransomware encryption"
+        ],
+        "proof_results": []
+      }
+    ],
+    "needs_user_decision": true
+  },
+  {
+    "phase": "resume_prior_host_selection",
+    "selected": {
+      "variable_id": "var_macbook",
+      "value": "MACLORY-AIR13"
+    },
+    "request_id": "hunt-req-20260921-101439",
+    "stopping": "STOP_INCONCLUSIVE",
+    "taxonomy": "INCONCLUSIVE",
+    "answer": {
+      "status": "INCONCLUSIVE",
+      "reason": "NO_VERIFIED_ANSWER_CANDIDATE",
+      "value": null,
+      "explanation": "No verified answer candidate was found, but semantic absence is not licensed by the current execution, proof, and route state.",
+      "answer_type": "value",
+      "card_ids": [],
+      "required_fields": [],
+      "available_fields": [
+        "action",
+        "atime",
+        "category",
+        "computername",
+        "ctime",
+        "domain",
+        "gid",
+        "hashed",
+        "host",
+        "inode",
+        "md5",
+        "mode",
+        "mtime",
+        "name",
+        "native_type",
+        "process_name",
+        "raw_event",
+        "raw_ref",
+        "sha1",
+        "sha256",
+        "site",
+        "size",
+        "sourcetype",
+        "target_path",
+        "time",
+        "timestamp",
+        "transaction_id",
+        "uid"
+      ],
+      "missing_fields": [],
+      "artifact_detected": false,
+      "claim": "No verified answer candidate was found, but semantic absence is not licensed until every required route is exhausted with complete-empty results under an explicit provider contract.",
+      "citations": [],
+      "citation_text": ""
+    },
+    "candidates": [
+      {
+        "variable_id": "var_mallory",
+        "entity_type": "person",
+        "value": "Mallory"
+      },
+      {
+        "variable_id": "var_macbook",
+        "entity_type": "endpoint",
+        "value": "MACLORY-AIR13"
+      }
+    ],
+    "candidate_groups": {},
+    "continuations": {
+      "step-2": {
+        "operation_id": "find_file_change_from_endpoint",
+        "stage_id": "narrow",
+        "candidate_index": 0,
+        "next_offset": 400,
+        "pages_attempted": 4,
+        "reason": "max_pages_or_provider_page_limit_reached"
+      }
+    },
+    "query_count": 2,
+    "queries": [
+      {
+        "query_id": "logical-goal-graph-hunt-req-20260921-101439-step-1",
+        "operation_id": "resolve_person_to_endpoint",
+        "native_query": "search index=\"botsv2\" \"Mallory\" | rex field=_raw \"Workstation Name:\\s*(?<WorkstationName>[^\\r\\n\\s]+)\" | rex field=_raw \"New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)\" | eval _host_candidate=coalesce(host,ComputerName) | where isnotnull(_host_candidate) AND _host_candidate!=\"\" AND _host_candidate!=\"-\" | dedup _host_candidate | head 101 | rename _host_candidate as host | table _time, host, ComputerName, TargetUserName, user, IpAddress, WorkstationName, LogonType, sourcetype",
+        "row_count": 5,
+        "complete": true
+      },
+      {
+        "query_id": "logical-goal-graph-hunt-req-20260921-101439-resumed-step-2",
+        "operation_id": "find_file_change_from_endpoint",
+        "native_query": "search index=\"botsv2\" (host=\"MACLORY-AIR13\" OR ComputerName=\"MACLORY-AIR13\") (\"target_path\" OR \"TargetFilename\" OR \"file_path\") | rex field=_raw \"(?i)<Data Name=[\\\"']ProductVersion[\\\"']>(?<ProductVersion>[^<]+)</Data>\" | rex field=_raw \"(?i)<Data Name=[\\\"']FileVersion[\\\"']>(?<FileVersion>[^<]+)</Data>\" | rex field=_raw \"(?i)ProductVersion[:= ]+(?<ProductVersion>[^\\r\\n,]+)\" | rex field=_raw \"(?i)FileVersion[:= ]+(?<FileVersion>[^\\r\\n,]+)\" | rex field=_raw \"(?i)version[\\\"':= ]+(?<Version>[0-9]+(\\.[0-9]+)+)\" | head 101 | table _time, host, ComputerName, sourcetype, TargetFilename, file_path, path, target_path, filename, name, action, Image, ProcessId, ProductVersion, FileVersion, Version, _raw",
+        "row_count": 5,
+        "complete": false
+      }
+    ],
+    "goal_verdicts": [
+      {
+        "goal_id": "goal-1",
+        "relation": "associated_with",
+        "status": "BINDING_SELECTED",
+        "query_ids": [
+          "user-selection-step-1"
+        ],
+        "proof_method_id": "method-goal-1-2",
+        "unverified_restrictions": [],
+        "compiler_limitations": [
+          "device_model=MacBook"
+        ],
+        "proof_results": [
+          {
+            "contract_id": "proof-user-selection-step-1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "user_selection",
+            "evaluator_version": "1.0",
+            "verified": false,
+            "verdict": "RETRIEVAL_ONLY",
+            "status": "RETRIEVAL_ONLY",
+            "reason_codes": [
+              "user_selection_binding"
+            ],
+            "subject_binding": null,
+            "object_binding": null,
+            "bindings": {
+              "var_macbook": "MACLORY-AIR13"
+            },
+            "satisfied_obligations": [],
+            "missing_obligations": [
+              "goal-1"
+            ],
+            "satisfied_constraints": [],
+            "unsatisfied_constraints": [],
+            "citations": [],
+            "cited_fields": {},
+            "completeness_satisfied": false,
+            "coverage_satisfied": false,
+            "limitations": [],
+            "diagnostic": "Analyst selected a binding to continue; this is not relation proof."
+          }
+        ]
+      },
+      {
+        "goal_id": "goal-2",
+        "relation": "modified",
+        "status": "PARTIAL",
+        "query_ids": [
+          "logical-goal-graph-hunt-req-20260921-101439-resumed-step-2"
+        ],
+        "proof_method_id": "method-goal-2-3",
+        "unverified_restrictions": [],
+        "compiler_limitations": [
+          "file_type=PowerPoint presentation",
+          "importance=critical",
+          "state=encrypted",
+          "event_date=August 18",
+          "cause=ransomware encryption"
+        ],
+        "proof_results": [
+          {
+            "contract_id": "proof-file-modified-v1",
+            "contract_version": "1.0.0",
+            "evaluator_id": "generic_observed_relation",
+            "evaluator_version": "1.0",
+            "verified": false,
+            "verdict": "PROOF_GAP",
+            "status": "PROOF_GAP",
+            "reason_codes": [
+              "incomplete_query_result"
+            ],
+            "subject_binding": null,
+            "object_binding": null,
+            "bindings": {},
+            "satisfied_obligations": [],
+            "missing_obligations": [
+              "query_completeness"
+            ],
+            "satisfied_constraints": [],
+            "unsatisfied_constraints": [],
+            "citations": [],
+            "cited_fields": {},
+            "completeness_satisfied": false,
+            "coverage_satisfied": false,
+            "limitations": [],
+            "diagnostic": "Proof contract 'proof-file-modified-v1' requires complete query results."
+          }
+        ]
+      }
+    ],
+    "needs_user_decision": false
+  }
+]

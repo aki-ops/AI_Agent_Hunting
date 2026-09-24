@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-S02_tor_artifact_identity-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'Was Tor Browser installed on the user MacBook?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

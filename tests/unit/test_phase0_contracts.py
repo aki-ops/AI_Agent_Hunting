@@ -62,6 +62,8 @@ def test_1_hunt_request_without_alert():
         (HuntRequestKind.NL_QUESTION, "Are any web servers running unauthorized processes?"),
         (HuntRequestKind.QUESTION, "What is Amber's personal email?"),
         (HuntRequestKind.SCHEDULED, "Weekly persistence sweep"),
+        (HuntRequestKind.ALERT, "EDR alert: suspicious process on workstation-01"),
+        (HuntRequestKind.POC, "PoC for CVE-2024-21887 command injection"),
     ]
 
     for kind, content in kinds:

@@ -1,0 +1,9 @@
+[
+  {
+    "id": "hypo-S09_powerpoint_benign_download-insufficient",
+    "statement": "Free-text hypothesis requires semantic compilation via LLM (--llm api): 'Did a user download Frothly_marketing_campaign_Q317.pptx without any encryption observed?'",
+    "status": "INSUFFICIENTLY_SPECIFIED",
+    "hypothesis_class": "",
+    "requirements": []
+  }
+]

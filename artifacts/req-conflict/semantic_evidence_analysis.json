@@ -1,0 +1,152 @@
+{
+  "analysis": {
+    "source_profile": {
+      "status": "NO_LLM_CALLER",
+      "readiness": [
+        {
+          "goal_id": "goal-event",
+          "relation": "observed_transition",
+          "status": "CAPABILITY_GAP",
+          "execution_complete": false,
+          "proof_complete": false,
+          "route_exhausted": false,
+          "readiness": "CAPABILITY_GAP",
+          "attempts": [],
+          "proof_gaps": [],
+          "capability_gaps": [
+            "no_typed_reachable_route"
+          ],
+          "terminal_cause": null
+        }
+      ],
+      "profiling_goal_ids": [
+        "goal-event"
+      ],
+      "retrieval": [
+        {
+          "relation": "observed_transition",
+          "query_terms": [
+            "action",
+            "event",
+            "host",
+            "login",
+            "observed",
+            "reboot",
+            "transition"
+          ],
+          "profile_count": 1,
+          "candidate_count": 1,
+          "candidates": [
+            {
+              "relation": "observed_transition",
+              "source_id": "cdb:source:events",
+              "score": 8.0,
+              "matched_terms": [
+                "action",
+                "event",
+                "host"
+              ],
+              "matched_field_ids": [
+                "cdb:events:field:action",
+                "cdb:events:field:host",
+                "cdb:events:field:event_id"
+              ],
+              "rank": 1,
+              "low_confidence": false
+            }
+          ],
+          "selected_source_ids": [
+            "cdb:source:events"
+          ],
+          "source_coverage": {
+            "discovered": 1,
+            "scheduled": 1,
+            "complete": true
+          },
+          "field_coverage": {
+            "discovered": 17,
+            "scheduled": 17,
+            "complete": true
+          },
+          "batch_count": 1,
+          "max_profiles_per_batch": 8,
+          "max_fields_per_source_per_batch": 48,
+          "ordering_only": true
+        }
+      ],
+      "coverage_manifests": {
+        "observed_transition": {
+          "total_sources": 1,
+          "considered_source_ids": [
+            "cdb:source:events"
+          ],
+          "examined_source_ids": [
+            "cdb:source:events"
+          ],
+          "rejected_source_ids": {},
+          "unexamined_source_ids": [],
+          "stage_audit": [
+            {
+              "stage": "F0_CERTIFIED",
+              "discovered_sources": [],
+              "count": 0
+            },
+            {
+              "stage": "F1_METADATA",
+              "discovered_sources": [],
+              "count": 0
+            },
+            {
+              "stage": "F2_ADJACENT",
+              "discovered_sources": [],
+              "count": 0
+            },
+            {
+              "stage": "F3_BOUNDED_PROFILING",
+              "discovered_sources": [
+                "cdb:source:events"
+              ],
+              "count": 1
+            },
+            {
+              "stage": "F4_APPROVED_EXHAUSTIVE",
+              "discovered_sources": [],
+              "count": 0
+            }
+          ]
+        }
+      },
+      "census_profile_discovery": {},
+      "proposals": [],
+      "rejected": [],
+      "relation_calls": [],
+      "runtime_capabilities": [],
+      "runtime_operation_ids": []
+    },
+    "compiler_trace": {
+      "prompt_hash": "a720a0077577a542",
+      "response_length": 1162,
+      "response_text": "{\"id\": \"goal-req-conflict\", \"request_id\": \"req-conflict\", \"objective\": \"Identify an event observed on server-01\", \"variables\": [{\"id\": \"host\", \"entity_type\": \"host\", \"value\": \"server-01\", \"value_origin\": \"request\", \"constraints\": []}, {\"id\": \"event\", \"entity_type\": \"event\", \"value\": null, \"value_origin\": \"llm_proposal\", \"constraints\": [{\"key\": \"action\", \"operator\": \"equals\", \"value\": \"login\"}, {\"key\": \"action\", \"operator\": \"equals\", \"value\": \"reboot\"}]}], \"relations\": [{\"id\": \"goal-event\", \"subject\": \"host\", \"relation\": \"observed_transition\", \"object\": \"event\", \"required\": true, \"provenance_span\": \"server-01\"}], \"answers\": [{\"variable_id\": \"event\", \"answer_type\": \"event\", \"required\": true}], \"answer_contracts\": [{\"slot_name\": \"event\", \"value_type\": \"event\", \"target_variable_id\": \"event\", \"required_qualifiers\": [], \"min_citations\": 1, \"acceptance_rule\": \"observed event\"}], \"clarification_triggers\": [], \"clarification_predicates\": [{\"id\": \"clarify-event-action\", \"kind\": \"CONFLICTING_EQUALS\", \"operator\": \"HAS_CONFLICT\", \"variable_id\": \"event\", \"constraint_key\": \"action\", \"provenance_span\": \"event\", \"schema_version\": \"1.0\", \"rule_version\": \"1.0\"}]}",
+      "validation_result": "VALID",
+      "output_kind": "semantic_goal_graph"
+    }
+  },
+  "assessments": [],
+  "semantic_route_assessments": [
+    {
+      "goal_id": "goal-event",
+      "relation": "observed_transition",
+      "status": "CAPABILITY_GAP",
+      "execution_complete": false,
+      "proof_complete": false,
+      "route_exhausted": false,
+      "readiness": "CAPABILITY_GAP",
+      "attempts": [],
+      "proof_gaps": [],
+      "capability_gaps": [
+        "no_typed_reachable_route"
+      ],
+      "terminal_cause": null
+    }
+  ]
+}

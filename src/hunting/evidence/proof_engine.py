@@ -11,12 +11,14 @@ from __future__ import annotations
 from typing import Any
 
 from hunting.contracts.observations import Observation
+from hunting.contracts.ontology import canonicalize_relation, proof_contract_id_for_relation
 from hunting.contracts.proof_contract import (
     ROLE_INCOMPATIBLE_FIELDS,
     ProofContract,
     ProofResult,
 )
 from hunting.contracts.queries import ProviderOperation, QueryResult
+from hunting.contracts.transforms import evaluate_constraint_against_row
 from hunting.evidence.relation_verifier import RelationVerifier
 from hunting.registry.proof_contract_registry import (
     ProofContractRegistry,
@@ -39,6 +41,7 @@ class ProofEngine:
         query_result: QueryResult | None = None,
         contract: ProofContract | None = None,
         bindings: dict[str, str] | None = None,
+        goal_graph: Any = None,
         **kwargs: Any,
     ) -> ProofResult:
         """Central evaluation function dispatching to approved evaluators.
@@ -46,36 +49,51 @@ class ProofEngine:
         Signature:
         evaluate(goal, method, operation, observations, query_result, contract) -> ProofResult
         """
-        # 1. Resolve ProofContract
+        # 1. Resolve ProofContract only from the accepted semantic graph goal or
+        # an explicitly supplied contract. Provider declarations are retrieval
+        # metadata and cannot invent a semantic relation or proof contract.
         resolved_contract = contract
-        if resolved_contract is None:
-            rel = None
-            if hasattr(goal, "relation") and goal.relation:
-                rel = str(goal.relation).strip().casefold()
-            elif operation and operation.guaranteed_relations:
-                rel = str(operation.guaranteed_relations[0]).strip().casefold()
+        raw_relation = str(getattr(goal, "relation", "") or "").strip()
+        graph_relation = canonicalize_relation(raw_relation)
+        graph_contract_id = proof_contract_id_for_relation(graph_relation)
 
-            if rel:
-                for c in self.registry.list_approved():
-                    if c.relation == rel:
-                        resolved_contract = c
-                        break
-
-            if resolved_contract is None and operation:
-                in_kinds = tuple(str(k).strip().lower() for k in getattr(operation, "input_entity_kinds", ()))
-                out_kinds = tuple(str(k).strip().lower() for k in getattr(operation, "output_entity_kinds", ()))
-                for c in self.registry.list_approved():
-                    c_in = tuple(str(k).strip().lower() for k in c.required_entity_roles)
-                    c_out = tuple(str(k).strip().lower() for k in c.required_value_roles)
-                    if in_kinds == c_in and out_kinds == c_out:
-                        resolved_contract = c
-                        break
-
-        # If no contract found or contract is not approved: novel relation exploration / gap
-        if resolved_contract is None:
-            rel_name = getattr(goal, "relation", None) or (
-                operation.guaranteed_relations[0] if operation and operation.guaranteed_relations else "unknown"
+        def _contract_matches_graph(candidate: ProofContract | None) -> bool:
+            if candidate is None or not graph_relation:
+                return candidate is not None
+            # A directional ontology alias or canonical relation alias can share
+            # the same reviewed proof contract as its canonical relation.
+            return (
+                candidate.relation == graph_relation
+                or candidate.relation == raw_relation.casefold()
+                or (graph_contract_id is not None and candidate.contract_id == graph_contract_id)
             )
+
+        if resolved_contract is not None and graph_relation:
+            if not _contract_matches_graph(resolved_contract):
+                return ProofResult(
+                    contract_id=resolved_contract.contract_id,
+                    contract_version=resolved_contract.version,
+                    evaluator_id="contract_relation_mismatch",
+                    evaluator_version=resolved_contract.evaluator_version,
+                    verified=False,
+                    verdict="PROOF_GAP",
+                    reason_codes=("contract_relation_mismatch",),
+                    diagnostic=(
+                        f"Explicit proof contract relation '{resolved_contract.relation}' "
+                        f"does not match accepted graph relation '{graph_relation}'."
+                    ),
+                    missing_obligations=("accepted_semantic_relation",),
+                )
+        if resolved_contract is None and graph_relation:
+            for candidate in self.registry.list_approved():
+                if _contract_matches_graph(candidate):
+                    resolved_contract = candidate
+                    break
+
+        # If no accepted graph relation or approved contract exists, rows and
+        # operation metadata remain retrieval-only.
+        if resolved_contract is None:
+            rel_name = graph_relation or "unknown"
             return ProofResult(
                 contract_id=None,
                 contract_version=None,
@@ -85,7 +103,23 @@ class ProofEngine:
                 verdict="PROOF_GAP",
                 reason_codes=("no_approved_proof_contract",),
                 diagnostic=f"no_approved_proof_contract_for_relation:{rel_name}",
-                missing_obligations=("approved_proof_contract",),
+                missing_obligations=("accepted_semantic_relation", "approved_proof_contract"),
+            )
+
+        if not _contract_matches_graph(resolved_contract):
+            return ProofResult(
+                contract_id=resolved_contract.contract_id,
+                contract_version=resolved_contract.version,
+                evaluator_id="contract_relation_mismatch",
+                evaluator_version=resolved_contract.evaluator_version,
+                verified=False,
+                verdict="PROOF_GAP",
+                reason_codes=("contract_relation_mismatch",),
+                diagnostic=(
+                    f"Proof contract relation '{resolved_contract.relation}' does not match "
+                    f"accepted graph relation '{graph_relation}'."
+                ),
+                missing_obligations=("accepted_semantic_relation",),
             )
 
         if not resolved_contract.is_approved:
@@ -198,6 +232,7 @@ class ProofEngine:
                 contract=resolved_contract,
                 bindings=bindings,
                 query_result=query_result,
+                goal_graph=goal_graph,
             )
         if eval_id == "evaluate_attribute_lookup" or hasattr(goal, "attribute"):
             return self._evaluate_attribute_lookup(
@@ -207,6 +242,7 @@ class ProofEngine:
                 contract=resolved_contract,
                 bindings=bindings,
                 query_result=query_result,
+                goal_graph=goal_graph,
             )
 
         # Default evaluator: evaluate_observed_relation
@@ -217,6 +253,7 @@ class ProofEngine:
             contract=resolved_contract,
             bindings=bindings,
             query_result=query_result,
+            goal_graph=goal_graph,
         )
 
     def _extract_events(
@@ -272,6 +309,7 @@ class ProofEngine:
         contract: ProofContract,
         bindings: dict[str, str] | None,
         query_result: QueryResult | None,
+        goal_graph: Any = None,
     ) -> ProofResult:
         """Deterministic evaluator for observed relations (visited, logged_on_to, etc.)."""
         # Invariant 1: DNS lookup does not prove web visit
@@ -365,6 +403,39 @@ class ProofEngine:
             if obj_var and obj_var in bindings:
                 expected_object = bindings[obj_var]
 
+        # Collect required variable constraints from goal_graph or goal
+        target_var = None
+        subject_var = None
+        if goal_graph is not None and hasattr(goal_graph, "variables"):
+            subj_id = getattr(goal, "subject", None)
+            obj_id = getattr(goal, "object", None)
+            for v in goal_graph.variables:
+                if v.id == subj_id:
+                    subject_var = v
+                elif v.id == obj_id:
+                    target_var = v
+
+        required_constraints: list[Any] = []
+        if subject_var and getattr(subject_var, "constraints", None):
+            # Subject restrictions are obligations of this relation only when the subject
+            # was not already grounded by an upstream relation in the goal graph.
+            is_upstream_grounded = False
+            if goal_graph is not None and hasattr(goal_graph, "relations"):
+                is_upstream_grounded = any(
+                    r.object == subject_var.id and getattr(r, "id", None) != getattr(goal, "id", None)
+                    for r in goal_graph.relations
+                )
+            if not is_upstream_grounded:
+                required_constraints.extend(subject_var.constraints)
+        if target_var and getattr(target_var, "constraints", None):
+            required_constraints.extend(target_var.constraints)
+        if hasattr(goal, "constraints") and goal.constraints:
+            for c in goal.constraints:
+                if c not in required_constraints:
+                    required_constraints.append(c)
+
+        all_unsatisfied_constraints: set[str] = set()
+
         # Scan events for a row that satisfies all required roles and constraints
         all_required_roles = (
             *contract.required_entity_roles,
@@ -376,6 +447,7 @@ class ProofEngine:
 
         all_missing_obligations: set[str] = set()
         violations: list[str] = []
+        conforming_events: list[dict[str, Any]] = []
 
         for ev in events:
             fields = ev["fields"]
@@ -436,18 +508,84 @@ class ProofEngine:
             if expected_subject is not None and entity_val:
                 exp_norm = expected_subject.strip().casefold()
                 ent_norm = entity_val.strip().casefold()
-                if exp_norm != "?" and exp_norm not in ent_norm and ent_norm not in exp_norm:
+                if exp_norm != "?" and exp_norm != ent_norm:
                     violations.append(f"subject_binding_mismatch:expected_{expected_subject}_got_{entity_val}")
                     continue
 
             if expected_object is not None and value_val:
                 exp_norm = expected_object.strip().casefold()
                 val_norm = value_val.strip().casefold()
-                if exp_norm != "?" and exp_norm not in val_norm and val_norm not in exp_norm:
+                if exp_norm != "?" and exp_norm != val_norm:
                     violations.append(f"object_binding_mismatch:expected_{expected_object}_got_{value_val}")
                     continue
 
-            # Found conforming proof row!
+            # Evaluate required semantic constraints against this event row
+            row_satisfied_constraints: list[str] = []
+            row_unsatisfied_constraints: list[str] = []
+            for c in required_constraints:
+                c_key = getattr(c, "key", None) or getattr(c, "type", None)
+                if not c_key and isinstance(c, str):
+                    if "=" in c:
+                        c_key, c_val = c.split("=", 1)
+                        c_op = "equals"
+                    elif ":" in c:
+                        c_key, c_val = c.split(":", 1)
+                        c_op = "exists"
+                    else:
+                        c_key = c
+                        c_val = None
+                        c_op = "exists"
+                    c_terms = ()
+                    c_text = c
+                else:
+                    c_val = getattr(c, "value", None)
+                    c_op = getattr(c, "operator", "equals")
+                    c_terms = getattr(c, "retrieval_terms", ())
+                    c_text = c.text() if hasattr(c, "text") else f"{c_key}={c_val}"
+
+                c_key_str = str(c_key).strip().casefold()
+                if evaluate_constraint_against_row(
+                    row_fields=fields,
+                    constraint_key=c_key_str,
+                    constraint_value=c_val,
+                    operator=c_op,
+                    retrieval_terms=c_terms,
+                ):
+                    row_satisfied_constraints.append(c_text)
+                else:
+                    row_unsatisfied_constraints.append(c_text)
+
+            if row_unsatisfied_constraints:
+                all_unsatisfied_constraints.update(row_unsatisfied_constraints)
+                violations.append(f"unsatisfied_constraints:{','.join(row_unsatisfied_constraints)}")
+                continue
+
+            conforming_events.append({
+                "citation": ev["citation"],
+                "subject": entity_val,
+                "object": value_val,
+                "roles": matched_roles,
+                "field_names": matched_field_names,
+                "satisfied_constraints": row_satisfied_constraints,
+            })
+
+        if conforming_events:
+            primary = conforming_events[0]
+            all_citations = tuple(item["citation"] for item in conforming_events)
+            all_bindings_dict: dict[str, str] = {}
+            for item in conforming_events:
+                all_bindings_dict.update(item["roles"])
+            for idx, item in enumerate(conforming_events):
+                if item["object"]:
+                    all_bindings_dict[f"proved_object_{idx}"] = item["object"]
+                if item["subject"]:
+                    all_bindings_dict[f"proved_subject_{idx}"] = item["subject"]
+
+            all_satisfied_constraints = tuple(dict.fromkeys(
+                sc for item in conforming_events for sc in item["satisfied_constraints"]
+            ))
+
+            # Found conforming proof rows!
             return ProofResult(
                 contract_id=contract.contract_id,
                 contract_version=contract.version,
@@ -456,19 +594,21 @@ class ProofEngine:
                 verified=True,
                 verdict="PROVEN",
                 reason_codes=("contract_requirements_satisfied",),
-                subject_binding=entity_val,
-                object_binding=value_val,
-                bindings=tuple(sorted(matched_roles.items())),
+                subject_binding=primary["subject"],
+                object_binding=primary["object"],
+                bindings=tuple(sorted(all_bindings_dict.items())),
                 satisfied_obligations=all_required_roles,
+                satisfied_constraints=all_satisfied_constraints,
                 missing_obligations=(),
-                citations=(ev["citation"],),
-                cited_fields=tuple(sorted(matched_field_names.items())),
+                unsatisfied_constraints=(),
+                citations=all_citations,
+                cited_fields=tuple(sorted(primary["field_names"].items())),
                 completeness_satisfied=True,
                 coverage_satisfied=True,
                 diagnostic=f"Proof established for relation '{contract.relation}' via contract '{contract.contract_id}'.",
             )
 
-        # No event satisfied all obligations
+        # No event satisfied all obligations and constraints
         reasons = ("non_conforming_rows",)
         if violations:
             reasons = (*reasons, *tuple(violations[:3]))
@@ -483,9 +623,13 @@ class ProofEngine:
             reason_codes=reasons,
             satisfied_obligations=(),
             missing_obligations=tuple(sorted(all_missing_obligations)),
+            satisfied_constraints=(),
+            unsatisfied_constraints=tuple(sorted(all_unsatisfied_constraints)),
             diagnostic=(
                 f"No event conformed to proof contract '{contract.contract_id}'. "
-                f"Missing roles: {', '.join(sorted(all_missing_obligations)) or 'none'}; violations: {violations}"
+                f"Missing roles: {', '.join(sorted(all_missing_obligations)) or 'none'}; "
+                f"Unsatisfied constraints: {', '.join(sorted(all_unsatisfied_constraints)) or 'none'}; "
+                f"violations: {violations}"
             ),
         )
 
@@ -497,6 +641,7 @@ class ProofEngine:
         contract: ProofContract,
         bindings: dict[str, str] | None,
         query_result: QueryResult | None,
+        goal_graph: Any = None,
     ) -> ProofResult:
         """Evaluator for state transitions (encryption, rename, file overwrite)."""
         required_actions = contract.required_action_roles or ("action",)
@@ -561,6 +706,7 @@ class ProofEngine:
         contract: ProofContract,
         bindings: dict[str, str] | None,
         query_result: QueryResult | None,
+        goal_graph: Any = None,
     ) -> ProofResult:
         """Evaluator for direct attribute lookup (software version, host IP, user email)."""
         attr_name = getattr(goal, "attribute", None) or "value"

@@ -103,11 +103,20 @@ class CanonicalActionController:
         return state.turn
 
     def record_query_execution(self, state: HuntState, query: QueryPlan, result: QueryResult) -> None:
-        """Authority method to record query plan execution and result."""
+        """Record one executed provider query in every compatibility view.
+
+        ``SearchEnvelope.budgets`` is the semantic runtime authority used by
+        ``RecoveryController``. ``HuntState.query_count`` and the legacy
+        ``HuntBudgetLedger`` remain mirrored compatibility counters; callers
+        must not pre-charge any of them before invoking this method.
+        """
         state.queries.append(query)
         state.query_results.append(result)
         state.query_count += 1
         self.budgets.record_query()
+        search_envelope = getattr(state, "search_envelope", None)
+        if search_envelope is not None:
+            search_envelope.budgets.consume(queries=1)
 
     def update_expectation_status(self, state: HuntState, expectation: Expectation, status: TestStatus) -> None:
         """Authority method to update an expectation's epistemic status."""
@@ -124,6 +133,10 @@ class CanonicalActionController:
     def set_stopping_decision(self, state: HuntState, decision: StoppingDecision) -> None:
         """Authority method to set the terminal stopping decision."""
         state.stopping_decision = decision
+
+    def clear_stopping_decision(self, state: HuntState) -> None:
+        """Authority method used when an explicitly resumed run reopens state."""
+        state.stopping_decision = None
 
     def select_action(
         self,

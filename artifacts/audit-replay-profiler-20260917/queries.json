@@ -1,0 +1,103 @@
+[
+  {
+    "query_id": "logical-goal-graph-hunt-req-20260916-034720-step-1",
+    "requirement_id": "goal-1",
+    "hypothesis_ids": [
+      "h"
+    ],
+    "semantic_intent": "",
+    "purpose": "resolve_person_to_endpoint",
+    "entity_binding": "subject=Mallory",
+    "binding_provenance": {
+      "subject": {
+        "variable_id": "subject",
+        "provenance": "logical_plan",
+        "trust_class": "runtime_binding_required"
+      }
+    },
+    "expected_fields": [
+      "user",
+      "host",
+      "ComputerName",
+      "sourcetype"
+    ],
+    "retrieval_stage": "narrow",
+    "removed_retrieval_keys": [],
+    "provider": "splunk",
+    "provider_id": "splunk",
+    "native_language": "spl",
+    "native_query": "search index=\"botsv2\" \"Mallory\" | rex field=_raw \"Workstation Name:\\s*(?<WorkstationName>[^\\r\\n\\s]+)\" | rex field=_raw \"New Logon:[\\s\\S]*?Account Name:\\s*(?<TargetUserName>[^\\r\\n\\s]+)\" | eval _host_candidate=coalesce(host,ComputerName) | where isnotnull(_host_candidate) AND _host_candidate!=\"\" AND _host_candidate!=\"-\" | dedup _host_candidate | head 101 | rename _host_candidate as host | table _time, host, ComputerName, TargetUserName, user, IpAddress, WorkstationName, LogonType, sourcetype",
+    "rows_count": 6,
+    "raw_count": null,
+    "observed_fields": [
+      "host",
+      "sourcetype",
+      "native_type",
+      "raw_event",
+      "ComputerName",
+      "timestamp",
+      "raw_ref"
+    ],
+    "sample_rows": [
+      {
+        "host": "MACLORY-AIR13",
+        "sourcetype": "usersWithLoginPrivs",
+        "timestamp": "2017-08-29T10:34:18.000+00:00",
+        "native_type": "usersWithLoginPrivs"
+      },
+      {
+        "host": "kutekitten",
+        "sourcetype": "usersWithLoginPrivs",
+        "timestamp": "2017-08-29T10:30:52.000+00:00",
+        "native_type": "usersWithLoginPrivs"
+      },
+      {
+        "host": "matar",
+        "sourcetype": "stream:smtp",
+        "timestamp": "2017-08-25T05:17:39.258+00:00",
+        "native_type": "stream:smtp"
+      },
+      {
+        "host": "jupiter",
+        "sourcetype": "suricata",
+        "timestamp": "2017-08-24T04:02:26.749+00:00",
+        "native_type": "suricata"
+      },
+      {
+        "host": "venus",
+        "ComputerName": "venus.frothly.local",
+        "sourcetype": "WinEventLog:Security",
+        "timestamp": "2017-08-19T06:26:27.000+00:00",
+        "native_type": "WinEventLog:Security"
+      }
+    ],
+    "complete": true,
+    "executed_ok": true,
+    "diagnostic": null,
+    "truncation_reason": null,
+    "result_summary": "6 rows returned; complete=True",
+    "completeness_contract": "provider-declared",
+    "is_targeted": true,
+    "operation_id": "resolve_person_to_endpoint",
+    "scope_id": "splunk_botsv2",
+    "page_trace": [
+      {
+        "step_id": "step-1",
+        "operation_id": "resolve_person_to_endpoint",
+        "stage_id": "narrow",
+        "removed_retrieval_keys": [],
+        "relaxation": null,
+        "query_id": "logical-goal-graph-hunt-req-20260916-034720-step-1",
+        "candidate_index": 0,
+        "page": 1,
+        "offset": 0,
+        "rows": 6,
+        "complete": true,
+        "cursor": null,
+        "executed_ok": true,
+        "diagnostic": null
+      }
+    ],
+    "continuation": {}
+  }
+]
