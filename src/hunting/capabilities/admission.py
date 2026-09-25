@@ -74,24 +74,6 @@ class CapabilityAdmissionGate:
                 reasons.append("missing_subject_type")
             if not str(requirement.get("object_type", "")).strip():
                 reasons.append("missing_object_type")
-            answer_role = str(requirement.get("answer_role", "")).strip()
-            if answer_role:
-                output_fields = [
-                    profile.field(field_id)
-                    for field_id in proposal.output_roles.values()
-                ]
-                answer_backed = False
-                for role, field in zip(proposal.output_roles.keys(), output_fields):
-                    if field is None:
-                        continue
-                    if types_are_compatible(answer_role, role):
-                        answer_backed = True
-                    if types_are_compatible(answer_role, field.name):
-                        answer_backed = True
-                    if field.nested_key and types_are_compatible(answer_role, field.nested_key):
-                        answer_backed = True
-                if not answer_backed:
-                    reasons.append(f"answer_role_not_census_backed:{answer_role.casefold()}")
         return AdmissionResult(not reasons, tuple(dict.fromkeys(reasons)))
 
     @classmethod

@@ -5,12 +5,101 @@ import json
 from typing import Any
 
 from hunting.capabilities.source_mapping_validator import SourceMappingValidator
+from hunting.contracts.ontology import FILE_IDENTITY_ANSWER_TYPES, types_are_compatible
 from hunting.contracts.source_profile import (
     ConstraintMapping,
     SourceCapabilityProposal,
     TelemetrySourceProfile,
 )
 from hunting.contracts.transforms import canonical_transform_name, list_transform_specs
+
+_FIELD_CAP = 12
+_SKIP_OBLIGATIONS = frozenset({"", "entity", "value", "any"})
+
+
+def _field_labels(field: Any) -> tuple[str, ...]:
+    labels = [str(getattr(field, "name", "") or "")]
+    nested = str(getattr(field, "nested_key", "") or "")
+    if nested:
+        labels.append(nested)
+    return tuple(label for label in labels if label.strip())
+
+
+def _port_token(value: Any) -> str:
+    text = str(value or "").strip().casefold()
+    return "" if text in _SKIP_OBLIGATIONS else text
+
+
+def mapping_ports(requirement: dict[str, Any]) -> dict[str, tuple[str, ...]]:
+    """Subject, object, and answer are C2 ports. Context names are not."""
+    mapping: list[str] = []
+    for key in (
+        requirement.get("subject_type"),
+        requirement.get("object_type"),
+        requirement.get("answer_role"),
+    ):
+        token = _port_token(key)
+        if token and token not in mapping:
+            mapping.append(token)
+    mapped = set(mapping)
+    unmapped: list[str] = []
+    for key in requirement.get("constraint_keys") or ():
+        token = _port_token(key)
+        if token and token not in mapped and token not in unmapped:
+            unmapped.append(token)
+    for hint in list(requirement.get("qualifier_hints") or ()) + list(requirement.get("constraint_hints") or ()):
+        raw = hint.get("key") or hint.get("qualifier") if isinstance(hint, dict) else hint
+        token = _port_token(raw)
+        if token and token not in mapped and token not in unmapped:
+            unmapped.append(token)
+    return {"mapping_keys": tuple(mapping), "unmapped_keys": tuple(unmapped)}
+
+
+def split_mapping_obligations(
+    requirement: dict[str, Any],
+    profiles: list[TelemetrySourceProfile] | tuple[TelemetrySourceProfile, ...] = (),
+) -> dict[str, tuple[str, ...]]:
+    del profiles
+    return mapping_ports(requirement)
+
+
+def compact_fields_for_c2(
+    fields: tuple[Any, ...] | list[Any],
+    ports: tuple[str, ...] | list[str],
+    *,
+    limit: int = _FIELD_CAP,
+) -> tuple[Any, ...]:
+    """Keep relation ports in the compact C2 window. Context tokens do not rank fields."""
+    cleaned = []
+    for port in ports:
+        token = _port_token(port)
+        if not token:
+            continue
+        if token not in cleaned:
+            cleaned.append(token)
+        if token in FILE_IDENTITY_ANSWER_TYPES and "file" not in cleaned:
+            cleaned.append("file")
+    cleaned = tuple(cleaned)
+    preferred = []
+    rest = []
+    for field in fields:
+        backed = any(
+            types_are_compatible(label, port)
+            for label in _field_labels(field)
+            for port in cleaned
+        )
+        if backed:
+            preferred.append(field)
+        else:
+            rest.append(field)
+    return tuple((preferred + rest)[: max(1, int(limit))])
+
+
+def _prompt_fields(
+    profile: TelemetrySourceProfile,
+    mapping_keys: tuple[str, ...],
+) -> tuple[Any, ...]:
+    return compact_fields_for_c2(profile.fields, mapping_keys, limit=_FIELD_CAP)
 
 
 class SourceProfiler:
@@ -29,6 +118,8 @@ class SourceProfiler:
         profiles: list[TelemetrySourceProfile] | tuple[TelemetrySourceProfile, ...],
         requirements: list[dict[str, Any]] | tuple[dict[str, Any], ...],
     ) -> dict[str, Any]:
+        splits = [mapping_ports(item) for item in requirements]
+        mapping_keys = tuple(dict.fromkeys(key for split in splits for key in split["mapping_keys"]))
         return {
             "component": "source_profiler",
             "instructions": (
@@ -42,7 +133,9 @@ class SourceProfiler:
                 "\"constraint_mappings\": [{\"semantic_constraint\": \"<key>\", \"native_field\": \"<field_id>\", \"operator\": \"equals\"|\"contains\", \"transform\": \"<transform>\"}]}]}. "
                 "The transform value MUST be empty for direct field matching or one of the registered transform IDs in transform_catalog. "
                 "Nested census fields require field_transforms[<field_id>]=extract_nested_key and must retain their parent/key metadata. "
-                "For every required constraint and required qualifier in capability_query, either emit a validated constraint_mappings entry using the exact field_id (including nested fields) or return no proposal; never silently omit a required semantic restriction. "
+                "mapping_keys are relation ports (subject, object, answer). Map each to a field_id when a census field supports it. "
+                "unmapped_keys are request context, not columns: emit them on the proposal as unaligned with reason no_census_field. "
+                "Do not withhold the source because of unmapped_keys. Emit a proposal when the shortlist is non-empty. "
                 "A mapping is a retrieval/proof capability claim, not a guess: use only a field whose native name and census provenance support the restriction. "
                 "Never invent a transform name. Output ONLY the JSON object. Do not include explanatory text."
             ),
@@ -56,12 +149,14 @@ class SourceProfiler:
                     "object_type": item.get("object_type"),
                     "answer_role": item.get("answer_role"),
                     "constraint_keys": list(item.get("constraint_keys") or ()),
+                    "mapping_keys": list(split["mapping_keys"]),
+                    "unmapped_keys": list(split["unmapped_keys"]),
                     "constraint_hints": list(item.get("constraint_hints") or ()),
                     "qualifier_hints": list(item.get("qualifier_hints") or ()),
                     "capability_query": dict(item.get("capability_query") or {}),
                     "roles": list(item.get("roles") or ())[:4],
                 }
-                for item in requirements
+                for item, split in zip(requirements, splits)
             ],
             "sources": [
                 {
@@ -77,7 +172,7 @@ class SourceProfiler:
                             "nested_key": field.nested_key,
                             "evidence_query_id": field.evidence_query_id,
                         }
-                        for field in profile.fields[:12]
+                        for field in _prompt_fields(profile, mapping_keys)
                     ],
                 }
                 for profile in profiles
@@ -111,32 +206,43 @@ class SourceProfiler:
 
         # The shared tracked LLM caller accepts a serialized prompt. Keeping
         # the boundary textual also makes the prompt hash/cost auditable.
-        raw = self.llm_caller(json.dumps(
+        prompt = json.dumps(
             self._context(profiles, requirements),
             ensure_ascii=False,
             sort_keys=True,
-        ))
+        )
+        shortlist_present = bool(profiles)
 
-        payload = None
-        try:
-            payload = _clean_and_parse(raw)
-        except Exception as exc:
+        def _invoke() -> tuple[dict[str, Any] | None, str]:
+            try:
+                payload = _clean_and_parse(self.llm_caller(prompt))
+            except Exception as exc:
+                return None, f"JSONDecodeError: {exc}"
+            if not isinstance(payload, dict) or not isinstance(payload.get("proposals"), list):
+                return None, "source profiler output must contain proposals[]"
+            return payload, ""
+
+        repair_status = "REPAIR_NOT_ATTEMPTED"
+        payload, error = _invoke()
+        if error:
             return [], {
                 "status": "MALFORMED_OUTPUT",
-                "repair_status": "REPAIR_NOT_ATTEMPTED",
-                "error": f"JSONDecodeError: {exc}",
+                "repair_status": repair_status,
+                "error": error,
                 "proposals": [],
                 "rejected": [],
             }
-
-        if not isinstance(payload, dict) or not isinstance(payload.get("proposals"), list):
-            return [], {
-                "status": "MALFORMED_OUTPUT",
-                "repair_status": "REPAIR_NOT_ATTEMPTED",
-                "error": "source profiler output must contain proposals[]",
-                "proposals": [],
-                "rejected": [],
-            }
+        if payload is not None and not payload["proposals"] and shortlist_present:
+            repair_status = "REPAIR_ATTEMPTED"
+            payload, error = _invoke()
+            if error or payload is None or not payload["proposals"]:
+                return [], {
+                    "status": "MALFORMED_OUTPUT",
+                    "repair_status": repair_status,
+                    "error": error or "proposals empty while an F1 shortlist remains",
+                    "proposals": [],
+                    "rejected": [],
+                }
 
         accepted: list[SourceCapabilityProposal] = []
         rejected: list[dict[str, Any]] = []
@@ -222,11 +328,19 @@ class SourceProfiler:
                 accepted.append(proposal)
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 rejected.append({"index": index, "reason": str(exc)})
-        return accepted, {
+        audit = {
             "status": "VALIDATED_CANDIDATES",
             "proposals": [item.to_dict() for item in accepted],
             "rejected": rejected,
         }
+        if repair_status == "REPAIR_ATTEMPTED":
+            audit["repair_status"] = repair_status
+        return accepted, audit
 
 
-__all__ = ["SourceProfiler"]
+__all__ = [
+    "SourceProfiler",
+    "compact_fields_for_c2",
+    "mapping_ports",
+    "split_mapping_obligations",
+]

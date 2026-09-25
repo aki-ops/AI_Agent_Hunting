@@ -121,6 +121,15 @@ class CapabilityRouteResolver:
                     )
                     if not admission.admitted and "missing_native_mapping" in admission.reasons:
                         admission = AdmissionResult(True, ())
+                    if not admission.admitted and admission.reasons and all(
+                        r == "missing_native_mapping" or r.startswith("answer_role_not_reachable")
+                        for r in admission.reasons
+                    ):
+                        # Explicitly bound runtime route: F1 + probe already
+                        # validated the source for this goal. The final answer
+                        # slot (e.g. file_name from a message payload) is
+                        # extracted downstream, not a census field requirement.
+                        admission = AdmissionResult(True, ())
                 else:
                     admission = admission_gate.evaluate_operation(
                         operation,

@@ -374,6 +374,25 @@ class SplunkLiveAdapter:
         }
         return profiles
 
+    def count_by_sourcetype(self) -> dict[str, int]:
+        """PEAK Prepare check: one count of events by sourcetype. Not a proof search."""
+        spl = f'| tstats count where index="{self.index}" by sourcetype'
+        resp = requests.post(
+            f"{self.splunk_url}/services/search/jobs",
+            data={"search": spl, "output_mode": "json", "exec_mode": "oneshot"},
+            auth=self.auth,
+            verify=self.verify_ssl,
+            timeout=self.timeout,
+        )
+        if resp.status_code != 200:
+            raise ConnectionError(f"sourcetype count failed: HTTP {resp.status_code}")
+        counts: dict[str, int] = {}
+        for row in resp.json().get("results", []):
+            name = str(row.get("sourcetype") or "")
+            if name:
+                counts[name] = int(row.get("count") or 0)
+        return counts
+
     def list_indexes(self, count: int = 0) -> list[dict[str, Any]]:
         """List all indexes on Splunk server via REST API with event counts."""
         resp = requests.get(
@@ -1140,6 +1159,9 @@ class SplunkLiveAdapter:
     def _resolve_evidence_kind(self, operation_id: str) -> str:
         """Map operation_id to canonical evidence requirement kind."""
         op = operation_id.lower()
+        bindings = (self.manifest or {}).get("bindings") or {}
+        if operation_id in bindings:
+            return operation_id
         if "process" in op or "lineage" in op:
             return "process_ancestry"
         if "web" in op or "http" in op:
@@ -1166,11 +1188,18 @@ class SplunkLiveAdapter:
         offset: int = 0,
         search_terms: list[str] | tuple[str, ...] | None = None,
         search_groups: list[list[str]] | None = None,
+        purpose: str | None = None,
     ) -> tuple[str, str, str]:
         """Construct safe parameterized SPL with search-time rex extractions and L+1 completeness limit."""
         start_dt, end_dt = validate_time_window_format(window)
         earliest_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         latest_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        if purpose == "sizing":
+            return (
+                f'search index="{self.index}" | stats count as match_count dc(user) as distinct_entities values(user) as users',
+                earliest_iso,
+                latest_iso,
+            )
         # Splunk has no implicit offset for oneshot searches.  Fetch one
         # extra row and use head+tail for bounded offset pagination so the
         # executor never mistakes a repeated first page for new evidence.
@@ -2061,8 +2090,10 @@ class SplunkLiveAdapter:
                     offset=offset,
                     search_terms=search_terms,
                     search_groups=search_groups,
+                    purpose=str(parameters.get("purpose") or "") or None,
                 )
-                spl = self._apply_discriminator_intent(spl, parameters)
+                if str(parameters.get("purpose") or "") != "sizing":
+                    spl = self._apply_discriminator_intent(spl, parameters)
         self.last_query_text = spl
 
         query_sid = str(parameters.get("sid") or f"hunt_{query_id}_{int(time.time() * 1000)}")

@@ -11,6 +11,8 @@ Verifies Phase 8 requirements:
 """
 from __future__ import annotations
 
+import pytest
+
 from hunting.compiler.compiler import KnowledgeBehaviorCompiler
 from hunting.contracts.entities import Domain, Host
 from hunting.contracts.hunt import (
@@ -76,27 +78,16 @@ def test_nl_lookup_compiles_explicit_answer_spec():
     }
 
 
-def test_1_known_cve_zero_llm():
-    """1. Known CVE compiles with exactly 0 LLM calls into 5-phase requirements."""
+def test_1_known_cve_is_rejected():
+    """Known CVE is not a hunt entry point on this branch."""
     compiler = KnowledgeBehaviorCompiler()
     req = HuntRequest(
         id="hunt-cve-test",
         kind=HuntRequestKind.CVE,
         content="Hunt for potential exploitation of CVE-2024-21887 on perimeter gateways",
     )
-    obj, hypotheses, requirements = compiler.compile(req)
-
-    assert compiler.llm_calls_made == 0
-    assert len(hypotheses) == 2
-    assert any(h.id.endswith("-exploited") for h in hypotheses)
-    assert any(h.id.endswith("-benign") for h in hypotheses)
-    assert len(requirements) >= 3
-
-    # Verify 0 web_request keywords were used as heuristic
-    req_types = {r.evidence_type for r in requirements}
-    assert "process_ancestry" in req_types
-    assert "file_modification" in req_types
-    assert "scope_records" in req_types
+    with pytest.raises(ValueError, match="free-text hypothesis"):
+        compiler.compile(req)
 
 
 def test_2_free_text_database_no_web():

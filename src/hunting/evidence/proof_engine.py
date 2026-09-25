@@ -19,7 +19,9 @@ from hunting.contracts.proof_contract import (
 )
 from hunting.contracts.queries import ProviderOperation, QueryResult
 from hunting.contracts.transforms import evaluate_constraint_against_row
+from hunting.evidence.behavior_comparator import proof_allowed
 from hunting.evidence.relation_verifier import RelationVerifier
+from hunting.planner.sizing import refute_allowed
 from hunting.registry.proof_contract_registry import (
     ProofContractRegistry,
     get_default_proof_contract_registry,
@@ -192,6 +194,26 @@ class ProofEngine:
                 and query_result is not None
                 and getattr(query_result, "complete", False)
             ):
+                min_coverage = kwargs.get("min_coverage_to_refute")
+                coverage_ratio = kwargs.get("coverage_ratio")
+                if min_coverage is not None and not refute_allowed(
+                    executed_ok=bool(getattr(query_result, "executed_ok", False)),
+                    complete=bool(getattr(query_result, "complete", False)),
+                    coverage_ratio=coverage_ratio,
+                    min_coverage=float(min_coverage),
+                    index_mismatch=bool(kwargs.get("index_mismatch", False)),
+                ):
+                    return ProofResult(
+                        contract_id=resolved_contract.contract_id,
+                        contract_version=resolved_contract.version,
+                        evaluator_id="evaluate_negative_evidence",
+                        evaluator_version=resolved_contract.evaluator_version,
+                        verified=False,
+                        verdict="PROOF_GAP",
+                        reason_codes=("refute_blocked_insufficient_coverage",),
+                        diagnostic="Empty query is inconclusive until coverage meets decision_criteria.",
+                        missing_obligations=("coverage_threshold",),
+                    )
                 return ProofResult(
                     contract_id=resolved_contract.contract_id,
                     contract_version=resolved_contract.version,
@@ -254,6 +276,7 @@ class ProofEngine:
             bindings=bindings,
             query_result=query_result,
             goal_graph=goal_graph,
+            comparator=kwargs.get("comparator"),
         )
 
     def _extract_events(
@@ -310,6 +333,7 @@ class ProofEngine:
         bindings: dict[str, str] | None,
         query_result: QueryResult | None,
         goal_graph: Any = None,
+        comparator: dict | None = None,
     ) -> ProofResult:
         """Deterministic evaluator for observed relations (visited, logged_on_to, etc.)."""
         # Invariant 1: DNS lookup does not prove web visit
@@ -585,7 +609,21 @@ class ProofEngine:
                 sc for item in conforming_events for sc in item["satisfied_constraints"]
             ))
 
-            # Found conforming proof rows!
+            # Found conforming proof rows. A behavior goal still needs a comparator.
+            if not proof_allowed(goal, goal_graph, comparator):
+                return ProofResult(
+                    contract_id=contract.contract_id,
+                    contract_version=contract.version,
+                    evaluator_id="evaluate_observed_relation",
+                    evaluator_version=contract.evaluator_version,
+                    verified=False,
+                    verdict="RETRIEVAL_ONLY",
+                    reason_codes=("behavior_predicate_match_is_candidate",),
+                    subject_binding=primary["subject"],
+                    object_binding=primary["object"],
+                    citations=all_citations,
+                    diagnostic="Predicate match on a behavior goal is a candidate until a comparator holds.",
+                )
             return ProofResult(
                 contract_id=contract.contract_id,
                 contract_version=contract.version,

@@ -89,6 +89,9 @@ def types_are_compatible(left: str, right: str) -> bool:
 PRIMARY_ENTITY_KINDS: frozenset[str] = frozenset({
     "endpoint", "process", "file", "account", "person", "domain", "ip", "email_address",
 })
+FILE_IDENTITY_ANSWER_TYPES: frozenset[str] = frozenset({
+    "file_name", "filename", "hash", "sha256", "md5", "attachment_name",
+})
 UNCONSTRAINED_RELATION_ROLES: frozenset[str] = frozenset({"", "entity", "value", "any"})
 
 

@@ -38,3 +38,7 @@ Gates M1–M5 and M7 remain closed. Gate M6 stays open (no hunt-workspace UI / n
 
 Do not add relation aliases, SMTP/email/file case branches, or scenario names. Do not treat exact `guaranteed_relations` miss + deferred C2 as `STOP_UNSUPPORTED`. Do not optimize SPL or add providers. Do not enable ClaimGraph/cell/adaptive loops on the default path. Do not weaken ProofContract: proximity, join and graph edges are not proof. Do not reopen closed M1–M5/M7 gates or fake-close M6.
 
+## Free-text hypothesis and PEAK
+
+The production entry on this branch is a free-text hypothesis (`--hypothesis`, `--hypothesis-file`, or `--query`). CVE, TTP, IOC, alert, and PoC requests are rejected. Prepare runs before any provider call. Thresholds are derived first and may then be edited by the analyst. A goal is `artifact` or `behavior`. A behavior predicate match is a candidate until a comparator holds. Sizing observations are not evidence. Act exports a detection draft, an append-only backlog, and a stakeholder note. The reasoning kernel remains `SemanticGoalGraph`.
+

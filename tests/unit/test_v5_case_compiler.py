@@ -20,7 +20,6 @@ from hunting.compiler.compiler import (
 from hunting.contracts.case_graph import (
     InvestigationCase,
     NodeType,
-    RelationType,
 )
 from hunting.contracts.hunt import (
     HuntRequest,
@@ -99,48 +98,15 @@ def test_free_text_llm_compiler_emits_investigation_case():
     assert edges[0].metadata["claim_id"] == "claim-visited-domain"
 
 
-def test_deterministic_cve_compiles_to_case_with_zero_llm():
-    """Verify known CVE-2024-21887 compiles deterministically into InvestigationCase with 0 LLM calls."""
+def test_cve_and_ttp_are_rejected():
+    """CVE and TTP are not compiled into an investigation case."""
     compiler = KnowledgeBehaviorCompiler(llm_caller=None)
-    req = HuntRequest(
-        id="hunt-cve-21887",
-        kind=HuntRequestKind.CVE,
-        content="Hunt for potential exploitation of CVE-2024-21887 on perimeter gateways",
-    )
-    obj, hyps, reqs = compiler.compile(req)
-
-    assert compiler.llm_calls_made == 0
-    assert obj.case is not None
-    assert obj.case_graph is not None
-    assert len(obj.case.graph.nodes) >= 3
-    assert len(obj.case.graph.edges) >= 2
-
-    # Edges: endpoint -> exploit proc -> webshell file
-    edges = list(obj.case.graph.edges.values())
-    rel_types = [e.relation_type for e in edges]
-    assert RelationType.SPAWNED in rel_types
-    assert RelationType.WROTE in rel_types
-
-    # Unknowns must include exploit process and file
-    unk_types = [u.entity_type for u in obj.case.unknowns]
-    assert NodeType.PROCESS in unk_types
-    assert NodeType.FILE in unk_types
-
-
-def test_deterministic_ttp_compiles_to_case_with_zero_llm():
-    """Verify MITRE TTP input compiles deterministically into InvestigationCase with 0 LLM calls."""
-    compiler = KnowledgeBehaviorCompiler(llm_caller=None)
-    req = HuntRequest(
-        id="hunt-ttp-1059",
-        kind=HuntRequestKind.TTP,
-        content="Investigation of MITRE T1059 command and script execution",
-    )
-    obj, hyps, reqs = compiler.compile(req)
-
-    assert compiler.llm_calls_made == 0
-    assert obj.case is not None
-    assert obj.case_graph is not None
-    assert len(obj.case.graph.nodes) >= 2
+    for kind, content in (
+        (HuntRequestKind.CVE, "Hunt for potential exploitation of CVE-2024-21887 on perimeter gateways"),
+        (HuntRequestKind.TTP, "Investigation of MITRE T1059 command and script execution"),
+    ):
+        with pytest.raises(ValueError, match="free-text hypothesis"):
+            compiler.compile(HuntRequest(id=f"hunt-{kind.value}", kind=kind, content=content))
 
 
 def test_validator_rejects_raw_spl_syntax():

@@ -397,6 +397,41 @@ class CdbAdapter:
             bindings=bindings,
         )
 
+    def _execute_sizing(self, window: str, query_id: str) -> QueryResult:
+        """Count rows and distinct users in the window. This is not a proof search."""
+        start_dt, end_dt = validate_time_window_format(window)
+        start_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        sql = (
+            "SELECT COUNT(*) AS match_count, COUNT(DISTINCT user) AS distinct_entities "
+            "FROM events WHERE timestamp >= ? AND timestamp <= ?"
+        )
+        match_count, distinct_entities = self._conn.execute(sql, [start_iso, end_iso]).fetchone()
+        scope_count = self._conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        users = [
+            row[0]
+            for row in self._conn.execute(
+                "SELECT DISTINCT user FROM events WHERE timestamp >= ? AND timestamp <= ? AND user IS NOT NULL AND user != ''",
+                [start_iso, end_iso],
+            ).fetchall()
+        ]
+        return QueryResult(
+            query_id=query_id,
+            outcome=QueryOutcome.ROWS,
+            executed_ok=True,
+            complete=True,
+            rows=[{
+                "match_count": int(match_count or 0),
+                "distinct_entities": int(distinct_entities or 0),
+                "scope_count": int(scope_count or 0),
+                "users": users,
+            }],
+            row_count=int(match_count or 0),
+            raw_count=int(scope_count or 0),
+            native_query=sql,
+            provider=self.provider_id,
+        )
+
     def execute_query(
         self,
         operation_id: str,
@@ -413,6 +448,8 @@ class CdbAdapter:
     ) -> QueryResult:
         """Execute a parameterized query over SQLite events table with EOF completeness check."""
         parameters = dict(parameters or {})
+        if str(parameters.get("purpose") or "") == "sizing":
+            return self._execute_sizing(window, query_id)
         params = {"window": window, "limit": limit}
         validate_query_params(operation_id, params)
 

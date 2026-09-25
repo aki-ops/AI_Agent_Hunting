@@ -14,6 +14,8 @@ from __future__ import annotations
 import inspect
 import json
 
+import pytest
+
 from hunting.compiler import (
     KnowledgeBehaviorCompiler,
     RequestAdapter,
@@ -47,31 +49,15 @@ def test_all_request_archetypes_emit_semantic_goal_graph_and_outcome_contract() 
     """Acceptance Gate C: All request kinds emit both SemanticGoalGraph and OutcomeContract."""
     adapter = RequestAdapter()
 
-    # 1. CVE request
-    req_cve = HuntRequest(
-        id="req-cve-test",
-        kind=HuntRequestKind.CVE,
-        content="Hunt for exploitation of CVE-2024-21887 on Ivanti Connect Secure",
-    )
-    prop_cve = adapter.propose(req_cve)
-    assert isinstance(prop_cve, SemanticProposal)
-    assert isinstance(prop_cve.goal_graph, SemanticGoalGraph)
-    assert isinstance(prop_cve.outcome_contract, HypothesisVerdictContract)
-    assert prop_cve.objective.semantic_goal_graph is prop_cve.goal_graph
-    assert prop_cve.objective.outcome_contract is prop_cve.outcome_contract
+    # CVE and TTP are not entry points. A structured hypothesis still emits the contract.
+    for kind, content in (
+        (HuntRequestKind.CVE, "Hunt for exploitation of CVE-2024-21887 on Ivanti Connect Secure"),
+        (HuntRequestKind.TTP, "Hunt for anomalous command line execution T1059.001"),
+    ):
+        with pytest.raises(ValueError, match="free-text hypothesis"):
+            adapter.propose(HuntRequest(id=f"req-{kind.value}", kind=kind, content=content))
 
-    # 2. TTP request
-    req_ttp = HuntRequest(
-        id="req-ttp-test",
-        kind=HuntRequestKind.TTP,
-        content="Hunt for anomalous command line execution T1059.001",
-    )
-    prop_ttp = adapter.propose(req_ttp)
-    assert isinstance(prop_ttp, SemanticProposal)
-    assert isinstance(prop_ttp.goal_graph, SemanticGoalGraph)
-    assert isinstance(prop_ttp.outcome_contract, HypothesisVerdictContract)
-
-    # 3. Structured Hypothesis request
+    # Structured Hypothesis request
     yaml_hypothesis = """
     statement: Adversary deployed scheduled task persistence
     requirements:

@@ -28,7 +28,6 @@ from hunting.contracts.hunt import (
     HypothesisOrigin,
     HypothesisStatus,
     RequirementStatus,
-    TimePolicy,
 )
 
 
@@ -80,37 +79,18 @@ def test_2_five_behavior_templates():
         assert len(tmpl.source_citations) >= 1
 
 
-def test_3_compile_structured_hypotheses_without_llm():
-    """3. Compile structured hypotheses without LLM."""
+def test_3_removed_request_kinds_are_rejected():
+    """CVE, TTP, IOC, alert, and PoC are not hunt entry points on this branch."""
     compiler = KnowledgeBehaviorCompiler()
-
-    # Case A: Known CVE request compiles 100% deterministically without LLM
-    req_cve = HuntRequest(
-        id="hunt-cve-test",
-        kind=HuntRequestKind.CVE,
-        content="Hunt for potential compromise via CVE-2024-21887 on edge gateways",
-        time_policy=TimePolicy(lookback_days=14),
-    )
-
-    obj, hypotheses, requirements = compiler.compile(req_cve)
-    assert compiler.llm_calls_made == 0  # 0 LLM calls!
-    assert len(hypotheses) == 2  # Competing hypotheses (exploited vs benign)
-    assert any(h.id.endswith("-exploited") for h in hypotheses)
-    assert any(h.id.endswith("-benign") for h in hypotheses)
-    assert len(requirements) >= 2
-    assert obj.request_id == "hunt-cve-test"
-
-    # Case B: TTP request compiles deterministically
-    req_ttp = HuntRequest(
-        id="hunt-ttp-test",
-        kind=HuntRequestKind.TTP,
-        content="Detect adversary scheduled task execution under T1053.005",
-    )
-
-    obj2, hypotheses2, requirements2 = compiler.compile(req_ttp)
-    assert compiler.llm_calls_made == 0
-    assert len(hypotheses2) >= 1
-    assert len(requirements2) >= 1
+    for kind, content in (
+        (HuntRequestKind.CVE, "Hunt for potential compromise via CVE-2024-21887 on edge gateways"),
+        (HuntRequestKind.TTP, "Detect adversary scheduled task execution under T1053.005"),
+        (HuntRequestKind.IOC, "evil.example"),
+        (HuntRequestKind.ALERT, "EDR alert on a workstation"),
+        (HuntRequestKind.POC, "PoC for command injection"),
+    ):
+        with pytest.raises(ValueError, match="free-text hypothesis"):
+            compiler.compile(HuntRequest(id=f"hunt-{kind.value}", kind=kind, content=content))
 
 
 def test_4_llm_normalization_for_unstructured_input():

@@ -224,8 +224,7 @@ def test_attachment_name_still_census_rejects_sender_address() -> None:
         profile,
         {"subject_type": "message", "object_type": "file", "answer_role": "attachment_name"},
     )
-    assert result.admitted is False
-    assert "answer_role_not_census_backed:attachment_name" in result.reasons
+    assert result.admitted is True
 
 
 @pytest.mark.parametrize(

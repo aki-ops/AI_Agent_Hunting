@@ -19,6 +19,7 @@ from hunting.contracts.investigation_model import (
 )
 from hunting.contracts.ontology import (
     CANONICAL_RELATION_VOCABULARY,
+    FILE_IDENTITY_ANSWER_TYPES,
     UNCONSTRAINED_RELATION_ROLES,
     get_canonical_relation,
     types_are_compatible,
@@ -321,12 +322,55 @@ class SemanticGoalGraphValidator:
         rejections.extend(stage2_rejections)
         stage_results["literal_provenance"] = len(stage2_rejections) == 0
 
+        rewritten_answers = list(graph.answers)
+        rewritten_contracts = list(graph.answer_contracts)
+        used_ids = {variable.id for variable in rewritten_variables}
+        moved_answers: dict[str, str] = {}
+        for index, answer in enumerate(list(rewritten_answers)):
+            answer_type = str(getattr(answer, "answer_type", "")).strip().casefold()
+            if answer_type not in FILE_IDENTITY_ANSWER_TYPES:
+                continue
+            hung = next((item for item in rewritten_variables if item.id == answer.variable_id), None)
+            if hung is None or types_are_compatible(hung.entity_type, "file"):
+                continue
+            existing_file = next(
+                (item for item in rewritten_variables if types_are_compatible(item.entity_type, "file")),
+                None,
+            )
+            if existing_file is not None:
+                file_id = existing_file.id
+            else:
+                file_id = "attachment"
+                suffix = 1
+                while file_id in used_ids:
+                    suffix += 1
+                    file_id = f"attachment-{suffix}"
+                rewritten_variables.append(SemanticVariable(
+                    id=file_id,
+                    entity_type="file",
+                    value_origin="llm_proposal",
+                ))
+                used_ids.add(file_id)
+            moved_answers[answer.variable_id] = file_id
+            rewritten_answers[index] = replace(answer, variable_id=file_id)
+            diagnostics.append(
+                f"Answer '{answer.answer_type}' moved from '{answer.variable_id}' "
+                f"({hung.entity_type}) to '{file_id}' (file)."
+            )
+        if moved_answers:
+            rewritten_contracts = [
+                replace(contract, target_variable_id=moved_answers[contract.target_variable_id])
+                if contract.target_variable_id in moved_answers
+                else contract
+                for contract in rewritten_contracts
+            ]
+
         # =========================================================================
         # Stage 3: Scope & Outcome Utility Validation (Story Expansion Pruning)
         # =========================================================================
-        target_var_ids = {a.variable_id for a in graph.answers} | {
-            ac.target_variable_id for ac in graph.answer_contracts
-        }
+        target_var_ids = {a.variable_id for a in rewritten_answers} | {
+            ac.target_variable_id for ac in rewritten_contracts
+        } | set(moved_answers.keys())
         if not target_var_ids and rewritten_variables:
             target_var_ids = {rewritten_variables[-1].id}
 
@@ -528,6 +572,8 @@ class SemanticGoalGraphValidator:
             variables=final_variables,
             relations=validated_relations,
             qualifiers=validated_qualifiers,
+            answers=rewritten_answers,
+            answer_contracts=rewritten_contracts,
             clarification_predicates=predicates,
             clarification_evaluations=evaluations,
             validation_diagnostics=list(diagnostics),

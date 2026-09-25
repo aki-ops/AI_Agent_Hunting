@@ -431,6 +431,7 @@ class SemanticRelationGoal:
     dependencies: tuple[str, ...] = ()
     dependency_operator: str = "AND"
     gate_condition: str | None = None
+    goal_class: str = "artifact"
 
     def __post_init__(self) -> None:
         for name in ("id", "subject", "relation", "object"):
@@ -442,6 +443,10 @@ class SemanticRelationGoal:
         if op not in {"AND", "OR", "GATE"}:
             op = "AND"
         object.__setattr__(self, "dependency_operator", op)
+        goal_class = str(self.goal_class or "artifact").lower()
+        if goal_class not in {"artifact", "behavior"}:
+            goal_class = "artifact"
+        object.__setattr__(self, "goal_class", goal_class)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -456,6 +461,7 @@ class SemanticRelationGoal:
             "dependencies": list(self.dependencies),
             "dependency_operator": self.dependency_operator,
             "gate_condition": self.gate_condition,
+            "goal_class": self.goal_class,
         }
 
 
@@ -790,6 +796,7 @@ class SemanticGoalGraph:
                 dependencies=tuple(item.get("dependencies", ())),
                 dependency_operator=str(item.get("dependency_operator", "AND")),
                 gate_condition=item.get("gate_condition"),
+                goal_class=str(item.get("goal_class", "artifact")),
             )
             for item in data.get("relations", []) if isinstance(item, dict)
         ]
@@ -929,8 +936,8 @@ class PlanStep:
             op = "AND"
         object.__setattr__(self, "dependency_operator", op)
         mode = str(getattr(self, "mode", "EXPLORE") or "EXPLORE").upper()
-        if mode not in {"EXPLORE", "DISCRIMINATE", "PROVE"}:
-            raise ValueError("PlanStep.mode must be EXPLORE, DISCRIMINATE or PROVE")
+        if mode not in {"EXPLORE", "DISCRIMINATE", "PROVE", "SIZING"}:
+            raise ValueError("PlanStep.mode must be EXPLORE, DISCRIMINATE, PROVE or SIZING")
         object.__setattr__(self, "mode", mode)
 
     def to_dict(self) -> dict[str, Any]:

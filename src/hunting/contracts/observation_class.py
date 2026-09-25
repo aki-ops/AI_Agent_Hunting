@@ -46,6 +46,9 @@ class ObservationClass(str, Enum):
     CANDIDATES = "CANDIDATES"
     """Extracted plausible candidate bindings awaiting proof verification."""
 
+    SIZING = "SIZING"
+    """Count-only coverage measurement. It is not evidence and cannot prove a goal."""
+
 
 class ExecutionStatus(str, Enum):
     """Orthogonal axis: Low-level query execution state."""

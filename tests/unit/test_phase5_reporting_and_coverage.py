@@ -223,7 +223,7 @@ def test_final_account_full_citations():
     state = HuntState(
         objective=HuntObjective(
             request_id="req-hunt-cite",
-            kind=HuntRequestKind.CVE,
+            kind=HuntRequestKind.HYPOTHESIS,
             statement="Investigate CVE-2024-21887",
             entities=[Host(name="DMZ-01")],
             time_policy=TimePolicy(start="2026-02-01T00:00:00Z", end="2026-02-02T00:00:00Z"),

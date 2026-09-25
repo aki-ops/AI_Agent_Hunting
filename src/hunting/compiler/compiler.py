@@ -1,12 +1,9 @@
 """Knowledge and Behavior Compiler.
 
-Component 1 of Canonical v4 Threat Hunting Architecture:
-1. Translates HuntRequest (CVE, TTP, IOC, NL_QUESTION) into testable HuntObjective,
-   Hypotheses, and EvidenceRequirements.
-2. Enforces deterministic-first compilation: structured templates compile with 0 LLM calls.
-3. Bounds LLM normalization fallback to max 1 call for unstructured input.
-4. Enforces strict schema validation, falsification conditions, source citations,
-   and prompt injection defense.
+Compiles a free-text hypothesis into a testable HuntObjective.
+Structured hypothesis text compiles with 0 LLM calls.
+Unstructured text uses at most one schema-validated LLM call, plus one repair.
+CVE, TTP, IOC, alert, and PoC requests are rejected.
 """
 from __future__ import annotations
 
@@ -17,22 +14,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
-from hunting.compiler.knowledge_base import build_default_knowledge_base
-from hunting.compiler.models import BehaviorTemplate, KnowledgeRecord
-from hunting.compiler.templates import build_default_templates
-from hunting.contracts.case_graph import (
-    EvidenceGoal,
-    GraphEdge,
-    GraphNode,
-    InvestigationCase,
-    InvestigationGraph,
-    InvestigationUnknown,
-    NodeStatus,
-    NodeType,
-    RelationStatus,
-    RelationType,
-    build_investigation_case_from_intent,
-)
+from hunting.contracts.case_graph import build_investigation_case_from_intent
 from hunting.contracts.claim import (
     ClaimGraph,
 )
@@ -53,7 +35,6 @@ from hunting.contracts.outcome import (
     OutcomeContract,
 )
 from hunting.contracts.semantic_graph import (
-    SemanticConstraint,
     SemanticGoalGraph,
     SemanticRelationGoal,
     SemanticVariable,
@@ -70,6 +51,15 @@ from hunting.validator.investigation_validator import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_REMOVED_REQUEST_KINDS = frozenset({
+    HuntRequestKind.CVE,
+    HuntRequestKind.TTP,
+    HuntRequestKind.IOC,
+    HuntRequestKind.ALERT,
+    HuntRequestKind.POC,
+})
 
 
 @dataclass
@@ -802,13 +792,9 @@ class RequestAdapter:
 
     def __init__(
         self,
-        knowledge_base: dict[str, KnowledgeRecord] | None = None,
-        templates: dict[str, BehaviorTemplate] | None = None,
         llm_caller: Callable[[str], str] | None = None,
         require_semantic_goal_graph: bool = False,
     ) -> None:
-        self.knowledge_base = knowledge_base if knowledge_base is not None else build_default_knowledge_base()
-        self.templates = templates if templates is not None else build_default_templates()
         self.llm_caller = llm_caller
         # Live API mode must not silently fall back to the legacy ClaimGraph
         # executor.  The compatibility representation remains available to
@@ -855,17 +841,16 @@ class RequestAdapter:
         # 2. Derive time window
         effective_window = time_window or self._derive_time_window(request)
 
-        # 3. Compile based on request kind
-        if request.kind == HuntRequestKind.CVE:
-            return self._compile_cve(request, effective_window)
-        elif request.kind in (HuntRequestKind.TTP, HuntRequestKind.IOC):
-            return self._compile_ttp_or_ioc(request, effective_window)
+        # 3. This branch compiles free-text hypotheses only.
+        if request.kind in _REMOVED_REQUEST_KINDS:
+            raise ValueError(
+                'This branch accepts only a free-text hypothesis. '
+                f'Request kind {request.kind.value} is not available.'
+            )
         elif request.kind in (
             HuntRequestKind.QUESTION,
             HuntRequestKind.NL_QUESTION,
             HuntRequestKind.HYPOTHESIS,
-            HuntRequestKind.ALERT,
-            HuntRequestKind.POC,
         ):
             structured = self._try_compile_structured_hypothesis(request, effective_window)
             if structured is not None:
@@ -890,394 +875,6 @@ class RequestAdapter:
                     capability_context=capability_context,
                 )
             return self._compile_general_structured(request, effective_window)
-
-    def _compile_cve(
-        self,
-        request: HuntRequest,
-        time_window: str,
-    ) -> tuple[HuntObjective, list[Hypothesis], list[EvidenceRequirementV4]]:
-        """Deterministically compile a CVE request into competing hypotheses and phased requirements."""
-        cve_id = self._extract_cve_id(request.content)
-        record = self.knowledge_base.get(cve_id)
-
-        if record and record.phases:
-            # Known CVE with full 5-phase decomposition
-            hypo_exploited = Hypothesis(
-                id=f"hypo-{cve_id}-exploited",
-                statement=f"Adversary successfully exploited {cve_id} ({record.title}) and established presence",
-                origin=HypothesisOrigin.RULE,
-                status=HypothesisStatus.LIVE,
-                hypothesis_class="external_exploitation",
-                source_refs=list(record.source_citations),
-                requirements=[f"req-{cve_id}-exploit", f"req-{cve_id}-post"],
-            )
-
-            hypo_benign = Hypothesis(
-                id=f"hypo-{cve_id}-benign",
-                statement=f"No exploitation of {cve_id} occurred; telemetry reflects clean baseline",
-                origin=HypothesisOrigin.RULE,
-                status=HypothesisStatus.LIVE,
-                hypothesis_class="benign_baseline",
-                source_refs=list(record.source_citations),
-                requirements=[f"req-{cve_id}-baseline"],
-            )
-
-            exploit_predicate = FieldPredicate(field="cmdline", op=FieldOp.EXISTS)
-            if cve_id == "CVE-2024-21887" or any("python" in ind.lower() for ind in record.phases.exploitation_indicators):
-                exploit_predicate = FieldPredicate(field="cmdline", op=FieldOp.CONTAINS, value="python")
-            elif any("sql" in ind.lower() for ind in record.phases.exploitation_indicators):
-                exploit_predicate = FieldPredicate(field="cmdline", op=FieldOp.CONTAINS, value="sql")
-
-            req_exploit = EvidenceRequirementV4(
-                id=f"req-{cve_id}-exploit",
-                description=f"Evidence of exploitation attempts targeting {cve_id}: {'; '.join(record.phases.exploitation_indicators)}",
-                evidence_type="process_ancestry",
-                predicate=exploit_predicate,
-                falsification_condition=f"telemetry confirms zero exploitation indicators for {cve_id}",
-                source_refs=list(record.source_citations),
-                status=RequirementStatus.DEFINED,
-            )
-
-            req_post = EvidenceRequirementV4(
-                id=f"req-{cve_id}-post",
-                description=f"Post-exploitation indicators for {cve_id}: {'; '.join(record.phases.post_exploitation)}",
-                evidence_type="file_modification",
-                predicate=FieldPredicate(field="file_path", op=FieldOp.EXISTS),
-                falsification_condition="filesystem inspection shows zero web shells or unauthorized artifacts",
-                source_refs=list(record.source_citations),
-                status=RequirementStatus.DEFINED,
-            )
-
-            req_baseline = EvidenceRequirementV4(
-                id=f"req-{cve_id}-baseline",
-                description="Verified operational telemetry showing standard application execution",
-                evidence_type="scope_records",
-                falsification_condition="telemetry gap or unobservable audit partition",
-                source_refs=list(record.source_citations),
-                status=RequirementStatus.DEFINED,
-            )
-
-            inv_case = self._build_cve_case(cve_id, record, request, [hypo_exploited, hypo_benign], [req_exploit, req_post])
-
-            outcome_contract = HypothesisVerdictContract(
-                support_obligations=(req_exploit.id, req_post.id),
-                refutation_obligations=(req_baseline.id,),
-                falsification_conditions=(
-                    req_exploit.falsification_condition
-                    or f"telemetry confirms zero exploitation indicators for {cve_id}",
-                ),
-                scope="; ".join(request.provider_hints or ["cdb_native_scope"]),
-            )
-            host_val = None
-            if getattr(request, "entities", None):
-                for ent in request.entities:
-                    val = getattr(ent, "name", None) or (str(ent) if isinstance(ent, str) else None)
-                    if val:
-                        host_val = val
-                        break
-            var_endpoint = SemanticVariable(
-                id="var_endpoint",
-                entity_type="host",
-                value=host_val,
-                value_origin="request",
-                constraints=(),
-            )
-            exploit_ind = (
-                "python" if any("python" in ind.lower() for ind in getattr(record.phases, "exploitation_indicators", []))
-                else None
-            )
-            var_proc = SemanticVariable(
-                id="var_exploit_proc",
-                entity_type="process",
-                value=None,
-                value_origin="request",
-                constraints=tuple([SemanticConstraint(key="cmdline", value=exploit_ind, operator="contains")]) if exploit_ind else (),
-            )
-            var_file = SemanticVariable(
-                id="var_webshell_file",
-                entity_type="file",
-                value=None,
-                value_origin="request",
-                constraints=(),
-            )
-            rel_proc = SemanticRelationGoal(
-                id=req_exploit.id,
-                subject="var_endpoint",
-                relation="spawned",
-                object="var_exploit_proc",
-                required=True,
-                description=req_exploit.description,
-                atomic_obligation=f"Detect anomalous process execution for {cve_id}",
-            )
-            rel_file = SemanticRelationGoal(
-                id=req_post.id,
-                subject="var_exploit_proc",
-                relation="wrote",
-                object="var_webshell_file",
-                required=True,
-                description=req_post.description,
-                atomic_obligation=f"Detect artifact write for {cve_id}",
-                dependencies=(rel_proc.id,),
-                dependency_operator="AND",
-            )
-            goal_graph = SemanticGoalGraph(
-                id=f"goal-graph-{request.id}",
-                request_id=request.id,
-                objective=f"Evaluate exploitation of {cve_id}",
-                variables=[var_endpoint, var_proc, var_file],
-                relations=[rel_proc, rel_file],
-                outcome_contract=outcome_contract,
-            )
-
-            objective = HuntObjective(
-                request_id=request.id,
-                target_hypotheses=[hypo_exploited.id, hypo_benign.id],
-                time_window=time_window,
-                target_scopes=request.provider_hints or ["cdb_native_scope"],
-                kind=request.kind,
-                statement=request.content,
-                case=inv_case,
-                case_graph=inv_case.graph,
-                semantic_goal_graph=goal_graph,
-                validated_graph=goal_graph,
-                outcome_contract=outcome_contract,
-            )
-
-            return objective, [hypo_exploited, hypo_benign], [req_exploit, req_post, req_baseline]
-        else:
-            # Unknown CVE without template -> fallback or general structured
-            return self._compile_general_structured(request, time_window)
-
-    def _build_cve_case(
-        self,
-        cve_id: str,
-        record: KnowledgeRecord,
-        request: HuntRequest,
-        hypotheses: list[Hypothesis],
-        requirements: list[EvidenceRequirementV4],
-    ) -> InvestigationCase:
-        graph = InvestigationGraph()
-        n_endpoint = GraphNode(id="node-endpoint", type=NodeType.ENDPOINT, value="?", status=NodeStatus.UNKNOWN)
-        n_proc = GraphNode(
-            id="node-exploit-proc",
-            type=NodeType.PROCESS,
-            value="python" if any("python" in ind.lower() for ind in getattr(record.phases, "exploitation_indicators", [])) else "?",
-            status=NodeStatus.UNKNOWN,
-        )
-        n_file = GraphNode(id="node-webshell-file", type=NodeType.FILE, value="?", status=NodeStatus.UNKNOWN)
-
-        graph.add_node(n_endpoint)
-        graph.add_node(n_proc)
-        graph.add_node(n_file)
-
-        e1 = GraphEdge(
-            id=f"edge-{cve_id}-spawn",
-            source_id="node-endpoint",
-            source_entity_type=NodeType.ENDPOINT,
-            relation_type=RelationType.SPAWNED,
-            target_id="node-exploit-proc",
-            target_entity_type=NodeType.PROCESS,
-            acceptable_operations=["find_process_from_endpoint"],
-            status=RelationStatus.UNPROVEN,
-        )
-        e2 = GraphEdge(
-            id=f"edge-{cve_id}-write",
-            source_id="node-exploit-proc",
-            source_entity_type=NodeType.PROCESS,
-            relation_type=RelationType.WROTE,
-            target_id="node-webshell-file",
-            target_entity_type=NodeType.FILE,
-            acceptable_operations=["find_file_change_from_process"],
-            status=RelationStatus.UNPROVEN,
-        )
-        graph.add_edge(e1)
-        graph.add_edge(e2)
-
-        unknowns = [
-            InvestigationUnknown(
-                id="unk-cve-proc",
-                entity_type=NodeType.PROCESS,
-                variable_name="exploit_process",
-                description=f"Exploitation child process execution for {cve_id}",
-                resolving_edge_id=e1.id,
-            ),
-            InvestigationUnknown(
-                id="unk-cve-file",
-                entity_type=NodeType.FILE,
-                variable_name="webshell_artifact",
-                description=f"Web shell file modification for {cve_id}",
-                resolving_edge_id=e2.id,
-            ),
-        ]
-        goals = [
-            EvidenceGoal(id="goal-cve-proc", target_edge_id=e1.id, description=f"Prove anomalous process lineage for {cve_id}"),
-            EvidenceGoal(id="goal-cve-file", target_edge_id=e2.id, description=f"Prove unauthorized file writes for {cve_id}"),
-        ]
-        claims = [
-            {"claim_id": h.id, "statement": h.statement, "hypothesis_class": getattr(h, "hypothesis_class", "unclassified")}
-            for h in hypotheses
-        ]
-        return InvestigationCase(
-            id=f"case-{cve_id}",
-            request_content=request.content,
-            question=f"Was {cve_id} exploited in the monitored scope?",
-            graph=graph,
-            claims=claims,
-            unknowns=unknowns,
-            evidence_goals=goals,
-            acceptance_criteria=[
-                {"criterion": f"Multi-stage process-to-file correlation verified for {cve_id}."}
-            ],
-            status="READY_FOR_DISCOVERY",
-        )
-
-    def _build_ttp_case(
-        self,
-        request: HuntRequest,
-        hypotheses: list[Hypothesis],
-        requirements: list[EvidenceRequirementV4],
-    ) -> InvestigationCase:
-        graph = InvestigationGraph()
-        n_endpoint = GraphNode(id="node-endpoint", type=NodeType.ENDPOINT, value="?", status=NodeStatus.UNKNOWN)
-        n_activity = GraphNode(id="node-activity", type=NodeType.EVENT, value="?", status=NodeStatus.UNKNOWN)
-        graph.add_node(n_endpoint)
-        graph.add_node(n_activity)
-
-        e1 = GraphEdge(
-            id=f"edge-{request.id}-activity",
-            source_id="node-endpoint",
-            source_entity_type=NodeType.ENDPOINT,
-            relation_type=RelationType.CONNECTED_TO,
-            target_id="node-activity",
-            target_entity_type=NodeType.EVENT,
-            status=RelationStatus.UNPROVEN,
-        )
-        graph.add_edge(e1)
-
-        unknowns = [
-            InvestigationUnknown(
-                id=f"unk-{request.id}-act",
-                entity_type=NodeType.EVENT,
-                variable_name="observed_behavior",
-                description=f"Observable behavioral event matching {request.content}",
-                resolving_edge_id=e1.id,
-            ),
-        ]
-        goals = [
-            EvidenceGoal(id=f"goal-{request.id}-act", target_edge_id=e1.id, description=f"Prove behavioral event for {request.content}"),
-        ]
-        claims = [
-            {"claim_id": h.id, "statement": h.statement, "hypothesis_class": getattr(h, "hypothesis_class", "unclassified")}
-            for h in hypotheses
-        ]
-        return InvestigationCase(
-            id=f"case-{request.id}",
-            request_content=request.content,
-            question=request.content,
-            graph=graph,
-            claims=claims,
-            unknowns=unknowns,
-            evidence_goals=goals,
-            acceptance_criteria=[
-                {"criterion": f"Behavioral correlation verified for {request.content}."}
-            ],
-            status="READY_FOR_DISCOVERY",
-        )
-
-    def _compile_ttp_or_ioc(
-        self,
-        request: HuntRequest,
-        time_window: str,
-    ) -> tuple[HuntObjective, list[Hypothesis], list[EvidenceRequirementV4]]:
-        """Deterministically compile a MITRE TTP or IOC without LLM."""
-        ttp_match = None
-        for key in self.knowledge_base:
-            if key in request.content:
-                ttp_match = self.knowledge_base[key]
-                break
-
-        template = self.templates.get("tmpl-proc-anomalous-lineage")
-        if "T1053" in request.content.upper():
-            template = self.templates.get("tmpl-pers-scheduled-task", template)
-        elif "T1071" in request.content.upper():
-            template = self.templates.get("tmpl-net-c2-beacon", template)
-
-        hypo_attack = Hypothesis(
-            id=f"hypo-{request.id}-active",
-            statement=f"Threat actor executing behavior related to {request.content}",
-            origin=HypothesisOrigin.RULE,
-            status=HypothesisStatus.LIVE,
-            hypothesis_class="unclassified",
-            source_refs=list(ttp_match.source_citations) if ttp_match else ["INTERNAL_TEMPLATE"],
-            requirements=[r.id for r in template.requirements] if template else [],
-        )
-
-        hypo_benign = Hypothesis(
-            id=f"hypo-{request.id}-benign",
-            statement="No matching behavior observed in environment",
-            origin=HypothesisOrigin.RULE,
-            status=HypothesisStatus.LIVE,
-            hypothesis_class="benign_baseline",
-            source_refs=list(ttp_match.source_citations) if ttp_match else ["INTERNAL_TEMPLATE"],
-            requirements=[],
-        )
-
-        requirements = template.requirements if template else []
-
-        outcome_contract = HypothesisVerdictContract(
-            support_obligations=tuple(r.id for r in requirements) if requirements else (f"req-{request.id}-act",),
-            falsification_conditions=(f"telemetry confirms zero behavior matching {request.content}",),
-            scope="; ".join(request.provider_hints or ["cdb_native_scope"]),
-        )
-        var_endpoint = SemanticVariable(id="var_endpoint", entity_type="host", value=None)
-        var_activity = SemanticVariable(id="var_activity", entity_type="event", value=None)
-        rel_goals = [
-            SemanticRelationGoal(
-                id=r.id,
-                subject="var_endpoint",
-                relation=r.evidence_type or "executed",
-                object="var_activity",
-                required=True,
-                description=r.description,
-            )
-            for r in requirements
-        ]
-        if not rel_goals:
-            rel_goals = [
-                SemanticRelationGoal(
-                    id=f"goal-{request.id}-act",
-                    subject="var_endpoint",
-                    relation="executed",
-                    object="var_activity",
-                    required=True,
-                    description=f"Behavioral event matching {request.content}",
-                )
-            ]
-        goal_graph = SemanticGoalGraph(
-            id=f"goal-graph-{request.id}",
-            request_id=request.id,
-            objective=f"Evaluate behavior: {request.content}",
-            variables=[var_endpoint, var_activity],
-            relations=rel_goals,
-            outcome_contract=outcome_contract,
-        )
-
-        inv_case = self._build_ttp_case(request, [hypo_attack, hypo_benign], requirements)
-        objective = HuntObjective(
-            request_id=request.id,
-            target_hypotheses=[hypo_attack.id, hypo_benign.id],
-            time_window=time_window,
-            target_scopes=request.provider_hints or ["cdb_native_scope"],
-            kind=request.kind,
-            statement=request.content,
-            case=inv_case,
-            case_graph=inv_case.graph,
-            semantic_goal_graph=goal_graph,
-            validated_graph=goal_graph,
-            outcome_contract=outcome_contract,
-        )
-
-        return objective, [hypo_attack, hypo_benign], requirements
 
     def _compile_semantic_llm(
         self,
@@ -1414,6 +1011,8 @@ class RequestAdapter:
                 goal_graph.raw_llm_proposal = raw_data
                 goal_graph.validation_diagnostics = list(val_result.diagnostics)
                 goal_graph = _mark_request_grounded_values(goal_graph, request.content, request.entities)
+                from hunting.compiler.goal_class import annotate_goal_classes
+                goal_graph = annotate_goal_classes(goal_graph, request.content)
 
                 hypothesis = Hypothesis(
                     id=f"hypo-{request.id}",

@@ -1,13 +1,7 @@
 """Command Line Interface (CLI) runner for AI Agent Hunting.
 
-Supports:
-  1. Ingest alert from JSON/YAML file (--alert <path>)
-  2. Ingest alert from CLI ad-hoc flags (--host, --user, --ip, --time)
-  3. Ingest alert via standard input pipe (cat alert.json | python -m hunting.cli)
-  4. Interactive prompt mode (-i, --interactive)
-  5. Configurable LLM provider: api (default, external LLM) or stub (explicit offline test mode)
-  6. Human confirmation enforcement (--auto-confirm vs console prompt)
-  7. Exporting Markdown investigation reports (--output <path>)
+The entry point is a free-text hypothesis (--hypothesis, --hypothesis-file, or --query).
+CVE, TTP, IOC, alert, and PoC inputs are not accepted.
 """
 from __future__ import annotations
 
@@ -19,12 +13,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from hunting.compiler.compiler import KnowledgeBehaviorCompiler
 from hunting.contracts.entities import Account, Domain, Host, IPAddress
 from hunting.contracts.hunt import HuntRequest, HuntRequestKind, StoppingDecision
-from hunting.contracts.state import Alert
 from hunting.controller.cost import LLMBudgetPolicy, LLMUsageTracker
 from hunting.engine import HypothesisHuntEngine
 from hunting.evidence.evaluator import EvidenceEvaluator
@@ -33,14 +24,11 @@ from hunting.m2_abduction.provider import (
     ApiLLMConfig,
     ApiLLMProvider,
     LLMTimeoutError,
-    StubAbductionProvider,
     create_llm_caller,
 )
 from hunting.m5_adapter import CdbAdapter, SplunkLiveAdapter
-from hunting.orchestrator import InvestigationOrchestrator
 from hunting.planner.adaptive import AdaptiveOperationPlanner
 from hunting.planner.planner import CanonicalQueryPlanner
-from hunting.registry.loader import load_registry
 
 
 def _apply_dotenv_setdefault(path: str | None = None) -> None:
@@ -60,121 +48,6 @@ def _cli_splunk_verify_ssl(args: argparse.Namespace | None = None) -> bool:
     return raw not in {"0", "false", "no"}
 
 
-def parse_alert_from_file_or_content(content_or_path: str) -> Alert:
-    """Parse Alert from file path or JSON/YAML string."""
-    data: dict[str, Any]
-    path = Path(content_or_path)
-    if path.exists() and path.is_file():
-        raw_text = path.read_text(encoding="utf-8")
-        if path.suffix in {".yaml", ".yml"}:
-            data = yaml.safe_load(raw_text) or {}
-        else:
-            data = json.loads(raw_text)
-    else:
-        # Try direct JSON parsing
-        try:
-            data = json.loads(content_or_path)
-        except Exception:
-            data = yaml.safe_load(content_or_path) or {}
-
-    alert_id = str(data.get("id", "alt-cli-001"))
-    source = str(data.get("source", "cli"))
-    received_at = str(data.get("received_at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
-    raw = str(data.get("raw", data.get("title", f"Alert from {source}")))
-    fields = data.get("fields", {})
-
-    return Alert(
-        id=alert_id,
-        raw=raw,
-        source=source,
-        received_at=received_at,
-        fields=fields,
-    )
-
-
-def create_adhoc_alert(
-    host: str | None = None,
-    user: str | None = None,
-    ip: str | None = None,
-    domain: str | None = None,
-    source: str = "EDR",
-    timestamp: str | None = None,
-    raw: str | None = None,
-) -> Alert:
-    """Construct an Alert from explicit CLI parameters."""
-    ts = timestamp or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    fields: dict[str, Any] = {"timestamp": ts}
-    if host:
-        fields["host"] = host
-    if user:
-        fields["user"] = user
-    if ip:
-        fields["ip"] = ip
-    if domain:
-        fields["domain"] = domain
-
-    raw_text = raw or f"Ad-hoc investigation on host={host or 'any'} user={user or 'any'}"
-    return Alert(
-        id=f"alt-adhoc-{datetime.now(timezone.utc).strftime('%H%M%S')}",
-        raw=raw_text,
-        source=source,
-        received_at=ts,
-        fields=fields,
-    )
-
-
-def prompt_interactive_alert() -> Alert:
-    """Prompt the analyst interactively via terminal stdin."""
-    print("\n--- AI Agent Hunting: Interactive Alert Setup ---")
-    host = input("[?] Host name (leave empty for broad anomaly sweep): ").strip() or None
-    user = input("[?] User account (leave empty if unknown): ").strip() or None
-    ip = input("[?] IP address (leave empty if unknown): ").strip() or None
-    domain = input("[?] Domain / FQDN (leave empty if unknown): ").strip() or None
-    source = input("[?] Alert source [default: EDR]: ").strip() or "EDR"
-    time_str = input("[?] Alert timestamp [default: current UTC]: ").strip() or None
-
-    return create_adhoc_alert(
-        host=host,
-        user=user,
-        ip=ip,
-        domain=domain,
-        source=source,
-        timestamp=time_str,
-    )
-
-
-def render_terminal_summary(
-    alert: Alert,
-    result: Any,
-    output_path: str | None,
-) -> None:
-    """Print an attractive summary table to stdout."""
-    cb = result.account.coverage_bound
-    w_pct = (cb.explored_cells_wildcard / cb.known_cells_wildcard * 100) if cb.known_cells_wildcard > 0 else 0.0
-    i_pct = (cb.explored_cells_instance / cb.known_cells_instance * 100) if cb.known_cells_instance > 0 else 0.0
-
-    print("\n" + "=" * 72)
-    print("                THREAT INVESTIGATION SUMMARY")
-    print("=" * 72)
-    print(f" Alert ID:        {alert.id} (Source: {alert.source})")
-    entities_str = ", ".join(f"{k}={v}" for k, v in alert.fields.items() if k != "timestamp")
-    print(f" Alert Entities:  {entities_str or '(None - Entity-free frame)'}")
-    print(f" Time Window:     {result.state.seed.window}")
-    print("-" * 72)
-    print(f" Terminal State:  {result.account.terminal_state.value}")
-    print(f" Disposition:     {result.account.disposition.value.upper()}")
-    print(f" Human Confirmed: {'YES' if result.account.human_confirmed else 'NO'}")
-    if result.account.residual:
-        print(f" Residual:        {result.account.residual.strip()}")
-    print("-" * 72)
-    print(f" Ledger Evidence: {len(result.ledger.observations)} observations ({len(result.ledger.unattributed_observations)} unattributed)")
-    print(f" Queries Executed: {len(result.state.queries)} queries ({', '.join(q.id for q in result.state.queries) or 'none'})")
-    print(" Coverage Bounds:")
-    print(f"   * Wildcard:     {cb.explored_cells_wildcard}/{cb.known_cells_wildcard} explored ({w_pct:.1f}%)")
-    print(f"   * Instance:     {cb.explored_cells_instance}/{cb.known_cells_instance} explored ({i_pct:.1f}%)")
-    print("=" * 72)
-    if output_path:
-        print(f" Full investigation report written to: {output_path}")
 def render_hunt_playbook(
     request: HuntRequest,
     objective: Any,
@@ -183,15 +56,7 @@ def render_hunt_playbook(
     time_window: str,
     output_path: str | None,
 ) -> None:
-    """Print an offline Threat Hunting Playbook & Query Plan to stdout and file."""
-    manifest_file = "configs/splunk_botsv2.yaml" if Path("configs/splunk_botsv2.yaml").exists() else None
-    offline_adapter = SplunkLiveAdapter(
-        splunk_url="http://offline",
-        index="botsv2",
-        manifest_path=manifest_file,
-        verify_ssl=False,
-    )
-
+    """Print an offline Threat Hunting Playbook without contacting a provider."""
     summary_content = request.content
     if "\n" in summary_content:
         for line in summary_content.splitlines():
@@ -226,19 +91,7 @@ def render_hunt_playbook(
         print(f"     - Detection Predicate: {pred_str}")
         print(f"     - Falsification: {r.falsification_condition}")
     print("-" * 80)
-    print(" 3. GENERATED QUERY PLANS (Các câu lệnh truy vấn mẫu cho SOC / Threat Hunter):")
-    first_ent = request.entities[0] if request.entities else None
-    for idx, r in enumerate(requirements, 1):
-        spl, _, _ = offline_adapter._build_spl(
-            operation_id=r.evidence_type,
-            entity=first_ent,
-            window=time_window,
-            predicate=r.predicate,
-            limit=100,
-        )
-        print(f"\n   --- [Query {idx}: {r.evidence_type.upper()}] ---")
-        for spl_line in spl.splitlines():
-            print(f"   {spl_line}")
+    print(" 3. QUERY PLANS: deferred until Prepare, sizing, and provider compilation.")
     print("=" * 80)
 
     # Markdown export
@@ -277,24 +130,11 @@ def render_hunt_playbook(
         md_lines.extend([
             "",
             "---",
-            "## 3. Ready-to-Execute Parameterized Queries (SPL)",
+            "## 3. Query plans",
+            "",
+            "Queries are not compiled in plan-only mode. Prepare, sizing, and the provider compiler run only on a real hunt.",
             "",
         ])
-        for idx, r in enumerate(requirements, 1):
-            spl, earliest, latest = offline_adapter._build_spl(
-                operation_id=r.evidence_type,
-                entity=first_ent,
-                window=time_window,
-                predicate=r.predicate,
-                limit=100,
-            )
-            md_lines.append(f"### 3.{idx}. Query for `{r.evidence_type}`")
-            md_lines.append(f"- **Earliest Time:** `{earliest}`")
-            md_lines.append(f"- **Latest Time:** `{latest}`")
-            md_lines.append("```spl")
-            md_lines.append(spl)
-            md_lines.append("```")
-            md_lines.append("")
 
         out_file = Path(output_path)
         out_file.parent.mkdir(parents=True, exist_ok=True)
@@ -506,33 +346,23 @@ def handle_replay_query(hunt_id: str | None, query_id: str) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hunting",
-        description="AI Agent Hunting: Deterministic Hypothesis Threat Hunting & Investigation CLI",
+        description="AI Agent Hunting: free-text hypothesis threat hunting",
     )
-    # Hypothesis / Threat Hunting inputs (v4)
-    hunt_group = parser.add_argument_group("Hypothesis & Threat Hunting Inputs (v4)")
+    hunt_group = parser.add_argument_group("Free-text hypothesis")
     hunt_group.add_argument("--hypothesis", "-H", type=str, help="Explicit hypothesis statement to test and verify (e.g. 'Attacker used webshell to execute cmd.exe')")
     hunt_group.add_argument("--hypothesis-file", type=str, help="Path to YAML/JSON file declaring custom hypothesis, requirements, and falsification conditions")
     hunt_group.add_argument("--plan-only", "--dry-run", dest="plan_only", action="store_true", help="Compile hypothesis into a structured Threat Hunt Playbook and query plans without executing queries on any backend")
-    hunt_group.add_argument("--cve", type=str, help="Hunt for known CVE identifier (e.g. CVE-2024-21887)")
-    hunt_group.add_argument("--ttp", type=str, help="Hunt for MITRE ATT&CK technique (e.g. T1059.001)")
-    hunt_group.add_argument("--ioc", type=str, help="Hunt for observable indicator of compromise (e.g. IP/domain/hash)")
-    hunt_group.add_argument("--threat-actor", type=str, help="Hunt for threat actor campaign/profile")
-    hunt_group.add_argument("--campaign", type=str, help="Hunt for specific adversary campaign")
-    hunt_group.add_argument("--query", "-q", type=str, help="Natural language hunting question")
-    hunt_group.add_argument("--poc", type=str, help="Hunt from a proof-of-concept or exploit description")
+    hunt_group.add_argument("--query", "-q", type=str, help="Natural language hunting question, compiled as a free-text hypothesis")
     hunt_group.add_argument("--time-window", type=str, help="Explicit search time window ISO interval (e.g. 2026-02-01T00:00:00Z/P1D)")
-
-    # Alert inputs (Legacy compatibility)
-    alert_group = parser.add_argument_group("Alert Inputs (Legacy)")
-    alert_group.add_argument("--alert", "-a", type=str, help="Path to alert JSON/YAML file or raw JSON string")
-    alert_group.add_argument("--host", type=str, help="Host entity (e.g. DESKTOP-VICTIM1)")
-    alert_group.add_argument("--user", type=str, help="User entity (e.g. CORP\\alice)")
-    alert_group.add_argument("--ip", type=str, help="IP entity (e.g. 192.168.1.50)")
-    alert_group.add_argument("--domain", type=str, help="Domain entity (e.g. evil-c2.corp.internal)")
-    alert_group.add_argument("--source", type=str, default="EDR", help="Alert source name [default: EDR]")
-    alert_group.add_argument("--time", type=str, help="Alert timestamp ISO 8601 [default: current UTC]")
-    alert_group.add_argument("-i", "--interactive", action="store_true", help="Interactive prompt mode for alert setup")
-    alert_group.add_argument("--legacy", action="store_true", help="Opt-in to legacy alert investigation loop")
+    hunt_group.add_argument("--host", type=str, help="Optional host pinned on the hypothesis (e.g. DESKTOP-VICTIM1)")
+    hunt_group.add_argument("--user", type=str, help="Optional account pinned on the hypothesis (e.g. CORP\\alice)")
+    hunt_group.add_argument("--ip", type=str, help="Optional IP pinned on the hypothesis (e.g. 192.168.1.50)")
+    hunt_group.add_argument("--domain", type=str, help="Optional domain pinned on the hypothesis (e.g. evil-c2.corp.internal)")
+    hunt_group.add_argument("--hunt-plan", type=str, default=None, help="YAML/JSON Prepare overrides applied after derivation")
+    hunt_group.add_argument("--skip-prepare", action="store_true", help="Bypass Prepare. The report must record that Prepare was skipped")
+    hunt_group.add_argument("--prepare", action="store_true", help="On a terminal, review the derived refute threshold before execution")
+    hunt_group.add_argument("--baseline-file", type=str, default=None, help="Known-benign values, one per line. A match is a citation, not a benign verdict")
+    hunt_group.add_argument("--sourcetype", action="append", default=None, help="Backup analyst override: restrict Execute to these sourcetypes")
 
     # Environment & Backend
     env_group = parser.add_argument_group("Environment & Backend")
@@ -655,6 +485,55 @@ def _read_candidate_choice(prompt: str) -> str:
         return ""
 
 
+def _load_baseline_values(path: str | None) -> tuple[str, ...]:
+    if not path:
+        return ()
+    file_path = Path(path)
+    if not file_path.is_file():
+        raise FileNotFoundError(f"Baseline file not found: {file_path}")
+    return tuple(
+        line.strip()
+        for line in file_path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    )
+
+
+def resolve_prepare_gate(args, content: str, entities: tuple[str, ...], time_window: str):
+    """Derive Prepare, then apply a user plan or a terminal edit. Runs before any provider."""
+    from hunting.peak_plan import (
+        PrepareError,
+        apply_user_overrides,
+        derive_prepare_plan,
+        load_prepare_overrides,
+        prompt_threshold_override,
+    )
+
+    if getattr(args, "skip_prepare", False):
+        print("[!] [PREPARE] skipped (--skip-prepare); the report must record source=skipped.")
+        return None, "skipped", None
+    try:
+        plan = derive_prepare_plan(content, time_window=time_window or "", entities=entities)
+        source = "derived"
+        if getattr(args, "hunt_plan", None):
+            plan = apply_user_overrides(plan, load_prepare_overrides(args.hunt_plan))
+            source = plan.decision_criteria.source
+        if getattr(args, "sourcetype", None):
+            plan = apply_user_overrides(plan, {"location_override": list(args.sourcetype)})
+        elif getattr(args, "prepare", False) and sys.stdin.isatty():
+            plan = prompt_threshold_override(plan, input)
+            source = plan.decision_criteria.source
+    except (PrepareError, OSError, ValueError) as exc:
+        print(f"[-] [PREPARE] {exc}", file=sys.stderr)
+        return None, "", 2
+    print(
+        f"[+] [PREPARE] topic={plan.topic!r} scope={plan.scope!r} "
+        f"max_duration={plan.max_duration!r} "
+        f"min_coverage_to_refute={plan.decision_criteria.min_coverage_to_refute} "
+        f"source={source}"
+    )
+    return plan, source, None
+
+
 def run_cli(args: argparse.Namespace) -> int:
     """Execute investigation or hypothesis-driven hunt workflow based on parsed arguments."""
     if hasattr(sys.stdout, "reconfigure"):
@@ -664,19 +543,11 @@ def run_cli(args: argparse.Namespace) -> int:
         except Exception:
             pass
 
-    has_explicit_request_kind = bool(
-        getattr(args, "cve", None)
-        or getattr(args, "ttp", None)
-        or getattr(args, "ioc", None)
-        or getattr(args, "threat_actor", None)
-        or getattr(args, "campaign", None)
-        or getattr(args, "query", None)
+    has_free_text = bool(
+        getattr(args, "query", None)
         or getattr(args, "hypothesis", None)
         or getattr(args, "hypothesis_file", None)
-        or getattr(args, "poc", None)
     )
-    is_legacy_mode = bool(getattr(args, "legacy", False) and not has_explicit_request_kind)
-    is_hypothesis_hunt = not is_legacy_mode
 
     # 0. Handle forensic subcommands / lookup flags
     subcmd = getattr(args, "subcommand", None)
@@ -687,7 +558,7 @@ def run_cli(args: argparse.Namespace) -> int:
         or getattr(args, "show_observation", None)
         or getattr(args, "obs_id_pos", None)
     )
-    if subcmd == "show-observation" or (obs_target and not is_hypothesis_hunt and not getattr(args, "alert", None)):
+    if subcmd == "show-observation" or (obs_target and not has_free_text):
         if not obs_target:
             print("[-] Error: --observation-id is required for show-observation", file=sys.stderr)
             return 1
@@ -698,7 +569,7 @@ def run_cli(args: argparse.Namespace) -> int:
         or getattr(args, "replay_query", None)
         or getattr(args, "query_id_pos", None)
     )
-    if subcmd == "replay-query" or (query_target and not is_hypothesis_hunt and not getattr(args, "alert", None)):
+    if subcmd == "replay-query" or (query_target and not has_free_text):
         if not query_target:
             print("[-] Error: --query-id is required for replay-query", file=sys.stderr)
             return 1
@@ -733,10 +604,43 @@ def run_cli(args: argparse.Namespace) -> int:
         print()
         return 0
 
-
+    if not has_free_text:
+        print(
+            "[-] A free-text hypothesis is required. "
+            "Pass --hypothesis, --hypothesis-file, or --query.",
+            file=sys.stderr,
+        )
+        return 2
+    is_hypothesis_hunt = True
+    preview_entities = tuple(
+        value for value in (
+            getattr(args, "host", None),
+            getattr(args, "user", None),
+            getattr(args, "ip", None),
+            getattr(args, "domain", None),
+        ) if value
+    )
+    if args.hypothesis:
+        preview_content = str(args.hypothesis)
+    elif args.query:
+        preview_content = str(args.query)
+    else:
+        preview_path = Path(args.hypothesis_file)
+        if not preview_path.exists():
+            print(f"[-] Error: Hypothesis file not found: {preview_path}", file=sys.stderr)
+            return 1
+        preview_content = preview_path.read_text(encoding="utf-8")
+    prepare_plan, prepare_source, prepare_code = resolve_prepare_gate(
+        args,
+        preview_content,
+        preview_entities,
+        getattr(args, "time_window", None) or "",
+    )
+    if prepare_code is not None:
+        return prepare_code
 
     # 1. Pure Plan / Dry-run Mode (Offline - No telemetry provider contacted)
-    if is_hypothesis_hunt and getattr(args, "plan_only", False):
+    if getattr(args, "plan_only", False):
         entities = []
         if args.host:
             entities.append(Host(name=args.host))
@@ -772,30 +676,25 @@ def run_cli(args: argparse.Namespace) -> int:
         elif args.hypothesis:
             kind = HuntRequestKind.HYPOTHESIS
             content = args.hypothesis
-        elif args.cve:
-            kind = HuntRequestKind.CVE
-            content = args.cve
-        elif args.ttp:
-            kind = HuntRequestKind.TTP
-            content = args.ttp
-        elif args.ioc:
-            kind = HuntRequestKind.IOC
-            content = args.ioc
         elif args.query:
             kind = HuntRequestKind.NL_QUESTION
             content = args.query
-        elif getattr(args, "poc", None):
-            kind = HuntRequestKind.POC
-            content = args.poc
         else:
-            kind = HuntRequestKind.HYPOTHESIS
-            content = args.threat_actor or args.campaign or "Adversary Campaign"
+            print(
+                "[-] A free-text hypothesis is required. "
+                "Pass --hypothesis, --hypothesis-file, or --query.",
+                file=sys.stderr,
+            )
+            return 2
 
         req = HuntRequest(
             id=f"hunt-req-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
             kind=kind,
             content=content,
             entities=entities,
+            prepare_source=prepare_source,
+            prepare_plan=prepare_plan.to_dict() if prepare_plan is not None else None,
+            baseline_values=_load_baseline_values(getattr(args, "baseline_file", None)),
         )
         compiler = KnowledgeBehaviorCompiler()
         default_window = ("2017-08-01T00:00:00Z/2017-08-31T23:59:59Z" if "botsv2" in str(getattr(args, "splunk_index", "")).lower() else "2016-08-01T00:00:00Z/2016-08-29T23:59:59Z") if getattr(args, "provider", "auto") in ("splunk", "auto") else "NOW-14d/NOW"
@@ -811,32 +710,28 @@ def run_cli(args: argparse.Namespace) -> int:
     auto_discovered_index_info: dict[str, Any] | None = None
 
     if selected_provider == "auto":
-        if is_hypothesis_hunt:
-            print("[*] [ENVIRONMENT AUDIT] Auditing available telemetry systems...")
-            splunk_alive = SplunkLiveAdapter.is_available(
-                splunk_url=args.splunk_url,
-                auth=(args.splunk_user, args.splunk_pass),
-                verify_ssl=_cli_splunk_verify_ssl(args),
-                timeout=2,
-            )
-            if splunk_alive:
-                selected_provider = "splunk"
-                print(f"[+] [ENVIRONMENT AUDIT] Detected live enterprise SIEM: Splunk at {args.splunk_url}")
-            else:
-                # A reachable provider is part of the epistemic contract.  A
-                # silent in-memory SQLite fallback creates an empty, unrelated
-                # data source and makes the hunt look like it executed while
-                # actually searching data the user never selected.
-                print(
-                    "[-] [ENVIRONMENT AUDIT] Splunk is not reachable. "
-                    "No telemetry provider was selected; use --provider cdb "
-                    "only for an explicit local test run.",
-                    file=sys.stderr,
-                )
-                return 2
+        print("[*] [ENVIRONMENT AUDIT] Auditing available telemetry systems...")
+        splunk_alive = SplunkLiveAdapter.is_available(
+            splunk_url=args.splunk_url,
+            auth=(args.splunk_user, args.splunk_pass),
+            verify_ssl=_cli_splunk_verify_ssl(args),
+            timeout=2,
+        )
+        if splunk_alive:
+            selected_provider = "splunk"
+            print(f"[+] [ENVIRONMENT AUDIT] Detected live enterprise SIEM: Splunk at {args.splunk_url}")
         else:
-            # Legacy alert mode defaults to cdb for backwards compatibility
-            selected_provider = "cdb"
+            # A reachable provider is part of the epistemic contract.  A
+            # silent in-memory SQLite fallback creates an empty, unrelated
+            # data source and makes the hunt look like it executed while
+            # actually searching data the user never selected.
+            print(
+                "[-] [ENVIRONMENT AUDIT] Splunk is not reachable. "
+                "No telemetry provider was selected; use --provider cdb "
+                "only for an explicit local test run.",
+                file=sys.stderr,
+            )
+            return 2
 
     if selected_provider == "splunk":
         selected_index = args.splunk_index
@@ -927,50 +822,25 @@ def run_cli(args: argparse.Namespace) -> int:
         elif args.hypothesis:
             kind = HuntRequestKind.HYPOTHESIS
             content = args.hypothesis
-        elif args.cve:
-            kind = HuntRequestKind.CVE
-            content = args.cve
-        elif args.ttp:
-            kind = HuntRequestKind.TTP
-            content = args.ttp
-        elif args.ioc:
-            kind = HuntRequestKind.IOC
-            content = args.ioc
         elif args.query:
             kind = HuntRequestKind.NL_QUESTION
             content = args.query
-        elif getattr(args, "poc", None):
-            kind = HuntRequestKind.POC
-            content = args.poc
-        elif getattr(args, "alert", None):
-            alert = parse_alert_from_file_or_content(args.alert)
-            kind = HuntRequestKind.ALERT
-            alert_desc = getattr(alert, "raw", None) or getattr(alert, "source", None) or "Observed activity"
-            content = f"Investigate alert {alert.id}: {alert_desc}"
-            for f_key, f_val in (alert.fields or {}).items():
-                if not f_val or str(f_key).casefold() == "timestamp":
-                    continue
-                k_norm = str(f_key).casefold()
-                if k_norm in ("host", "hostname", "computer_name") and not any(isinstance(e, Host) and e.name == str(f_val) for e in entities):
-                    entities.append(Host(name=str(f_val)))
-                elif k_norm in ("user", "username", "account") and not any(isinstance(e, Account) and e.username == str(f_val) for e in entities):
-                    entities.append(Account(username=str(f_val)))
-                elif k_norm in ("ip", "ip_address", "src_ip", "dest_ip") and not any(isinstance(e, IPAddress) and e.address == str(f_val) for e in entities):
-                    entities.append(IPAddress(address=str(f_val)))
-                elif k_norm in ("domain", "site") and not any(isinstance(e, Domain) and e.name == str(f_val) for e in entities):
-                    entities.append(Domain(name=str(f_val)))
-        elif entities:
-            kind = HuntRequestKind.HYPOTHESIS
-            content = f"Investigate observed entities: {', '.join(getattr(e, 'name', getattr(e, 'username', getattr(e, 'address', str(e)))) for e in entities)}"
         else:
-            kind = HuntRequestKind.HYPOTHESIS
-            content = args.threat_actor or args.campaign or "Adversary Campaign"
+            print(
+                "[-] A free-text hypothesis is required. "
+                "Pass --hypothesis, --hypothesis-file, or --query.",
+                file=sys.stderr,
+            )
+            return 2
 
         req = HuntRequest(
             id=f"hunt-req-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
             kind=kind,
             content=content,
             entities=entities,
+            prepare_source=prepare_source,
+            prepare_plan=prepare_plan.to_dict() if prepare_plan is not None else None,
+            baseline_values=_load_baseline_values(getattr(args, "baseline_file", None)),
         )
 
         # Wire LLM Provider, Trackers, Compiler, Planner, and Evaluator for v4 Engine
@@ -1066,7 +936,7 @@ def run_cli(args: argparse.Namespace) -> int:
         time_win = args.time_window or default_window
         if not args.time_window and selected_provider == "splunk":
             print(f"[+] [ENVIRONMENT AUDIT] Auto-aligned hunt time window: {time_win}")
-        if not entities and not (args.query or args.hypothesis or args.cve or args.ttp or args.ioc):
+        if not entities and not (args.query or args.hypothesis or args.hypothesis_file):
             print(f"[+] [ENVIRONMENT AUDIT] Target entity unassigned -> Executing Population Sweep across '{getattr(adapter, 'index', 'telemetry')}'")
 
         display_content = content
@@ -1198,7 +1068,7 @@ def run_cli(args: argparse.Namespace) -> int:
                 StoppingDecision.STOP_NEEDS_CLARIFICATION,
             )
             and can_prompt_for_selection
-            and decision_rounds < 8
+            and decision_rounds < max(1, int(getattr(args, "max_refine", 1) or 1))
         ):
             decision_rounds += 1
             semantic_analysis = result.account.semantic_analysis or {}
@@ -1284,82 +1154,21 @@ def run_cli(args: argparse.Namespace) -> int:
             out_file.write_text(result.report, encoding="utf-8")
 
         render_hunt_terminal_summary(req, result, args.output)
+        for note in (result.account.semantic_analysis or {}).get("escalations") or []:
+            print(f"[!] [ESCALATE] {note}")
+        from hunting.act.act import commit_act
+        from hunting.act_input import account_to_act_input
+        act_payload = account_to_act_input(result.account, req.prepare_plan)
+        commit_act(
+            source=act_payload["source"],
+            spls=act_payload["spls"],
+            backlog=act_payload["backlog"],
+            stakeholder=act_payload["stakeholder"],
+            detection_tier=act_payload["detection_tier"],
+            gaps=act_payload["gaps"],
+            export_dir=Path("artifacts") / "act" / act_payload["source"],
+        )
         return 0
-
-    # Otherwise, legacy alert investigation mode
-    # 1. Determine alert
-    alert: Alert
-    if args.interactive:
-        alert = prompt_interactive_alert()
-    elif args.alert:
-        alert = parse_alert_from_file_or_content(args.alert)
-    elif args.host or args.user or args.ip or args.domain:
-        alert = create_adhoc_alert(host=args.host, user=args.user, ip=args.ip, domain=args.domain, source=args.source, timestamp=args.time)
-    elif hasattr(sys.stdin, "isatty") and not sys.stdin.isatty():
-        try:
-            raw_stdin = sys.stdin.read().strip()
-        except (OSError, ValueError):
-            raw_stdin = ""
-        if raw_stdin:
-            alert = parse_alert_from_file_or_content(raw_stdin)
-        else:
-            alert = prompt_interactive_alert()
-    else:
-        print("[!] No input provided. Entering interactive mode...")
-        alert = prompt_interactive_alert()
-
-    # 2. Load Manifest & Database
-    manifest_path = Path(args.manifest)
-    if not manifest_path.exists():
-        print(f"[-] Error: Manifest file not found: {manifest_path}", file=sys.stderr)
-        return 1
-    registry = load_registry(manifest_path)
-
-    # 3. Setup LLM Provider
-    if args.llm == "api":
-        llm_provider = ApiLLMProvider(ApiLLMConfig.from_env())
-    else:
-        llm_provider = StubAbductionProvider()
-
-    scope_id = getattr(getattr(adapter, "scope", None), "scope_id", "cdb_security")
-    orchestrator = InvestigationOrchestrator(
-        registry=registry,
-        adapters={scope_id: adapter, "cdb_security": adapter},
-        llm_provider=llm_provider,
-        auto_confirm_analyst=args.auto_confirm,
-    )
-
-    # 5. Run Investigation
-    print(f"[*] Starting autonomous investigation for alert '{alert.id}'...")
-    try:
-        if not args.auto_confirm:
-            try:
-                result = orchestrator.investigate(alert, analyst_confirmed=False)
-            except PermissionError as e:
-                print(f"\n[!] {e}")
-                confirm_ans = input("[?] Do you confirm this disposition and authorize report emission? [y/N]: ").strip().lower()
-                if confirm_ans in {"y", "yes"}:
-                    result = orchestrator.investigate(alert, analyst_confirmed=True)
-                else:
-                    print("[-] Investigation halted: analyst confirmation declined.", file=sys.stderr)
-                    return 2
-        else:
-            result = orchestrator.investigate(alert, analyst_confirmed=True)
-
-    except Exception as e:
-        print(f"[-] Investigation failed with error: {e}", file=sys.stderr)
-        return 1
-
-    # 6. Save Report
-    if args.output:
-        out_file = Path(args.output)
-        out_file.parent.mkdir(parents=True, exist_ok=True)
-        out_file.write_text(result.report, encoding="utf-8")
-
-    # 7. Render Terminal Summary
-    render_terminal_summary(alert, result, args.output)
-    return 0
-
 
 def main() -> None:
     _apply_dotenv_setdefault()

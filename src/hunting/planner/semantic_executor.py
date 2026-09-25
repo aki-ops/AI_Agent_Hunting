@@ -162,6 +162,50 @@ class SemanticPlanExecutor:
         self.operations = {operation.id: operation for operation in operations}
         self.proof_engine = proof_engine
 
+    def _behavior_prove_execution(self, step, goal_graph, scope, time_window: str, limit: int):
+        """Count a behavior goal before proof. A verified binding is not required."""
+        if goal_graph is None:
+            return None
+        from hunting.evidence.behavior_comparator import goal_class_for
+        from hunting.m1_ledger.ledger import ObservationLedger
+        from hunting.planner.behavior_cycle import run_behavior_cycle
+
+        goal_id = next(iter(getattr(step, "advances_goal_ids", ()) or ()), "")
+        relation = next((item for item in getattr(goal_graph, "relations", ()) if item.id == goal_id), None)
+        if relation is None or goal_class_for(relation, goal_graph) != "behavior":
+            return None
+        mode = str(getattr(step, "mode", "")).upper()
+        if mode not in {"SIZING", "PROVE", "EXPLORE"}:
+            return None
+        if goal_id in self._behavior_handled:
+            return "ALREADY_HANDLED"
+        self._behavior_handled.add(goal_id)
+        ledger = self._behavior_ledger or ObservationLedger()
+        cycle = run_behavior_cycle(
+            adapter=self.adapter,
+            goal=relation,
+            goal_graph=goal_graph,
+            scope=scope,
+            time_window=time_window,
+            operation_id=step.operation_id,
+            ledger=ledger,
+            baseline_values=self._baseline_values,
+            proof_engine=self.proof_engine,
+            limit=limit,
+        )
+        result = cycle.prove_query or cycle.sizing_query
+        return StepExecution(
+            step_id=step.id,
+            query_id=result.query_id,
+            result=result,
+            operation_id=step.operation_id,
+            status="ESCALATED" if cycle.escalated else "EXECUTED",
+            goal_id=goal_id,
+            observation_class="SIZING" if cycle.escalated else "",
+            next_action_reason=cycle.escalation or "",
+            observations=[cycle.sizing_observation],
+        )
+
     @staticmethod
     def _typed_entity(value: str, entity_type: str | None) -> Any:
         """Preserve the semantic type at the provider boundary."""
@@ -200,6 +244,8 @@ class SemanticPlanExecutor:
         target_cardinality: dict[str, str] | None = None,
         proof_engine: Any | None = None,
         goal_graph: Any | None = None,
+        ledger: Any | None = None,
+        baseline_values: tuple[str, ...] = (),
     ) -> SemanticExecutionResult:
         var_types = dict(variable_types or {})
         if goal_graph and getattr(goal_graph, "variables", None):
@@ -262,6 +308,9 @@ class SemanticPlanExecutor:
         page_trace: list[dict[str, Any]] = []
         continuations: dict[str, dict[str, Any]] = {}
         active_proof_engine = proof_engine if proof_engine is not None else self.proof_engine
+        self._behavior_ledger = ledger
+        self._baseline_values = tuple(baseline_values or getattr(goal_graph, "baseline_values", ()) or ())
+        self._behavior_handled: set[str] = set()
         if active_proof_engine is None and goal_graph is not None:
             try:
                 from hunting.evidence.proof_engine import ProofEngine
@@ -379,6 +428,18 @@ class SemanticPlanExecutor:
                             and prior[dependency].status != "EXECUTED"
                         )
                     )
+                    continue
+                behavior_execution = self._behavior_prove_execution(step, goal_graph, scope, time_window, limit)
+                if behavior_execution == "ALREADY_HANDLED":
+                    agenda.dispatch(step.id)
+                    remaining.remove(step)
+                    progress = True
+                    continue
+                if behavior_execution is not None:
+                    executions.append(behavior_execution)
+                    agenda.dispatch(step.id)
+                    remaining.remove(step)
+                    progress = True
                     continue
                 unverified_inputs = [
                     variable_id
@@ -775,6 +836,25 @@ class SemanticPlanExecutor:
                                     ),
                                 )
                         elif active_proof_engine is not None:
+                            from hunting.evidence.behavior_comparator import goal_class_for
+                            from hunting.planner.sizing import escalation_for, measure_sizing
+                            if goal_class_for(step_goal, goal_graph) == "behavior" and goal_graph is not None:
+                                values = {
+                                    str(row.get("host") or row.get("user") or row.get("account") or row.get("src") or "")
+                                    for row in (getattr(result, "rows", None) or [])
+                                }
+                                values.discard("")
+                                magnitude = str(getattr(goal_graph, "expected_magnitude", "population") or "population")
+                                sizing = measure_sizing(
+                                    match_count=len(getattr(result, "rows", None) or []),
+                                    distinct_entities=len(values),
+                                    scope_size=max(len(values), 1),
+                                    expected_magnitude=magnitude,
+                                )
+                                goal_graph.sizing = sizing
+                                note = escalation_for(sizing, magnitude)
+                                if note:
+                                    goal_graph.escalations = [*getattr(goal_graph, "escalations", ()), note]
                             try:
                                 try:
                                     step_pr = active_proof_engine.evaluate(

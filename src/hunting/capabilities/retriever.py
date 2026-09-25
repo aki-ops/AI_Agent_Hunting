@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import Any, Iterable
 
+from hunting.capabilities.source_profiler import compact_fields_for_c2
 from hunting.contracts.source_profile import TelemetryFieldProfile, TelemetrySourceProfile
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
@@ -163,14 +164,16 @@ class CapabilityBatcher:
                     rank=rank,
                     low_confidence=not bool(matched_terms),
                 ))
-                matching_ids = set(matched_fields)
-                ordered_fields = list(profile.fields)
-                ordered_fields.sort(key=lambda field: (
-                    0 if field.field_id in matching_ids else 1,
-                    field.name.casefold(),
-                    field.field_id,
-                ))
-                ordered_profiles.append(replace(profile, fields=tuple(ordered_fields)))
+                ordered_fields = compact_fields_for_c2(
+                    profile.fields,
+                    (
+                        requirement.get("subject_type", ""),
+                        requirement.get("object_type", ""),
+                        requirement.get("answer_type") or requirement.get("answer_role") or "",
+                    ),
+                    limit=len(profile.fields) or 1,
+                )
+                ordered_profiles.append(replace(profile, fields=ordered_fields))
 
             batches: list[tuple[TelemetrySourceProfile, ...]] = []
             current: list[TelemetrySourceProfile] = []

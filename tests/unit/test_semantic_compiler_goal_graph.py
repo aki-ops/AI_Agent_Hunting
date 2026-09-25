@@ -39,8 +39,6 @@ def test_alert_and_poc_compile_to_the_same_goal_graph_contract() -> None:
         "answers": [{"variable_id": "process", "answer_type": "process"}],
     }
     kinds = (
-        (HuntRequestKind.ALERT, "EDR alert: suspicious process on workstation-01"),
-        (HuntRequestKind.POC, "PoC spawns a process on workstation-01"),
         (HuntRequestKind.HYPOTHESIS, "A host executed a suspicious process"),
     )
     graphs = []

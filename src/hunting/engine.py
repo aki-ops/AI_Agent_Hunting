@@ -31,7 +31,7 @@ from hunting.capabilities.registry import build_default_capability_registry
 from hunting.capabilities.route_resolver import CapabilityRouteResolver
 from hunting.capabilities.runtime_materializer import materialize_runtime_operation
 from hunting.capabilities.source_mapping_validator import SourceMappingValidator
-from hunting.capabilities.source_profiler import SourceProfiler
+from hunting.capabilities.source_profiler import SourceProfiler, compact_fields_for_c2
 from hunting.compiler.compiler import KnowledgeBehaviorCompiler
 from hunting.contracts.capabilities import CapabilityGraph
 from hunting.contracts.case_graph import (
@@ -995,7 +995,23 @@ class HypothesisHuntEngine:
             max_bindings=max_bindings,
             proof_engine=engine_proof_evaluator,
             goal_graph=goal_graph,
+            ledger=ledger,
+            baseline_values=tuple(getattr(goal_graph, "baseline_values", ()) or ()),
         )
+        notes = list(getattr(goal_graph, "escalations", ()) or ())
+        queries = list(getattr(goal_graph, "behavior_queries", ()) or ())
+        citations = list(getattr(goal_graph, "benign_citations", ()) or ())
+        if notes or queries or citations:
+            analysis = dict(getattr(state, "semantic_analysis", {}) or {})
+            if notes:
+                analysis["escalations"] = notes
+            if queries:
+                analysis["behavior_queries"] = queries
+            if citations:
+                analysis["benign_citations"] = citations
+            state.semantic_analysis = analysis
+            if notes and not state.stopping_decision:
+                self.controller.set_stopping_decision(state, StoppingDecision.STOP_INCONCLUSIVE)
 
         self._sync_semantic_candidate_sets(state, execution, goal_graph, target_cardinality)
 
@@ -2865,74 +2881,17 @@ class HypothesisHuntEngine:
                                 "status": "DEFERRED_ADAPTER_UNSUPPORTED",
                                 "complete": False,
                             })
-                    matched_ids = set(hit.matched_field_ids)
-                    semantic_terms = {
-                        token
-                        for value in (
-                            answer_role,
-                            *(str(item.get("key", "")) for item in req.get("qualifier_hints", ()) if isinstance(item, dict)),
-                            *(str(item) for item in req.get("constraint_keys", ())),
-                        )
-                        for token in re.findall(r"[A-Za-z0-9]+", value.casefold())
-                        if len(token) > 1
-                    }
-                    nested_ranked = sorted(
-                        (
-                            field for field in profile.fields
-                            if field.origin == "nested_payload"
-                        ),
-                        key=lambda field: (
-                            -sum(
-                                1 for term in semantic_terms
-                                if term in str(field.nested_key or field.name).casefold()
-                                or str(field.nested_key or field.name).casefold() in term
-                            ),
-                            str(field.nested_key or field.name).casefold(),
-                        ),
-                    )
-                    # Reserve one compact slot for the best payload key and
-                    # keep the remaining slots for relation input/output
-                    # fields.  This prevents nested discovery from hiding the
-                    # fields needed to bind the relation itself.
-                    nested_budget = max(1, self.capability_context_fields // 6)
-                    nested_first = nested_ranked[:nested_budget]
-                    matched_flat = [
-                        field for field in profile.fields
-                        if field.field_id in matched_ids and field.origin == "flat"
-                    ]
-                    # Preserve F1's relevance ordering.  The census itself is
-                    # alphabetic, which can hide the native field needed for a
-                    # qualifier behind unrelated fields when the C2 context
-                    # is intentionally compact.
-                    matched_rank = {
-                        field_id: index
-                        for index, field_id in enumerate(hit.matched_field_ids)
-                    }
-                    matched_flat.sort(
-                        key=lambda field: (
-                            matched_rank.get(field.field_id, len(matched_rank)),
-                            field.name.casefold(),
-                        )
-                    )
-                    ordered_fields = nested_first + matched_flat
-                    ordered_ids = {field.field_id for field in ordered_fields}
-                    ordered_fields.extend(
-                        field for field in nested_ranked[nested_budget:]
-                        if field.field_id not in ordered_ids
-                    )
-                    ordered_ids = {field.field_id for field in ordered_fields}
-                    ordered_fields.extend(
-                        field for field in profile.fields
-                        if field.field_id in matched_ids and field.field_id not in ordered_ids
-                    )
-                    ordered_ids = {field.field_id for field in ordered_fields}
-                    ordered_fields.extend(
-                        field for field in profile.fields
-                        if field.field_id not in ordered_ids
-                    )
                     compact_shortlist.append(replace(
                         profile,
-                        fields=tuple(ordered_fields[: self.capability_context_fields]),
+                        fields=compact_fields_for_c2(
+                            profile.fields,
+                            (
+                                req.get("subject_type", ""),
+                                req.get("object_type", ""),
+                                answer_role,
+                            ),
+                            limit=self.capability_context_fields,
+                        ),
                     ))
                 shortlist = tuple(compact_shortlist)
                 retrieval_by_goal[req["goal_id"]] = (shortlist,) if shortlist else ()
@@ -3224,6 +3183,32 @@ class HypothesisHuntEngine:
             probe_executor = BoundedProbeExecutor()
             materialized: list[dict[str, Any]] = []
             runtime_operations = []
+            provider_unavailable_no_proposals = (
+                not accepted_source_proposals
+                and any(
+                    item.get("status") == "PROVIDER_UNAVAILABLE"
+                    for item in source_profile_audit.get("relation_calls", [])
+                )
+            )
+            if provider_unavailable_no_proposals:
+                from hunting.capabilities.deterministic_probe import build_fallback_proposals
+
+                overrides = ((getattr(request, "prepare_plan", None) or {}).get("location_override", ())) or ()
+                allowed = {str(x).strip().casefold() for x in overrides if str(x).strip()}
+                fallback_proposals: list[Any] = []
+                for req in profiling_requirements:
+                    for shortlist in retrieval_by_goal.get(req["goal_id"], ()):
+                        for profile in shortlist:
+                            full = active_profiles.get(profile.source_id, profile)
+                            if allowed and str(getattr(full, "native_type", "")).strip().casefold() not in allowed:
+                                continue
+                            fallback_proposals.extend(build_fallback_proposals(full, req))
+                if fallback_proposals:
+                    source_profile_audit.setdefault("fallback", {})["deterministic_probe"] = {
+                        "status": "ATTEMPTED",
+                        "proposal_count": len(fallback_proposals),
+                    }
+                    accepted_source_proposals.extend(fallback_proposals)
             for proposal in accepted_source_proposals:
                 profile = active_profiles.get(proposal.source_id)
                 requirement = requirements_by_goal_id.get(getattr(proposal, "goal_id", ""))
@@ -3238,15 +3223,19 @@ class HypothesisHuntEngine:
                         "reasons": ["proposal is not for the selected provider or graph"],
                     })
                     continue
-                admission = admission_gate.evaluate(proposal, profile, requirement)
-                if not admission.admitted:
-                    materialized.append({
-                        "source_id": proposal.source_id,
-                        "relation": proposal.relation,
-                        "status": "REJECTED",
-                        "reasons": list(admission.reasons),
-                    })
-                    continue
+                is_fallback = "deterministic-fallback-f1-probe" in tuple(
+                    getattr(proposal, "rationale_refs", ()) or ()
+                )
+                if not is_fallback:
+                    admission = admission_gate.evaluate(proposal, profile, requirement)
+                    if not admission.admitted:
+                        materialized.append({
+                            "source_id": proposal.source_id,
+                            "relation": proposal.relation,
+                            "status": "REJECTED",
+                            "reasons": list(admission.reasons),
+                        })
+                        continue
                 cached_for_proposal = cached_capabilities.get((
                     proposal.source_id,
                     str(getattr(proposal, "goal_id", "") or requirement["goal_id"]),
@@ -3464,6 +3453,15 @@ class HypothesisHuntEngine:
         )
         setattr(state, "request", request)
         state.compiler_trace = dict(getattr(self.compiler, "last_compile_trace", {}) or {})
+        prepare_plan = getattr(request, "prepare_plan", None)
+        prepare_source = getattr(request, "prepare_source", "") or ""
+        if prepare_plan or prepare_source:
+            analysis = dict(getattr(state, "semantic_analysis", {}) or {})
+            if prepare_plan:
+                analysis["prepare"] = prepare_plan
+            if prepare_source:
+                analysis["prepare_source"] = prepare_source
+            state.semantic_analysis = analysis
 
         # Initialize immutable hard constraints and SearchEnvelope E_0
         pinned_ents: set[str] = set()
@@ -3493,6 +3491,25 @@ class HypothesisHuntEngine:
         native_semantic_graph = getattr(objective, "semantic_goal_graph", None) is not None
         if native_semantic_graph:
             state.semantic_goal_graph = objective.semantic_goal_graph
+            criteria = ((getattr(request, "prepare_plan", None) or {}).get("decision_criteria") or {})
+            if criteria.get("expected_magnitude"):
+                state.semantic_goal_graph.expected_magnitude = criteria["expected_magnitude"]
+            if criteria.get("min_coverage_to_refute") is not None:
+                state.semantic_goal_graph.min_coverage_to_refute = criteria["min_coverage_to_refute"]
+            baseline_values = tuple(getattr(request, "baseline_values", ()) or ())
+            if baseline_values:
+                state.semantic_goal_graph.baseline_values = baseline_values
+            from hunting.peak_data import confirm_entries, minimap_entries
+            _peak_adapter = configured_adapters[0] if configured_adapters else None
+            manifest = getattr(_peak_adapter, "manifest", None)
+            counts = {}
+            counter = getattr(_peak_adapter, "count_by_sourcetype", None)
+            if counter is not None:
+                try:
+                    counts = dict(counter() or {})
+                except Exception:
+                    counts = {}
+            state.semantic_goal_graph.data_locations = confirm_entries(minimap_entries(manifest), counts)
             if initial_bindings:
                 updated_vars = []
                 for variable in state.semantic_goal_graph.variables:

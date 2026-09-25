@@ -795,6 +795,19 @@ def render_final_hunt_account(account: FinalHuntAccount) -> str:
     return "\n".join(lines)
 
 
+def format_hunt_audit(analysis: dict | None, llm_usage: dict | None) -> list[str]:
+    """Record Prepare source, whether an LLM compiled the hunt, and the package version."""
+    source = str((analysis or {}).get("prepare_source") or "unrecorded")
+    calls = int((llm_usage or {}).get("calls_made", 0) or 0)
+    mode = "llm" if calls else "deterministic"
+    version = str((analysis or {}).get("package_version") or "v9")
+    return [
+        f"- **Prepare:** `{source}`",
+        f"- **Compilation mode:** `{mode}`",
+        f"- **Version:** `{version}`",
+    ]
+
+
 def render_analyst_report(account: FinalHuntAccount) -> str:
     """Render the small analyst-facing report conforming to v9 6-section structure.
 
@@ -1039,12 +1052,27 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
                 profile_discovery = source_profile_audit.get("census_profile_discovery", {}) or {}
                 gap_count = len(profile_discovery.get("unprofiled_source_types", []) or [])
                 completeness = "complete" if profile_discovery.get("complete", True) else f"incomplete ({gap_count} source gap(s))"
-                lines.append(
-                    f"  - `{item.get('relation', 'unknown')}`: "
-                    f"batches=`{item.get('batch_count', 0)}`, "
-                    f"ordering_only=`{item.get('ordering_only', False)}`, "
-                    f"candidates=`{len(candidates)}`; census profiles=`{completeness}`"
-                )
+                if item.get("stage") == "F1_METADATA":
+                    hits = item.get("hits", []) or []
+                    lines.append(
+                        f"  - `{item.get('relation', 'unknown')}`: "
+                        f"F1 hits=`{len(hits)}`, total=`{item.get('total_documents', 0)}`, "
+                        f"unexamined=`{len(item.get('unexamined_ids', []) or [])}`; census profiles=`{completeness}`"
+                    )
+                else:
+                    lines.append(
+                        f"  - `{item.get('relation', 'unknown')}`: "
+                        f"batches=`{item.get('batch_count', 0)}`, "
+                        f"ordering_only=`{item.get('ordering_only', False)}`, "
+                        f"candidates=`{len(candidates)}`; census profiles=`{completeness}`"
+                    )
+            relation_calls = source_profile_audit.get("relation_calls", []) or []
+            if relation_calls:
+                lines.append("- Profiler calls by relation (F1 filtering vs C2 proposal are separate):")
+                for call in relation_calls:
+                    lines.append(
+                        f"  - `{call.get('relation', 'unknown')}`: status=`{call.get('status', 'unknown')}`"
+                    )
         if source_profile_audit.get("error"):
             lines.append(f"- Profiling error: `{source_profile_audit['error']}`")
         runtime_capabilities = getattr(account, "runtime_capabilities", []) or []
@@ -1636,6 +1664,8 @@ def render_analyst_report(account: FinalHuntAccount) -> str:
         if token_mode == "ACTUAL"
         else ("(estimated)" if token_mode == "ESTIMATED" else "(hybrid actual/estimated)")
     )
+    lines.extend(["", "### Hunt audit", ""])
+    lines.extend(format_hunt_audit(account.semantic_analysis, usage))
     lines.extend([
         "",
         "### Cost Accounting",

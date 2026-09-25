@@ -52,18 +52,13 @@ from hunting.contracts import (
 
 
 def test_1_hunt_request_without_alert():
-    """1. HuntRequest accepts hypothesis/TTP/IOC/CVE/CTI/NL question without alert."""
+    """1. HuntRequest still stores a free-text hypothesis, question, CTI report, or scheduled request."""
     kinds = [
-        (HuntRequestKind.CVE, "CVE-2024-21887 command injection"),
-        (HuntRequestKind.TTP, "T1059.001 PowerShell execution"),
-        (HuntRequestKind.IOC, "evil-c2.example.com"),
         (HuntRequestKind.HYPOTHESIS, "Lateral movement via WMI across finance subnet"),
         (HuntRequestKind.CTI_REPORT, "APT29 campaign advisory 2026-03"),
         (HuntRequestKind.NL_QUESTION, "Are any web servers running unauthorized processes?"),
-        (HuntRequestKind.QUESTION, "What is Amber's personal email?"),
+        (HuntRequestKind.QUESTION, "What is the service account used for interactive logon?"),
         (HuntRequestKind.SCHEDULED, "Weekly persistence sweep"),
-        (HuntRequestKind.ALERT, "EDR alert: suspicious process on workstation-01"),
-        (HuntRequestKind.POC, "PoC for CVE-2024-21887 command injection"),
     ]
 
     for kind, content in kinds:
@@ -81,10 +76,10 @@ def test_1_hunt_request_without_alert():
 
     # Validation: empty id or content must fail
     with pytest.raises(ValueError, match="HuntRequest.id must not be empty"):
-        HuntRequest(id="", kind=HuntRequestKind.CVE, content="CVE-2024-1234")
+        HuntRequest(id="", kind=HuntRequestKind.HYPOTHESIS, content="CVE-2024-1234")
 
     with pytest.raises(ValueError, match="HuntRequest.content must not be empty"):
-        HuntRequest(id="req-empty", kind=HuntRequestKind.CVE, content="")
+        HuntRequest(id="req-empty", kind=HuntRequestKind.HYPOTHESIS, content="")
 
 
 def test_2_distinct_contract_types():

@@ -1,13 +1,14 @@
 """Provider-neutral composition of semantic goals into logical plan steps."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Iterable
 
 from hunting.contracts.ontology import canonicalize_relation, types_are_compatible
 from hunting.contracts.queries import ProviderOperation
 from hunting.contracts.semantic_graph import LogicalPlan, PlanStep, ProofMethod, SemanticGoalGraph
 from hunting.contracts.transforms import is_literal_telemetry_token
+from hunting.peak_data import link_goal
 
 _ROUTE_CLASS_RANK = {"EXECUTABLE": 0, "MAPPING_REQUIRED": 1, "DISCOVERY_ONLY": 2}
 
@@ -439,7 +440,7 @@ class SemanticGoalPlanner:
             id=plan_id,
             goal_graph_id=graph.id,
             provider_id=self.provider_id,
-            steps=steps,
+            steps=self._with_behavior_sizing(steps, graph),
             unresolved_goal_ids=[diagnostic.goal_id for diagnostic in diagnostics],
             proof_methods=proof_methods,
             selected_method_ids=selected_method_ids,
@@ -449,6 +450,65 @@ class SemanticGoalPlanner:
         # Keep diagnostics auditable without adding provider-specific state to
         # the contract itself.  The executor/report layer can serialize them.
         return plan
+
+    @staticmethod
+    def _with_behavior_sizing(steps: list[PlanStep], graph: Any) -> list[PlanStep]:
+        """A behavior goal is counted before it is proved, even when the route is EXPLORE."""
+        behavior_ids = {
+            relation.id
+            for relation in getattr(graph, "relations", ())
+            if str(getattr(relation, "goal_class", "")).lower() == "behavior"
+        }
+        if not behavior_ids:
+            return steps
+        rewritten: list[PlanStep] = []
+        covered: set[str] = set()
+        for step in steps:
+            matched = next((goal_id for goal_id in step.advances_goal_ids if goal_id in behavior_ids), "")
+            if matched and matched not in covered and str(step.mode).upper() != "SIZING":
+                covered.add(matched)
+                sizing_id = f"{step.id}-sizing"
+                rewritten.append(PlanStep(
+                    id=sizing_id,
+                    operation_id=step.operation_id,
+                    input_bindings={},
+                    output_bindings={},
+                    advances_goal_ids=(matched,),
+                    depends_on=(),
+                    relation=step.relation,
+                    mode="SIZING",
+                ))
+                step = replace(step, depends_on=tuple(dict.fromkeys((*step.depends_on, sizing_id))))
+            rewritten.append(step)
+        covered = {goal_id for step in rewritten for goal_id in step.advances_goal_ids}
+        for relation in getattr(graph, "relations", ()):
+            if str(getattr(relation, "goal_class", "")).lower() != "behavior":
+                continue
+            if relation.id in covered:
+                continue
+            types = {variable.id: variable.entity_type for variable in getattr(graph, "variables", ())}
+            hits = link_goal(
+                relation.relation,
+                (
+                    types.get(relation.subject, ""),
+                    types.get(relation.object, ""),
+                ),
+                list(getattr(graph, "data_locations", ()) or ()),
+            )
+            if not hits:
+                continue
+            entry = hits[0]
+            rewritten.append(PlanStep(
+                id=f"step-{relation.id}-data",
+                operation_id=str(entry["evidence"]),
+                input_bindings={},
+                output_bindings={},
+                advances_goal_ids=(relation.id,),
+                depends_on=(),
+                relation=relation.relation,
+                mode="SIZING",
+            ))
+        return rewritten
 
     @staticmethod
     def _constraint_key(raw: str) -> str:

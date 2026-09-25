@@ -24,6 +24,10 @@ Read `context.md` and then the canonical documents in the order declared there.
 11. Keep provider names, fields and native query logic outside the reasoning kernel.
 12. Add a failing counterexample before fixing an authority or reasoning defect.
 
+## Free-text entry
+
+This branch accepts a free-text hypothesis only. CVE, TTP, IOC, alert, and PoC are not entry points. Prepare is required before a provider is contacted unless `--skip-prepare` is set, and that skip is recorded. Behavior goals are not proved by a predicate match alone.
+
 ## Current migration priority
 
 Follow the pull-request sequence in `08-EVIDENCE-BASED-REARCHITECTURE-PLAN.md`. Core reasoning correctness precedes source ranking, query optimization and additional providers.

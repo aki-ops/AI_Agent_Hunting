@@ -296,13 +296,8 @@ def test_10_wildcard_cell_state_post_execution():
         kind=HuntRequestKind.CVE,
         content="CVE-2024-21887 Ivanti Connect Secure Command Injection",
     )
-    result = engine.execute_hunt(req, adapter=mock_adapter, time_window="2026-02-01T00:00:00Z/P1D")
-    wildcard_cells = [c for c in result.state.cells if c.is_wildcard]
-    assert len(wildcard_cells) > 0
-    assert result.account.stopping_decision is not None
-    if result.state.queries:
-        for wc in wildcard_cells:
-            assert wc.state == CellState.EXPLORED
+    with pytest.raises(ValueError, match="free-text hypothesis"):
+        engine.execute_hunt(req, adapter=mock_adapter, time_window="2026-02-01T00:00:00Z/P1D")
 
 
 def test_11_cross_host_disjoint_evidence_weakens_compromise_hypothesis():

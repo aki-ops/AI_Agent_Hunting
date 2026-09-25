@@ -84,7 +84,9 @@ An LLM may propose interpretation, goals, relations, source mappings, query inte
 
 ### 4.2 One production reasoning graph
 
-All input kinds compile into one `SemanticGoalGraph`. `ClaimGraph`, `InvestigationModel` and `InvestigationCase` may exist only behind an explicit legacy compatibility boundary until removed. They cannot control the default production route.
+The production entry is a free-text hypothesis. CVE, TTP, IOC, alert, and PoC are rejected before compilation. Every accepted request still compiles into one `SemanticGoalGraph`. `ClaimGraph`, `InvestigationModel` and `InvestigationCase` may exist only behind an explicit legacy compatibility boundary until removed. They cannot control the default production route.
+
+PEAK Prepare is a gate in front of that graph, not a replacement for it. Prepare carries topic, ABLE, scope, `max_duration`, plan, `research_refs`, and `decision_criteria`. Thresholds are derived from the hypothesis and then may be overridden by the analyst. Each relation is `artifact` or `behavior`. Sizing is a separate observation. A behavior relation becomes proved only when a comparator (first-seen, rarity, or baseline deviation) holds. Act writes the detection draft, backlog, and stakeholder note after the deterministic stop.
 
 ### 4.3 OutcomeContract, not universal AnswerContract
 

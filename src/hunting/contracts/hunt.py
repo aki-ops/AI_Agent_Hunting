@@ -72,6 +72,9 @@ class HuntRequest:
     entities: list[EntityRef] = field(default_factory=list)
     time_policy: TimePolicy | None = None
     provider_hints: list[str] = field(default_factory=list)
+    prepare_source: str = ""
+    prepare_plan: dict[str, Any] | None = None
+    baseline_values: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.id.strip():
