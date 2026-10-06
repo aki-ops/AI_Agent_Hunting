@@ -59,5 +59,5 @@ ruff check .
 | `src/hunting/recommend.py` | luật khuyến nghị + advisor |
 | `src/hunting/pipeline.py`, `cli.py`, `report.py` | điều phối, CLI, báo cáo |
 | `pocs/` | PoC mẫu (BOTS v1) |
-| `docs/ARCHITECTURE.md` | kiến trúc, luật khuyến nghị, giới hạn |
+| `docs/ARCHITECTURE.md`, `docs/BAO-CAO-PEAK-ASSISTANT.md` | kiến trúc, luật khuyến nghị, giới hạn; báo cáo thay đổi và kết quả |
 | `docs/archive/` | engine v6 (ClaimGraph) và paper cũ; khôi phục code bằng tag `v6-engine-final` |
