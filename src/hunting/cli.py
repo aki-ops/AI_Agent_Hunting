@@ -1140,12 +1140,25 @@ def run_cli(args: argparse.Namespace) -> int:
         if manifest_file and manifest_file.lower() in ("none", "null", "discovery", "auto", "mode1"):
             manifest_file = None
         elif manifest_file is None:
-            idx_manifest = Path(f"configs/splunk_{selected_index}.yaml")
-            default_cfg = Path("configs/splunk_botsv2.yaml")
-            if idx_manifest.exists():
-                manifest_file = str(idx_manifest)
-            elif default_cfg.exists():
-                manifest_file = str(default_cfg)
+            # Step 3 Optimization: Check known manifests in order of specificity
+            # 1. Exact index manifest: configs/splunk_<index>.yaml
+            # 2. BOTS v1 / v2 matching by name
+            # 3. Default fallback configs/splunk_botsv2.yaml
+            idx_clean = str(selected_index).lower()
+            candidates = [
+                Path(f"configs/splunk_{selected_index}.yaml"),
+                Path(f"configs/splunk_{idx_clean}.yaml"),
+            ]
+            if "botsv1" in idx_clean:
+                candidates.append(Path("configs/splunk_botsv1.yaml"))
+            elif "botsv2" in idx_clean:
+                candidates.append(Path("configs/splunk_botsv2.yaml"))
+            candidates.append(Path("configs/splunk_botsv2.yaml"))
+
+            for cand in candidates:
+                if cand.exists():
+                    manifest_file = str(cand)
+                    break
 
         adapter = SplunkLiveAdapter(
             splunk_url=args.splunk_url,

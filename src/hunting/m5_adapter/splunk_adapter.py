@@ -213,7 +213,7 @@ class SplunkLiveAdapter:
         self.verify_ssl = verify_ssl
         self.timeout = timeout
         self.provider_id = "splunk"
-        configured_profile_limit = os.getenv("SPLUNK_PROFILE_SOURCE_LIMIT", "").strip()
+        configured_profile_limit = os.getenv("SPLUNK_PROFILE_SOURCE_LIMIT", "5").strip()
         if profile_source_limit is None and configured_profile_limit:
             try:
                 profile_source_limit = int(configured_profile_limit)
@@ -313,6 +313,13 @@ class SplunkLiveAdapter:
         selected = discovered if profile_limit is None else discovered[:profile_limit]
         selected_names = {str(native_type) for native_type, _ in selected}
         failed: list[str] = []
+        # Standard operational / noise fields that must never be sent to the LLM
+        # profiler. Filtering them out saves tens of thousands of prompt tokens.
+        ignored_field_prefixes = ("date_", "_", "punct", "timestartpos", "timeendpos", "eventtype")
+        ignored_fields = {
+            "index", "splunk_server", "source", "sourcetype", "linecount", "tag", "tag::eventtype"
+        }
+
         for native_type, event_count in selected:
             safe_type = str(native_type).replace('"', '')[:200]
             source_id = f"splunk:{self.index}:{safe_type}"
@@ -336,6 +343,9 @@ class SplunkLiveAdapter:
                 for item in resp.json().get("results", []):
                     name = str(item.get("field", "")).strip()
                     if not name:
+                        continue
+                    low_name = name.lower()
+                    if low_name in ignored_fields or any(low_name.startswith(p) for p in ignored_field_prefixes):
                         continue
                     fields.append(TelemetryFieldProfile(
                         field_id=f"{source_id}:field:{name}",

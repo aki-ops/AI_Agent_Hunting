@@ -258,25 +258,10 @@ class ApiLLMProvider(LLMProvider):
         # scenario expectations instead of returning source mappings.
         if prompt_context.get("component") == "source_profiler":
             system_instruction = (
-                "You are a telemetry schema-matching assistant. Return only valid JSON "
-                "with a top-level proposals array. Propose candidate mappings from "
-                "the supplied census IDs to semantic roles and relations. Never invent "
-                "source IDs, field IDs, values, native queries, evidence or verdicts. "
-                "Each proposal must use {source_id, relation, input_roles, "
-                "output_roles, proof_mode, probe_kind, projection_roles, "
-                "supported_constraints, searchable_constraints, "
-                "temporal_roles, action_roles, state_roles, "
-                "artifact_identity_roles, correlation_roles, "
-                "relaxable_constraint_keys, rationale_refs, confidence}; "
-                "role values must be census field IDs and constraint keys must "
-                "come from the supplied semantic requirement. "
-                "Use supported_constraints only for constraints the source can "
-                "prove; use searchable_constraints only for retrieval hints. "
-                "Relaxable keys must be a subset of searchable_constraints. "
-                "Every proposal must reference existing census IDs. Use only these "
-                "proof_mode values: retrieval_only, relation_observable. Use only "
-                "these probe_kind values: cooccurrence, schema, value_presence, temporal. "
-                "Return {\"proposals\": []} when no mapping is justified."
+                "You are a telemetry schema-matching assistant. Output strictly compact JSON: {\"proposals\": [...]}.\n"
+                "Propose only candidate mappings from the supplied census IDs to semantic roles and relations. Never invent source IDs, fields, values, native queries, evidence or verdicts.\n"
+                "Each proposal: {source_id, relation, input_roles, output_roles, proof_mode: 'retrieval_only'|'relation_observable', probe_kind: 'cooccurrence'|'schema', supported_constraints: [], searchable_constraints: []}.\n"
+                "Return {\"proposals\": []} if no mapping is justified."
             )
 
 

@@ -77,8 +77,8 @@ class CapabilityBatcher:
     def __init__(
         self,
         *,
-        max_profiles_per_batch: int = 8,
-        max_fields_per_source_per_batch: int = 48,
+        max_profiles_per_batch: int = 3,
+        max_fields_per_source_per_batch: int = 24,
     ) -> None:
         if max_profiles_per_batch <= 0:
             raise ValueError("max_profiles_per_batch must be positive")
