@@ -10,7 +10,10 @@
     "location": "egress web traffic from we1149srv",
     "evidence": "web_request telemetry; hit = GET to ad.networkfilter.co /banner/ path"
   },
-  "research_refs": ["Splunk SURGe PEAK hypothesis-driven hunting", "BOTS v1 known IOC"],
+  "research_refs": [
+    "Splunk SURGe PEAK hypothesis-driven hunting",
+    "BOTS v1 known IOC"
+  ],
   "scope": "BOTS v1 hosts on 2016-08-21",
   "max_duration": "3d",
   "plan": "search_text over web telemetry for the C2 domain + banner path",
@@ -36,5 +39,9 @@
     "MITRE ATT&CK T1071.001 - Application Layer Protocol: Web",
     "BOTS v1 known IOC"
   ],
-  "expected_chain": ["web_request", "process_creation"]
+  "expected_chain": [
+    "web_request",
+    "process_creation"
+  ],
+  "time_window": "2016-08-21T00:00:00Z/2016-08-22T00:00:00Z"
 }

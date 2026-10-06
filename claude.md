@@ -1,40 +1,26 @@
-# Repository Working Rules (v5.0)
+# Repository Working Rules (v7)
 
-Read `context.md` first, then use `01_FINAL-ARCHITECTURE.md` as canonical
-architecture, `02` for executable method, `03` for literature traceability,
-and `04` for verified checklist gates.
-
----
-
-## Core Architectural Invariants
-
-- The reasoning unit is the **Investigation Case Graph**.
-- `Cell` is strictly `(ProviderScope, entity | ANY, time_bucket)` for execution coverage, never an ontology or thinking graph.
-- **Relation-First Rule**: Unresolved edge with known source entity $\rightarrow$ valid provider operation $\rightarrow$ verified relation $\rightarrow$ pivot.
-- Never execute broad/wildcard network queries before human subject identity is verified.
-- Strict field role isolation: `client_ip` ≠ `server_ip`, `endpoint_host` ≠ `server_host`, `account_name` ≠ `person`.
-- Never bind web servers (`jabbah`, `we1149srv`, IIS) as client workstations.
+Read `context.md` first, then `docs/ARCHITECTURE.md`. The v6 engine (ClaimGraph / CapabilityGraph) was
+removed; its documents live in `docs/archive/` and its code at git tag `v6-engine-final`.
 
 ---
 
-## LLM & Verification Boundary
+## Invariants
 
-- Free-text semantic compilation: at most 1 call. Must emit schema-strict `InvestigationCase`. Zero raw SPL.
-- Known CVE/TTP/IOC inputs compile deterministically (zero LLM calls).
-- Grounded explanation receives **only** the verified `EvidenceSubgraph`.
-- Relation verification is 100% deterministic (citations, field roles, temporal checks).
-- Incomplete telemetry, timeouts, or unproven edges stop as `STOP_INCONCLUSIVE_*`, never `NOT_FOUND`.
-
----
+- PEAK Assistant (Cisco Talos) does PEAK **Prepare**: ABLE table and hunt plan. Its output is advisory.
+- **Execute** is deterministic: literal `(field, op, value)` predicates through an adapter. No LLM in matching.
+- The LLM never creates or edits evidence. Judge and advisor outputs are advisory and cannot change the
+  rule-computed disposition by more than one step; the advisor cannot change it at all.
+- Absence of rows is never "clean" by itself: a missing telemetry source gives `COLLECT_DATA_THEN_RERUN`.
+- Every recommendation has `decision_required = True`; the hunter decides, the system never acts.
+- Strict field role isolation (`client_ip` ≠ `server_ip`, account ≠ person); do not bind web servers as clients.
 
 ## Documentation Integrity
 
-- `report.md` is an ephemeral per-hunt output artifact, **not** an architecture document.
-- Every architectural change must update `01`, `02`, `03`, `04`, and `docs/01` first.
-
----
+- Any change to the disposition rules in `recommend.py` must update `docs/ARCHITECTURE.md` and `tests/unit/test_pipeline.py`.
+- `artifacts/` is run output (git-ignored). Verified sample results are copied to `results/`.
+- Never commit `.env` or secrets. `llm.py` writes only `${ENV}` placeholders into PEAK's `model_config.json`.
 
 ## Agent Autonomy & Execution Directive
 
 - **Autonomous Proactivity**: Do not ask the user for permission, clarification, or confirmation. Always decide the optimal implementation and execute directly to completion.
-

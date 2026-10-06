@@ -117,7 +117,7 @@ def enforce_max_duration(window: str, max_duration: str) -> tuple[str, str]:
         return window, (
             f"max_duration {raw!r} is not a duration (use 30m, 12h, 3d or 2w); window unchanged"
         )
-    from hunting.m5_adapter.allowlist import validate_time_window_format
+    from hunting.adapters.allowlist import validate_time_window_format
 
     start, end = validate_time_window_format(window)
     span = end - start
@@ -283,7 +283,7 @@ def derive_prepare_plan(
     win = str(time_window or "").strip()
     if win and "/" in win:
         try:
-            from hunting.m5_adapter.allowlist import validate_time_window_format
+            from hunting.adapters.allowlist import validate_time_window_format
 
             start, end = validate_time_window_format(win)
             days = max(1, (end - start).days or 1)

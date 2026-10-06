@@ -99,7 +99,7 @@ def test_stakeholder_summary_next_step_per_kind():
 
 
 def test_poc_report_has_act_section(tmp_path: Path):
-    from hunting.m5_adapter import CdbAdapter
+    from hunting.adapters import CdbAdapter
     from hunting.poc import PocAgent, get_poc, render_poc_report
 
     adapter = CdbAdapter(":memory:")
@@ -116,23 +116,3 @@ def test_poc_report_has_act_section(tmp_path: Path):
     assert "Detection Draft" in report
     assert "Stakeholder Summary" in report
     assert "```spl" in report
-
-
-def test_baseline_and_math_reports_have_act(tmp_path: Path):
-    from hunting.baseline import render_baseline_report, run_baseline
-    from hunting.mathunt import render_math_report, run_math
-
-    rows = [
-        {"timestamp": "2016-08-21T01:00:00Z", "host": "h1", "user": "u1", "image": "a.exe"},
-        {"timestamp": "2016-08-21T02:00:00Z", "host": "h1", "user": "u1", "image": "b.exe"},
-    ]
-    brep = render_baseline_report(run_baseline(
-        rows, data_source="cdb:events",
-        time_window="2016-08-21T00:00:00Z/2016-08-22T00:00:00Z", ledger_dir=tmp_path))
-    assert "## Act (Detection Drafts + Backlog)" in brep
-    mrep = render_math_report(run_math(
-        rows + [{"timestamp": "2016-08-21T03:00:00Z", "host": "h1", "user": "u1",
-                 "image": "powershell.exe", "cmdline": "powershell -enc AAA"}],
-        data_source="cdb:events",
-        time_window="2016-08-21T00:00:00Z/2016-08-22T00:00:00Z", ledger_dir=tmp_path))
-    assert "## Act (Detection Drafts + Backlog)" in mrep

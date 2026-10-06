@@ -41,5 +41,6 @@
   "expected_chain": [
     "web_request",
     "exploitation"
-  ]
+  ],
+  "time_window": "2016-08-10T21:36:00Z/2016-08-10T22:00:00Z"
 }

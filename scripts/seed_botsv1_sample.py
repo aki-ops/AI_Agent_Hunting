@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from hunting.m5_adapter import CdbAdapter
+from hunting.adapters import CdbAdapter
 
 # Compact representation of BOTS v1 events. Each event is row-shaped to
 # match the CDB schema.

@@ -2,30 +2,23 @@ __pycache__/
 *.py[cod]
 *.pyo
 .pytest_cache/
+.ruff_cache/
 *.egg-info/
 dist/
 build/
 .venv/
 venv/
-data/cdb_sample/
-*.sqlite
-*.sqlite.backup
-data/*.sqlite
-data/*.tgz
-data/*.gz
-data/*.csv
-data/raw/
-baselines/
-models/math_runs/
 .env
 .env.*
 !.env.example
 
-# Generated hunt run artifacts
-artifacts/hunt-*
-artifacts/req-hunt-*
+# Local telemetry databases and raw datasets (rebuild with scripts/)
+data/
+*.sqlite
+*.sqlite.backup
+
+# Run output (reports worth keeping are copied to results/)
+artifacts/
 
 # Claude tool worktrees
 .claude/
-
-

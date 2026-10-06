@@ -8,8 +8,8 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
+from hunting.adapters.allowlist import validate_time_window_format
 from hunting.contracts.native_query import NativeQueryCandidate, NativeQueryValidationResult
-from hunting.m5_adapter.allowlist import validate_time_window_format
 
 _FORBIDDEN_COMMANDS = frozenset({
     "collect", "delete", "dump", "eventstats", "outputlookup", "outputcsv",

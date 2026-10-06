@@ -78,7 +78,5 @@ PoC poc-joomla-rce — verdict MATCHED — 199 obs, 2 matched step(s),
 .venv/Scripts/python.exe scripts/ingest_botsv1_eval.py  # ~6 phút, cần data/raw/*.gz
 .venv/Scripts/python.exe scripts/run_fp_eval.py         # ~30s
 .venv/Scripts/python.exe scripts/ingest_http.py         # ingest stream:http + tạo PoC Joomla
-.venv/Scripts/python.exe main.py --provider cdb --db data/botsv1_eval.sqlite \
-  --poc-file pocs/poc-joomla-rce.json --time-window "2016-08-10T00:00:00Z/2016-08-11T00:00:00Z" \
-  --poc-judge --llm api
+.venv/Scripts/python.exe main.py --poc pocs/poc-joomla-rce.json --db data/botsv1_eval.sqlite   --window "2016-08-10T00:00:00Z/2016-08-11T00:00:00Z"
 ```

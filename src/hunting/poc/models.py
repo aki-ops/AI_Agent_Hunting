@@ -117,6 +117,7 @@ class PoC:
     scope: str = ""               # systems / data / timeframe boundary
     max_duration: str = ""        # e.g. "3d" — clamp the window and stop the refine loop
     plan: str = ""                # how data is gathered, techniques, owners
+    time_window: str = ""         # default telemetry window "<start>/<end>" (ISO-8601 UTC); CLI --window overrides
 
     def render(self) -> dict[str, Any]:
         return {
@@ -135,6 +136,7 @@ class PoC:
             "scope": self.scope,
             "max_duration": self.max_duration,
             "plan": self.plan,
+            "time_window": self.time_window,
             "steps": [s.render() for s in self.steps],
             "fallbacks": [s.render() for s in self.fallbacks],
             "references": list(self.references),

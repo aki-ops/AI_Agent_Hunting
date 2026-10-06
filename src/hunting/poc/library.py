@@ -393,5 +393,6 @@ def poc_from_file(path) -> PoC:
         scope=str(data.get("scope", "")),
         max_duration=str(data.get("max_duration", "")),
         plan=str(data.get("plan", "")),
+        time_window=str(data.get("time_window", "")),
     )
     return _register(poc)

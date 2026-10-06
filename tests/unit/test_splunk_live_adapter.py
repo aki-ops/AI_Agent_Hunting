@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+from hunting.adapters.splunk_adapter import SplunkLiveAdapter
 from hunting.contracts.entities import Host
 from hunting.contracts.expectations import EvidenceRequirement, FieldOp, FieldPredicate
 from hunting.contracts.queries import QueryOutcome
-from hunting.m5_adapter.splunk_adapter import SplunkLiveAdapter
 
 
 def is_splunk_live() -> bool:

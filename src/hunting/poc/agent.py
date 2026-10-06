@@ -37,7 +37,6 @@ from hunting.peak import (
     missing_prepare_fields,
     parse_duration,
 )
-from hunting.poc.compiler import compile_poc, graph_summary
 from hunting.poc.library import get_poc, list_pocs
 from hunting.poc.models import PoC, TestStep
 
@@ -466,11 +465,6 @@ class PocAgent:
         duration = parse_duration(poc.max_duration)
         deadline = (t0 + duration.total_seconds()) if duration is not None else None
 
-        graph = compile_poc(
-            poc, request_id=request_id, time_window=time_window, scope_note=scope_note,
-        )
-        summary = graph_summary(graph)
-
         step_results, refine_log = self._execute_loop(
             poc, time_window, request_id, max_refine=max_refine, deadline=deadline,
         )
@@ -576,7 +570,7 @@ class PocAgent:
 
         ledger_path = self.ledger_dir / f"{request_id}.json"
         ledger_path.write_text(
-            json.dumps({"graph": summary, "result": result.to_dict()}, indent=2, ensure_ascii=False),
+            json.dumps({"result": result.to_dict()}, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
         result.ledger_path = str(ledger_path)

@@ -1,22 +1,23 @@
-# AI Agent Hunting — Project Context (v6)
+# AI Agent Hunting — Project Context (v7)
 
-Read the canonical documentation in this order:
+Read `docs/ARCHITECTURE.md` for the pipeline, the recommendation rules and known limits.
 
-1. `01_FINAL-ARCHITECTURE.md` — ClaimGraph, CapabilityGraph and EvidenceGraph;
-2. `02_METHOD-AND-IMPLEMENTATION-PLAN.md` — executable evidence-seeking lifecycle;
-3. `03_LITERATURE-AND-TRACEABILITY.md` — source grounding and claim boundaries;
-4. `04-IMPLEMENTATION-CHECKLIST.md` — evidence-gated implementation plan;
-5. `06-REFERENCE-ARCHITECTURE-DECISION.md` — detailed architecture decision;
-6. `docs/01-REAL-PROVIDER-SPECIFICATIONS.md` — provider capabilities and operations.
+## Flow
+
+`PoC JSON → PEAK Assistant (ABLE + hunt plan) → deterministic Execute → rules + judge + advisor → recommendation`
+
+## Where things are
+
+1. `src/hunting/llm.py` — `.env` → PEAK `model_config.json`; one LLM path for PEAK agents and our judge/advisor.
+2. `src/hunting/prepare.py` — PEAK bridge with offline fallback.
+3. `src/hunting/poc/` + `src/hunting/adapters/` — PoC model/loader, executor, CDB and Splunk adapters.
+4. `src/hunting/recommend.py` — dispositions and confidence rules.
+5. `pocs/` — BOTS v1 PoCs; `data/botsv1_eval.sqlite` (git-ignored, rebuild via `scripts/`).
 
 ## Core invariants
 
-1. The LLM proposes a request-derived ClaimGraph; it does not create evidence.
-2. Providers are selected through a CapabilityGraph with typed inputs/outputs.
-3. Native queries are compiled and executed by adapters, not emitted by the LLM.
-4. Raw observations are append-only; normalized facts are additive views.
-5. EvidenceGraph claims require citations, field roles and sufficient completeness.
-6. `Cell = (ProviderScope, entity | ANY, time_bucket)` is coverage only.
-7. No keyword, event family or scenario branch controls the reasoning path.
-8. Coverage gaps and incomplete queries cannot become negative or benign results.
-9. LLM calls, query count, latency and cost are bounded and auditable.
+1. The LLM never creates evidence; observations come only from adapters.
+2. Matching is literal and reproducible: same PoC + same data = same rows.
+3. Missing telemetry or an unproven outcome lowers confidence; it never turns into "benign".
+4. The hunter decides; every recommendation is `decision_required`.
+5. PEAK agent calls are not metered (they build their own clients); judge/advisor calls are.

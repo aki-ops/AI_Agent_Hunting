@@ -10,7 +10,10 @@
     "location": "we1149srv authentication log",
     "evidence": "authentication telemetry; hit = burst of Logon Failed rows for user admin"
   },
-  "research_refs": ["Splunk SURGe PEAK hypothesis-driven hunting", "BOTS v1 walkthrough - brute-force phase"],
+  "research_refs": [
+    "Splunk SURGe PEAK hypothesis-driven hunting",
+    "BOTS v1 walkthrough - brute-force phase"
+  ],
   "scope": "we1149srv on 2016-08-21",
   "max_duration": "3d",
   "plan": "search_text over authentication telemetry for Logon Failed + admin",
@@ -37,5 +40,8 @@
     "MITRE ATT&CK T1110 - Brute Force",
     "BOTS v1 walkthrough - brute-force phase"
   ],
-  "expected_chain": ["authentication_failure_burst"]
+  "expected_chain": [
+    "authentication_failure_burst"
+  ],
+  "time_window": "2016-08-21T00:00:00Z/2016-08-22T00:00:00Z"
 }

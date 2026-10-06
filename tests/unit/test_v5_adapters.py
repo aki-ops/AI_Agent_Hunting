@@ -8,10 +8,10 @@ Verifies:
 """
 from __future__ import annotations
 
+from hunting.adapters.cdb_adapter import CdbAdapter
+from hunting.adapters.splunk_adapter import SplunkLiveAdapter
 from hunting.contracts.entities import Account, Host, IPAddress
 from hunting.contracts.expectations import FieldOp, FieldPredicate
-from hunting.m5_adapter.cdb_adapter import CdbAdapter
-from hunting.m5_adapter.splunk_adapter import SplunkLiveAdapter
 
 
 def test_splunk_adapter_field_role_validation():

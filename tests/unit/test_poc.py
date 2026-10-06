@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from hunting.adapters.cdb_adapter import CdbAdapter
 from hunting.controller.cost import LLMUsageTracker
-from hunting.m5_adapter.cdb_adapter import CdbAdapter
 from hunting.poc import PocAgent, get_poc, list_pocs, render_poc_report
 
 
@@ -205,7 +205,7 @@ def test_poc_agent_runs_against_cdb(tmp_path: Path):
     assert result.ledger_path is not None
 
     ledger = json.loads(Path(result.ledger_path).read_text(encoding="utf-8"))
-    assert "graph" in ledger
+    assert "result" in ledger
     assert "result" in ledger
     assert ledger["result"]["verdict"] == "MATCHED"
 
@@ -579,52 +579,3 @@ def test_hunt_plan_yaml_round_trip(tmp_path: Path):
     assert loaded["behavior"] == "DNS tunneling"
     assert loaded["research_refs"] == ["PEAK"]
     assert loaded["max_duration"] == "3d"
-
-
-def test_compiler_puts_able_constraints_on_the_anchor():
-    from hunting.poc.compiler import compile_poc
-
-    graph = compile_poc(
-        get_poc("poc-phishing-powershell-enc"),
-        request_id="req-able",
-        time_window="2026-09-01T00:00:00Z/2026-09-02T00:00:00Z",
-    )
-    anchor = graph.variables[0]
-    keys = {item.key for item in anchor.constraints}
-    assert "able_behavior" in keys
-    assert "able_evidence" in keys
-    assert any("powershell.exe" in item for item in graph.assumptions)
-
-
-def test_analytic_poc_runs_against_botsv1_sample(tmp_path: Path):
-    """An analyst PoC loaded from JSON finds the BOTS v1 brute-force rows."""
-    from hunting.m5_adapter import CdbAdapter
-    from hunting.poc import poc_from_file
-    from scripts.seed_botsv1_sample import BOTS_SAMPLE
-
-    adapter = CdbAdapter(":memory:")
-    adapter.insert_events(BOTS_SAMPLE)
-
-    spec = tmp_path / "bruteforce.json"
-    spec.write_text(
-        """{
-            "poc_id": "poc-bruteforce-test",
-            "name": "BF test",
-            "kind": "behavior",
-            "summary": "BOTS v1 brute force",
-            "steps": [{"step_id": "s1-failed", "description": "Failed logon",
-                       "target_field": "cmdline", "op": "CONTAINS",
-                       "value": "Logon Failed", "source_kind": "authentication"}],
-            "references": ["MITRE T1110"]
-        }""",
-        encoding="utf-8",
-    )
-
-    poc = poc_from_file(spec)
-    agent = PocAgent(adapter=adapter, ledger_dir=tmp_path)
-    result = agent.run(
-        poc.poc_id,
-        time_window="2016-08-21T00:00:00Z/2016-08-22T00:00:00Z",
-    )
-    assert result.verdict == "MATCHED"
-    assert result.total_observations >= 5

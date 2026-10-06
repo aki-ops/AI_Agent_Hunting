@@ -23,7 +23,7 @@ import sys
 import time
 
 sys.path.insert(0, "src")
-from hunting.m5_adapter import CdbAdapter
+from hunting.adapters import CdbAdapter
 from hunting.poc import PocAgent
 
 DB = "data/botsv1_eval.sqlite"
