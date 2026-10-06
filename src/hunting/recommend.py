@@ -332,7 +332,22 @@ def _json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
+def _step_item(item: Any) -> dict[str, str] | None:
+    """Accept {"action","why"} and the shapes models drift into (plain string, step/title/reason keys)."""
+    if isinstance(item, str):
+        return {"action": item.strip(), "why": ""} if item.strip() else None
+    if not isinstance(item, dict):
+        return None
+    action = next((str(item[k]).strip() for k in ("action", "step", "title", "check") if str(item.get(k, "")).strip()), "")
+    why = next((str(item[k]).strip() for k in ("why", "reason", "rationale", "description") if str(item.get(k, "")).strip()), "")
+    return {"action": action, "why": why} if action else None
+
+
+ADVISOR_ATTEMPTS = 3
+
+
 def advise(rec: Recommendation, poc: PoC, able_md: str, plan_md: str, llm: Callable[[str, int], str]) -> None:
+    """Fill next steps / questions / risks. Retries when the reply is unusable (models drift off strict JSON)."""
     prompt = ADVISOR_PROMPT.format(
         hypothesis=f"{poc.name}. {poc.summary}",
         disposition=rec.disposition,
@@ -342,23 +357,31 @@ def advise(rec: Recommendation, poc: PoC, able_md: str, plan_md: str, llm: Calla
         able=able_md[:2500],
         plan=plan_md[:6000],
     )
-    try:
-        data = _json_object(llm(prompt, 3000))
-    except Exception as exc:  # advisory only
-        rec.advisor_note = f"Advisor LLM lỗi ({type(exc).__name__}): không có gợi ý bổ sung."
-        return
-    if not data:
-        rec.advisor_note = "Advisor LLM trả về định dạng không hợp lệ: không có gợi ý bổ sung."
-        return
+    problem = ""
+    for attempt in range(1, ADVISOR_ATTEMPTS + 1):
+        try:
+            raw = llm(prompt, 3000)
+        except Exception as exc:  # advisory only
+            problem = f"Advisor LLM lỗi ({type(exc).__name__}): không có gợi ý bổ sung."
+            break  # the LLM layer already retried transport errors
+        data = _json_object(raw)
+        if not data:
+            problem = f"Advisor LLM trả về định dạng không hợp lệ sau {attempt} lần thử: không có gợi ý bổ sung."
+            continue
 
-    def _items(key: str) -> list[Any]:
-        value = data.get(key)
-        return list(value)[:5] if isinstance(value, list) else []
+        def _items(key: str) -> list[Any]:
+            value = data.get(key)
+            return list(value)[:5] if isinstance(value, list) else []
 
-    rec.next_steps = [
-        {"action": str(i.get("action", "")).strip(), "why": str(i.get("why", "")).strip()}
-        for i in _items("next_steps") if isinstance(i, dict) and str(i.get("action", "")).strip()
-    ]
-    rec.questions_for_hunter = [str(q).strip() for q in _items("questions_for_hunter") if str(q).strip()]
-    rec.risks = [str(r).strip() for r in _items("risks") if str(r).strip()]
-    rec.advisor_note = "Gợi ý bước tiếp theo do LLM tạo từ kế hoạch PEAK; chỉ mang tính tham khảo."
+        steps = [step for step in (_step_item(i) for i in _items("next_steps")) if step]
+        if not steps:
+            problem = f"Advisor LLM không đưa ra bước tiếp theo nào dùng được sau {attempt} lần thử."
+            continue
+        rec.next_steps = steps
+        rec.questions_for_hunter = [str(q).strip() for q in _items("questions_for_hunter") if str(q).strip()]
+        rec.risks = [str(r).strip() for r in _items("risks") if str(r).strip()]
+        rec.advisor_note = "Gợi ý bước tiếp theo do LLM tạo từ kế hoạch PEAK; chỉ mang tính tham khảo."
+        if attempt > 1:
+            rec.advisor_note += f" (đạt ở lần thử {attempt}/{ADVISOR_ATTEMPTS})"
+        return
+    rec.advisor_note = problem

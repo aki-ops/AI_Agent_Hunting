@@ -1,6 +1,7 @@
 # Kết quả chạy 4 PoC có sẵn qua PEAK Assistant (BOTS v1)
 
 Lệnh: `python main.py --poc-dir pocs --db data/botsv1_eval.sqlite` (cdb 4,417,543 dòng, PEAK Assistant + LLM thật).
+Model: `LLM_MODEL=auto` (OpenRouter Auto Router tự chọn model cho từng request, nên nội dung LLM kém tái lập hơn model cố định; model Meta Muse đã bị bỏ vì hay trả 404).
 Mỗi thư mục con có `recommendation.md/json` (khuyến nghị cho người quyết định), `peak_able.md` (bảng ABLE
 do PEAK `able_table` viết) và `peak_hunt_plan.md` (kế hoạch do PEAK planner + critic viết).
 
@@ -25,6 +26,6 @@ do PEAK `able_table` viết) và `peak_hunt_plan.md` (kế hoạch do PEAK plann
 ## Lưu ý trung thực
 
 - Judge/advisor/PEAK là LLM, kết quả mỗi lần chạy có thể khác; phần tất định (số bản ghi, disposition khi cùng judge) tái lập được.
-- Endpoint LLM thỉnh thoảng trả 404 `model_not_found`; mỗi bước (ABLE, kế hoạch, judge, advisor) tự gọi lại với backoff 3s/10s/25s. Lần chạy này endpoint ổn định nên cơ chế gọi lại chưa phải dùng tới (chỉ có unit test).
+- Endpoint LLM thỉnh thoảng trả 404 `model_not_found`; mỗi bước (ABLE, kế hoạch, judge, advisor) tự gọi lại với backoff 3s/10s/25s. Lần chạy này không có lần gọi lại nào (endpoint ổn định), nên cơ chế đó chỉ được kiểm bằng unit test. Advisor thử lại tối đa 3 lần nếu model trả JSON lỗi.
 - Bản nháp SPL trong báo cáo chưa được kiểm tra trên Splunk thật.
 - Số token của các agent bên trong PEAK chưa được đo.

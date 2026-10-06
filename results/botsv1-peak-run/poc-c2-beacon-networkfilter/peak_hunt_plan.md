@@ -1,97 +1,111 @@
-## Hypothesis
-C2 beacon to ad.networkfilter.co (BOTS v1 known IOC). Outbound HTTP request to ad.networkfilter.co, the ad-fraud beacon seen in BOTS v1, via Application Layer Protocol: Web (MITRE ATT&CK T1071.001), specifically GET to /banner/ pattern.
+# Hypothesis
+C2 beacon to `ad.networkfilter.co` (BOTS v1 known IOC). Outbound HTTP request to `ad.networkfilter.co`, the ad-fraud beacon seen in BOTS v1. Expected observable chain: `web_request`, `process_creation`. Candidate behavior mapping: MITRE ATT&CK T1071.001 - Application Layer Protocol: Web.
 
-## Recommended Time Frame
-2016-08-01T00:01:01Z to 2016-08-28T23:54:58Z — full `web_request` coverage in CDB (39,010 rows). No narrower window recommended; beaconing requires full-window review for cadence.
-Human-readable bounds for all SPL drafts: earliest="08/01/2016:00:00:00" latest="08/28/2016:23:59:00" (ISO 2016-08-01 to 2016-08-28). Exception: DNS corroboration only valid earliest="08/24/2016:10:25:02" latest="08/24/2016:16:34:35" (ISO 2016-08-24T10:25:02Z to 2016-08-24T16:34:35Z).
+# Recommended Time Frame
+Full available dataset: `2016-08-01T00:00:00Z` through `2016-08-28T23:59:00Z` (28 days). This supports baseline and time-series analysis for beaconing, not just single-request matching. If a narrower focus is needed, prioritize `2016-08-24T10:25:02Z` through `2016-08-24T16:34:35Z` for optional DNS pivots, but `web_request` and `process_creation` cover the full range.
 
-## ABLE Table
-| Element | Restatement |
+# ABLE Table
+| ABLE Element | Details |
 |---|---|
-| **Actor** | Unspecified ad-fraud / opportunistic operator behind ad.networkfilter.co (BOTS v1 known IOC); no named APT |
-| **Behavior** | Outbound C2 beacon via Web (T1071.001): HTTP request to `ad.networkfilter.co`, specifically `/banner/` ad-fraud beacon pattern |
-| **Location** | Internal endpoints initiating outbound web traffic to internet / egress; in CDB terms `host` values with `native_type` EQUALS `web_request` from 2016-08-01 to 2016-08-28 |
-| **Evidence** | CDB SQLite table `events`: `native_type` EQUALS `web_request` where `domain` stores site and `cmdline` stores `site=<host> uri=<path>`. Hunt predicates: `domain` CONTAINS `ad.networkfilter.co`, `cmdline` CONTAINS `ad.networkfilter.co`, `cmdline` CONTAINS `/banner/`. Pivot on `host`, `ip`, `timestamp` for cadence and `host`, `pid`, `ppid`, `image` with `native_type` EQUALS `process_creation` for sourcing process chain `web_request, process_creation`. SPL shown only as equivalent detection draft; execution is via single literal predicates (EQUALS/CONTAINS/STARTS_WITH/ENDS_WITH/MATCHES/EXISTS, case-insensitive) |
+| Actor | Ad-fraud/C2 operator associated with the BOTS v1 known IOC `ad.networkfilter.co`. No named APT or individual actor is specified. |
+| Behavior | Outbound HTTP command-and-control beaconing to `ad.networkfilter.co`. Expected behavior includes a web request to the known C2 host and potentially a GET request to the `/banner/` path. Expected observable chain: `web_request`, `process_creation`. |
+| Location | Network perimeter/egress web traffic and internal endpoints that generate outbound HTTP requests. Local telemetry tables: `web_request` and `process_creation`. Optional DNS pivot in `dns`. |
+| Evidence | Table `web_request`: `domain EQUALS ad.networkfilter.co`; `cmdline CONTAINS ad.networkfilter.co`; `cmdline CONTAINS /banner/`. Table `process_creation`: `cmdline CONTAINS ad.networkfilter.co`; `cmdline CONTAINS /banner/`. Pivot on `host`, `user`, `ip`, and `timestamp`. Optional: `dns.domain EQUALS ad.networkfilter.co`. |
 
-## Data
-| Table / Index | native_type / event_id (sourcetype equivalent) | Key Fields | Relevance to Hunt |
-|---|---|---|---|
-| `events` | `web_request` / `-` (39,010 rows, 2016-08-01T00:01:01Z to 2016-08-28T23:54:58Z) | `timestamp`, `host`, `user`, `ip`, `port`, `domain`, `cmdline` | Primary evidence: `domain` holds site, `cmdline` holds `site=<host> uri=<path>`. Directly tests `ad.networkfilter.co` and `/banner/` predicates. `host`, `ip`, `timestamp` enable beacon cadence analysis |
-| `events` | `process_creation` / `4688` (3,642,895 rows, 2016-08-01 to 2016-08-28) + `1` (66 rows, 2016-08-10 to 2016-08-24) | `timestamp`, `host`, `user`, `pid`, `ppid`, `image`, `cmdline`, `file_path` | Expected observable chain second step: identify sourcing process on beaconing `host` near beacon `timestamp` via `host`, `pid`, `ppid`, `image` pivot |
-| `events` | `dns` / `-` (35,904 rows, 2016-08-24T10:25:02Z to 2016-08-24T16:34:35Z only) | `timestamp`, `host`, `domain`, `cmdline`, `ip` | Corroborating resolution of `ad.networkfilter.co` if beacon falls in 2016-08-24 window; **cannot answer** resolution outside that window |
-| `events` | `authentication` / `4624`, `smb` / `5140, 5145, 4648` | `host`, `user`, `ip`, `timestamp`, `action`, `cmdline` | Context only for compromised user/host triage; not direct beacon evidence |
+# Data
+| Telemetry Table / native_type | Key Fields | Relevance |
+|---|---|---|
+| `web_request` | `timestamp`, `host`, `user`, `ip`, `port`, `domain`, `cmdline`, `action`, `status`, `raw_ref` | Primary evidence. `domain` stores the site; `cmdline` stores text such as `site=<host> uri=<path>`. Use to find `ad.networkfilter.co` and `/banner/` requests. |
+| `process_creation` (`event_id` 4688 and 1) | `timestamp`, `host`, `user`, `pid`, `ppid`, `cmdline`, `image`, `file_path`, `raw_ref` | Secondary evidence in expected chain. May show a script, browser, or utility launching/containing the beacon destination or path. |
+| `dns` | `timestamp`, `host`, `user`, `ip`, `domain`, `cmdline`, `raw_ref` | Optional pivot for DNS lookup of `ad.networkfilter.co`. Coverage is limited to `2016-08-24T10:25:02Z` through `2016-08-24T16:34:35Z`. |
+| `authentication` (`event_id` 4624) | `timestamp`, `host`, `user`, `ip`, `action`, `cmdline`, `raw_ref` | Context only. Helps scope users and hosts around IOC hits; not a primary detection. |
+| `smb` (`event_id` 5140, 5145, 4648) | `timestamp`, `host`, `user`, `ip`, `cmdline`, `file_path`, `action`, `raw_ref` | Optional impact/lateral-movement context if a beaconing host is compromised; not part of the expected observable chain. |
 
-Available data limitations that must be stated to hunter:
-- No dedicated HTTP method, header, body, bytes, user-agent fields. `web_request` retains only `domain` and `site=<host> uri=<path>` in `cmdline`. HTTP GET, headers, volume **cannot be confirmed** from available data.
-- Encrypted sessions, proxy/firewall logs, TLS SNI not available. C2 vs ad-fraud distinction **cannot be confirmed** without those plus process join.
-- Named actor attribution **cannot be answered** from available data.
-- `dns` coverage is limited to 2016-08-24T10:25:02Z to 2016-08-24T16:34:35Z and **cannot answer** pre-infection resolution outside that window.
+Note: local execution is against the CDB SQLite table `events`; `native_type` acts as the table/sourcetype selector. Field matching is literal and case-insensitive for `EQUALS`, `CONTAINS`, `STARTS_WITH`, and `ENDS_WITH`. All SPL below is illustrative only and assumes a Splunk mirror where `native_type` is mapped to `sourcetype` and local `timestamp` is mapped to `_time` for `earliest`/`latest`. The deterministic executor runs predicates, not SPL.
 
-## Hunt Procedure
-**Executor rule:** Each numbered step executes as ONE literal predicate (field, operator, value) over `timestamp, event_id, native_type, host, user, pid, ppid, cmdline, image, ip, port, domain, file_path, action, status, raw_ref` plus pivots on `host, user, ip, time`. SPL is equivalent detection draft only; LLM never creates evidence. Field matching is literal (EQUALS / CONTAINS / STARTS_WITH / ENDS_WITH / MATCHES / EXISTS); EQUALS, CONTAINS, STARTS_WITH and ENDS_WITH are case-insensitive.
+# Hunt Procedure
 
-**1. Scope to web telemetry**
-- Predicate: `native_type` / EQUALS / `web_request`
-- SPL draft (equivalent only): `index=* sourcetype=web_request earliest="08/01/2016:00:00:00" latest="08/28/2016:23:59:00" | table _time host user ip domain cmdline | sort _time`
-- Interpretation: Establishes baseline of 39,010 events 2016-08-01 to 2016-08-28. If zero results, stop — no web data to test. Record distinct `host` count for scope.
+1. Table: `web_request`; Predicate: `domain EQUALS ad.networkfilter.co`
+   - Purpose: primary high-signal detection for the BOTS v1 IOC.
+   - Record all hits by `host`, `user`, `ip`, `port`, `timestamp`, and `cmdline`.
+   - Illustrative SPL only: `sourcetype=web_request domain="ad.networkfilter.co"`
 
-**2. Hunt for known C2 host in site field**
-- Predicate: `domain` / CONTAINS / `ad.networkfilter.co`
-- SPL draft: `index=* sourcetype=web_request earliest="08/01/2016:00:00:00" latest="08/28/2016:23:59:00" domain="*ad.networkfilter.co*" | table _time host user ip port domain cmdline`
-- Interpretation: Direct positive for hypothesis. Any hit is high-fidelity BOTS v1 IOC match. Preserve `host`, `ip`, `timestamp`, `cmdline` for next steps. If no hits, do NOT stop here — proceed to Step 3 before declaring negative due to possible `domain` vs `cmdline` encoding variance.
+2. Table: `web_request`; Predicate: `cmdline CONTAINS ad.networkfilter.co`
+   - Purpose: catch cases where `domain` is not populated but `cmdline` contains `site=ad.networkfilter.co uri=...`.
+   - Merge and de-duplicate with step 1 by `host`, `user`, `ip`, `timestamp`, and `cmdline`.
+   - Illustrative SPL only: `sourcetype=web_request cmdline="*ad.networkfilter.co*"`
 
-**3. Hunt for known C2 host in request text**
-- Predicate: `cmdline` / CONTAINS / `ad.networkfilter.co`
-- SPL draft: `index=* sourcetype=web_request earliest="08/01/2016:00:00:00" latest="08/28/2016:23:59:00" cmdline="*ad.networkfilter.co*" | table _time host user ip domain cmdline`
-- Interpretation: Corroborates Step 2 and catches cases where `domain` is empty/truncated but `site=<host>` in `cmdline` retains IOC. Per local doc, web rows store `site=<host> uri=<path>` in `cmdline`. If Steps 2 AND 3 both zero, hypothesis has no IOC evidence in full window — document as negative and skip to Step 7 for near-miss review.
+3. Table: `web_request`; Predicate: `cmdline CONTAINS /banner/`
+   - Purpose: detect the ad-fraud beacon URI pattern even when the domain is not present in the indexed fields.
+   - This predicate is broad and will produce benign hits. Do not treat `/banner/` alone as high priority unless it correlates with `ad.networkfilter.co`, repeated behavior from the same `host`/`user`/`ip`, or close timing to IOC hits from steps 1–2.
+   - Illustrative SPL only: `sourcetype=web_request cmdline="*/banner/*"`
 
-**4. Hunt for ad-fraud beacon path pattern**
-- Predicate: `cmdline` / CONTAINS / `/banner/`
-- SPL draft: `index=* sourcetype=web_request earliest="08/01/2016:00:00:00" latest="08/28/2016:23:59:00" cmdline="*/banner/*" | table _time host user ip domain cmdline`
-- Interpretation: Tests second analyst predicate (GET to /banner/). Intersection of Step 2/3 hits with this step = strongest BOTS v1 ad-fraud beacon pattern (`site=ad.networkfilter.co uri=/banner/...`). `cmdline` CONTAINS `/banner/` alone without IOC must NOT escalate — many ad networks use /banner/, so require IOC match to escalate. Available data **cannot confirm** HTTP method was GET; treat as path-pattern match only.
+4. Table: `process_creation`; Predicate: `cmdline CONTAINS ad.networkfilter.co`
+   - Purpose: identify scripts, browsers, or utilities that may have launched the beacon.
+   - Illustrative SPL only: `sourcetype=process_creation cmdline="*ad.networkfilter.co*"`
 
-**5a. Pivot on beaconing endpoint to assess cadence**
-- Pivot: `host` / EQUALS / `<value from Steps 2-4>`
-- SPL draft component: `index=* sourcetype=web_request earliest="08/01/2016:00:00:00" latest="08/28/2016:23:59:00" domain="*ad.networkfilter.co*" | stats count earliest(_time) AS earliest latest(_time) AS latest values(cmdline) AS uris dc(cmdline) AS uri_count by host | eval duration=latest-earliest`
-- Interpretation: Single isolated hit = possible one-off ad load or single beacon. Multiple hits from same `host` at regular intervals over 2016-08-01 to 2016-08-28, same `/banner/` URI = beaconing behavior supporting C2 hypothesis. Irregular diverse URIs/domains from same host = likely user browsing/adware. Document inter-beacon deltas manually from `timestamp` ordering.
+5. Table: `process_creation`; Predicate: `cmdline CONTAINS /banner/`
+   - Purpose: detect process command lines referencing the `/banner/` path.
+   - Browser-driven beaconing may not appear here; absence does not rule out `web_request` evidence.
+   - Illustrative SPL only: `sourcetype=process_creation cmdline="*/banner/*"`
 
-**5b. Pivot on egress destination IP to assess cadence**
-- Pivot: `ip` / EQUALS / `<destination ip value from Steps 2-4>`
-- SPL draft component: `index=* sourcetype=web_request earliest="08/01/2016:00:00:00" latest="08/28/2016:23:59:00" domain="*ad.networkfilter.co*" | stats count earliest(_time) AS earliest latest(_time) AS latest values(cmdline) AS uris by host, ip | eval duration=latest-earliest`
-- Interpretation: Same `ip` across beacons strengthens infrastructure persistence. `values(cmdline) AS uris` unbounded over 39k rows — use `uri_count` for triage to avoid overload. Diverse `host` values to same `ip` = wider infection; single `host` = isolated.
+6. Post-processing/SPL-only: Correlate and de-duplicate `web_request` hits from steps 1–3.
+   - The deterministic executor cannot perform multi-predicate correlation or grouping. This step requires post-processing or SPL.
+   - Group by `host`, `user`, `ip`, `domain`, `cmdline`, and `timestamp`; count requests.
+   - For `/banner/` alone, require correlation with `ad.networkfilter.co`, repeated host behavior, or close timing to IOC hits before escalating.
+   - Illustrative SPL only: `sourcetype=web_request (domain="ad.networkfilter.co" OR cmdline="*ad.networkfilter.co*" OR cmdline="*/banner/*") | stats count min(timestamp) as first max(timestamp) as last values(cmdline) as cmds by host user ip domain | sort -count`
+   - Limitation: this cannot prove periodicity by itself.
 
-**6a. Scope to process creation for sourcing process**
-- Predicate: `native_type` / EQUALS / `process_creation`
-- SPL draft base: `index=* sourcetype=process_creation earliest="08/01/2016:00:00:00" latest="08/28/2016:23:59:00" | table _time host user pid ppid image cmdline file_path`
-- Interpretation: Establishes process dataset (3,642,895 x 4688 + 66 x 1) for host-temporal correlation. No disposition on this step alone.
+7. Post-processing/SPL-only: Time-series/periodicity analysis.
+   - The deterministic executor cannot extract URI paths or bin time.
+   - Extract URI path from `cmdline` where possible; group hits by `host`, `user`, `ip`, `domain`, and extracted path; bin time at `1m`, `5m`, `10m`, or `1h`.
+   - Fixed intervals, repeated counts, or clustered requests at regular periods indicate beaconing. Irregular one-off traffic is lower confidence.
+   - Illustrative SPL only: `sourcetype=web_request (domain="ad.networkfilter.co" OR cmdline="*ad.networkfilter.co*" OR cmdline="*/banner/*") | bin _time span=5m | stats count by host user ip domain cmdline _time | sort _time`
+   - Limitation: `web_request` cannot prove “beaconing” periodicity by itself without this time-series analysis. If local `timestamp` is not mapped to `_time`, convert it before using `bin _time`.
 
-**6b. Pivot to beaconing host**
-- Pivot: `host` / EQUALS / `<beaconing host from Step 5a>`
-- Interpretation: Restricts process_creation to endpoint that beaconed. Look for suspicious parent-child: browser (iexplore.exe, chrome.exe, firefox.exe), script host (powershell.exe, wscript.exe, cscript.exe), or unknown binary in temp/appdata.
+8. Post-processing/SPL-only: Pivot from `web_request` IOC hits to nearby `process_creation` activity.
+   - Use the `host` and timestamp from step 1–3 findings. Bound the search to a short window, e.g. ±10 minutes.
+   - Put filters in the base search and avoid a post-pipe `search`.
+   - Illustrative SPL only: `sourcetype=process_creation host=<host> earliest=<web_hit-10m> latest=<web_hit+10m> (cmdline="*ad.networkfilter.co*" OR cmdline="*/banner/*" OR image="*powershell.exe" OR image="*cmd.exe" OR image="*wscript.exe" OR image="*cscript.exe" OR image="*curl.exe" OR image="*wget.exe" OR image="*bitsadmin.exe" OR image="*rundll32.exe" OR image="*regsvr32.exe" OR image="*mshta.exe")`
+   - If decomposed into executor predicates, use separate table-scoped steps with more precise `ENDS_WITH` matching, for example:
+     - Table: `process_creation`; Predicate: `image ENDS_WITH powershell.exe`
+     - Table: `process_creation`; Predicate: `image ENDS_WITH cmd.exe`
+     - Table: `process_creation`; Predicate: `image ENDS_WITH wscript.exe`
+     - Table: `process_creation`; Predicate: `image ENDS_WITH cscript.exe`
+     - Table: `process_creation`; Predicate: `image ENDS_WITH curl.exe`
+     - Table: `process_creation`; Predicate: `image ENDS_WITH wget.exe`
+     - Table: `process_creation`; Predicate: `image ENDS_WITH bitsadmin.exe`
+     - Table: `process_creation`; Predicate: `image ENDS_WITH rundll32.exe`
+     - Table: `process_creation`; Predicate: `image ENDS_WITH regsvr32.exe`
+     - Table: `process_creation`; Predicate: `image ENDS_WITH mshta.exe`
+   - Interpretation: process context strengthens attribution and helps distinguish user browsing from scripted beaconing.
 
-**6c. Pivot to beacon time window**
-- Pivot: `time` / ±300 seconds around / `<beacon timestamp from Steps 2-4>`
-- SPL draft for 6a+6b+6c combined (equivalent only, hunter must substitute absolute times): `index=* sourcetype=process_creation host="<beacon_host>" earliest="<beacon_time-300>" latest="<beacon_time+300>" | table _time host user pid ppid image cmdline file_path`
-- Interpretation: If `image` is standard browser with interactive `user`, favor adware/browsing. If `image` is script/system process, no user interaction, or high `ppid` chaining, escalate. **Limitation:** CDB requires join on `host, pid, ppid, image, timestamp`; `web_request` has no `pid` link, so attribution is temporal + host correlation only, not definitive process-to-request linkage — state this explicitly in findings. Expected chain is `web_request, process_creation`.
+9. Optional: Table: `dns`; Predicate: `domain EQUALS ad.networkfilter.co`
+   - Purpose: confirm DNS resolution of the C2 domain if available.
+   - Illustrative SPL only: `sourcetype=dns domain="ad.networkfilter.co"`
+   - Limitation: DNS coverage is limited to `2016-08-24T10:25:02Z` through `2016-08-24T16:34:35Z`. Absence outside that window is not meaningful.
 
-**7. Near-miss and typo-squat review**
-- Predicate: `domain` / CONTAINS / `networkfilter`
-- SPL draft: `index=* sourcetype=web_request earliest="08/01/2016:00:00:00" latest="08/28/2016:23:59:00" domain="*networkfilter*" | stats count by domain, cmdline`
-- Then if needed as separate atomic follow-up — Predicate: `cmdline` / CONTAINS / `networkfilter`
-- Interpretation: Catches evasion variants (subdomains, http vs https encoding). If only `ad.networkfilter.co` exact hits exist, no evasion. If similar domains appear, treat as new leads. If Steps 2-4 were negative, this step confirms true negative vs encoding miss.
+10. Optional: Table: `dns`; Predicate: `cmdline CONTAINS ad.networkfilter.co`
+    - Purpose: catch cases where the DNS query name is stored in `cmdline` rather than `domain`.
+    - Illustrative SPL only: `sourcetype=dns cmdline="*ad.networkfilter.co*"`
 
-**8a. Scope to DNS telemetry (conditional)**
-- Predicate: `native_type` / EQUALS / `dns`
-- SPL draft base: `index=* sourcetype=dns earliest="08/24/2016:10:25:02" latest="08/24/2016:16:34:35" | table _time host domain cmdline ip`
-- Interpretation: Establishes limited DNS window (2016-08-24T10:25:02Z to 2016-08-24T16:34:35Z, 35,904 rows). No disposition alone.
+11. Post-processing/context pivot: Correlate with `authentication` and `smb` for user/host context.
+    - After a suspicious `host` is identified, use single table-scoped predicates for that host if executor steps are needed:
+      - Table: `authentication`; Predicate: `host EQUALS <confirmed_host>`
+      - Table: `smb`; Predicate: `host EQUALS <confirmed_host>`
+    - Purpose: identify which users were active, whether the host had logon activity, and whether SMB activity suggests lateral movement. This is context only, not primary detection.
 
-**8b. Hunt for IOC resolution within DNS scope**
-- Predicate: `domain` / CONTAINS / `ad.networkfilter.co` [applied within dns scope from 8a; only meaningful for `timestamp` in 2016-08-24T10:25:02Z to 2016-08-24T16:34:35Z]
-- SPL draft: `index=* sourcetype=dns earliest="08/24/2016:10:25:02" latest="08/24/2016:16:34:35" domain="*ad.networkfilter.co*" | table _time host domain cmdline ip`
-- Interpretation: Hit confirms host attempted resolution. No hit outside that window means nothing — available `dns` data **cannot answer** pre-infection resolution. Do not declare negative based on missing DNS.
+12. Scope and report findings.
+    - For each confirmed or suspected host, report: `host`, `user`, `ip`, `port`, `domain`, `cmdline`/URI path, first seen, last seen, count, time interval pattern, and any related `process_creation` events.
+    - Classification guidance:
+      - Confirmed C2 beacon: recurring `web_request` to `ad.networkfilter.co` and/or `/banner/` with a regular interval and corroborating process or DNS evidence.
+      - Suspicious: one or few IOC hits without clear periodicity.
+      - No finding: no matching `web_request` or `process_creation` IOC evidence.
+    - If no hits are found, state that the available data cannot prove absence of C2 if traffic was encrypted, non-HTTP, DNS-only, outside the collected window, or mediated entirely through a browser process not visible in `process_creation`.
 
-**9. Disposition criteria**
-- Positive (likely C2/ad-fraud beacon): Steps 2 or 3 positive AND Step 4 positive on same `host` + repeat cadence in Steps 5a/5b + suspicious/non-browser `process_creation` in Steps 6a-6c.
-- Suspect (requires triage): IOC hit but single event or browser-sourced — possible adware vs beacon; recommend proxy/firewall review (not in CDB), full host timeline, and `authentication` (`native_type` EQUALS `authentication`) review for that `host, user`.
-- Negative: No hits in Steps 2, 3, 4, 7 across full 2016-08-01 to 2016-08-28 `web_request` window.
-- Explicitly document what CDB cannot answer: HTTP method/headers/body/volume, encrypted C2 content, named actor identity, and DNS before/after 2016-08-24 window.
+## Data Limitations / Unanswerable Questions
+- The available `web_request` data cannot show full HTTP headers, request method beyond text in `cmdline`, response codes, or complete URI beyond what is stored in `cmdline`.
+- The available data cannot prove periodic beaconing without time-series analysis across `host`, `ip`, and `timestamp`. This must be repeated when interpreting Step 7.
+- `process_creation` may not capture browser-driven or purely script-driven beaconing; absence in `process_creation` does not rule out `web_request` evidence.
+- The `dns` table exists but has very limited coverage; DNS findings outside `2016-08-24T10:25:02Z` through `2016-08-24T16:34:35Z` cannot be assessed.
+- No named threat actor attribution is possible from this IOC alone; `ad.networkfilter.co` is a known BOTS v1 IOC and should be treated as high-signal but verified with host, user, and timing context.

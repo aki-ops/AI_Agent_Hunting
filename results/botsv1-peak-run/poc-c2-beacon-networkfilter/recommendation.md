@@ -48,25 +48,29 @@ No adapter hits and no escalation evidence; result is 'absence of evidence', not
 
 ## Gợi ý bước tiếp theo (từ kế hoạch PEAK, LLM)
 
-1. **Mở rộng kiểm tra ra toàn bộ vùng phủ web_request từ 2016-08-01 đến 2016-08-28 với vị từ domain CONTAINS ad.networkfilter.co** — Cửa sổ đã chạy chỉ bao phủ 2016-08-21 đến 2016-08-22 với 566 dòng trên tổng số 39.010 dòng, nên dễ bỏ sót beacon theo chu kỳ; kế hoạch PEAK yêu cầu rà toàn cửa sổ để đánh giá nhịp beacon
-2. **Kiểm tra bổ sung trường domain và kiểm tra lại cmdline CONTAINS /banner/ trên toàn cửa sổ web_request** — Bằng chứng hiện tại chỉ kiểm tra cmdline cho ad.networkfilter.co, trong khi tài liệu ghi domain lưu địa chỉ và cmdline lưu dạng site=<host> uri=<path>, nên cần đối chiếu cả hai trường để tránh âm tính giả do khác biệt mã hóa
-3. **Tra cứu telemetry dns cho ad.networkfilter.co trong khoảng khả dụng duy nhất 2016-08-24T10:25:02Z đến 2016-08-24T16:34:35Z** — Nhằm củng cố giả thuyết bằng phân giải tên nếu beacon rơi vào cửa sổ DNS hẹp, đồng thời ghi nhận giới hạn không thể trả lời phân giải ngoài khoảng này
-4. **Nếu có kết quả dương tính, pivot theo host, ip, timestamp để dựng nhịp beacon và nối với process_creation theo host, pid, ppid, image, timestamp** — Nhằm xác định tần suất beacon và tiến trình nguồn tạo yêu cầu web theo chuỗi web_request, process_creation trong kế hoạch PEAK
+1. **Chạy lại predicate domain EQUALS ad.networkfilter.co trên bảng web_request trong cửa sổ rộng hơn theo PEAK (2016-08-01T00:00:00Z đến 2016-08-28T23:59:00Z).** — Bước s1 hiện tại chỉ dùng cmdline CONTAINS ad.networkfilter.co; trường domain có thể chứa IOC mà không xuất hiện trong cmdline, và cửa sổ 1 ngày có thể bỏ sót beacon.
+2. **Chạy predicate cmdline CONTAINS ad.networkfilter.co và cmdline CONTAINS /banner/ trên bảng process_creation trong cùng cửa sổ rộng hơn.** — PEAK xác định process_creation là mắt xích thứ hai; chưa có bước nào của PoC chạy trên bảng này, nên chưa thể loại trừ tiến trình khởi tạo beacon.
+3. **Chạy predicate domain EQUALS ad.networkfilter.co trên bảng dns (coverage giới hạn 2016-08-24T10:25:02Z–2016-08-24T16:34:35Z).** — DNS là pivot tùy chọn trong PEAK; nếu có lookup, nó củng cố chuỗi beacon dù web_request không khớp.
+4. **Pivot trên host, user, ip, timestamp của 566 dòng web_request trong cửa sổ đã chạy để tìm bất thường về tần suất/egress, kể cả khi không khớp predicate IOC.** — Nguồn có dữ liệu nhưng predicate không khớp; cần kiểm tra xem có hoạt động web bất thường nào khác không trước khi đóng với caveat.
+5. **Kiểm tra tính đầy đủ của trường domain và cmdline trong web_request bằng cách lấy mẫu các dòng trong cửa sổ (nếu executor cho phép truy vấn không predicate).** — Nếu domain bị trống hoặc cmdline không chứa site=..., predicate hiện tại có thể âm tính giả do giới hạn trường.
 
 _Gợi ý bước tiếp theo do LLM tạo từ kế hoạch PEAK; chỉ mang tính tham khảo._
 
 **Câu hỏi để người săn tự trả lời trước khi quyết định**
 
-- Liệu nhà phân tích có đồng ý rằng kết quả âm tính trong cửa sổ một ngày 2016-08-21 đến 2016-08-22 là chưa đủ để đóng giả thuyết khi vùng phủ đầy đủ kéo dài đến 2016-08-28?
-- Nhà phân tích có muốn ưu tiên rà soát near-miss cho /banner/ và networkfilter trên toàn bộ web_request trước khi kết luận không có beacon không?
-- Nhà phân tích có thông tin bổ sung về host hoặc người dùng ưu tiên để định hướng pivot sang process_creation và xác thực tiến trình nguồn không?
+- Trong cửa sổ 2016-08-21, process_creation và dns đã được chạy chưa? Nếu chưa, có thể chạy bổ sung không?
+- 566 dòng web_request trong cửa sổ có trường domain được điền đầy đủ không, hay phần lớn dựa vào cmdline?
+- Có bản ghi nào trong web_request có domain hoặc cmdline chứa chuỗi gần giống ad.networkfilter.co (ví dụ biến thể subdomain) nhưng không khớp chính xác do predicate không?
+- PEAK khuyến nghị cửa sổ 28 ngày; lý do cửa sổ thực thi chỉ 1 ngày là do giới hạn dữ liệu hay do cấu hình hunt?
+- Nếu mở rộng cửa sổ, có cần ưu tiên khoảng 2016-08-24T10:25:02Z–2016-08-24T16:34:35Z cho DNS pivot không?
 
 **Rủi ro nếu quyết định sai**
 
-- Nguy cơ âm tính giả do cửa sổ đã chạy quá hẹp so với yêu cầu rà toàn bộ 2016-08-01 đến 2016-08-28 để phát hiện beacon theo chu kỳ
-- Nguy cơ bỏ sót do chỉ kiểm tra cmdline mà chưa kiểm tra trường domain, nơi lưu trực tiếp địa chỉ theo mô tả dữ liệu
-- Nguy cơ không thể xác nhận phương thức HTTP GET, tiêu đề, dung lượng và phân biệt ad-fraud với C2 khác do thiếu trường phương thức, nhật ký proxy/tường lửa/TLS
-- Nguy cơ không thể quy kết tác nhân cụ thể và không thể kiểm chứng phân giải DNS ngoài khoảng 2016-08-24T10:25:02Z đến 2016-08-24T16:34:35Z
+- Cửa sổ thực thi chỉ 1 ngày so với khuyến nghị 28 ngày của PEAK, nên CLOSE_WITH_CAVEAT có thể bỏ sót beacon ngoài cửa sổ.
+- Bước s1 chỉ dùng cmdline CONTAINS ad.networkfilter.co mà không kiểm tra domain EQUALS, có thể âm tính giả nếu IOC nằm ở trường domain.
+- Chưa chạy process_creation và dns, nên chuỗi quan sát dự kiến chưa hoàn chỉnh; chain_complete là false.
+- Việc vắng mặt trong process_creation không loại trừ beacon do trình duyệt hoặc script điều khiển.
+- Predicate /banner/ quá rộng, dễ nhiễu; cần tương quan với IOC hoặc hành vi lặp lại trước khi kết luận.
 
 ## Kế hoạch từ PEAK Assistant
 
@@ -87,6 +91,6 @@ search index="botsv1" match(cmdline, "(?i)ad.networkfilter.co") match(cmdline, "
 
 ## Chi phí và tái lập
 
-- LLM (judge + advisor): 1 lần gọi, 5093 token. Các agent bên trong PEAK Assistant tự tạo client riêng nên chưa được đo.
-- Thời gian chạy bước Execute (gồm lệnh gọi judge): 2.94s
-- Ledger: `artifacts\runs\rerun\poc-c2-beacon-networkfilter\poc-c2-beacon-networkfilter.json`
+- LLM (judge + advisor): 1 lần gọi, 6561 token. Các agent bên trong PEAK Assistant tự tạo client riêng nên chưa được đo.
+- Thời gian chạy bước Execute (gồm lệnh gọi judge): 4.84s
+- Ledger: `artifacts\runs\auto\poc-c2-beacon-networkfilter\poc-c2-beacon-networkfilter.json`

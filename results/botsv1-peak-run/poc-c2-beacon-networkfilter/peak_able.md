@@ -1,13 +1,19 @@
-# PEAK ABLE Table: command-and-control beaconing
+# PEAK ABLE Table: HTTP Command-and-Control Beaconing to ad.networkfilter.co
+
 *Hypothesis: C2 beacon to ad.networkfilter.co (BOTS v1 known IOC). Outbound HTTP request to ad.networkfilter.co, the ad-fraud beacon seen in BOTS v1.*
-| ABLE Element |  |
+
+| ABLE Element | |
 |---|---|
-| Actor | Unspecified ad-fraud / opportunistic operator behind ad.networkfilter.co (BOTS v1 known IOC); no named APT in hypothesis or research document |
-| Behavior | Outbound command-and-control beacon via Application Layer Protocol: Web (MITRE ATT&CK T1071.001) - HTTP request to known C2 host ad.networkfilter.co, specifically GET to /banner/ ad-fraud beacon pattern |
-| Location | Internal endpoints initiating outbound web traffic to the internet / egress perimeter; in CDB terms the `host` values with `native_type` EQUALS `web_request` from 2016-08-01 to 2016-08-28 |
-| Evidence | CDB SQLite table `events`, `native_type` EQUALS `web_request` where `domain` stores site and `cmdline` stores `site=<host> uri=<path>`: `domain` CONTAINS `ad.networkfilter.co`, `cmdline` CONTAINS `ad.networkfilter.co`, `cmdline` CONTAINS `/banner/`; pivot on `host`, `ip`, `timestamp` for beacon cadence and on `host`, `pid`, `ppid`, `image` with `native_type` EQUALS `process_creation` for sourcing process chain `web_request, process_creation`; SPL only as equivalent detection draft, each hunt step executed as one literal field/operator/value predicate (EQUALS/CONTAINS/STARTS_WITH/ENDS_WITH/MATCHES/EXISTS, case-insensitive) |
+| Actor | Ad-fraud/C2 operator associated with the BOTS v1 known IOC ad.networkfilter.co. No named APT or individual actor is specified in the hypothesis or research document. |
+| Behavior | Outbound HTTP command-and-control beaconing to ad.networkfilter.co. The expected behavior is a web request to the known C2 host, potentially using a GET request to the /banner/ path. MITRE ATT&CK T1071.001: Application Layer Protocol: Web. Expected observable chain: web_request, process_creation. |
+| Location | Network perimeter/egress web traffic and internal endpoints that generate outbound HTTP requests. Examine web/proxy telemetry for outbound requests from internal hosts, and endpoint process creation on hosts that may launch beaconing processes. In local telemetry, the relevant tables are web_request and process_creation. |
+| Evidence | Data sources: web_request and process_creation. In web_request, the site is stored in domain and the text site=<host> uri=<path> is stored in cmdline. Candidate literal predicates: web_request.domain EQUALS ad.networkfilter.co; web_request.cmdline CONTAINS ad.networkfilter.co; web_request.cmdline CONTAINS /banner/; process_creation.cmdline CONTAINS ad.networkfilter.co; process_creation.cmdline CONTAINS /banner/. Pivot on host, user, ip, and timestamp to scope beaconing. Optional DNS pivot if ad.networkfilter.co appears in dns.domain, but the expected observable chain is web_request and process_creation. |
+
 ## Notes
-- Executor limitation: hunts run through deterministic executor, not by LLM; plan steps must be literal predicates over `timestamp, event_id, native_type, host, user, pid, ppid, cmdline, image, ip, port, domain, file_path, action, status, raw_ref` plus pivots on `host, user, ip, time`; LLM never creates or edits evidence
-- Available data cannot confirm HTTP method/headers/body/volume: `web_request` retains only `domain` and `site=<host> uri=<path>` in `cmdline` with no dedicated method, header, or bytes fields
-- Available data cannot answer pre-infection DNS resolution outside 2016-08-24T10:25:02Z to 2016-08-24T16:34:35Z `dns` coverage; `web_request` coverage is 2016-08-01T00:01:01Z to 2016-08-28T23:54:58Z
-- Available data cannot attribute to named actor or distinguish ad-fraud from other C2 without `process_creation` join on `host, pid, ppid, image, timestamp` and without firewall/proxy/TLS logs for encrypted sessions
+- ad.networkfilter.co is a known BOTS v1 IOC; its presence should be treated as high-signal but still verified with host, user, and timing context.
+- Field matching in the local executor is literal and case-insensitive for EQUALS, CONTAINS, STARTS_WITH, and ENDS_WITH.
+- Web requests store the host in domain and site=<host> uri=<path> in cmdline; the available columns do not include full HTTP headers, response codes, or complete URI beyond what is in cmdline.
+- The available data can show individual web requests but cannot by itself prove periodic beaconing without time-series analysis across host, ip, and timestamp.
+- process_creation may not capture browser-driven or script-driven beaconing; absence in process_creation does not rule out web_request evidence.
+- The dns table exists, but the expected observable chain does not include DNS. DNS pivots are optional if ad.networkfilter.co appears in dns.domain.
+- Equivalent detection draft: search web_request where domain EQUALS ad.networkfilter.co OR cmdline CONTAINS ad.networkfilter.co OR cmdline CONTAINS /banner/; then pivot to process_creation by host and time.

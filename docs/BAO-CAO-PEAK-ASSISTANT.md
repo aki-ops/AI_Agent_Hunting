@@ -5,6 +5,8 @@ Kết quả gốc nằm ở [`results/botsv1-peak-run/`](../results/botsv1-peak-
 
 ## 1. Tóm tắt
 
+> Cập nhật: model LLM đã đổi từ `meta/muse-spark-1.3-contributor` (hay trả 404 thoáng qua) sang `auto` (OpenRouter tự chọn model). Kết quả dưới đây là của lần chạy với `auto`; khuyến nghị giống lần chạy với Meta Muse.
+
 - Repo được làm gọn: mã nguồn `src/` từ **36.376 dòng xuống 8.400 dòng**. Engine v6 (ClaimGraph, CapabilityGraph, planner,
   evidence, reporter) bị loại khỏi nhánh chính; chỉ giữ đường chạy PoC, adapter CDB/Splunk và các contract adapter cần.
 - Phần **Prepare** của PEAK giờ do **PEAK Assistant (Cisco Talos)** làm: bảng ABLE (`able_table`) và kế hoạch hunt
@@ -12,7 +14,7 @@ Kết quả gốc nằm ở [`results/botsv1-peak-run/`](../results/botsv1-peak-
   **người săn quyết định**, hệ thống không tự hành động.
 - Chạy 4 PoC có sẵn trên BOTS v1 (4.417.543 dòng) với PEAK và LLM thật: 1 PoC khớp (khuyến nghị chuyển IR, tin cậy
   trung bình), 3 PoC rỗng (khuyến nghị đóng kèm cảnh báo, chưa phải "sạch").
-- 76 test pass, 8 test bị skip (cần Splunk thật tại localhost:8089), `ruff` sạch.
+- 77 test pass, 8 test bị skip (cần Splunk thật tại localhost:8089), `ruff` sạch.
 
 ## 2. Đã thay đổi gì
 
@@ -67,7 +69,7 @@ Lệnh: `python main.py --poc-dir pocs --db data/botsv1_eval.sqlite`. Cả 4 PoC
 
 - 199 request tới `imreallynotbatman.com` trong 21:36:45–21:40:57, toàn bộ từ IP 40.80.148.42, ghi bởi host `splunk-02`.
   Có dấu hiệu quét: `/acunetix-wvs-test-for-some-inexistent-file`, các đường dẫn ngẫu nhiên, `/joomla/index.php/component/search/`.
-- Judge (LLM, tham khảo): TRUE_POSITIVE 0,85, nhận định đây là giai đoạn quét.
+- Judge (LLM, tham khảo): TRUE_POSITIVE 0,88, nhận định đây là giai đoạn quét.
 - Tin cậy bị hạ từ HIGH xuống **MEDIUM**: PoC không có bước nào kiểm tra kết quả, và dữ liệu `web_request` chỉ có `domain` và
   `site=… uri=…`, không có mã trạng thái hay phản hồi. Dữ liệu chứng minh có **quét/thăm dò**, **không** chứng minh khai thác thành công.
 - Câu hỏi để người săn trả lời trước khi chuyển IR: `splunk-02` là sensor hay endpoint thật? có log phía server và mã
@@ -90,9 +92,9 @@ không phải "không có tấn công".
 
 | Việc | Kết quả |
 |---|---|
-| Test | 76 passed, 8 skipped (đều là test Splunk live: không có Splunk tại localhost:8089), `ruff` sạch |
+| Test | 77 passed, 8 skipped (đều là test Splunk live: không có Splunk tại localhost:8089), `ruff` sạch |
 | Test mới (`test_pipeline.py`) | luật khuyến nghị theo bảng, advisor với JSON lỗi, fallback khi PEAK hỏng, thử lại khi lỗi thoáng qua, độ phủ nguồn CDB, CLI end-to-end offline |
-| Chạy thật | 4/4 PoC có PEAK, không traceback trong log, advisor có đủ cho cả 4 |
+| Chạy thật (`LLM_MODEL=auto`) | 4/4 PoC có PEAK, 0 traceback, không phải gọi lại lần nào, advisor đủ cho cả 4 |
 | Lộ khoá | đã kiểm tra: khoá API không xuất hiện trong file output nào |
 
 Lỗi đã gặp và cách xử lý:
@@ -104,7 +106,8 @@ Lỗi đã gặp và cách xử lý:
    **đường gọi lại chưa được thử với lỗi thật**, chỉ có unit test.
 3. **Tin cậy HIGH quá lạc quan** ở lần chạy thử đầu của Joomla: thêm luật hạ về MEDIUM khi PoC không kiểm tra kết quả.
 4. **Gợi ý "cô lập `splunk-02`"** có thể nguy hiểm vì đó có thể là sensor: đổi thành "xác nhận vai trò của host trước khi cô lập".
-5. **Advisor tưởng `CONTAINS` phân biệt hoa thường** (thực tế không): thêm sự thật này vào prompt của PEAK và advisor.
+5. **Advisor với `auto` đôi khi trả JSON lỗi/rỗng** (2/4 PoC ở lần chạy đầu): advisor giờ thử lại tối đa 3 lần và chấp nhận nhiều dạng JSON; lần chạy cuối cả 4 PoC có đủ 5 bước, 5 câu hỏi, 5 rủi ro.
+6. **Advisor tưởng `CONTAINS` phân biệt hoa thường** (thực tế không): thêm sự thật này vào prompt của PEAK và advisor.
 
 ## 5. Giới hạn đã biết
 

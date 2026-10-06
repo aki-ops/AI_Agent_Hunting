@@ -106,8 +106,15 @@ def test_advisor_parses_json_and_survives_garbage():
     assert rec.questions_for_hunter == ["Is host a server?"]
 
     rec2 = decide(_poc(), _ev(2), None)
-    advise(rec2, _poc(), "able", "plan", lambda prompt, n: "not json")
+    calls = {"n": 0}
+
+    def not_json(prompt, n):
+        calls["n"] += 1
+        return "not json"
+
+    advise(rec2, _poc(), "able", "plan", not_json)
     assert rec2.next_steps == [] and "không hợp lệ" in rec2.advisor_note
+    assert calls["n"] == 3  # retried before giving up
 
     def boom(prompt, n):
         raise TimeoutError("x")
@@ -116,6 +123,18 @@ def test_advisor_parses_json_and_survives_garbage():
     advise(rec3, _poc(), "able", "plan", boom)
     assert rec3.next_steps == [] and "lỗi" in rec3.advisor_note
     assert rec3.disposition == rec.disposition  # advisor cannot change the rules' answer
+
+
+def test_advisor_retries_until_usable_and_accepts_drifted_shapes():
+    rec = decide(_poc(), _ev(2), None)
+    replies = iter([
+        "garbage",
+        '{"next_steps": [], "questions_for_hunter": [], "risks": []}',
+        '{"next_steps": ["Check parent process", {"step": "Pivot on host", "reason": "scope"}], "questions_for_hunter": ["q"], "risks": []}',
+    ])
+    advise(rec, _poc(), "able", "plan", lambda prompt, n: next(replies))
+    assert [s["action"] for s in rec.next_steps] == ["Check parent process", "Pivot on host"]
+    assert rec.next_steps[1]["why"] == "scope" and "3/3" in rec.advisor_note
 
 
 # --- LLM settings / Prepare fallback -----------------------------------------

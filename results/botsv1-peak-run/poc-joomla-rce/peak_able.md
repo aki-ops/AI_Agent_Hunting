@@ -1,12 +1,17 @@
-# PEAK ABLE Table: Exploit Public-Facing Application (T1190)
+# PEAK ABLE Table: Joomla Search/Mailto RCE (T1190)
+
 *Hypothesis: Joomla RCE web compromise (BOTS v1 real attack). Attacker scans and exploits Joomla search/mailto components on imreallynotbatman.com.*
-| ABLE Element |  |
-| --- | --- |
-| Actor | Unspecified external opportunistic attacker. No named APT in research document (BOTS v1 walkthrough - web compromise phase); treat as generic web scanner/exploiter targeting public Joomla site. |
-| Behavior | T1190 Exploit Public-Facing Application: scanning then exploitation / RCE via Joomla search and mailto components. Focus on 1-2 TTPs: anomalous URI access to Joomla component paths followed by exploit-pattern requests. |
-| Location | Internet-facing web tier hosting imreallynotbatman.com, as observed at perimeter/web logging. In local telemetry this is `events` where `native_type` is `web_request` (39,010 rows 2016-08-01 to 2016-08-28). Scope to `domain` = imreallynotbatman.com, pivot by `ip`, `host`, and `timestamp`. No internal desktop / SMB / auth scope for initial hunt. |
-| Evidence | Data source: CDB SQLite table `events`, `native_type` = web_request. Site in `domain`, request detail in `cmdline` as text `site=<host> uri=<path>`. Hunt predicates expressible to deterministic executor: `domain EQUALS imreallynotbatman.com` (web), `cmdline CONTAINS /joomla/` (web), refined as `cmdline CONTAINS site=imreallynotbatman.com`, `cmdline CONTAINS search`, `cmdline CONTAINS mailto`. Positive would look like clustered web_request rows to that domain with Joomla URIs in cmdline, scan burst from single `ip` followed by focused search/mailto exploit URIs, pivotable by `ip` and `timestamp`. |
+
+| ABLE Element | |
+|---|---|
+| Actor | External attacker in the BOTS v1 real-attack scenario. No named threat group attribution is provided in the research, so treat this as an opportunistic web application exploitation actor targeting an internet-facing Joomla site. |
+| Behavior | Scanning and exploitation of Joomla search/mailto components on imreallynotbatman.com, leading to remote code execution. Expected observable chain: web_request, exploitation. MITRE ATT&CK T1190 (Exploit Public-Facing Application). Candidate detection predicates include web requests to `domain EQUALS imreallynotbatman.com` and Joomla component paths where `cmdline CONTAINS /joomla/`. |
+| Location | Internet-facing web server hosting imreallynotbatman.com, typically in the perimeter or DMZ web tier. Focus first on web request telemetry for the site, then on process activity on the web server host. If exploitation succeeds, also inspect the web server host and adjacent internal network for follow-on activity. |
+| Evidence | Relevant data sources: `web_request` events (`domain`, `cmdline`), `process_creation` events (`image`, `cmdline`, `pid`, `ppid`, `host`), `authentication` (`user`, `ip`, `action`), `dns`, and `smb`. Expected evidence: `web_request` rows where `domain EQUALS imreallynotbatman.com` and `cmdline CONTAINS /joomla/`; web request `cmdline` stores text such as `site=<host> uri=<path>`, so Joomla paths are embedded there. Corroborate with `process_creation` on the web server showing unexpected child processes, shell commands, or downloaded payloads after the web requests. Use pivots on `host`, `user`, `ip`, and time. The available data cannot directly prove successful RCE or reveal exploit payload content; it can show the web request pattern and any subsequent process/authentication/network behavior. |
+
 ## Notes
-- Each hunt step must be one literal predicate (field/operator/value) on `timestamp, event_id, native_type, host, user, pid, ppid, cmdline, image, ip, port, domain, file_path, action, status, raw_ref`; EQUALS/CONTAINS/STARTS_WITH/ENDS_WITH are case-insensitive plus pivots on host, user, ip, time.
-- Available data cannot confirm RCE success from web_request alone: no HTTP method/status/body/user-agent fields in schema, only `domain` + `cmdline` URI text and `raw_ref`; exploitation vs scanning cannot be distinguished without response or payload decoding.
-- Available data cannot link to server-side execution without validated `host` mapping for imreallynotbatman.com; `process_creation` (4688: 3,642,895 rows, 1: 66 rows) and `authentication` (4624) pivots require host/ip/time correlation and are out of scope for initial web compromise confirmation.
+- Actor attribution is not provided in the research. The hypothesis is technique-focused, primarily T1190.
+- Local telemetry does not expose a dedicated URI field. Joomla path strings are embedded in `cmdline` as `site=<host> uri=<path>`, so preferred predicates are `cmdline CONTAINS /joomla/` and optionally `cmdline CONTAINS com_search` or `cmdline CONTAINS com_mailto` if those strings are present.
+- The data can show web requests and process creation, but cannot directly confirm exploit success or payload content. Corroborate with `process_creation`, `authentication`, `dns`, and `smb` activity after the suspicious web request timestamp.
+- Plan steps must be single literal predicates over fields listed in the local data document. Pivots on `host`, `user`, `ip`, or time should be separate steps.
+- MITRE ATT&CK reference: T1190, Exploit Public-Facing Application.

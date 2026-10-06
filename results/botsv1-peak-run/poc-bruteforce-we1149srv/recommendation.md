@@ -48,29 +48,29 @@ No adapter hits and no escalation evidence; result is 'absence of evidence', not
 
 ## Gợi ý bước tiếp theo (từ kế hoạch PEAK, LLM)
 
-1. **Mở rộng phạm vi sang toàn bộ 2016-08-01 đến 2016-08-28 và chạy lại native_type EQUALS authentication rồi cmdline CONTAINS Logon Failed, sau đó pivot theo host, user, ip và timestamp theo cửa sổ 5-phút/15-phút/60-phút để tìm cụm authentication_failure_burst** — Cửa sổ đã chạy chỉ 01 ngày với 20.657 dòng trong khi tổng có 579.580 dòng authentication, nên kết quả 0 dòng chưa loại trừ được burst nằm ngoài cửa sổ
-2. **Kiểm tra mã hóa thực tế bằng cmdline CONTAINS Logon và cmdline CONTAINS Logon Success trên native_type EQUALS authentication, đồng thời pivot theo action và status để đối chiếu outcome** — Cả hai bước đều 0/20.657 dòng dù nguồn có dữ liệu, cho thấy giả định mã hóa Logon Failed trong cmdline có thể sai và cần xác nhận văn bản thực tế
-3. **Pivot phân bố user và host trên tập native_type EQUALS authentication để liệt kê top user, top host và kiểm tra sự tồn tại của user EQUALS admin** — user EQUALS admin là ví dụ do phân tích viên tự đặt cho tài khoản đặc quyền, nếu tài khoản không tồn tại thì cần pivot để phân biệt brute-force tập trung một user với password spray nhiều user
-4. **Nếu tìm được cụm thất bại, pivot tiếp theo ip và timestamp rồi tìm tương quan cmdline CONTAINS Logon Success trên cùng host cộng user cộng ip theo trình tự thời gian** — Theo kế hoạch PEAK, chỉ tương quan thành công sau burst mới xác nhận xâm nhập thành công, không thể đánh giá tác động nếu chỉ nhìn thất bại
-5. **Thu thập bối cảnh tài sản và vùng mạng cho host ngoài bảng events để xác minh trạng thái public-facing** — Bảng events chỉ có host, domain, ip mà không có thẻ zone hay asset inventory, nên không thể khẳng định máy chủ hướng Internet từ telemetry hiện có
+1. **Mở rộng truy vấn sang toàn bộ cửa sổ CDB 2016-08-01T00:00:00Z đến 2016-08-28T23:59:00Z; lọc native_type EQUALS authentication; nhóm theo host, user, ip, timestamp với bin 5 phút và 1 giờ.** — PEAK khuyến nghị 28 ngày và burst 5 phút/1 giờ; cửa sổ hiện tại 21-22 chỉ có 20,657 dòng auth nhưng không match, cần kiểm tra hành vi ngoài cửa sổ.
+2. **Trong native_type EQUALS authentication, thống kê count theo action và status (và event_id) cho cùng cửa sổ.** — Predicate cmdline CONTAINS Logon Failed trả 0 dù có dữ liệu auth; cần xác nhận failure có được mã hóa ở action/status hay không.
+3. **Pivot native_type EQUALS authentication theo user, host, ip; kiểm tra riêng user EQUALS admin và các tài khoản đặc quyền thực tế nếu có inventory.** — Bước s2 trả 0; cần biết tài khoản nào bị target thay vì chỉ giả định admin.
+4. **Tìm cmdline CONTAINS Logon Success trong native_type EQUALS authentication, đối chiếu cùng host/user/ip và khoảng thời gian gần các failed tiềm năng.** — Chain chưa hoàn tất; cần kiểm tra thất bại có dẫn tới thành công sau đó không.
+5. **Đối chiếu host trong authentication với web_request theo domain và cmdline chứa site=<host> uri=<path>; nếu không có, ghi nhận thiếu asset inventory/exposure.** — PEAK nêu public-facing không chứng minh được từ cột hiện có; cần web telemetry hoặc inventory để xác nhận Location.
 
 _Gợi ý bước tiếp theo do LLM tạo từ kế hoạch PEAK; chỉ mang tính tham khảo._
 
 **Câu hỏi để người săn tự trả lời trước khi quyết định**
 
-- Trong 20.657 dòng authentication của cửa sổ 21-22/08, các giá trị thực tế phổ biến nhất của cmdline, action và status là gì?
-- Danh sách user và host thực tế có chứa admin hay tài khoản đặc quyền khác cần ưu tiên không?
-- Ngưỡng nào được coi là burst để quét toàn 28 ngày, ví dụ bao nhiêu thất bại trong 5-phút/15-phút/60-phút trên cùng host và ip?
-- Có bối cảnh tài sản, thẻ vùng mạng, hoặc nhật ký perimeter/firewall và web_request/dns nào để xác minh host là public-facing không?
-- Có muốn mở rộng săn sang password spray nhiều user thay vì chỉ giữ user EQUALS admin không?
+- Có bản ghi authentication nào thể hiện thất bại qua action hoặc status nhưng không dùng chuỗi Logon Failed không?
+- Tên tài khoản đặc quyền thực tế trên các host liên quan là gì, ngoài admin, và có inventory để xác nhận không?
+- Host nào trong authentication cũng xuất hiện trong web_request hoặc có bằng chứng public-facing từ asset inventory?
+- Có success event nào trên cùng host, user, ip gần các failed tiềm năng trong cửa sổ 21-22 hoặc cửa sổ rộng hơn không?
+- Cửa sổ 2016-08-21 đến 2016-08-22 được chọn vì lý do gì, và có cần ưu tiên 28 ngày theo PEAK không?
 
 **Rủi ro nếu quyết định sai**
 
-- Âm tính giả do sai giả định mã hóa Logon Failed trong cmdline dù telemetry đầy đủ, dẫn đến đóng sớm cuộc tấn công thực sự
-- Phạm vi cửa sổ quá hẹp chỉ 01 trên 28 ngày nên bỏ sót burst ở thời điểm khác
-- Chỉ tập trung vào ví dụ user EQUALS admin nên bỏ sót tấn công vào tài khoản khác hoặc password spray
-- Không thể khẳng định public-facing từ bảng events đơn lẻ nên nguy cơ đánh giá sai mức độ phơi nhiễm
-- Bỏ qua tương quan Logon Success sau burst nên đánh giá thiếu nguy cơ xâm nhập thành công
+- CLOSE_WITH_CAVEAT có thể bỏ sót brute force nếu failure được mã hóa khác Logon Failed trong cmdline, action hoặc status.
+- Không thể xác nhận máy chủ public-facing chỉ từ dữ liệu authentication; thiếu asset inventory/exposure.
+- Chỉ kiểm tra user EQUALS admin có thể bỏ sót tài khoản đặc quyền khác hoặc tài khoản bị target.
+- Cửa sổ 21-22 hẹp hơn khuyến nghị 28 ngày của PEAK, nên có thể bỏ lỡ burst ngoài cửa sổ.
+- Không có samples, top_values, pivots, first_seen, last_seen nên khó kiểm chứng nguồn IP, mẫu cmdline và pattern tấn công.
 
 ## Kế hoạch từ PEAK Assistant
 
@@ -91,6 +91,6 @@ search index="botsv1" match(cmdline, "(?i)Logon Failed") user="admin" earliest=-
 
 ## Chi phí và tái lập
 
-- LLM (judge + advisor): 1 lần gọi, 5531 token. Các agent bên trong PEAK Assistant tự tạo client riêng nên chưa được đo.
-- Thời gian chạy bước Execute (gồm lệnh gọi judge): 2.54s
-- Ledger: `artifacts\runs\rerun\poc-bruteforce-we1149srv\poc-bruteforce-we1149srv.json`
+- LLM (judge + advisor): 1 lần gọi, 6003 token. Các agent bên trong PEAK Assistant tự tạo client riêng nên chưa được đo.
+- Thời gian chạy bước Execute (gồm lệnh gọi judge): 4.32s
+- Ledger: `artifacts\runs\auto\poc-bruteforce-we1149srv\poc-bruteforce-we1149srv.json`
