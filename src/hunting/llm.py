@@ -143,6 +143,27 @@ def run_async(coro):
             loop.close()
 
 
+# This gateway intermittently answers 404 "model_not_found" for a model that exists, and the OpenAI
+# client does not retry 404. Retrying with a short backoff is the fix; a real misconfiguration still
+# fails after the last attempt with the original error.
+RETRY_DELAYS = (3.0, 10.0, 25.0)
+
+
+async def retry_async(factory, *, delays: tuple[float, ...] = RETRY_DELAYS, label: str = "LLM call", notes: list[str] | None = None):
+    """Await ``factory()`` and retry on any exception with backoff; re-raise the last error."""
+    for attempt in range(len(delays) + 1):
+        try:
+            return await factory()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if attempt >= len(delays):
+                raise
+            if notes is not None:
+                notes.append(f"{label}: retry {attempt + 1}/{len(delays)} after {type(exc).__name__}")
+            await asyncio.sleep(delays[attempt])
+
+
 class PeakLlm:
     """Synchronous ``(prompt, max_tokens) -> str`` caller backed by PEAK's model client."""
 
@@ -174,7 +195,10 @@ class PeakLlm:
         return str(result.content)
 
     def __call__(self, prompt: str, max_tokens: int = 0, system: str | None = None) -> str:
-        return run_async(asyncio.wait_for(self._ask(prompt, system), timeout=self.settings.timeout))
+        async def _once():
+            return await asyncio.wait_for(self._ask(prompt, system), timeout=self.settings.timeout)
+
+        return run_async(retry_async(_once, label="LLM call"))
 
     @property
     def total_tokens(self) -> int:

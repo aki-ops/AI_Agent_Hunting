@@ -25,6 +25,6 @@ do PEAK `able_table` viết) và `peak_hunt_plan.md` (kế hoạch do PEAK plann
 ## Lưu ý trung thực
 
 - Judge/advisor/PEAK là LLM, kết quả mỗi lần chạy có thể khác; phần tất định (số bản ghi, disposition khi cùng judge) tái lập được.
-- Endpoint LLM thỉnh thoảng trả 404 `model_not_found`; pipeline tự thử lại PEAK một lần (xem `peak.notes` trong JSON).
+- Endpoint LLM thỉnh thoảng trả 404 `model_not_found`; mỗi bước (ABLE, kế hoạch, judge, advisor) tự gọi lại với backoff 3s/10s/25s. Lần chạy này endpoint ổn định nên cơ chế gọi lại chưa phải dùng tới (chỉ có unit test).
 - Bản nháp SPL trong báo cáo chưa được kiểm tra trên Splunk thật.
 - Số token của các agent bên trong PEAK chưa được đo.

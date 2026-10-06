@@ -184,6 +184,32 @@ def test_prepare_retries_a_transient_peak_failure(monkeypatch):
     assert any("attempt 1/2 failed" in n for n in result.notes)
 
 
+# --- transient LLM errors ----------------------------------------------------
+
+def test_retry_async_recovers_from_transient_errors_and_reraises_persistent_ones():
+    import asyncio
+
+    from hunting.llm import retry_async
+
+    state = {"n": 0}
+    notes: list[str] = []
+
+    async def flaky():
+        state["n"] += 1
+        if state["n"] < 3:
+            raise RuntimeError("404 model_not_found")
+        return "ok"
+
+    assert asyncio.run(retry_async(flaky, delays=(0, 0, 0), label="x", notes=notes)) == "ok"
+    assert state["n"] == 3 and len(notes) == 2
+
+    async def dead():
+        raise RuntimeError("really down")
+
+    with pytest.raises(RuntimeError, match="really down"):
+        asyncio.run(retry_async(dead, delays=(0, 0)))
+
+
 # --- source coverage on the CDB adapter -------------------------------------
 
 def test_cdb_source_presence_and_description():

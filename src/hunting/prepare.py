@@ -21,10 +21,13 @@ and the result is marked ``used_peak=False`` with the reason.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import io
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from hunting.llm import PeakLlm, run_async
+from hunting.llm import PeakLlm, retry_async, run_async
 from hunting.poc.models import PoC
 
 LOCAL_CONTEXT = (
@@ -125,36 +128,61 @@ async def _peak_prepare(
         result.research_markdown = research
         result.notes.append("research: PoC references (PEAK researcher not requested)")
 
-    able = await asyncio.wait_for(
-        able_table(
-            hypothesis=hypothesis,
-            research_document=research,
-            local_data_document=data_document,
-            local_context=LOCAL_CONTEXT,
-        ),
-        timeout,
-    )
-    if not able or able.startswith("Error while generating"):
-        raise RuntimeError(able or "empty ABLE table")
+    async def _able() -> str:
+        text = await asyncio.wait_for(
+            able_table(
+                hypothesis=hypothesis,
+                research_document=research,
+                local_data_document=data_document,
+                local_context=LOCAL_CONTEXT,
+            ),
+            timeout,
+        )
+        if not text or text.startswith("Error while generating"):  # able_table swallows errors into a string
+            raise RuntimeError(text or "empty ABLE table")
+        return text
+
+    able = await retry_async(_able, label="ABLE", notes=result.notes)
     result.able_markdown = able
     result.notes.append("ABLE: PEAK able_table")
 
-    run = await asyncio.wait_for(
-        plan_hunt(
-            research_document=research,
-            local_data_document=data_document,
-            hypothesis=hypothesis,
-            able_info=able,
-            data_discovery=data_document,
-            local_context=LOCAL_CONTEXT,
-        ),
-        timeout,
-    )
-    plan = extract_hunt_plan(run)
-    if not plan or "could not create a hunt plan" in plan.lower() or plan.strip() == "no plan was generated":
-        raise RuntimeError(f"PEAK planner produced no usable plan: {(plan or '')[:200]}")
+    async def _plan() -> str:
+        run = await asyncio.wait_for(
+            plan_hunt(
+                research_document=research,
+                local_data_document=data_document,
+                hypothesis=hypothesis,
+                able_info=able,
+                data_discovery=data_document,
+                local_context=LOCAL_CONTEXT,
+            ),
+            timeout,
+        )
+        text = extract_hunt_plan(run)
+        if not text or "could not create a hunt plan" in text.lower() or text.strip() == "no plan was generated":
+            raise RuntimeError(f"PEAK planner produced no usable plan: {(text or '')[:200]}")
+        return text
+
+    plan = await retry_async(_plan, label="hunt plan", notes=result.notes)
     result.hunt_plan_markdown = plan
     result.notes.append("plan: PEAK hunt_planner + hunt_plan_critic")
+
+
+@contextlib.contextmanager
+def _quiet_peak():
+    """PEAK/autogen print tracebacks for every failed LLM call; failures are reported in the notes instead."""
+    names = ("autogen_core", "autogen_agentchat", "autogen_ext")
+    loggers = [logging.getLogger(n) for n in names]
+    levels = [lg.level for lg in loggers]
+    for lg in loggers:
+        lg.setLevel(logging.CRITICAL)
+    sink = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+            yield
+    finally:
+        for lg, level in zip(loggers, levels):
+            lg.setLevel(level)
 
 
 def run_prepare(
@@ -176,8 +204,10 @@ def run_prepare(
     for attempt in range(1, attempts + 1):
         attempt_result = PrepareResult(used_peak=False)
         try:
-            run_async(_peak_prepare(poc, data_document, timeout, use_research, attempt_result))
+            with _quiet_peak():
+                run_async(_peak_prepare(poc, data_document, timeout, use_research, attempt_result))
         except Exception as exc:  # PEAK/LLM failure must never abort the hunt
+            result.notes.extend(attempt_result.notes)
             result.notes.append(f"PEAK Prepare attempt {attempt}/{attempts} failed ({type(exc).__name__}: {str(exc)[:300]})")
             continue
         attempt_result.notes = [*result.notes, *attempt_result.notes]
