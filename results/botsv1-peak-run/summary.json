@@ -1,0 +1,34 @@
+[
+  {
+    "poc_id": "poc-bruteforce-we1149srv",
+    "verdict": "EMPTY",
+    "observations": 0,
+    "disposition": "CLOSE_WITH_CAVEAT",
+    "confidence": "MEDIUM",
+    "used_peak": true
+  },
+  {
+    "poc_id": "poc-c2-beacon-networkfilter",
+    "verdict": "EMPTY",
+    "observations": 0,
+    "disposition": "CLOSE_WITH_CAVEAT",
+    "confidence": "MEDIUM",
+    "used_peak": true
+  },
+  {
+    "poc_id": "poc-joomla-rce",
+    "verdict": "MATCHED",
+    "observations": 199,
+    "disposition": "ESCALATE_TO_IR",
+    "confidence": "MEDIUM",
+    "used_peak": true
+  },
+  {
+    "poc_id": "poc-pdf-exploit-enc",
+    "verdict": "EMPTY",
+    "observations": 0,
+    "disposition": "CLOSE_WITH_CAVEAT",
+    "confidence": "MEDIUM",
+    "used_peak": true
+  }
+]

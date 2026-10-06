@@ -1,0 +1,13 @@
+# PEAK ABLE Table: command-and-control beaconing
+*Hypothesis: C2 beacon to ad.networkfilter.co (BOTS v1 known IOC). Outbound HTTP request to ad.networkfilter.co, the ad-fraud beacon seen in BOTS v1.*
+| ABLE Element |  |
+|---|---|
+| Actor | Unspecified ad-fraud operator associated with BOTS v1 known IOC; no specific APT named in hypothesis or research document |
+| Behavior | Command-and-control beaconing via Application Layer Protocol: Web (MITRE ATT&CK T1071.001) - periodic outbound HTTP request, specifically GET to ad.networkfilter.co with ad-fraud beacon pattern GET to /banner/ path. Expected observable chain: web_request -> process_creation for attribution |
+| Location | Internal endpoints/hosts with internet egress as observed in local telemetry. Hunt scope is CDB SQLite table `events` where `native_type` = web_request (39,010 rows, 2016-08-01T00:01:01Z to 2016-08-28T23:54:58Z); logically represents internal-to-perimeter egress traffic |
+| Evidence | Data source: CDB `events` table, `native_type` = web_request. Web requests store site in `domain` and text `site=<host> uri=<path>` in `cmdline`. Hunt predicates (case-insensitive, literal): `domain` EQUALS `ad.networkfilter.co` / `domain` CONTAINS `ad.networkfilter.co`; `cmdline` CONTAINS `ad.networkfilter.co`; `cmdline` CONTAINS `site=ad.networkfilter.co`; `cmdline` CONTAINS `/banner/` for beacon URI pattern. Corroborate with `native_type` EQUALS `process_creation` pivoted on `host` and `timestamp` (plus `user`, `ip` where available) to identify originating process (`image`, `cmdline`, `pid`, `ppid`). Equivalent detection draft only: `native_type=web_request AND (domain=ad.networkfilter.co OR cmdline CONTAINS ad.networkfilter.co OR cmdline CONTAINS /banner/)` |
+## Notes
+- Hunts run through deterministic executor: each PoC step must be one literal predicate (field, operator, value) with operators EQUALS, CONTAINS, STARTS_WITH, ENDS_WITH, MATCHES, EXISTS; EQUALS/CONTAINS/STARTS_WITH/ENDS_WITH are case-insensitive, plus pivots on host, user, ip and time
+- Available data cannot answer full-window DNS corroboration: `native_type` = dns in CDB is limited to 2016-08-24T10:25:02Z to 2016-08-24T16:34:35Z (35,904 rows), versus web_request coverage 2016-08-01 to 2016-08-28
+- Available data cannot answer payload content, beacon frequency modeling, or full HTTP headers/body: CDB provides only `domain` and `cmdline` with `site=<host> uri=<path>`, no byte counts or response details to prove exfiltration volume
+- Attribution to responsible process requires pivot to process_creation (event_id 4688: 3,642,895 rows 2016-08-01 to 2016-08-28; event_id 1: 66 rows 2016-08-10 to 2016-08-24) on `host` + `timestamp`; direct join key is not present in web_request rows
