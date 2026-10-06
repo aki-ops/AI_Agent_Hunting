@@ -20,9 +20,16 @@ không có dữ liệu được báo là `COLLECT_DATA_THEN_RERUN`, không phả
 ```bash
 python -m venv .venv
 .venv\Scripts\activate          # Windows;  source .venv/bin/activate trên Linux/macOS
-pip install -e ".[dev]"          # kéo theo PEAK Assistant (pin theo commit)
-cp .env.example .env             # điền LLM_ENDPOINT, LLM_API_KEY, LLM_MODEL (endpoint tương thích OpenAI)
+pip install -e ".[dev]"          # lõi tất định, KHÔNG cần LLM
+pip install -e ".[peak]"         # tuỳ chọn: PEAK Assistant (pin theo commit) cho pha Prepare
+cp .env.example .env             # tuỳ chọn: điền LLM_ENDPOINT, LLM_API_KEY, LLM_MODEL (endpoint tương thích OpenAI)
 ```
+
+LLM là tuỳ chọn: chưa cài extra `peak` hoặc chưa điền `.env` thì hệ thống tự chạy phần tất định và đưa khuyến nghị
+theo luật (in một dòng `[i]`). `--model NAME` ghi đè `LLM_MODEL` (ví dụ mô hình `:free` của OpenRouter).
+
+Luận văn/đồ án đầy đủ (lý thuyết, thiết kế, hướng dẫn thực hành, thực nghiệm, phụ lục): `docs/thesis/`
+(`LUAN-VAN-AI-AGENT-HUNTING.docx` / `.pdf`; dựng lại bằng `python docs/thesis/build_thesis.py`).
 
 ## Chạy
 

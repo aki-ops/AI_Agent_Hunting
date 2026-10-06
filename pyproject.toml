@@ -7,14 +7,18 @@ dependencies = [
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "requests>=2.28.0",
-    # PEAK Assistant (Cisco Talos, MIT). Pinned to a commit; it ships no PyPI release.
-    "peak-assistant @ git+https://github.com/Cisco-Talos/PEAK-Assistant@dfabbb0fbcc27292ecbb8e32beeccda372bc0783",
 ]
 
 [project.scripts]
 hunting = "hunting.cli:main"
 
 [project.optional-dependencies]
+# LLM features are optional. Without this extra the deterministic hunt and rule-based
+# recommendations still work (use --offline or leave .env unconfigured).
+peak = [
+    # PEAK Assistant (Cisco Talos, MIT). Pinned to a commit; it ships no PyPI release.
+    "peak-assistant @ git+https://github.com/Cisco-Talos/PEAK-Assistant@dfabbb0fbcc27292ecbb8e32beeccda372bc0783",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",

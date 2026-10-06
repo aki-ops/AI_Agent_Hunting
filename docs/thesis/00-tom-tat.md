@@ -1,0 +1,19 @@
+# TÓM TẮT
+
+Săn mối đe dọa (threat hunting) là hoạt động chủ động tìm những xâm nhập mà cơ chế phát hiện tự động bỏ sót. Khung PEAK của Splunk SURGe chia mỗi cuộc săn thành ba pha Prepare, Execute và Act, trong đó pha Prepare (chọn chủ đề, nghiên cứu, giả thuyết, mô hình ABLE, phạm vi, kế hoạch) tốn nhiều công sức nhưng lại phù hợp để trợ lý trí tuệ nhân tạo hỗ trợ. Cisco Talos đã công bố mã nguồn mở PEAK Assistant, một tập tác tử dùng mô hình ngôn ngữ lớn (LLM) để viết báo cáo nghiên cứu, bảng ABLE và kế hoạch săn.
+
+Đồ án này xây dựng AI Agent Hunting v7, một hệ thống ghép PEAK Assistant vào một đường thực thi tất định. Hệ thống nhận một PoC (giả thuyết đã cụ thể hoá thành các vị từ `trường – phép so sánh – giá trị`), nhờ PEAK Assistant viết bảng ABLE và kế hoạch săn, chạy các vị từ trên telemetry (SQLite hoặc Splunk), kiểm tra độ phủ của nguồn dữ liệu, rồi sinh một khuyến nghị có xếp hạng, kèm lý do, giới hạn, câu hỏi và rủi ro để **người săn quyết định**. Thiết kế giữ ba nguyên tắc: LLM không tạo hay sửa bằng chứng; kết quả rỗng không bao giờ bị đọc thành "sạch" khi nguồn dữ liệu thiếu hoặc chưa chứng minh được; LLM là thành phần tuỳ chọn, hệ thống vẫn chạy và vẫn đưa khuyến nghị theo luật khi không có LLM.
+
+Hệ thống được kiểm chứng trên bộ dữ liệu Boss of the SOC v1 (4.417.543 sự kiện) với bốn PoC có sẵn. PoC khai thác Joomla cho 199 bản ghi khớp và khuyến nghị chuyển IR ở mức tin cậy trung bình, vì dữ liệu chỉ chứng minh hoạt động quét chứ chưa chứng minh khai thác thành công. Ba PoC còn lại không có bản ghi khớp và được khuyến nghị đóng kèm cảnh báo, không phải kết luận "sạch": cửa sổ chỉ phủ một trong hai mươi tám ngày dữ liệu và nguồn có thể thiếu đúng loại sự kiện cần tìm. Đồ án cũng mô tả các lỗi gặp phải khi vận hành LLM thật (lỗi 404 thoáng qua của endpoint, đầu ra JSON không ổn định) và cách xử lý, đồng thời cung cấp hướng dẫn thực hành từ cài đặt đến viết PoC mới.
+
+**Từ khoá:** săn mối đe dọa, PEAK, PEAK Assistant, ABLE, mô hình ngôn ngữ lớn, hệ thống đa tác tử, hỗ trợ ra quyết định, Boss of the SOC.
+
+# ABSTRACT
+
+Threat hunting looks for intrusions that automated detection misses. The PEAK framework (Splunk SURGe) splits a hunt into Prepare, Execute and Act. Prepare is labour-intensive and well suited to an AI assistant; Cisco Talos released PEAK Assistant, an open-source set of LLM agents that write research reports, ABLE tables and hunt plans.
+
+This project builds AI Agent Hunting v7, which couples PEAK Assistant with a deterministic execution path. Given a PoC (a hypothesis expressed as `field – operator – value` predicates), the system asks PEAK Assistant for the ABLE table and hunt plan, runs the predicates against telemetry (SQLite or Splunk), checks data-source coverage, and produces a ranked recommendation with reasons, caveats, questions and risks so that a **human hunter decides**. Three principles hold throughout: the LLM never creates or edits evidence; an empty result is never read as "clean" when data is missing or unproven; the LLM is optional and the system still produces rule-based recommendations without it.
+
+The system was evaluated on Boss of the SOC v1 (4,417,543 events) with four existing PoCs. The Joomla PoC matched 199 records and was recommended for IR escalation at medium confidence, because the data proves scanning but not successful exploitation. The other three PoCs matched nothing and were recommended for closure with caveats rather than declared clean: the window covered one of twenty-eight days and the source may lack the required event type. The thesis also documents the failures met when operating a real LLM (transient 404 responses, unstable JSON output) and how they were handled, and includes a practical guide from installation to authoring new PoCs.
+
+**Keywords:** threat hunting, PEAK, PEAK Assistant, ABLE, large language models, multi-agent systems, decision support, Boss of the SOC.

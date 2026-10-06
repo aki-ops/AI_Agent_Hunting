@@ -47,9 +47,11 @@ class LlmSettings:
     max_tokens: int = 16000
 
     @classmethod
-    def from_env(cls, env_path: str | Path = ".env") -> "LlmSettings":
+    def from_env(cls, env_path: str | Path = ".env", model: str | None = None) -> "LlmSettings":
         file_env = load_dotenv(env_path)
         merged = {**file_env, **{k: os.environ[k] for k in _ENV_KEYS if k in os.environ}}
+        if model:
+            merged["LLM_MODEL"] = model
         endpoint = merged.get("LLM_ENDPOINT", "").strip()
         key = merged.get("LLM_API_KEY", "").strip()
         model = merged.get("LLM_MODEL", "").strip()
@@ -205,8 +207,8 @@ class PeakLlm:
         return self.prompt_tokens + self.completion_tokens
 
 
-def build_llm(env_path: str | Path = ".env", work_dir: str | Path = "artifacts/.peak") -> PeakLlm:
-    settings = LlmSettings.from_env(env_path)
+def build_llm(env_path: str | Path = ".env", work_dir: str | Path = "artifacts/.peak", model: str | None = None) -> PeakLlm:
+    settings = LlmSettings.from_env(env_path, model=model)
     return PeakLlm(settings, configure_peak(settings, work_dir))
 
 

@@ -33,6 +33,7 @@ def _parser() -> argparse.ArgumentParser:
     prov.add_argument("--splunk-manifest", default=None)
     llm = p.add_argument_group("PEAK Assistant / LLM")
     llm.add_argument("--env", default=".env", help="env file with LLM_ENDPOINT, LLM_API_KEY, LLM_MODEL")
+    llm.add_argument("--model", help="override LLM_MODEL from the env file (e.g. a free OpenRouter model)")
     llm.add_argument("--offline", action="store_true", help="skip PEAK Assistant and every LLM call (deterministic only)")
     llm.add_argument("--research", action="store_true", help="also run PEAK's researcher team (needs MCP research servers)")
     llm.add_argument("--peak-timeout", type=int, default=420, help="seconds allowed per PEAK step [default: 420]")
@@ -82,10 +83,14 @@ def main(argv: list[str] | None = None) -> int:
     llm = None
     if not args.offline:
         try:
-            llm = build_llm(args.env, work_dir=out_root / ".peak")
+            llm = build_llm(args.env, work_dir=out_root / ".peak", model=args.model)
             print(f"[+] LLM via PEAK model factory: model={llm.settings.model}")
         except LlmUnavailable as exc:
-            print(f"[!] PEAK/LLM disabled: {exc}. Running deterministic only.", file=sys.stderr)
+            print(
+                f"[i] LLM is optional and not available ({exc}). Running the deterministic hunt only; "
+                "recommendations are rule-based without judge/advisor. Configure .env or pass --offline to silence this.",
+                file=sys.stderr,
+            )
     else:
         print("[+] offline mode: PEAK Assistant and LLM skipped")
 

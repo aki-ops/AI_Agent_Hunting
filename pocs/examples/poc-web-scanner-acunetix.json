@@ -1,0 +1,25 @@
+{
+  "poc_id": "poc-web-scanner-acunetix",
+  "name": "Automated web vulnerability scanner against the Joomla site (Acunetix)",
+  "kind": "behavior",
+  "summary": "Requests to imreallynotbatman.com that carry the Acunetix scanner probe path, followed by Joomla component enumeration.",
+  "topic": "web application reconnaissance",
+  "able": {
+    "actor": "",
+    "behavior": "Active scanning of a public-facing web application (T1595.002) preceding exploitation (T1190)",
+    "location": "web traffic to imreallynotbatman.com",
+    "evidence": "web_request telemetry; hit = domain imreallynotbatman.com with an acunetix probe uri and /joomla/ paths"
+  },
+  "research_refs": ["MITRE ATT&CK T1595.002 Vulnerability Scanning", "BOTS v1 walkthrough - web compromise phase"],
+  "scope": "stream:http for imreallynotbatman.com on 2016-08-10 21:36-22:00",
+  "max_duration": "3d",
+  "plan": "search_text over web telemetry for the victim site, then the acunetix probe string, then the Joomla path",
+  "time_window": "2016-08-10T21:36:00Z/2016-08-10T22:00:00Z",
+  "steps": [
+    {"step_id": "s1-victim-site", "description": "Request to the Joomla site", "target_field": "domain", "op": "EQUALS", "value": "imreallynotbatman.com", "source_kind": "web"},
+    {"step_id": "s2-acunetix-probe", "description": "Acunetix probe path", "target_field": "cmdline", "op": "CONTAINS", "value": "acunetix", "source_kind": "web"},
+    {"step_id": "s3-joomla-enum", "description": "Joomla component enumeration", "target_field": "cmdline", "op": "CONTAINS", "value": "/joomla/", "source_kind": "web"}
+  ],
+  "references": ["MITRE ATT&CK T1595.002", "MITRE ATT&CK T1190"],
+  "expected_chain": ["web_request"]
+}

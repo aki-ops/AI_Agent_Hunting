@@ -278,3 +278,28 @@ def test_cli_offline_end_to_end(tmp_path: Path):
 
 def test_cli_requires_a_poc(capsys):
     assert main(["--offline"]) == 2
+
+
+def test_cli_runs_without_any_llm_configuration(tmp_path: Path, monkeypatch, capsys):
+    """LLM/PEAK is optional: no .env at all still gives a rule-based recommendation."""
+    for key in ("LLM_ENDPOINT", "LLM_API_KEY", "LLM_MODEL"):
+        monkeypatch.delenv(key, raising=False)
+    db = tmp_path / "t.sqlite"
+    CdbAdapter(str(db)).insert_events([
+        {"timestamp": "2026-09-01T10:00:00Z", "host": "H", "image": "notepad.exe", "cmdline": "notepad.exe",
+         "raw_ref": "e", "native_type": "process_creation"},
+    ])
+    poc = {
+        "poc_id": "poc-nollm", "name": "n", "kind": "ttp", "summary": "s", "topic": "t",
+        "able": {"actor": "", "behavior": "b", "location": "l", "evidence": "process telemetry"},
+        "research_refs": ["r"], "scope": "s", "max_duration": "3d", "plan": "p", "time_window": WINDOW,
+        "steps": [{"step_id": "s1", "description": "ps", "target_field": "image", "op": "EQUALS",
+                   "value": "powershell.exe", "source_kind": "process"}],
+    }
+    poc_file = tmp_path / "poc.json"
+    poc_file.write_text(json.dumps(poc), encoding="utf-8")
+    out = tmp_path / "out"
+    assert main(["--poc", str(poc_file), "--db", str(db), "--env", str(tmp_path / "missing.env"), "--out", str(out)]) == 0
+    data = json.loads((out / "poc-nollm" / "recommendation.json").read_text(encoding="utf-8"))
+    assert data["disposition"] == CLOSE and data["peak"]["used_peak"] is False
+    assert "LLM is optional" in capsys.readouterr().err
