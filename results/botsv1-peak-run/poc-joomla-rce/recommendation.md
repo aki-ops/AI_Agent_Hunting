@@ -14,14 +14,16 @@
 
 **Lý do**
 
-- 2/2 bước PoC có kết quả, tổng 199 bản ghi khớp.
+- 2/2 bước PoC có kết quả, tổng 200 bản ghi khớp.
 - Khoảng thời gian hit: 2016-08-10T21:36:45Z → 2016-08-10T21:40:57Z.
-- Judge (advisory) đánh giá TRUE_POSITIVE, độ tin cậy 0.88.
+- Judge (advisory) đánh giá TRUE_POSITIVE, độ tin cậy 0.85.
 - Độ tin cậy bị hạ xuống MEDIUM: PoC không có bước nào kiểm tra kết quả (status/action) nên chưa chứng minh được tấn công thành công.
 
 **Cần lưu ý (giới hạn của kết luận)**
 
 - Khớp predicate literal chứng minh có hoạt động tương ứng trong dữ liệu; tự nó chưa chứng minh thành công hay tác động (cần xem response/status và hậu quả trên host).
+- Bước `s1-victim-site`: chỉ hiển thị 100 bản ghi trong ít nhất 1999 bản ghi khớp (quét đã dừng ở giới hạn hàng nên tổng thực tế có thể lớn hơn).
+- Bước `s2-joomla-path`: chỉ hiển thị 100 bản ghi trong ít nhất 2000 bản ghi khớp (quét đã dừng ở giới hạn hàng nên tổng thực tế có thể lớn hơn).
 
 ## Các lựa chọn cho người quyết định (xếp theo ưu tiên)
 
@@ -33,17 +35,17 @@
 
 ## Bằng chứng
 
-| Bước | Predicate | Nguồn | Bản ghi nguồn trong cửa sổ | Khớp |
-|---|---|---|---|---|
-| `s1-victim-site` | `domain EQUALS imreallynotbatman.com` | web | 12,546 | 99 |
-| `s2-joomla-path` | `cmdline CONTAINS /joomla/` | web | 12,546 | 100 |
+| Bước | Predicate | Nguồn | Bản ghi nguồn trong cửa sổ | Trong phạm vi lọc | Khớp (hiển thị / tổng) |
+|---|---|---|---|---|---|
+| `s1-victim-site` | `domain EQUALS imreallynotbatman.com` | web | 12,546 | 12,546 | 100 / ≥1999 |
+| `s2-joomla-path` | `cmdline CONTAINS /joomla/` | web | 12,546 | 12,546 | 100 / ≥2000 |
 
-Tổng 199 bản ghi khớp; 2/2 bước có kết quả.
+Tổng 200 bản ghi hiển thị làm bằng chứng; 2/2 bước có kết quả.
 Hit đầu tiên 2016-08-10T21:36:45Z, hit cuối 2016-08-10T21:40:57Z.
-- Top `host`: splunk-02 (199)
-- Top `ip`: 40.80.148.42 (199)
-- Top `domain`: imreallynotbatman.com (199)
-- Giá trị phổ biến của `domain`: `imreallynotbatman.com` (199)
+- Top `host`: splunk-02 (200)
+- Top `ip`: 40.80.148.42 (200)
+- Top `domain`: imreallynotbatman.com (200)
+- Giá trị phổ biến của `domain`: `imreallynotbatman.com` (200)
 - Giá trị phổ biến của `cmdline`: `site=imreallynotbatman.com uri=/joomla/index.php/component/search/` (15), `site=imreallynotbatman.com uri=/` (12), `site=imreallynotbatman.com uri=/joomla/index.php` (9)
 
 **Mẫu bản ghi**
@@ -54,38 +56,38 @@ Hit đầu tiên 2016-08-10T21:36:45Z, hit cuối 2016-08-10T21:40:57Z.
 
 ## Judge (LLM, chỉ tham khảo)
 
-**TRUE_POSITIVE** — độ tin cậy 0.88
+**TRUE_POSITIVE** — độ tin cậy 0.85
 
-Evidence shows reconnaissance and Joomla component probing against imreallynotbatman.com within the PoC window: Acunetix scanner test URI, random 8-character paths, and direct access to /joomla/ component paths including open-flash-chart.swf. This is consistent with the described Joomla RCE web compromise attack chain rather than normal browsing or baseline operations.
-- Acunetix WVS test file indicates automated vulnerability scanning.
-- Random paths and Joomla component enumeration suggest exploit reconnaissance.
-- Target domain matches the PoC victim site.
+Requests to /acunetix-wvs-test-for-some-inexistent-file and random 8-character URIs followed by Joomla component enumeration (/joomla/components/com_jnews/..., /joomla/index.php...) within a tight 21:36-21:40 window match automated Joomla vulnerability scanning/exploitation activity from the BOTS v1 real attack, not routine user traffic.
+- Acunetix scanner signature and randomized paths indicate automated reconnaissance.
+- Joomla component paths align with the PoC's Joomla RCE compromise hypothesis.
+- No change-ticket or sanctioned-scan metadata is present in the provided rows.
 
 ## Gợi ý bước tiếp theo (từ kế hoạch PEAK, LLM)
 
-1. **Truy vấn process_creation trên host splunk-02 trong cửa sổ 2016-08-10T21:36:00Z–22:00:00Z, lọc image/cmdline bất thường (cmd.exe, powershell, wget, curl, /bin/sh) để tìm dấu hiệu RCE.** — 
-2. **Kiểm tra trường status/action của web_request cho các URI chứa /joomla/ (đặc biệt component/search) để xác định mã HTTP 200 vs 404/500; nếu trường trống, ghi nhận thiếu telemetry.** — 
-3. **Pivot authentication: tìm sự kiện đăng nhập (4624) từ IP 40.80.148.42 hoặc trên host splunk-02 trong cùng khung giờ.** — 
-4. **Pivot DNS: tìm truy vấn DNS từ host splunk-02 ra domain lạ trong 2016-08-10 21:36–22:00.** — 
-5. **Tìm trong cmdline web_request các chuỗi com_search, com_mailto, hoặc dấu hiệu exploit (base64, cmd=, eval) để phân biệt scan và khai thác.** — 
+1. **Truy vấn web_request trong cửa sổ 2016-08-10T21:36:00Z–22:00:00Z, lọc domain EQUALS imreallynotbatman.com, nhóm theo action và status; nếu trường action/status không có hoặc rỗng, ghi nhận là telemetry thiếu.** — Bước PoC chưa kiểm tra status/action nên chưa biết request nào thành công; cần xác định 200/302/403/404/500 để đánh giá khả năng khai thác.
+2. **Lấy đầy đủ các bản ghi khớp cho hai bước s1-victim-site và s2-joomla-path (matched_total khoảng 1999–2000 nhưng row_count 100, scan_truncated=true) bằng phân trang hoặc nới ngưỡng.** — Dữ liệu bị cắt nên mới thấy 200/2000 bản ghi; cần xem toàn bộ URI, IP, timestamp để tìm payload search/mailto và mẫu bất thường.
+3. **Kiểm tra process_creation trên host splunk-02 trong và sau cửa sổ 21:36–21:40, event_id 4688 hoặc 1, tìm tiến trình con bất thường, cmdline lạ, image ngoài tiến trình web.** — RCE thành công thường tạo process_creation trên web server; đây là mắt xích còn thiếu để nâng độ tin cậy.
+4. **Truy vấn web_request với domain EQUALS imreallynotbatman.com và cmdline CONTAINS search hoặc cmdline CONTAINS mailto trong cùng cửa sổ; nhóm theo ip, cmdline, action, status.** — Giả thuyết nêu Joomla search/mailto; cần tách hai thành phần này khỏi các đường dẫn Joomla hợp lệ khác.
+5. **Pivot IP 40.80.148.42 sang các nguồn web_request, authentication, dns, smb trong cùng ngày 2016-08-10 để xem còn tương tác ngoài imreallynotbatman.com hoặc dấu hiệu C2/lateral movement.** — Một IP nguồn chiếm toàn bộ 200 bản ghi; cần xác định phạm vi hoạt động và hậu quả sau khai thác.
 
 _Gợi ý bước tiếp theo do LLM tạo từ kế hoạch PEAK; chỉ mang tính tham khảo._
 
 **Câu hỏi để người săn tự trả lời trước khi quyết định**
 
-- Có bản ghi process_creation nào trên splunk-02 trong khoảng 21:36–22:00 ngày 2016-08-10 không?
-- Mã trạng thái HTTP của các request /joomla/index.php/component/search/ là gì?
-- Có sự kiện authentication nào từ 40.80.148.42 hoặc user bất thường trên splunk-02 không?
-- Có truy vấn DNS hoặc kết nối SMB ra ngoài từ splunk-02 trong cùng khung giờ không?
-- Có bằng chứng nào cho thấy 40.80.148.42 là scanner hợp pháp (Acunetix) hay là kẻ tấn công thực sự?
+- Trường action và status trong web_request có giá trị cụ thể nào cho các bản ghi đã khớp, và có request POST hoặc payload search/mailto nào không?
+- Có telemetry process_creation (4688/1) trên splunk-02 trong khoảng 21:36–22:00 ngày 2016-08-10 không, và có tiến trình con nào đáng ngờ?
+- Vì sao matched_total khoảng 1999–2000 nhưng row_count chỉ 100 và scan_truncated=true; có thể lấy đủ dữ liệu không?
+- Có log WAF, web server access log, hoặc EDR bổ sung để xác nhận exploit thành công hay không?
+- IP 40.80.148.42 có phải external/attacker hay là scanner/proxy dùng chung, và có hoạt động khác trong ngày không?
 
 **Rủi ro nếu quyết định sai**
 
-- Chưa có bước kiểm tra status/action nên chưa chứng minh RCE thành công; có thể chỉ là scan.
-- Mẫu có /acunetix-wvs-test-for-some-inexistent-file gợi ý scanner Acunetix, có thể dương tính giả.
-- Telemetry process_creation có thể thưa hoặc thiếu, không đủ kết luận.
-- Sự kiện chỉ thấy từ một IP 40.80.148.42; nếu không kiểm tra IP khác có thể bỏ sót.
-- Việc escalate lên IR khi chưa xác nhận thành công có thể gây lãng phí nguồn lực.
+- Nhiều đường dẫn /joomla/ có thể là truy cập hợp lệ; cmdline CONTAINS /joomla/ có thể khớp nhầm, làm tăng false positive.
+- Không có kiểm tra status/action trong PoC nên chưa chứng minh được khai thác thành công; confidence chỉ MEDIUM.
+- Dữ liệu bị cắt (scan_truncated) nên bằng chứng chưa đầy đủ, có thể bỏ sót request quan trọng hoặc payload.
+- Thiếu process_creation/EDR/WAF/web server log để xác nhận RCE, hậu khai thác, hoặc exfiltration.
+- Cửa sổ hit ngắn (21:36:45–21:40:57) có thể chỉ là giai đoạn scan ban đầu, chưa thấy toàn bộ chuỗi tấn công.
 
 ## Kế hoạch từ PEAK Assistant
 
@@ -100,12 +102,12 @@ Chi tiết: `peak_able.md` (bảng ABLE) và `peak_hunt_plan.md` (hunt plan).
 Trạng thái: **DRAFT** (chưa chạy trên Splunk thật).
 
 ```spl
-search index="botsv1" domain="imreallynotbatman.com" match(cmdline, "(?i)/joomla/") earliest=-14d latest=now
+search index="botsv1" domain="imreallynotbatman.com" match(cmdline, "(?i)/joomla/") earliest=1470864960 latest=1470866400
 | table _time, host, user, image, cmdline, domain, file_path, action
 ```
 
 ## Chi phí và tái lập
 
-- LLM (judge + advisor): 2 lần gọi, 7393 token. Các agent bên trong PEAK Assistant tự tạo client riêng nên chưa được đo.
-- Thời gian chạy bước Execute (gồm lệnh gọi judge): 6.23s
-- Ledger: `artifacts\runs\auto\poc-joomla-rce\poc-joomla-rce.json`
+- LLM (judge + advisor): 2 lần gọi, 9524 token. Các agent bên trong PEAK Assistant tự tạo client riêng nên chưa được đo.
+- Thời gian chạy bước Execute (gồm lệnh gọi judge): 16.09s
+- Ledger: `artifacts\runs\v2\poc-joomla-rce\poc-joomla-rce.json`

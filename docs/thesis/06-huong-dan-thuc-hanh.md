@@ -26,7 +26,7 @@ Cài đặt này chỉ kéo theo `pydantic`, `pyyaml`, `requests`, cùng `pytest
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-Kết quả mong đợi: `78 passed, 8 skipped`. Tám bài bị bỏ qua cần máy chủ Splunk thật tại cổng 8089 và tự bỏ qua khi không có.
+Kết quả mong đợi: `93 passed, 8 skipped`. Tám bài bị bỏ qua cần máy chủ Splunk thật tại cổng 8089 và tự bỏ qua khi không có.
 
 ### 6.1.3. Cài thêm PEAK Assistant (tuỳ chọn)
 
@@ -120,10 +120,10 @@ Màn hình in một khối cho mỗi PoC:
 
 ```text
 === poc-joomla-rce  window=2016-08-10T21:36:00Z/2016-08-10T22:00:00Z
-    verdict=MATCHED obs=199 -> ESCALATE_TO_IR (MEDIUM) | PEAK=no
+    verdict=MATCHED obs=200 -> INVESTIGATE_FURTHER (MEDIUM) | PEAK=no
 ```
 
-Khi không dùng LLM, kết quả này thường là `INVESTIGATE_FURTHER` vì không có judge nào đánh giá ngữ cảnh. Hệ thống ghi rõ điều đó trong mục giới hạn của báo cáo.
+Khi không dùng LLM, Joomla dừng ở `INVESTIGATE_FURTHER` vì không có judge nào đánh giá ngữ cảnh; với LLM, cùng PoC cho `ESCALATE_TO_IR` (MEDIUM). Hệ thống ghi rõ điều đó trong mục giới hạn của báo cáo.
 
 ### 6.4.2. Toàn bộ PoC, có LLM
 
@@ -154,9 +154,9 @@ Mở `recommendation.md` của một PoC. Nên đọc theo thứ tự sau, vì t
 
 1. **Dòng đầu: khuyến nghị và độ tin cậy.** Ví dụ `ESCALATE_TO_IR (MEDIUM)`. Đây là gợi ý, không phải quyết định.
 2. **Lý do.** Mỗi lý do gắn với một sự kiện kiểm chứng được: số bước khớp, khoảng thời gian hit, nhận định judge.
-3. **Giới hạn của kết luận.** Mục dễ bị bỏ qua nhất nhưng quan trọng nhất. Với kết quả rỗng, mục này nói rõ cửa sổ đã quét, rằng predicate là literal, và rằng nguồn chưa chắc chứa đúng loại sự kiện.
+3. **Giới hạn của kết luận.** Mục dễ bị bỏ qua nhất nhưng quan trọng nhất. Với kết quả rỗng, mục này nói rõ cửa sổ đã quét, rằng predicate là literal, liệt kê các loại sự kiện thực có trong nguồn (để bạn tự kiểm tra loại sự kiện cần tìm có trong đó không), và nêu các điều kiện phụ suy ra từ ABLE (host, chuỗi AND). Nếu có bước bị cắt ở 100 hàng, mục này ghi tổng số khớp.
 4. **Bảng lựa chọn.** Các hành động khả dĩ xếp theo ưu tiên.
-5. **Bằng chứng.** Bảng từng bước với số bản ghi nguồn và số khớp; các giá trị xoay trục (máy, IP, miền); vài hàng mẫu. Đây là chỗ để tự kiểm chứng.
+5. **Bằng chứng.** Bảng từng bước với số bản ghi nguồn trong cửa sổ, trong phạm vi lọc và số khớp (`hiển thị / tổng`, dấu `≥` nghĩa là quét chạm giới hạn nên tổng chỉ là cận dưới); mục "Phạm vi truy vấn thực tế"; các giá trị xoay trục (máy, IP, miền); vài hàng mẫu. Đây là chỗ để tự kiểm chứng.
 6. **Phần do LLM viết** (judge, bước tiếp theo, câu hỏi, rủi ro, kế hoạch PEAK): luôn được gắn nhãn "chỉ mang tính tham khảo".
 
 Ba tình huống thường gặp và cách xử lý:
@@ -180,9 +180,10 @@ Một PoC là tệp JSON. Hãy xem ví dụ đầy đủ tại Phụ lục A. C�
 
 1. **Phát biểu giả thuyết cụ thể và kiểm chứng được.** Tốt: "một địa chỉ IP gửi nhiều yêu cầu có chuỗi `acunetix` tới site Joomla". Kém: "có ai đó tấn công website".
 2. **Xem dữ liệu có gì** (mục 6.3.3). Nếu không có nguồn nào chứa dấu hiệu bạn tìm, hãy dừng và coi đó là phát hiện về khoảng trống dữ liệu.
-3. **Chọn trường và toán tử.** Dùng `EQUALS` cho giá trị chính xác (tên tệp, tên miền); `CONTAINS` cho chuỗi con; `MATCHES` khi cần biểu thức chính quy; `EXISTS` khi chỉ cần trường có giá trị.
-4. **Thêm một bước kiểm tra kết quả nếu dữ liệu có.** Bước trên trường `status`, `action`, `result` hoặc `response` cho phép hệ thống nâng độ tin cậy khi leo thang; thiếu bước này, giới hạn "chưa chứng minh thành công" sẽ luôn xuất hiện.
-5. **Đặt `time_window` hợp lý** và chạy thử với `--offline` trước, rồi mới bật LLM.
+3. **Cẩn thận với `able.location`.** Nếu trường này chứa một token giống tên máy (ví dụ `we1149srv`), **mọi bước sẽ chỉ tìm trên máy đó** (báo cáo ghi rõ trong mục phạm vi truy vấn). Chỉ ghi tên máy khi bạn thật sự muốn giới hạn, và kiểm tra bằng `describe_data`/bảng độ phủ rằng máy đó thực sự ghi nguồn bạn cần: nhật ký web trong BOTS v1 nằm dưới tên máy thu log `splunk-02`, không phải máy client. Tương tự, các chuỗi cụ thể (tên tệp, cờ `-enc`, IP, chuỗi trong ngoặc kép) trong `able.behavior`/`able.evidence` được AND vào mọi bước.
+4. **Chọn trường và toán tử.** Dùng `EQUALS` cho giá trị chính xác (tên tệp, tên miền); `CONTAINS` cho chuỗi con; `MATCHES` khi cần biểu thức chính quy; `EXISTS` khi chỉ cần trường có giá trị.
+5. **Thêm một bước kiểm tra kết quả nếu dữ liệu có.** Bước trên trường `status`, `action`, `result` hoặc `response` cho phép hệ thống nâng độ tin cậy khi leo thang; thiếu bước này, giới hạn "chưa chứng minh thành công" sẽ luôn xuất hiện.
+6. **Đặt `time_window` hợp lý** và chạy thử với `--offline` trước, rồi mới bật LLM.
 
 ### 6.6.3. Chạy thử ví dụ
 
@@ -192,7 +193,7 @@ Kho có sẵn `pocs/examples/poc-web-scanner-acunetix.json`. Chạy:
 .venv\Scripts\python.exe main.py --poc pocs/examples/poc-web-scanner-acunetix.json --offline
 ```
 
-Kết quả khi chạy thật trên BOTS v1: 203 bản ghi khớp, 3 trên 3 bước có kết quả, tất cả từ địa chỉ 40.80.148.42, hit đầu tiên lúc 21:36:45; khuyến nghị `INVESTIGATE_FURTHER` (MEDIUM) vì ở chế độ `--offline` không có judge. Số 203 lớn hơn 199 của PoC Joomla vì ví dụ này thêm bước tìm chuỗi `acunetix`.
+Kết quả khi chạy thật trên BOTS v1: 204 bản ghi hiển thị, 3 trên 3 bước có kết quả (100 / ≥1.999, 6 và 100 / ≥2.000), tất cả từ địa chỉ 40.80.148.42, hit đầu tiên lúc 21:36:45; khuyến nghị `INVESTIGATE_FURTHER` (MEDIUM) vì ở chế độ `--offline` không có judge. Bước tìm `acunetix` chỉ có 6 hàng, đủ để nhận diện máy quét.
 
 ### 6.6.4. Những lỗi người mới hay mắc
 
@@ -200,7 +201,7 @@ Bảng: Lỗi thường gặp khi viết PoC
 | Triệu chứng | Nguyên nhân thường gặp | Cách sửa |
 |---|---|---|
 | PoC bị từ chối trước khi chạy | Thiếu trường của cổng Prepare | Đọc thông báo; điền trường thiếu |
-| Kết quả luôn rỗng | Giá trị literal sai hoa thường không thành vấn đề, nhưng sai trường hoặc sai dạng thì có | Chạy `describe_data`, nhìn mẫu hàng thật trong CSDL |
+| Kết quả luôn rỗng | Sai trường hoặc sai dạng giá trị (hoa thường không thành vấn đề); hoặc bị lọc theo host ngầm | Xem mục "Phạm vi truy vấn thực tế" và cột "Trong phạm vi lọc" của báo cáo; chạy `describe_data`, nhìn mẫu hàng thật trong CSDL |
 | `EQUALS` không khớp đường dẫn đầy đủ | Giá trị ghi cả đường dẫn nhưng tên tệp trong dữ liệu khác | Dùng chỉ tên tệp (`powershell.exe`) |
 | Quá nhiều hit vô nghĩa | Dùng `CONTAINS` với chuỗi quá ngắn | Dùng `EQUALS` hoặc `MATCHES` chính xác hơn, thêm bước loại trừ |
 | `COLLECT_DATA_THEN_RERUN` | Nguồn đúng là không có dữ liệu trong cửa sổ | Kiểm tra `source_kind` và `time_window` trước khi kết luận |

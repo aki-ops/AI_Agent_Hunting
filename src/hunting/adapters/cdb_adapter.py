@@ -384,6 +384,10 @@ class CdbAdapter:
             for term in terms:
                 conditions.append("(" + " OR ".join(f"COALESCE({col}, '') LIKE ?" for col in text_cols) + ")")
                 sql_params.extend([f"%{term}%"] * len(text_cols))
+            # Push "field is present" down to SQL so the row cap cannot hide matches (EXISTS steps).
+            for col in parameters.get("require_nonempty") or []:
+                if col in self._REQUIRE_COLUMNS:
+                    conditions.append(f"COALESCE({col}, '') <> ''")
 
         # A person is a semantic search seed, not a provider entity type.  It
         # must still constrain identity resolution; otherwise the operation
@@ -699,18 +703,60 @@ class CdbAdapter:
     }
 
 
-    def source_presence(self, window: str, source_kind: str) -> int | None:
-        """Rows of ``source_kind`` telemetry inside ``window``; ``None`` if the kind is unknown."""
+    _REQUIRE_COLUMNS = frozenset(
+        {"raw_ref", "cmdline", "image", "file_path", "domain", "user", "host", "ip", "action", "status"}
+    )
+
+    def _source_where(self, window: str, source_kind: str, host: str | None) -> tuple[str, list[Any]] | None:
         native_types = self._SOURCE_NATIVE_TYPES.get(str(source_kind).lower())
         if not native_types:
             return None
         start_dt, end_dt = validate_time_window_format(window)
         marks = ",".join("?" for _ in native_types)
+        where = f"native_type IN ({marks}) AND timestamp >= ? AND timestamp <= ?"
+        args: list[Any] = [
+            *native_types,
+            start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        ]
+        if host:
+            where += " AND host = ?"
+            args.append(host)
+        return where, args
+
+    def source_presence(self, window: str, source_kind: str, host: str | None = None) -> int | None:
+        """Rows of ``source_kind`` telemetry inside ``window`` (optionally one host); ``None`` if the kind is unknown."""
+        built = self._source_where(window, source_kind, host)
+        if built is None:
+            return None
+        where, args = built
+        return int(self._conn.execute(f"SELECT COUNT(*) FROM events WHERE {where}", args).fetchone()[0])
+
+    def source_breakdown(
+        self, window: str, source_kind: str, host: str | None = None, top: int = 8
+    ) -> list[tuple[str, int]]:
+        """Event types inside a source (``native_type/event_id``) with row counts, most frequent first."""
+        built = self._source_where(window, source_kind, host)
+        if built is None:
+            return []
+        where, args = built
         cur = self._conn.execute(
-            f"SELECT COUNT(*) FROM events WHERE native_type IN ({marks}) AND timestamp >= ? AND timestamp <= ?",
-            [*native_types, start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"), end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")],
+            "SELECT native_type, COALESCE(event_id, ''), COUNT(*) FROM events "
+            f"WHERE {where} GROUP BY 1, 2 ORDER BY 3 DESC LIMIT ?",
+            [*args, top],
         )
-        return int(cur.fetchone()[0])
+        return [(f"{nt}/{eid}" if eid else str(nt), int(n)) for nt, eid, n in cur.fetchall()]
+
+    def source_top_hosts(self, window: str, source_kind: str, top: int = 3) -> list[tuple[str, int]]:
+        """Hosts that actually produce ``source_kind`` telemetry in ``window``."""
+        built = self._source_where(window, source_kind, None)
+        if built is None:
+            return []
+        where, args = built
+        cur = self._conn.execute(
+            f"SELECT host, COUNT(*) FROM events WHERE {where} GROUP BY 1 ORDER BY 2 DESC LIMIT ?", [*args, top]
+        )
+        return [(str(h), int(n)) for h, n in cur.fetchall()]
 
     def describe_data(self) -> str:
         """Markdown description of the telemetry this adapter can search.

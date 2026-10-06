@@ -80,7 +80,7 @@ Dùng LLM để chấm hoặc đánh giá đầu ra (LLM-as-a-judge) được ng
 
 ### 2.5.1. Vắng bằng chứng không phải bằng chứng vắng mặt
 
-Altman và Bland nhấn mạnh rằng một nghiên cứu không tìm thấy hiệu ứng chưa chứng minh hiệu ứng không tồn tại [13]. Trong săn mối đe dọa, điều tương đương là một truy vấn rỗng. Có ít nhất bốn nguyên nhân khiến truy vấn rỗng mà vẫn có tấn công: nguồn dữ liệu không được thu thập; nguồn có nhưng không chứa loại sự kiện cần tìm; cửa sổ thời gian không bao trùm hoạt động; và vị từ literal bỏ sót biến thể. Hệ thống trong đồ án không xử lý hết được cả bốn, nhưng hiện thực hoá hai (độ phủ nguồn trong cửa sổ; giới hạn cửa sổ) và nêu rõ hai còn lại trong phần "giới hạn của kết luận" của mỗi báo cáo.
+Altman và Bland nhấn mạnh rằng một nghiên cứu không tìm thấy hiệu ứng chưa chứng minh hiệu ứng không tồn tại [13]. Trong săn mối đe dọa, điều tương đương là một truy vấn rỗng. Có ít nhất bốn nguyên nhân khiến truy vấn rỗng mà vẫn có tấn công: nguồn dữ liệu không được thu thập; nguồn có nhưng không chứa loại sự kiện cần tìm; cửa sổ thời gian không bao trùm hoạt động; và vị từ literal bỏ sót biến thể. Hệ thống trong đồ án không xử lý hết được cả bốn, nhưng hiện thực hoá ba (độ phủ nguồn trong cửa sổ; độ phủ trong phạm vi host kèm chạy lại không lọc host; giới hạn cửa sổ) và nêu rõ, kèm liệt kê loại sự kiện thực có, điểm còn lại trong phần "giới hạn của kết luận" của mỗi báo cáo.
 
 ### 2.5.2. Tách bạch bằng chứng và diễn giải
 

@@ -58,6 +58,17 @@ def run_poc(
     # 3) Act: recommendation for the human.
     effective_window = result.time_window
     evidence = summarize_evidence(poc, result, adapter, effective_window)
+    if evidence.observations == 0 and evidence.scope_empty_sources and not evidence.missing_sources:
+        # The ABLE host filter matched no telemetry at all: re-run once without it, so "no data for that host"
+        # is not confused with "no such activity anywhere".
+        probe = PocAgent(
+            adapter=adapter, ledger_dir=out_dir / "unscoped_probe", enable_judge=False, use_able_host=False
+        ).run(poc.poc_id, time_window=window, request_id=f"{poc.poc_id}-unscoped", enforce_prepare=True)
+        evidence.unscoped_probe = {
+            "observations": probe.total_observations,
+            "matched_steps": len(probe.matched_step_ids),
+            "total_steps": len(poc.steps),
+        }
     rec = decide(poc, evidence, result.judgment)
     if llm is not None:
         advise(rec, poc, prepare.able_markdown, prepare.hunt_plan_markdown, llm)

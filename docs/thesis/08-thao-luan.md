@@ -20,7 +20,7 @@ Bảng: So sánh ba cách tiếp cận
 | Kết quả cuối | Tài liệu kế hoạch | Nhãn và nhận định judge | Khuyến nghị có lý do, giới hạn, rủi ro |
 | Xử lý kết quả rỗng | Không áp dụng | Nhãn EMPTY | Độ phủ nguồn, `COLLECT_DATA_THEN_RERUN` |
 | Chạy khi không có LLM | Không | Một phần | Có, đầy đủ |
-| Kích thước mã | Lớn | ~36.400 dòng | ~8.400 dòng |
+| Kích thước mã | Lớn | ~36.400 dòng | ~8.700 dòng |
 
 Đây không phải so sánh hiệu năng; ba hệ thống phục vụ mục đích khác nhau. PEAK Assistant mạnh ở chỗ cộng tác với người săn qua giao diện trò chuyện, điều mà v7 chủ ý không làm: v7 coi PoC là đầu vào đã được người săn chốt.
 
@@ -28,11 +28,13 @@ Bảng: So sánh ba cách tiếp cận
 
 ### 8.3.1. Khớp literal và độ phủ loại sự kiện
 
-Đây là hạn chế lớn nhất. Vị từ là literal: `-enc` không bắt `-EncodedCommand`, `Logon Failed` không bắt biến thể ngôn ngữ khác. Hệ thống ghi nhận giới hạn này nhưng chưa thử biến thể. Quan trọng hơn là độ phủ theo **nguồn** chưa đủ: nguồn `authentication` có 20.657 bản ghi trong cửa sổ nên hệ thống không báo thiếu dữ liệu, nhưng toàn bộ đó là đăng nhập thành công, trong khi PoC cần đăng nhập thất bại. Một nâng cấp tự nhiên là độ phủ theo **loại sự kiện** (`native_type`, `event_id`) thay vì theo nhóm nguồn; adapter đã có sẵn `describe_data` nên khó khăn chủ yếu ở việc PoC phải khai báo loại sự kiện cần.
+Vị từ là literal: `-enc` không bắt `-EncodedCommand`, `Logon Failed` không bắt biến thể ngôn ngữ khác. Hệ thống ghi nhận giới hạn này nhưng chưa thử biến thể. Độ phủ theo **nguồn** không đủ: nguồn `authentication` có 20.657 bản ghi trong cửa sổ nhưng toàn bộ là đăng nhập thành công, trong khi PoC cần đăng nhập thất bại. Sau lượt rà soát cuối, báo cáo của kết quả rỗng liệt kê các loại sự kiện thực có (`authentication/4624 (20.657)`) để người săn tự đối chiếu, nhưng hệ thống **vẫn chưa tự so** chúng với predicate: điều đó đòi hỏi PoC khai báo loại sự kiện cần có (ví dụ `required_event_types`), một thay đổi định dạng PoC còn để ngỏ.
 
-### 8.3.2. Cửa sổ thời gian và giới hạn hàng
+### 8.3.2. Phạm vi truy vấn ngầm, cửa sổ thời gian và giới hạn hàng
 
-Mỗi PoC chạy trên một cửa sổ (một ngày hoặc 24 phút) và `max_duration` cắt về ba ngày, nên ba PoC rỗng chỉ phủ 1 trên 28 ngày. Mỗi bước giới hạn 100 hàng, nên con số 199 là mức trần chứ không phải số bản ghi thật (dữ liệu có khoảng 19,7 nghìn dòng Joomla). Báo cáo đang hiển thị "199 bản ghi khớp" mà không nói rõ đã chạm trần; đây là một thiếu sót nên sửa. Bản nháp SPL cũng dùng khoảng thời gian cố định `earliest=-14d` chứ chưa lấy theo cửa sổ của PoC.
+Đây là điểm yếu thiết kế đã bộc lộ và được xử lý một phần ở lượt rà soát cuối. Phạm vi suy ra từ ABLE của PoC (host trong `able.location`, chuỗi cụ thể trong `able.behavior`) được thêm vào mọi bước. Cơ chế này có ý đồ tốt (PEAK muốn ABLE dẫn dắt truy vấn) nhưng nguy hiểm khi tên máy trong `location` chỉ mang tính mô tả: ở cả ba PoC rỗng, máy đó không ghi nguồn tương ứng nên PoC chưa từng tìm trên dữ liệu thật (mục 7.2.2). Đồ án đã làm ba việc: hiển thị phạm vi, đếm độ phủ trong phạm vi, và chạy lại không lọc host khi phạm vi rỗng. Nhưng gốc vấn đề vẫn còn: việc đọc tên máy từ văn xuôi bằng biểu thức chính quy vẫn là heuristic, có thể chọn nhầm token; một thiết kế sạch hơn là tách một trường `host_scope` tường minh trong PoC.
+
+Về cửa sổ, mỗi PoC chạy trên một cửa sổ (một ngày hoặc 24 phút) và `max_duration` cắt về ba ngày, nên ba PoC rỗng chỉ phủ 1 trên 28 ngày. Về giới hạn hàng, mỗi bước quét tối đa 2.000 hàng và giữ 100 hàng làm bằng chứng; báo cáo hiện ghi `hiển thị / tổng` và dấu `≥` khi quét chạm trần, nhưng số tổng khi bị cắt vẫn chỉ là cận dưới (PoC Joomla có khoảng 19,7 nghìn dòng Joomla trong cả tập dữ liệu). Muốn có số chính xác cần truy vấn `COUNT` riêng. Bản nháp SPL nay dùng cửa sổ của PoC (đổi sang epoch) nhưng chưa thêm bộ lọc host của phạm vi, nên bản nháp phát hiện rộng hơn PoC.
 
 ### 8.3.3. Vai trò của máy và bối cảnh tổ chức
 
@@ -48,7 +50,7 @@ PEAK Assistant tự nhận là chưa qua kiểm thử bảo mật và không có
 
 ### 8.3.6. Tính không tất định của LLM
 
-Cùng bằng chứng nhưng judge có thể cho độ tin cậy khác nhau (0,88 đến 0,97 trong các lần chạy). Thiết kế đã giới hạn ảnh hưởng của sự dao động này (chỉ đẩy một bậc, chỉ khi ≥ 0,7), nhưng ngưỡng 0,7 và 0,8 được chọn theo kinh nghiệm chứ chưa hiệu chỉnh trên tập dữ liệu có nhãn.
+Cùng bằng chứng nhưng judge có thể cho độ tin cậy khác nhau (0,85 đến 0,97 trong các lần chạy). Thiết kế đã giới hạn ảnh hưởng của sự dao động này (chỉ đẩy một bậc, chỉ khi ≥ 0,7), nhưng ngưỡng 0,7 và 0,8 được chọn theo kinh nghiệm chứ chưa hiệu chỉnh trên tập dữ liệu có nhãn.
 
 ## 8.4. Các mối đe dọa đối với tính hợp lệ
 
@@ -67,6 +69,8 @@ Khuyến nghị không phải kết luận pháp lý hay lệnh hành động. H
 ## 8.6. Bài học rút ra
 
 - Chạy bằng dữ liệu thật quan trọng hơn việc thêm kiểm thử. Các lỗi ở mục 7.4 hầu hết chỉ lộ ra khi chạy trên dữ liệu và LLM thật.
+- Một kết luận đúng chưa chắc có lý do đúng. Ba PoC rỗng cho cùng khuyến nghị trước và sau khi sửa, nhưng trước đó chúng chưa từng tìm đúng chỗ. Chỉ khi đối chiếu cột "bản ghi nguồn trong cửa sổ" với "trong phạm vi lọc" và truy vấn trực tiếp dữ liệu thì mới thấy. Bài học: mọi bộ lọc ngầm phải hiện ra trong báo cáo, và mọi con số độ phủ phải đếm đúng phạm vi mà truy vấn thực sự chạy.
+- Tự đối chiếu tài liệu với mã. Mô tả "MATCHES dùng `re.search`" trong bản thảo luận văn đúng ở tầng lọc nhưng sai ở tầng truy xuất; lỗi chỉ lộ ra khi đọc lại mã khi rà soát.
 - Đọc báo cáo như một người dùng. Lỗi độ tin cậy HIGH vô căn cứ không làm hỏng bất kỳ bài kiểm thử nào, nó chỉ lộ ra khi đọc câu "chưa chứng minh được thành công" mà vẫn thấy HIGH.
 - Đầu ra của LLM cần được kiểm tra về hình thức và về sự vắng mặt: cả hai lỗi 6 và 7 đều ở dạng "trông hợp lệ nhưng thực chất trống hoặc là thông báo lỗi".
 - Làm gọn có thể là một đóng góp. Bỏ khoảng 28.000 dòng mã mà không đổi kết quả khiến hệ thống dễ giải thích hơn nhiều, nhưng cần thẻ git để việc bỏ đi không là mất mát.

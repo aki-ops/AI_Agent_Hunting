@@ -18,7 +18,7 @@
   {
     "poc_id": "poc-joomla-rce",
     "verdict": "MATCHED",
-    "observations": 199,
+    "observations": 200,
     "disposition": "ESCALATE_TO_IR",
     "confidence": "MEDIUM",
     "used_peak": true

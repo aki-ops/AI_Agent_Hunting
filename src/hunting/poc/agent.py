@@ -22,8 +22,9 @@ Design invariants
 from __future__ import annotations
 
 import json
+import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -92,19 +93,40 @@ def _apply_op(cell: Any, op: str, want: str) -> bool:
     return _cell_contains(cell, want)
 
 
-def _compile_terms(step: TestStep) -> list[str]:
-    """Turn a TestStep's predicate into a list of literal CDB search terms.
+#: Rows scanned per step before the operator post-filter, and rows kept for evidence/judge.
+SCAN_LIMIT = 2000
+ROW_CAP = 100
 
-    We deliberately treat MATCHES as a substring: the adapter can search
-    columns by LIKE; the regex character class is preserved by leaving it
-    as-is so the LIKE still narrows the row set.
+
+def _regex_literal(pattern: str) -> str | None:
+    """Longest literal fragment every match of ``pattern`` must contain (>= 3 chars), else None.
+
+    Only narrows the coarse LIKE retrieval; the real regex is applied afterwards. Alternation makes no single
+    fragment mandatory, so it yields None (scan the window instead of guessing).
+    """
+    if "|" in pattern:
+        return None
+    text = re.sub(r"\\.", "\0", pattern)
+    text = re.sub(r"\[[^\]]*\]", "\0", text)
+    best = ""
+    for match in re.finditer(r"([^\0.^$*+?{}\[\]()]+)([*?{]?)", text):
+        fragment = match.group(1)[:-1] if match.group(2) else match.group(1)
+        if len(fragment) > len(best):
+            best = fragment
+    return best if len(best) >= 3 else None
+
+
+def _compile_terms(step: TestStep) -> list[str]:
+    """Literal CDB search terms that can only narrow retrieval, never drop a true match.
+
+    MATCHES is narrowed by the longest mandatory literal of the regex (or not at all); EXISTS uses no text
+    term (the adapter filters on the field being non-empty).
     """
     if step.op.value == "EXISTS":
-        return [step.target_field]
-    if step.op.value in {"EQUALS", "STARTS_WITH", "ENDS_WITH"}:
-        return [step.value]
+        return []
     if step.op.value == "MATCHES":
-        return [step.value]
+        literal = _regex_literal(step.value)
+        return [literal] if literal else []
     return [step.value]
 
 
@@ -119,6 +141,9 @@ class StepResult:
     row_count: int = 0
     used_fallback: bool = False
     pass_index: int = 1
+    matched_total: int = 0  # rows passing the operator among those scanned (>= row_count)
+    scan_truncated: bool = False  # the scan hit SCAN_LIMIT, so matched_total is a lower bound
+    scope: dict[str, Any] = field(default_factory=dict)  # filters applied on top of the predicate
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -128,6 +153,9 @@ class StepResult:
             "op": self.op,
             "value": self.value,
             "row_count": self.row_count,
+            "matched_total": self.matched_total,
+            "scan_truncated": self.scan_truncated,
+            "scope": self.scope,
             "used_fallback": self.used_fallback,
             "pass_index": self.pass_index,
             "rows": self.rows,
@@ -220,8 +248,11 @@ class PocAgent:
         ledger_dir: str | Path | None = None,
         judge_caller: Callable[[str, int], str] | None = None,
         enable_judge: bool = False,
+        use_able_host: bool = True,
     ) -> None:
         self.adapter = adapter
+        # False drops the host filter inferred from ABLE `location` (used for the unscoped probe).
+        self.use_able_host = use_able_host
         self.llm_caller = llm_caller
         self.llm_tracker = llm_tracker
         self.ledger_dir = Path(ledger_dir) if ledger_dir else Path("artifacts") / "poc_hunts"
@@ -244,37 +275,44 @@ class PocAgent:
         for term in extra_terms:
             if term not in terms:
                 terms.append(term)
-        result = self.adapter.execute_query(
-            operation_id="search_text",
-            entity=Host(name=host) if host else None,
-            window=time_window,
-            limit=100,
-            query_id=query_id,
-            search_terms=terms,
-        )
-        rows = [dict(row) for row in (result.rows or [])]
-        # Post-filter: the adapter is a coarse LIKE retriever; enforce the
-        # step's real operator on the target field here so EQUALS is exact
-        # and EXISTS with an empty value does not match arbitrary rows.
+        scan_truncated = False
         if step.op.value == "EXISTS" and not (step.value or "").strip():
-            rows = []
+            rows: list[dict[str, Any]] = []  # EXISTS with an empty value matches nothing (eval FP fix)
         else:
+            result = self.adapter.execute_query(
+                operation_id="search_text",
+                entity=Host(name=host) if host else None,
+                window=time_window,
+                limit=SCAN_LIMIT,
+                query_id=query_id,
+                search_terms=terms,
+                parameters={"require_nonempty": [step.target_field]} if step.op.value == "EXISTS" else None,
+            )
+            rows = [dict(row) for row in (result.rows or [])]
+            scan_truncated = getattr(result, "complete", True) is False
+            # Post-filter: the adapter is a coarse LIKE retriever; enforce the step's real operator on the
+            # target field here so EQUALS is exact.
             rows = [r for r in rows if _apply_op(r.get(step.target_field), step.op.value, step.value)]
         if actor:
             needle = actor.lower()
             rows = [r for r in rows if needle in str(r.get("user") or "").lower()]
         if host:
             rows = [r for r in rows if str(r.get("host") or "") == host]
+        matched_total = len(rows)
+        kept = rows[:ROW_CAP]
         return StepResult(
             step_id=step.step_id,
             description=step.description,
             target_field=step.target_field,
             op=step.op.value,
             value=step.value,
-            rows=rows,
-            row_count=len(rows),
+            rows=kept,
+            row_count=len(kept),
             used_fallback=False,
             pass_index=pass_index,
+            matched_total=matched_total,
+            scan_truncated=scan_truncated,
+            scope={"host": host, "actor": actor, "extra_terms": list(extra_terms)},
         )
 
     def _run_steps(
@@ -319,6 +357,8 @@ class PocAgent:
     ) -> tuple[list[StepResult], list[dict[str, Any]]]:
         """Analyze, refine once, and run again. Operators are never widened."""
         drive = able_drive(poc.actor, poc.behavior, poc.location, poc.evidence)
+        if not self.use_able_host:
+            drive = replace(drive, host=None)
         primary = self._run_steps(
             list(poc.steps), time_window, request_id,
             drive=drive, host=drive.host, fallback=False, pass_index=1,

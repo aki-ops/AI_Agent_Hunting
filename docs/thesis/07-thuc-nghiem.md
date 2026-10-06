@@ -34,38 +34,53 @@ Bảng: Bốn PoC thực nghiệm
 
 ## 7.2. Kết quả chính
 
+Các kết quả dưới đây là của bản hệ thống đã sửa ba lỗi phát hiện ở lượt rà soát cuối (mục 7.4, lỗi 8–10). Bản chạy trước đó cho các kết luận trùng ở bốn PoC nhưng ba PoC rỗng đúng **vì lý do sai**; điểm này được phân tích ở mục 7.2.2.
+
 Bảng: Kết quả bốn PoC với mô hình `auto`
-| PoC | Số bản ghi khớp | Bước khớp | Khuyến nghị | Tin cậy | Judge |
-|---|---|---|---|---|---|
-| `poc-joomla-rce` | 199 | 2/2 | `ESCALATE_TO_IR` | MEDIUM | TRUE_POSITIVE, 0,88 |
-| `poc-bruteforce-we1149srv` | 0 | 0/2 | `CLOSE_WITH_CAVEAT` | MEDIUM | không chạy (không có hit) |
-| `poc-c2-beacon-networkfilter` | 0 | 0/2 | `CLOSE_WITH_CAVEAT` | MEDIUM | không chạy |
-| `poc-pdf-exploit-enc` | 0 | 0/3 | `CLOSE_WITH_CAVEAT` | MEDIUM | không chạy |
+| PoC | Bản ghi hiển thị | Số khớp tổng | Bước khớp | Khuyến nghị | Tin cậy | Judge |
+|---|---|---|---|---|---|---|
+| `poc-joomla-rce` | 200 | ≥1.999 và ≥2.000 (quét chạm giới hạn) | 2/2 | `ESCALATE_TO_IR` | MEDIUM | TRUE_POSITIVE, 0,85 |
+| `poc-bruteforce-we1149srv` | 0 | 0 | 0/2 | `CLOSE_WITH_CAVEAT` | MEDIUM | không chạy (không có hit) |
+| `poc-c2-beacon-networkfilter` | 0 | 0 | 0/2 | `CLOSE_WITH_CAVEAT` | MEDIUM | không chạy |
+| `poc-pdf-exploit-enc` | 0 | 0 | 0/3 | `CLOSE_WITH_CAVEAT` | MEDIUM | không chạy |
 
 Ghi chú: trong tệp JSON, trường `judge` của ba PoC rỗng được ghi `NO_SIGNAL` với độ tin cậy 0, là giá trị mặc định khi không có hàng để đánh giá, không phải nhận định thật của LLM.
 
-Hai kiểm tra cho thấy phần tất định ổn định: cả ba cấu hình cho cùng số bản ghi khớp (199 và ba lần 0) và cùng các nguồn được phát hiện có dữ liệu.
+Phần tất định ổn định: cả ba cấu hình (không LLM, `auto`, Nemotron miễn phí) cho cùng số bản ghi hiển thị (200 và ba lần 0) và cùng cơ cấu độ phủ.
 
 ### 7.2.1. PoC Joomla: có hit, kết luận ở mức vừa phải
 
-Hệ thống tìm thấy 199 bản ghi (99 khớp bước 1, 100 khớp bước 2; mỗi bước giới hạn 100 hàng), tất cả từ một địa chỉ 40.80.148.42 tới `imreallynotbatman.com`, trong khoảng 21:36:45 đến 21:40:57. Các hàng mẫu chứa `/acunetix-wvs-test-for-some-inexistent-file`, đường dẫn ngẫu nhiên tám ký tự và các thành phần `/joomla/index.php/component/search/`: đặc trưng của máy quét Acunetix duyệt thành phần Joomla.
+Hệ thống giữ 200 bản ghi làm bằng chứng (100 cho mỗi bước), tất cả từ một địa chỉ 40.80.148.42 tới `imreallynotbatman.com`, trong khoảng 21:36:45 đến 21:40:57. Số khớp thật lớn hơn nhiều: mỗi bước có ít nhất khoảng 2.000 hàng khớp trong cửa sổ 24 phút (lượt quét dừng ở giới hạn 2.000 hàng nên đó chỉ là cận dưới). Phiên bản trước báo "199 bản ghi", một con số do giới hạn 100 hàng và một hàng bị bộ lọc loại, và không cho người đọc biết điều đó; báo cáo hiện ghi `100 / ≥1999` và `100 / ≥2000`. Các hàng mẫu chứa `/acunetix-wvs-test-for-some-inexistent-file`, đường dẫn ngẫu nhiên tám ký tự và các thành phần `/joomla/index.php/component/search/`: đặc trưng của máy quét Acunetix duyệt thành phần Joomla.
 
 Khuyến nghị là `ESCALATE_TO_IR` nhưng **MEDIUM, không phải HIGH**, và lý do được ghi thẳng trong báo cáo: dữ liệu web chỉ có miền và đường dẫn, không có mã trạng thái, và PoC không có bước nào kiểm tra kết quả, nên chỉ chứng minh được hoạt động quét, chưa chứng minh khai thác thành công. Mục "Rủi ro nếu quyết định sai" do advisor viết nêu đúng điểm này và còn gợi ý rằng mẫu Acunetix có thể là một đợt quét hợp pháp. Đây là hành vi mong muốn: kết luận thận trọng hơn cái mà một nhãn "MATCHED" đơn thuần gợi ra. Báo cáo cũng nhắc người dùng kiểm tra vai trò thật của máy `splunk-02`, vốn là máy ghi log chứ không phải nạn nhân.
 
 Lưu ý lịch sử: phiên bản đầu của bộ luật cho kết quả `HIGH` với cùng bằng chứng. Việc đọc báo cáo đầu tiên mới làm lộ ra rằng độ tin cậy này không có căn cứ; luật trần `outcome_observed` được thêm vào sau đó (mục 4.6.3).
 
-### 7.2.2. Ba PoC rỗng: không phải "sạch"
+### 7.2.2. Ba PoC rỗng: không phải "sạch", và không hề được tìm đúng chỗ
 
-Ba PoC không có bản ghi khớp. Bảng sau cho thấy vì sao hệ thống không được phép nói "không có tấn công".
+Đây là phát hiện quan trọng nhất của lượt rà soát cuối. Cả ba PoC rỗng có `able.location` chứa tên máy `we1149srv` ("we1149srv authentication log", "egress web traffic from we1149srv", "we1149srv and workstations opening email attachments"). Hàm suy ra phạm vi ABLE biến tên máy đó thành bộ lọc `host = we1149srv` cho **mọi bước**, và điều này không hiện ra trong predicate, báo cáo hay tài liệu. Khi đếm độ phủ trong đúng phạm vi đó, cả ba đều bằng không.
 
-Bảng: Độ phủ nguồn của ba PoC rỗng (cửa sổ 21/8)
-| PoC | Nguồn cần | Bản ghi nguồn trong cửa sổ | Dữ liệu cần tìm có trong cả CSDL không |
+Bảng: Phạm vi truy vấn và độ phủ của ba PoC rỗng (cửa sổ 21/8)
+| PoC | Nguồn | Bản ghi nguồn trong cửa sổ | Trong phạm vi `host = we1149srv` | Host thực sự ghi nguồn | Chạy lại không lọc host |
+|---|---|---|---|---|---|
+| `poc-bruteforce-we1149srv` | authentication | 20.657 | **0** | we9748srv (218), we5364srv (107), we1864srv (75) | 0 bản ghi |
+| `poc-c2-beacon-networkfilter` | web | 566 | **0** | splunk-02 (566) | 0 bản ghi |
+| `poc-pdf-exploit-enc` | process | 129.775 | **0** | we9748srv (1.335), we5364srv (630), we1864srv (537) | 0 bản ghi |
+
+Với PoC `c2-beacon`, vấn đề mang tính cấu trúc: toàn bộ 39.010 dòng web trong CSDL có `host = splunk-02` (máy thu log), nên bộ lọc theo máy client không thể khớp bất kỳ dòng web nào, kể cả khi beacon có thật. Phiên bản trước báo "nguồn web có 566 bản ghi trong cửa sổ" (đúng nhưng đếm mọi host) trong khi phạm vi tìm kiếm thực tế là 0 dòng; kết luận `CLOSE_WITH_CAVEAT` tình cờ đúng chỉ vì dữ liệu cũng không chứa `networkfilter` ở bất cứ đâu.
+
+Bản đã sửa xử lý phạm vi rỗng thành một trường hợp riêng. Hệ thống đếm độ phủ cả toàn cửa sổ lẫn trong phạm vi host, liệt kê host thực sự ghi nguồn, rồi chạy lại cùng PoC một lần **không lọc host** (thư mục `unscoped_probe/`). Cả ba lần chạy lại đều cho 0 bản ghi, nên khuyến nghị là `CLOSE_WITH_CAVEAT` (MEDIUM) với lý do ghi đủ hai vế: dữ liệu không chứa dấu hiệu ở bất kỳ host nào, và host nêu trong PoC không ghi nguồn này nên PoC chưa từng được thử trên host đó. Kết luận cuối vẫn là `CLOSE_WITH_CAVEAT` như trước, nhưng giờ có lý do đúng và có đo.
+
+Độc lập với phạm vi host, truy vấn trực tiếp trên toàn CSDL (mọi host, mọi ngày) cho 0 dòng với từng chuỗi tín hiệu cần tìm:
+
+Bảng: Dấu hiệu cần tìm có trong dữ liệu không (toàn CSDL 4.417.543 dòng)
+| PoC | Dấu hiệu | Số dòng khớp | Loại sự kiện thực có trong nguồn (cửa sổ 21/8) |
 |---|---|---|---|
-| `poc-bruteforce-we1149srv` | authentication | 20.657 | Không: chỉ có 4624 (thành công), không có 4625 |
-| `poc-c2-beacon-networkfilter` | web | 566 | Không: không có `networkfilter` trong dữ liệu đã nạp |
-| `poc-pdf-exploit-enc` | process | 129.775 | Không: không có PowerShell mã hoá thật (các dòng `splunk-powershell.exe` là công cụ của Splunk) |
+| `poc-bruteforce-we1149srv` | `Logon Failed`; `user = admin` | 0; 0 | chỉ `authentication/4624` (đăng nhập thành công), không có 4625 |
+| `poc-c2-beacon-networkfilter` | `networkfilter` | 0 | `web_request` (chỉ có miền và đường dẫn) |
+| `poc-pdf-exploit-enc` | `powershell.exe` cùng `-enc`; `-w hidden` | 0; 0 | `process_creation/4688` (các dòng `splunk-powershell.exe` là công cụ của Splunk) |
 
-Nguồn có dữ liệu nên hệ thống không dùng `COLLECT_DATA_THEN_RERUN` mà dùng `CLOSE_WITH_CAVEAT` (MEDIUM), kèm ba giới hạn: nguồn có dữ liệu chưa chắc có đúng loại sự kiện, predicate literal không bắt biến thể, chỉ quét một cửa sổ. Hạn chế thứ nhất đúng là tình trạng thực tế ở đây: đây là điểm hệ thống **chưa tự phát hiện**. Nó chỉ nhắc, và việc kiểm tra loại sự kiện cụ thể phải do người săn làm (mục 8.3).
+Cột cuối của bảng hiện nay cũng được hệ thống tự liệt kê trong báo cáo (mục "giới hạn của kết luận"), nên người săn không phải tự truy vấn để biết rằng nguồn xác thực chỉ có đăng nhập thành công. Hệ thống vẫn **chưa tự đối chiếu** loại sự kiện này với predicate; nó chỉ trưng bày để người săn đối chiếu (mục 8.3).
 
 Mỗi PoC chỉ quét một ngày trong 28 ngày (3,6% khoảng dữ liệu), nên kể cả loại sự kiện có trong dữ liệu, các ngày khác vẫn chưa được xem. Người đọc nên coi kết quả `CLOSE_WITH_CAVEAT` ở đây là "không tìm thấy trong phạm vi đã quét", đúng như nhãn.
 
@@ -79,19 +94,19 @@ Bảng: Cùng bốn PoC dưới ba cấu hình
 | `poc-c2-beacon-networkfilter` | `CLOSE_WITH_CAVEAT` | `CLOSE_WITH_CAVEAT` | `CLOSE_WITH_CAVEAT` |
 | `poc-pdf-exploit-enc` | `CLOSE_WITH_CAVEAT` | `CLOSE_WITH_CAVEAT` | `CLOSE_WITH_CAVEAT` |
 
-Ba nhận xét. Thứ nhất, phần quyết định giữa ba cấu hình khác nhau ở đúng một chỗ: judge đóng góp vào Joomla. Không có LLM, hệ thống nói trung thực rằng "chuỗi khớp đủ nhưng chưa ai đánh giá ngữ cảnh" và dừng ở `INVESTIGATE_FURTHER`. Thứ hai, hai mô hình LLM rất khác nhau về nguồn gốc cho cùng kết luận, và độ tin cậy judge dao động nhẹ (0,88 và 0,92; các lần chạy trước từng ra 0,97, 0,92, 0,88), điều này đúng với dự đoán rằng judge không ổn định và nên chỉ dùng làm tham khảo. Thứ ba, ba PoC rỗng không đổi, vì judge không chạy khi không có hàng nào, và luật rỗng không phụ thuộc LLM.
+Ba nhận xét. Thứ nhất, phần quyết định giữa ba cấu hình khác nhau ở đúng một chỗ: judge đóng góp vào Joomla. Không có LLM, hệ thống nói trung thực rằng "chuỗi khớp đủ nhưng chưa ai đánh giá ngữ cảnh" và dừng ở `INVESTIGATE_FURTHER`. Thứ hai, hai mô hình LLM rất khác nhau về nguồn gốc cho cùng kết luận, và độ tin cậy judge dao động (0,85 và 0,92 trong lần chạy này; các lần chạy trước từng ra 0,88, 0,92, 0,97), điều này đúng với dự đoán rằng judge không ổn định và nên chỉ dùng làm tham khảo. Thứ ba, ba PoC rỗng không đổi, vì judge không chạy khi không có hàng nào, và luật rỗng không phụ thuộc LLM.
 
 Về chi phí gọi LLM do judge và advisor (số lời gọi và token do bộ đo của hệ thống ghi lại, không tính phần bên trong PEAK vì PEAK không báo token):
 
 Bảng: Số lời gọi và token của judge/advisor
 | PoC | `auto`: lời gọi / token | Nemotron: lời gọi / token |
 |---|---|---|
-| `poc-joomla-rce` | 2 / 7.393 | 2 / 7.877 |
-| `poc-bruteforce-we1149srv` | 1 / 6.003 | 1 / 4.124 |
-| `poc-c2-beacon-networkfilter` | 1 / 6.561 | 1 / 4.267 |
-| `poc-pdf-exploit-enc` | 1 / 6.748 | 1 / 3.663 |
+| `poc-joomla-rce` | 2 / 9.524 | 2 / 7.280 |
+| `poc-bruteforce-we1149srv` | 1 / 7.004 | 1 / 4.814 |
+| `poc-c2-beacon-networkfilter` | 1 / 6.695 | 1 / 6.362 |
+| `poc-pdf-exploit-enc` | 1 / 8.087 | 1 / 4.949 |
 
-Phần chiếm nhiều thời gian nhất và không được đo token là hai lượt gọi PEAK (ABLE và kế hoạch), mỗi lượt là một cuộc hội thoại đa tác tử nhiều lượt. Đây là hạn chế đo lường ghi ở mục 8.4.
+Token tăng so với bản trước vì advisor nhận thêm phạm vi truy vấn, cơ cấu loại sự kiện và kết quả chạy lại. Phần chiếm nhiều thời gian nhất và không được đo token là hai lượt gọi PEAK (ABLE và kế hoạch), mỗi lượt là một cuộc hội thoại đa tác tử nhiều lượt. Đây là hạn chế đo lường ghi ở mục 8.3.
 
 ## 7.4. Các lỗi đã phát hiện nhờ thực nghiệm
 
@@ -107,8 +122,13 @@ Bảng: Lỗi phát hiện khi chạy thật và cách xử lý
 | 5 | Độ tin cậy HIGH cho kết quả chưa chứng minh được thành công | Luật chưa tách quét và khai thác | Trần `outcome_observed` |
 | 6 | Advisor trả JSON sai hoặc danh sách rỗng ở 2/4 PoC với `auto` | Mô hình không tuân thủ định dạng | Thử tới 3 lần, chấp nhận nhiều dạng, ghi lý do khi thất bại |
 | 7 | `able_table` của PEAK nuốt lỗi thành chuỗi `Error while generating...` | Cách PEAK xử lý ngoại lệ | Nhận ra chuỗi lỗi và coi là lỗi thật để thử lại |
+| 8 | Ba PoC rỗng bị lọc ngầm theo `host = we1149srv`, host không ghi nguồn tương ứng; độ phủ báo 20.657/566/129.775 bản ghi trong khi phạm vi thực tế là 0 | Host suy ra từ `able.location` không hiển thị trong predicate hay báo cáo | Hiển thị phạm vi; đếm độ phủ trong phạm vi; chạy lại không lọc host; luật riêng (mục 7.2.2) |
+| 9 | `MATCHES` với regex thật (`acunet.x`) cho 0 hàng dù `acunetix` cho 6; `EXISTS` dùng tên trường làm từ khoá | Tầng truy xuất đưa nguyên regex vào `LIKE` | Thu hẹp bằng đoạn literal bắt buộc; `EXISTS` đẩy xuống SQL |
+| 10 | Joomla báo 199 bản ghi (bước 1 chỉ 99) mà không nói đã chạm giới hạn; SPL dùng `earliest=-14d` cố định | Chỉ lấy 100 hàng rồi mới lọc; cửa sổ SPL không lấy từ PoC | Quét 2.000 hàng rồi lọc, báo `hiển thị / tổng`; SPL dùng cửa sổ của PoC |
 
-Lỗi số 6 đáng nói thêm. Trước khi sửa, hai trong bốn PoC không có phần bước tiếp theo, và không có cảnh báo nào cho biết LLM đã trả sai: báo cáo trông "hoàn chỉnh" nhưng thiếu một phần. Sau khi sửa, cả bốn PoC có 3 đến 5 bước, 3 đến 5 câu hỏi và 3 đến 5 rủi ro (với Nemotron, số bước/câu hỏi/rủi ro lần lượt là 5/5/5 cho `bruteforce` và Joomla, 4/5/5 cho `c2`, 5/3/3 cho `pdf-exploit`). Lần chạy cuối không có traceback nào trong nhật ký.
+Lỗi số 6 đáng nói thêm. Trước khi sửa, hai trong bốn PoC không có phần bước tiếp theo, và không có cảnh báo nào cho biết LLM đã trả sai: báo cáo trông "hoàn chỉnh" nhưng thiếu một phần. Sau khi sửa, cả bốn PoC có đủ 5 bước, 5 câu hỏi và 5 rủi ro với `auto`; với Nemotron là 5/5/5, 5/3/5, 5/5/5 và 5/5/5 (bruteforce, c2, Joomla, pdf-exploit). Lần chạy cuối không có traceback nào trong nhật ký.
+
+Ba lỗi 8–10 được tìm thấy ở lượt rà soát cuối bằng cách đối chiếu mô tả trong luận văn với mã nguồn rồi truy vấn thẳng vào dữ liệu, không phải qua kiểm thử đơn vị. Lỗi 8 đặc biệt đáng nói: kết luận của ba PoC không đổi sau khi sửa, nên một người chỉ nhìn bảng kết quả sẽ không thấy gì khác; sai chỉ nằm ở chỗ PoC chưa từng được tìm đúng chỗ, và chỉ lộ ra khi so cột "bản ghi nguồn trong cửa sổ" với số bản ghi trong phạm vi. Mỗi lỗi có bài hồi quy riêng (`tests/unit/test_scope_and_caps.py`, 15 bài).
 
 ## 7.5. Gọi LLM: miễn phí và độ tin cậy của endpoint
 
@@ -134,40 +154,40 @@ Hai điều kiện cần đọc cẩn thận. Một: nhóm "HTTP 200 nhưng khô
 
 ### 7.5.3. Chạy trọn bốn PoC với một mô hình miễn phí
 
-`nvidia/nemotron-3-super-120b-a12b:free` được chọn và chạy trọn bốn PoC (`--model`). Kết quả: cả bốn PoC cho cùng khuyến nghị như `auto`, PEAK được dùng ở cả bốn (`used_peak = true`), không có lần gọi lại nào phải ghi nhận, không có traceback. Judge cho Joomla là TRUE_POSITIVE 0,92. Bảng ABLE và kế hoạch của PEAK vẫn tuân thủ cấu trúc và nhắc đúng nguồn dữ liệu có trong CSDL (ví dụ ABLE của Joomla nói rằng telemetry có `web_request` với trường `domain` và `cmdline`, và gợi ý pivot sang `process_creation` để tìm hậu khai thác).
+`nvidia/nemotron-3-super-120b-a12b:free` được chọn và chạy trọn bốn PoC (`--model`), hai lần: một lần trước và một lần sau khi sửa phạm vi truy vấn; số liệu ở chương này là của lần sau. Kết quả: cả bốn PoC cho cùng khuyến nghị như `auto`, PEAK được dùng ở cả bốn (`used_peak = true`), không có lần gọi lại nào phải ghi nhận, không có traceback. Judge cho Joomla là TRUE_POSITIVE 0,92. Bảng ABLE và kế hoạch của PEAK vẫn tuân thủ cấu trúc và nhắc đúng nguồn dữ liệu có trong CSDL (ví dụ ABLE của Joomla nói rằng telemetry có `web_request` với trường `domain` và `cmdline`, và gợi ý pivot sang `process_creation` để tìm hậu khai thác).
 
 Kết luận cho yêu cầu ban đầu "gọi được API miễn phí hay không": **có**, ít nhất với một mô hình, và hệ thống chạy trọn vẹn. Đồng thời mục 6.2.2 bảo đảm rằng nếu không có khoá, hệ thống vẫn chạy ở chế độ không LLM.
 
 ## 7.6. Kiểm thử đơn vị và tính hồi quy
 
-Bộ kiểm thử có 86 bài: 78 đạt và 8 bị bỏ qua (cần Splunk); `ruff` không báo lỗi. Hai nhóm bài có ý nghĩa cho luận văn.
+Bộ kiểm thử có 101 bài: 93 đạt và 8 bị bỏ qua (cần Splunk); `ruff` không báo lỗi. Hai nhóm bài có ý nghĩa cho luận văn.
 
 - **Bất biến kiến trúc được khoá bằng kiểm thử:** chuỗi một phần không escalate; judge dưới ngưỡng không đổi luật; kết quả rỗng khi thiếu nguồn cho `COLLECT_DATA_THEN_RERUN`; advisor lỗi không đổi `disposition`; khoá API không có trong cấu hình.
-- **Bài hồi quy cho lỗi thật:** `EQUALS` không khớp `splunk-powershell.exe`; `EXISTS` rỗng không khớp; `retry_async` thành công sau lỗi thoáng qua và ném lại lỗi dai dẳng; CLI chạy được khi không có `.env`.
+- **Bài hồi quy cho lỗi thật:** `EQUALS` không khớp `splunk-powershell.exe`; `EXISTS` rỗng không khớp; `retry_async` thành công sau lỗi thoáng qua và ném lại lỗi dai dẳng; CLI chạy được khi không có `.env`; phạm vi host rỗng được ghi nhận và chạy lại không lọc host (cả nhánh không hit và nhánh có hit ở host khác); báo cáo ghi `hiển thị / tổng`; `MATCHES` với regex thật tìm được; `EXISTS` không bị che bởi giới hạn quét.
 
-Quá trình làm gọn kho cũng là một thực nghiệm hồi quy: sau khi xoá khoảng 28.000 dòng mã nguồn và các tệp kiểm thử của engine cũ, đường chạy PoC cho đúng cùng kết quả như trước (Joomla 199 bản ghi, ba PoC còn lại rỗng).
+Quá trình làm gọn kho cũng là một thực nghiệm hồi quy: sau khi xoá khoảng 28.000 dòng mã nguồn và các tệp kiểm thử của engine cũ, đường chạy PoC cho đúng cùng kết quả như trước (Joomla có hit, ba PoC còn lại rỗng; lúc đó chưa lộ ra các lỗi 8–10).
 
 ## 7.7. Đánh giá theo yêu cầu
 
 Bảng: Đối chiếu yêu cầu và kết quả
 | Yêu cầu | Kết quả | Bằng chứng |
 |---|---|---|
-| FR1, FR3 | Đạt | Cổng Prepare; 199 hit tái lập |
+| FR1, FR3 | Đạt | Cổng Prepare; 200 bản ghi hiển thị tái lập qua ba cấu hình |
 | FR2 | Đạt | `used_peak = true` ở 4/4 PoC, với hai cấu hình LLM |
-| FR4, FR5 | Đạt | Bảng độ phủ; 5 disposition; lựa chọn xếp hạng |
+| FR4, FR5 | Đạt (sau sửa) | Độ phủ theo cửa sổ, theo host và theo loại sự kiện; 5 disposition; lựa chọn xếp hạng |
 | FR6, FR7 | Đạt | `summary.md`, báo cáo, SPL, backlog |
 | FR8 | Đạt | `--offline` và bài `test_cli_runs_without_any_llm_configuration` |
 | FR9 | Đạt | `--model` và lần chạy Nemotron |
 | NFR1 | Đạt | Mọi hàng đến từ adapter; kiểm thử |
-| NFR2 | Đạt | Cùng số bản ghi qua ba cấu hình |
+| NFR2 | Đạt | Cùng số bản ghi hiển thị qua ba cấu hình |
 | NFR3 | Đạt từng phần | Gọi lại và fallback có kiểm thử; lỗi 404 thật chỉ có kiểm thử mô phỏng và quan sát gián tiếp |
 | NFR4 | Đạt | Quét không thấy khoá trong `artifacts/runs/*`, `results`, `docs` |
-| NFR5 | Đạt | Khoảng 8.400 dòng trong `src/` |
+| NFR5 | Đạt | Khoảng 8.700 dòng trong `src/` |
 | NFR6 | Đạt | Thẻ `v6-engine-final`, nhánh `pre-peak-snapshot` |
 
 ## 7.8. Thời gian chạy
 
-Phần tất định rất nhanh: tìm kiếm trên 4,4 triệu dòng mất vài giây mỗi PoC (4 đến 15 giây gồm cả judge). Phần LLM chiếm hầu hết thời gian. Chạy cả bốn PoC với `auto` mất khoảng bốn phút; với mô hình Meta Muse ban đầu mất 4 đến 8 phút cho mỗi PoC (khoảng 16 đến 32 phút cho cả bốn), nên `auto` nhanh hơn rõ rệt. Các con số thời gian phụ thuộc mạnh vào dịch vụ LLM tại thời điểm chạy, chỉ dùng để tham khảo.
+Phần tất định nhanh: tìm kiếm trên 4,4 triệu dòng mất vài giây mỗi PoC (6 đến 16 giây gồm cả judge ở lần chạy cuối; quét 2.000 hàng thay vì 100 không làm chậm đáng kể). Phần LLM chiếm hầu hết thời gian. Lần chạy `auto` trước đó mất khoảng bốn phút cho cả bốn PoC, còn lần chạy cuối (ước lượng thô, không bấm giờ chính xác) mất khoảng 12 đến 15 phút cho mỗi cấu hình có LLM; với mô hình Meta Muse ban đầu mất 4 đến 8 phút cho mỗi PoC. Chênh lệch này cho thấy thời gian phụ thuộc mạnh vào dịch vụ LLM tại thời điểm chạy, các con số chỉ dùng để tham khảo.
 
 ## 7.9. Điều chưa được kiểm chứng
 
@@ -176,6 +196,7 @@ Phần tất định rất nhanh: tìm kiếm trên 4,4 triệu dòng mất vài
 1. **Splunk thật.** Chưa chạy adapter Splunk hoặc kiểm tra SPL do hệ thống sinh ra trên một máy chủ Splunk.
 2. **`--research`.** Tác tử nghiên cứu của PEAK (cần máy chủ MCP) chưa được thử.
 3. **Retry trên 404 thật.** Cơ chế gọi lại chỉ được kiểm thử bằng lỗi mô phỏng; trong các lần chạy cuối không gặp lại lỗi 404 nên chưa quan sát nó cứu một lần chạy thật.
-4. **Recall.** Chỉ đo được một pha tấn công thật (Joomla); ba pha còn lại thiếu dữ liệu nên chưa đo được khả năng phát hiện. Không có số liệu về độ chính xác tổng thể nào có thể tuyên bố.
-5. **Số lần lặp.** Mỗi cấu hình chỉ chạy đầy đủ một đến vài lần; chưa có thống kê về độ biến thiên của judge hoặc advisor ngoài các con số rời rạc đã nêu.
-6. **Chất lượng nội dung do PEAK viết.** Hệ thống kiểm tra PEAK có chạy và có trả cấu trúc, nhưng không có người chuyên gia nào chấm chất lượng ABLE hay kế hoạch.
+4. **Adapter Splunk với các thay đổi truy xuất mới.** Giới hạn quét 2.000 hàng và tham số `require_nonempty` chưa được chạy trên Splunk thật; adapter này cũng chưa có độ phủ theo host hay theo loại sự kiện.
+5. **Recall.** Chỉ đo được một pha tấn công thật (Joomla); ba pha còn lại thiếu dữ liệu nên chưa đo được khả năng phát hiện. Không có số liệu về độ chính xác tổng thể nào có thể tuyên bố.
+6. **Số lần lặp.** Mỗi cấu hình chỉ chạy đầy đủ một đến vài lần; chưa có thống kê về độ biến thiên của judge hoặc advisor ngoài các con số rời rạc đã nêu.
+7. **Chất lượng nội dung do PEAK viết.** Hệ thống kiểm tra PEAK có chạy và có trả cấu trúc, nhưng không có người chuyên gia nào chấm chất lượng ABLE hay kế hoạch.

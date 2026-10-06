@@ -22,5 +22,9 @@ thiếu `topic`, `able.behavior`, `able.location`, `able.evidence`, `scope`, `ma
 
 - `op`: `EQUALS` (khớp chính xác, kèm basename) · `CONTAINS` · `STARTS_WITH` · `ENDS_WITH` · `MATCHES` (regex) · `EXISTS`.
 - `source_kind`: `process` · `dns` · `web` · `authentication` · `file` · `smb`; dùng để kiểm tra độ phủ nguồn.
+- `able.location` có tác dụng thực thi: nếu chứa token giống tên máy (vd. `we1149srv`) thì **mọi bước chỉ tìm trên host đó**
+  (báo cáo hiển thị điều này). Đừng ghi tên máy vào `location` nếu không muốn giới hạn; nên kiểm tra host đó thực sự ghi
+  nguồn tương ứng (web proxy/stream thường ghi dưới tên máy thu log, không phải máy client).
+- Literal cụ thể trong `able.behavior`/`able.evidence` (tên tệp, cờ như `-enc`, IP, chuỗi trong ngoặc kép) được AND vào mọi bước.
 - `time_window`: cửa sổ mặc định; `--window` ghi đè. Cửa sổ dài hơn `max_duration` bị cắt về phần cuối.
 - Muốn khuyến nghị đạt tin cậy HIGH khi escalate, PoC cần có một bước trên trường kết quả (`status`, `action`...).

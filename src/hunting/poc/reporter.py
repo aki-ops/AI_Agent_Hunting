@@ -19,9 +19,11 @@ def build_poc_act_block(
         spl_from_poc_steps,
         stakeholder_summary,
         validate_spl,
+        window_to_splunk,
     )
 
-    spl = spl_from_poc_steps(poc_render.get("steps", []))
+    earliest, latest = window_to_splunk(getattr(result, "time_window", None))
+    spl = spl_from_poc_steps(poc_render.get("steps", []), earliest=earliest, latest=latest)
     validation = validate_spl(spl, live_checker)
     all_ids = [s.get("step_id", "") for s in poc_render.get("steps", [])]
     backlog = backlog_from_poc(poc_render, list(result.matched_step_ids), all_ids)

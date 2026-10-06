@@ -162,6 +162,21 @@ def commit_act(
     }
 
 
+def window_to_splunk(window: str | None) -> tuple[str, str]:
+    """``START/END`` (ISO-8601 UTC) -> Splunk ``earliest``/``latest`` as epoch seconds; falls back to the last 14 days."""
+    from datetime import datetime, timezone
+
+    try:
+        start, end = str(window).split("/", 1)
+        stamps = [
+            int(datetime.fromisoformat(x.strip().replace("Z", "+00:00")).astimezone(timezone.utc).timestamp())
+            for x in (start, end)
+        ]
+        return str(stamps[0]), str(stamps[1])
+    except (ValueError, AttributeError):
+        return "-14d", "now"
+
+
 def spl_from_poc_steps(
     steps: list[dict[str, Any]],
     *,

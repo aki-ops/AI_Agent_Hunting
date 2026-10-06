@@ -13,6 +13,7 @@ from hunting.act.act import (
     stakeholder_summary,
     validate_spl,
     validate_spl_static,
+    window_to_splunk,
 )
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "spl_from_lead",
     "spl_from_outlier",
     "spl_from_poc_steps",
+    "window_to_splunk",
     "stakeholder_summary",
     "validate_spl",
     "validate_spl_static",

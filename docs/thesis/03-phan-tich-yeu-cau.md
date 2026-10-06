@@ -19,7 +19,7 @@ Từ hiện trạng, đồ án tập trung vào bốn vấn đề.
 
 **Vấn đề 2: chuẩn bị săn đang là việc thủ công.** Viết bảng ABLE, xác định nguồn dữ liệu và lập kế hoạch cần đọc tài liệu và viết nhiều văn bản. PEAK Assistant tự động hoá chính các việc này, nên việc tiếp tục tự xây là lãng phí.
 
-**Vấn đề 3: đầu ra chưa phục vụ quyết định.** "MATCHED, 199 bản ghi" chưa cho người săn biết có nên chuyển cho IR hay không, độ tin cậy ra sao, và còn thiếu gì. Một cuộc săn rỗng còn tệ hơn: nhãn "EMPTY" dễ bị đọc nhầm thành "an toàn".
+**Vấn đề 3: đầu ra chưa phục vụ quyết định.** "MATCHED, 200 bản ghi" chưa cho người săn biết có nên chuyển cho IR hay không, độ tin cậy ra sao, và còn thiếu gì. Một cuộc săn rỗng còn tệ hơn: nhãn "EMPTY" dễ bị đọc nhầm thành "an toàn".
 
 **Vấn đề 4: ràng buộc vận hành LLM.** Endpoint LLM có thể không sẵn sàng, bị giới hạn tốc độ, trả lỗi thoáng qua hoặc tốn phí. Người dùng có thể chưa có khoá API. Hệ thống không được sập hay trả kết quả sai trong những tình huống đó.
 

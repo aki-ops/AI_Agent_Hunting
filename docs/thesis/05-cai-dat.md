@@ -19,20 +19,20 @@ PEAK Assistant được khai báo là phụ thuộc **tuỳ chọn** (`pip insta
 
 ## 5.2. Cấu trúc mã nguồn
 
-Sau khi làm gọn, `src/hunting/` gồm các mô-đun sau với tổng khoảng 8.400 dòng.
+Sau khi làm gọn, `src/hunting/` gồm các mô-đun sau với tổng khoảng 8.700 dòng.
 
 Bảng: Cấu trúc mã nguồn
 | Đường dẫn | Dòng | Vai trò |
 |---|---|---|
 | `llm.py` | ~215 | Cấu hình LLM, gọi lại, bộ gọi đồng bộ |
 | `prepare.py` | ~220 | Cầu nối PEAK Assistant |
-| `recommend.py` | ~390 | Tóm tắt bằng chứng, luật khuyến nghị, advisor |
-| `report.py` | ~110 | Dựng báo cáo Markdown và bảng tổng hợp |
-| `pipeline.py` | ~100 | Điều phối một PoC từ đầu đến cuối |
+| `recommend.py` | ~500 | Tóm tắt bằng chứng, luật khuyến nghị, advisor |
+| `report.py` | ~130 | Dựng báo cáo Markdown và bảng tổng hợp |
+| `pipeline.py` | ~115 | Điều phối một PoC từ đầu đến cuối |
 | `cli.py` | ~130 | Dòng lệnh |
 | `poc/` | ~1.700 | Mô hình PoC, nạp JSON, tác tử thực thi, judge, báo cáo |
-| `adapters/` | ~3.200 | Adapter CDB và Splunk, danh sách cho phép, kiểm soát |
-| `act/` | ~350 | Bản nháp SPL, backlog, ghi chú stakeholder |
+| `adapters/` | ~3.300 | Adapter CDB và Splunk, danh sách cho phép, kiểm soát |
+| `act/` | ~365 | Bản nháp SPL, backlog, ghi chú stakeholder |
 | `contracts/`, `capabilities/`, `controller/`, `query_safety/` | ~1.550 | Hợp đồng dữ liệu mà adapter cần, theo dõi chi phí |
 | `peak.py` | ~450 | Cổng Prepare, phân tích thời lượng, cửa sổ, ABLE → quan sát cụ thể |
 
@@ -116,13 +116,13 @@ PEAK và AutoGen in nhiều dòng traceback cho mỗi lời gọi lỗi. Ngữ c
 
 `PocAgent.run` thực hiện: kiểm tra cổng Prepare, cắt cửa sổ theo `max_duration`, chạy vòng thực thi, gọi judge (nếu bật), ghi gói IR khi có hit, ghi sổ cái. Vòng thực thi `_execute_loop` có đặc tính đáng chú ý:
 
-- Lượt 1 chạy mọi bước chính, mỗi bước gọi `adapter.execute_query(operation_id="search_text", search_terms=...)` với giới hạn 100 hàng.
-- Các giá trị cụ thể rút từ ABLE (tên tệp, cờ dòng lệnh, địa chỉ IP, chuỗi trong ngoặc kép) được AND thêm vào truy vấn; văn xuôi không thêm điều kiện nào. Việc rút trích dùng biểu thức chính quy trong `peak.py`.
+- Lượt 1 chạy mọi bước chính, mỗi bước gọi `adapter.execute_query(operation_id="search_text", search_terms=...)` với giới hạn quét `SCAN_LIMIT = 2000` hàng; sau khi áp dụng toán tử, tối đa `ROW_CAP = 100` hàng được giữ và `matched_total` ghi tổng số khớp.
+- Các giá trị cụ thể rút từ ABLE **của PoC** (tên tệp, cờ dòng lệnh, địa chỉ IP, chuỗi trong ngoặc kép; không phải bảng ABLE do PEAK sinh) được AND thêm vào truy vấn; văn xuôi không thêm điều kiện nào. Host suy ra từ `able.location` cũng được dùng làm bộ lọc thực thể. Việc rút trích dùng biểu thức chính quy trong `peak.py`, và mọi điều kiện thêm này được ghi vào `StepResult.scope`.
 - Nếu các hit ở bước đầu tiên đến từ đúng một máy khác với máy ABLE nêu, lượt 2 chạy lại các bước còn lại trên máy đó.
 - Nếu lượt 1 hoàn toàn rỗng và PoC khai báo `fallbacks` thì chạy các bước thay thế; sau đó có thể chạy lại đúng các vị từ gốc một lần.
 - Toán tử không bao giờ được nới: `EQUALS` không biến thành `CONTAINS` ở lượt thứ hai.
 
-Hàm `_apply_op` hiện thực toán tử trên giá trị ô. `EQUALS` so khớp không phân biệt hoa thường với cả giá trị đầy đủ và phần tên tệp cuối đường dẫn; `MATCHES` dùng `re.search` và lùi về `CONTAINS` nếu biểu thức lỗi; `EXISTS` yêu cầu ô không rỗng và, nếu `value` rỗng, loại bỏ mọi hàng để tránh khớp bừa (một lỗi thật đã được phát hiện khi đánh giá trên dữ liệu lớn).
+Hàm `_apply_op` hiện thực toán tử trên giá trị ô. `EQUALS` so khớp không phân biệt hoa thường với cả giá trị đầy đủ và phần tên tệp cuối đường dẫn; `MATCHES` dùng `re.search` và lùi về `CONTAINS` nếu biểu thức lỗi; `EXISTS` yêu cầu ô không rỗng và, nếu `value` rỗng, loại bỏ mọi hàng để tránh khớp bừa (một lỗi thật đã được phát hiện khi đánh giá trên dữ liệu lớn). Ở tầng truy xuất, `MATCHES` chỉ gửi cho adapter đoạn literal bắt buộc dài nhất của biểu thức (`_regex_literal`) và `EXISTS` được đẩy xuống SQL (`parameters={"require_nonempty": [trường]}`); nếu không, regex bị đưa nguyên vào `LIKE` sẽ không khớp gì.
 
 ## 5.6. Adapter
 
@@ -161,14 +161,15 @@ Mô-đun `report.py` dựng báo cáo Markdown bằng tiếng Việt với các 
 
 ## 5.9. Kiểm thử
 
-Bộ kiểm thử gồm 86 bài, trong đó 78 chạy được và 8 bị bỏ qua vì cần Splunk thật. Kết quả cuối: 78 đạt, 8 bỏ qua, mã kiểm tra tĩnh `ruff` không báo lỗi. Các bài mới (`tests/unit/test_pipeline.py`) kiểm tra:
+Bộ kiểm thử gồm 101 bài, trong đó 93 chạy được và 8 bị bỏ qua vì cần Splunk thật. Kết quả cuối: 93 đạt, 8 bỏ qua, mã kiểm tra tĩnh `ruff` không báo lỗi. Các bài mới (`tests/unit/test_pipeline.py` và `tests/unit/test_scope_and_caps.py`) kiểm tra:
 
 - **Luật khuyến nghị:** 11 tổ hợp tham số (bằng chứng × judge) ứng với bảng luật; chuỗi một phần không escalate dù judge tin cậy cao; trần độ tin cậy khi chưa có bước kiểm tra kết quả và mở trần khi có.
 - **Rỗng không thành sạch:** thiếu nguồn cho `COLLECT_DATA_THEN_RERUN` với câu cảnh báo.
 - **Advisor:** phân tích JSON có hàng rào mã; thử lại khi rác hoặc rỗng; chấp nhận dạng lệch chuẩn; lỗi LLM không đổi khuyến nghị.
 - **Cấu hình LLM:** đọc `.env`, tách địa chỉ gốc, không để khoá lọt vào cấu hình, từ chối giá trị mẫu.
 - **Chịu lỗi PEAK:** khi PEAK ném lỗi thì quay về PoC và có ghi chú; lỗi thoáng qua được thử lại thành công; cơ chế `retry_async` thành công sau vài lần và ném lại lỗi dai dẳng.
-- **Độ phủ CDB:** đếm theo loại nguồn, loại nguồn không biết trả `None`, mô tả dữ liệu.
+- **Độ phủ CDB:** đếm theo loại nguồn (và theo host), cơ cấu loại sự kiện, host ghi nguồn, mô tả dữ liệu.
+- **Phạm vi ngầm và giới hạn hàng (mục 7.4):** phạm vi host rỗng phải được ghi nhận và chạy lại không lọc host (cả hai nhánh có hit và không hit); báo cáo ghi `hiển thị / tổng` khi chạm trần 100 hàng; `MATCHES` với regex thật tìm được; `EXISTS` không bị che bởi giới hạn quét; `_regex_literal` chỉ thu hẹp, không bỏ sót; cửa sổ SPL lấy từ PoC.
 - **Đầu cuối:** chạy CLI trên một CSDL nhỏ ở chế độ `--offline`, và chạy CLI khi không có tệp `.env` nào.
 
 Các bài này không gọi LLM thật; việc gọi thật được kiểm chứng bằng thực nghiệm ở Chương 7.

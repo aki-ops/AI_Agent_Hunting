@@ -64,7 +64,7 @@ Ví dụ này khác PoC Joomla ở chỗ thêm bước tìm chuỗi `acunetix` v
 }
 ```
 
-Chạy với `--offline` trên BOTS v1: 203 bản ghi khớp (99, 6 và 100 cho từng bước), khuyến nghị `INVESTIGATE_FURTHER` (MEDIUM).
+Chạy với `--offline` trên BOTS v1: 204 bản ghi hiển thị (100 / ≥1.999, 6 và 100 / ≥2.000 cho từng bước), khuyến nghị `INVESTIGATE_FURTHER` (MEDIUM).
 
 ### A.3. Bảng trường của PoC
 
@@ -105,15 +105,18 @@ ESCALATE_TO_IR — độ tin cậy trung bình (MEDIUM).
 > quyết định cuối cùng; hệ thống không tự hành động.
 
 Lý do
-- 2/2 bước PoC có kết quả, tổng 199 bản ghi khớp.
+- 2/2 bước PoC có kết quả, tổng 200 bản ghi khớp.
 - Khoảng thời gian hit: 2016-08-10T21:36:45Z → 2016-08-10T21:40:57Z.
-- Judge (advisory) đánh giá TRUE_POSITIVE, độ tin cậy 0.88.
+- Judge (advisory) đánh giá TRUE_POSITIVE, độ tin cậy 0.85.
 - Độ tin cậy bị hạ xuống MEDIUM: PoC không có bước nào kiểm tra kết quả
   (status/action) nên chưa chứng minh được tấn công thành công.
 
 Cần lưu ý (giới hạn của kết luận)
 - Khớp predicate literal chứng minh có hoạt động tương ứng trong dữ liệu;
   tự nó chưa chứng minh thành công hay tác động.
+- Bước s1-victim-site: chỉ hiển thị 100 bản ghi trong ít nhất 1999 bản ghi khớp
+  (quét đã dừng ở giới hạn hàng nên tổng thực tế có thể lớn hơn).
+- Bước s2-joomla-path: chỉ hiển thị 100 bản ghi trong ít nhất 2000 bản ghi khớp.
 
 ## Các lựa chọn cho người quyết định (xếp theo ưu tiên)
 1. ESCALATE_TO_IR       — chuyển gói bằng chứng cho IR; trước khi cô lập,
@@ -122,21 +125,22 @@ Cần lưu ý (giới hạn của kết luận)
 3. TUNE_POC_OR_CLOSE    — thêm điều kiện loại trừ rồi chạy lại.
 
 ## Bằng chứng
-| Bước             | Predicate                          | Nguồn | Bản ghi nguồn | Khớp |
-| s1-victim-site   | domain EQUALS imreallynotbatman.com | web   | 12,546        | 99   |
-| s2-joomla-path   | cmdline CONTAINS /joomla/           | web   | 12,546        | 100  |
+| Bước           | Predicate                           | Nguồn | Nguồn/cửa sổ | Trong phạm vi | Khớp (hiển thị / tổng) |
+| s1-victim-site | domain EQUALS imreallynotbatman.com | web   | 12,546       | 12,546        | 100 / ≥1999            |
+| s2-joomla-path | cmdline CONTAINS /joomla/           | web   | 12,546       | 12,546        | 100 / ≥2000            |
 
 ## Judge (LLM, chỉ tham khảo)
-TRUE_POSITIVE — 0.88. Acunetix scanner test URI, random 8-character paths,
-and direct access to /joomla/ component paths ...
+TRUE_POSITIVE — 0.85. Requests to /acunetix-wvs-test-for-some-inexistent-file and
+random 8-character URIs followed by Joomla component enumeration within a tight
+21:36-21:40 window match automated Joomla vulnerability scanning ...
 
 ## Rủi ro nếu quyết định sai
 - Chưa có bước kiểm tra status/action nên chưa chứng minh RCE thành công.
 - Mẫu có /acunetix-wvs-test-for-some-inexistent-file gợi ý scanner Acunetix.
 - Việc escalate lên IR khi chưa xác nhận thành công có thể lãng phí nguồn lực.
 
-## Act: bản nháp phát hiện (SPL)  — trạng thái DRAFT, chưa chạy trên Splunk thật
-search index="botsv1" domain="imreallynotbatman.com" match(cmdline, "(?i)/joomla/") earliest=-14d latest=now
+## Act: bản nháp phát hiện (SPL)  — trạng thái DRAFT, chưa chạy trên Splunk thật; cửa sổ lấy từ PoC (epoch UTC)
+search index="botsv1" domain="imreallynotbatman.com" match(cmdline, "(?i)/joomla/") earliest=1470864960 latest=1470866400
 | table _time, host, user, image, cmdline, domain, file_path, action
 ```
 
@@ -182,7 +186,7 @@ Bảng: Các khoá cấp cao của `recommendation.json`
 | `headline` | chuỗi | Câu tóm tắt |
 | `reasons`, `caveats` | danh sách chuỗi | Lý do và giới hạn |
 | `options` | danh sách | Mỗi phần tử có `action`, `rank`, `rationale` |
-| `evidence` | đối tượng | `window`, `steps[]` (`step_id`, `description`, `predicate`, `source_kind`, `row_count`, `source_rows_in_window`), `matched_steps`, `total_steps`, `observations`, `first_seen`, `last_seen`, `pivots`, `top_values`, `samples`, `chain_complete`, `missing_sources`, `unverifiable_sources` |
+| `evidence` | đối tượng | `window`, `steps[]` (`step_id`, `description`, `predicate`, `source_kind`, `row_count`, `source_rows_in_window`, `source_rows_in_scope`, `matched_total`, `scan_truncated`), `scope` (`host`, `actor`, `observables`), `scope_empty_sources`, `capped_steps`, `source_breakdown`, `source_hosts`, `unscoped_probe`, `matched_steps`, `total_steps`, `observations`, `first_seen`, `last_seen`, `pivots`, `top_values`, `samples`, `chain_complete`, `missing_sources`, `unverifiable_sources` |
 | `judge` | đối tượng | `verdict`, `confidence`, `rationale`, `notes` |
 | `next_steps`, `questions_for_hunter`, `risks` | danh sách | Do advisor tạo |
 | `decision_required` | boolean | Luôn `true` |
@@ -193,7 +197,7 @@ Bảng: Các khoá cấp cao của `recommendation.json`
 
 ## Phụ lục E. Danh sách kiểm thử
 
-Bảng: Phân bố 86 bài kiểm thử theo tệp
+Bảng: Phân bố 101 bài kiểm thử theo tệp
 | Tệp | Số bài | Nội dung |
 |---|---|---|
 | `test_pipeline.py` | 25 | Luật khuyến nghị, advisor, cấu hình LLM, PEAK, độ phủ CDB, CLI |
@@ -202,24 +206,25 @@ Bảng: Phân bố 86 bài kiểm thử theo tệp
 | `test_act.py` | 8 | Bản nháp SPL, backlog, ghi chú stakeholder |
 | `test_v5_adapters.py` | 5 | Hợp đồng adapter và kiểm soát truy vấn |
 | `test_peak_execute.py` | 2 | Phân tích kế hoạch PEAK thành quan sát cụ thể |
+| `test_scope_and_caps.py` | 15 | Phạm vi host ngầm, giới hạn hàng, `MATCHES`/`EXISTS`, độ phủ theo loại sự kiện, cửa sổ SPL |
 
 Các bài của `test_pipeline.py` (tên rút gọn): `test_disposition_rules` (11 tổ hợp); `test_escalate_is_high_only_when_an_outcome_field_is_tested`; `test_empty_result_never_reads_as_clean_when_source_missing`; `test_advisor_parses_json_and_survives_garbage`; `test_advisor_retries_until_usable_and_accepts_drifted_shapes`; `test_llm_settings_from_env_file`; `test_llm_settings_rejects_placeholders`; `test_prepare_without_llm_uses_poc_plan_and_says_so`; `test_prepare_degrades_when_peak_agents_fail`; `test_prepare_retries_a_transient_peak_failure`; `test_retry_async_recovers_from_transient_errors_and_reraises_persistent_ones`; `test_cdb_source_presence_and_description`; `test_cli_offline_end_to_end`; `test_cli_requires_a_poc`; `test_cli_runs_without_any_llm_configuration`.
 
-Lệnh chạy: `python -m pytest tests -q` (kết quả: 78 đạt, 8 bỏ qua) và `python -m ruff check src tests` (không báo lỗi).
+Lệnh chạy: `python -m pytest tests -q` (kết quả: 93 đạt, 8 bỏ qua) và `python -m ruff check src tests` (không báo lỗi).
 
 ## Phụ lục F. Kết quả từng lần chạy
 
-Bảng: Tổng hợp các lần chạy đã dùng trong luận văn
+Bảng: Tổng hợp các lần chạy cuối (sau khi sửa phạm vi truy vấn) đã dùng trong luận văn
 | Cấu hình | PoC | Khuyến nghị | Tin cậy | Lời gọi LLM | Token | Thời gian Execute (giây) | Judge |
 |---|---|---|---|---|---|---|---|
-| `auto` | joomla | `ESCALATE_TO_IR` | MEDIUM | 2 | 7.393 | 6,2 | TRUE_POSITIVE 0,88 |
-| `auto` | bruteforce | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 6.003 | 4,3 | (không có hit) |
-| `auto` | c2-beacon | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 6.561 | 4,8 | (không có hit) |
-| `auto` | pdf-exploit | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 6.748 | 6,0 | (không có hit) |
-| Nemotron free | joomla | `ESCALATE_TO_IR` | MEDIUM | 2 | 7.877 | 14,8 | TRUE_POSITIVE 0,92 |
-| Nemotron free | bruteforce | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 4.124 | 4,3 | (không có hit) |
-| Nemotron free | c2-beacon | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 4.267 | 5,3 | (không có hit) |
-| Nemotron free | pdf-exploit | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 3.663 | 7,8 | (không có hit) |
+| `auto` | joomla | `ESCALATE_TO_IR` | MEDIUM | 2 | 9.524 | 16,1 | TRUE_POSITIVE 0,85 |
+| `auto` | bruteforce | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 7.004 | 6,1 | (không có hit) |
+| `auto` | c2-beacon | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 6.695 | 6,2 | (không có hit) |
+| `auto` | pdf-exploit | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 8.087 | 8,8 | (không có hit) |
+| Nemotron free | joomla | `ESCALATE_TO_IR` | MEDIUM | 2 | 7.280 | 8,3 | TRUE_POSITIVE 0,92 |
+| Nemotron free | bruteforce | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 4.814 | 6,1 | (không có hit) |
+| Nemotron free | c2-beacon | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 6.362 | 6,4 | (không có hit) |
+| Nemotron free | pdf-exploit | `CLOSE_WITH_CAVEAT` | MEDIUM | 1 | 4.949 | 9,3 | (không có hit) |
 | `--offline` | joomla | `INVESTIGATE_FURTHER` | MEDIUM | 0 | 0 | — | — |
 | `--offline` | ba PoC còn lại | `CLOSE_WITH_CAVEAT` | MEDIUM | 0 | 0 | — | — |
 
@@ -238,7 +243,7 @@ AI_Agent_Hunting/
 │   ├── act/                # SPL, backlog, stakeholder
 │   └── peak.py  contracts/  capabilities/  controller/  query_safety/
 ├── scripts/                # nạp BOTS v1 vào SQLite
-├── tests/unit/             # 86 bài kiểm thử
+├── tests/unit/             # 101 bài kiểm thử
 ├── results/botsv1-peak-run/# kết quả đã commit
 └── docs/                   # kiến trúc, định dạng PoC, báo cáo, thesis/, archive/
 ```

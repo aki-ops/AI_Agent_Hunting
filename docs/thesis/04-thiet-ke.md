@@ -19,9 +19,9 @@ Hình 3 trình bày luồng tám bước khi chạy một PoC. Các bước 2 v�
 
 1. **Nạp PoC và kiểm tra cổng Prepare.** PoC phải có chủ đề, hành vi, vị trí, bằng chứng, phạm vi, thời lượng tối đa, kế hoạch và tài liệu nghiên cứu (trường actor được để trống). Thiếu một trường thì PoC bị từ chối trước khi chạm vào telemetry.
 2. **PEAK Prepare.** Dựng đầu vào cho PEAK từ PoC và từ mô tả telemetry của adapter, gọi `able_table` rồi `plan_hunt`.
-3. **Thực thi vị từ.** Mỗi bước của PoC được thực hiện qua adapter bằng phép tìm văn bản thô, rồi bộ lọc đúng toán tử được áp dụng lên trường đích.
+3. **Thực thi vị từ.** Mỗi bước của PoC được thực hiện qua adapter bằng phép tìm văn bản thô (quét tối đa 2.000 hàng), rồi bộ lọc đúng toán tử được áp dụng lên trường đích; tối đa 100 hàng được giữ làm bằng chứng và tổng số hàng khớp được ghi lại. Ngoài vị từ, truy vấn còn chịu phạm vi suy ra từ ABLE **của PoC** (host từ `able.location`, các chuỗi cụ thể từ `able.behavior` và `able.evidence`); phạm vi này được hiển thị trong báo cáo.
 4. **Tinh chỉnh.** Tối đa một lượt: nếu mọi hit đến từ đúng một máy thì chạy lại các bước còn lại trên máy đó; nếu rỗng thì chạy lại đúng các vị từ gốc. Toán tử không bao giờ bị nới (EQUALS không thành CONTAINS).
-5. **Độ phủ nguồn.** Với mỗi `source_kind` của các bước, đếm số bản ghi của nguồn đó trong cửa sổ.
+5. **Độ phủ nguồn.** Với mỗi `source_kind` của các bước, đếm số bản ghi của nguồn đó trong cửa sổ và trong phạm vi host của PoC, đồng thời liệt kê các loại sự kiện thực có. Nếu nguồn có dữ liệu nhưng không có bản ghi nào trong phạm vi host, hệ thống chạy lại PoC một lần không lọc host (thư mục `unscoped_probe/`) để phân biệt "host này không ghi nguồn" với "không có hoạt động ở đâu cả".
 6. **Luật khuyến nghị.** Tính `disposition` và `confidence` từ bằng chứng, độ phủ và nhận định judge.
 7. **Judge và advisor.** Judge chỉ chạy khi có bản ghi khớp. Advisor luôn chạy nếu có LLM, nhận kế hoạch PEAK và tóm tắt bằng chứng, và trả về bước tiếp theo, câu hỏi và rủi ro.
 8. **Báo cáo.** Ghi `recommendation.md`, `recommendation.json`, bản nháp SPL và các tệp phụ.
@@ -36,7 +36,7 @@ Sáu toán tử được hỗ trợ: `EQUALS`, `CONTAINS`, `STARTS_WITH`, `ENDS_
 
 ### 4.3.2. Kết quả thực thi và bằng chứng
 
-`PocHuntResult` giữ danh sách `StepResult` (số hàng và các hàng của từng bước), danh sách bước đã khớp, nhận định judge (nếu có), nhật ký tinh chỉnh và đường dẫn sổ cái. `EvidenceSummary` là bản tóm tắt phục vụ khuyến nghị: với mỗi bước có số hàng khớp và số bản ghi nguồn trong cửa sổ; ngoài ra có thời điểm đầu và cuối của hit, các giá trị xoay trục hàng đầu (máy, người dùng, IP, tên miền), giá trị phổ biến của các trường đích và tối đa năm hàng mẫu.
+`PocHuntResult` giữ danh sách `StepResult` (số hàng và các hàng của từng bước), danh sách bước đã khớp, nhận định judge (nếu có), nhật ký tinh chỉnh và đường dẫn sổ cái. `EvidenceSummary` là bản tóm tắt phục vụ khuyến nghị: với mỗi bước có số hàng khớp và số bản ghi nguồn trong cửa sổ; ngoài ra có thời điểm đầu và cuối của hit, các giá trị xoay trục hàng đầu (máy, người dùng, IP, tên miền), giá trị phổ biến của các trường đích và tối đa năm hàng mẫu. `EvidenceSummary` còn mang phạm vi truy vấn thực tế (`scope`), số bản ghi khớp tổng và cờ bị cắt của từng bước, cơ cấu loại sự kiện của nguồn, các host thực sự ghi nguồn khi phạm vi host rỗng, và kết quả chạy lại không lọc host (`unscoped_probe`).
 
 ### 4.3.3. Khuyến nghị
 
@@ -73,9 +73,15 @@ Hình 4 mô tả chính sách lỗi. Mỗi bước (ABLE, kế hoạch) được
 
 Adapter CDB thực hiện phép tìm văn bản thô: mỗi giá trị tìm kiếm được so khớp bằng `LIKE` trên các cột văn bản (`raw_ref`, `cmdline`, `image`, `file_path`, `domain`, `user`, `host`, `native_type`) với tham số hoá an toàn. Phép tìm này có chủ ý rộng để không bỏ sót. Sau đó bộ thực thi áp dụng toán tử thật của bước lên đúng trường đích. Thiết kế hai tầng này sinh ra từ một lỗi thực tế: khi chỉ dùng `LIKE`, vị từ `image EQUALS powershell.exe` khớp luôn cả `splunk-powershell.exe` và tạo 100 báo động giả trên 4,38 triệu dòng; bộ lọc chính xác ở tầng hai đưa tỷ lệ này về không.
 
+**Giới hạn hàng và quét.** Nếu adapter chỉ trả 100 hàng rồi mới lọc, các hàng khớp đúng có thể nằm ngoài 100 hàng đầu và bị bỏ sót; một kiểm tra thực tế cho thấy bước `EQUALS` của PoC Joomla chỉ còn 99 hàng vì một hàng trong 100 hàng đầu bị bộ lọc loại, trong khi tổng số khớp thật lớn hơn nhiều. Vì vậy mỗi bước quét tối đa `SCAN_LIMIT = 2000` hàng, áp dụng toán tử, rồi giữ `ROW_CAP = 100` hàng đầu làm bằng chứng và lưu `matched_total`. Cờ `scan_truncated` cho biết lượt quét chạm giới hạn, nghĩa là tổng chỉ là cận dưới (báo cáo ghi `≥`).
+
+**Hai toán tử cần xử lý riêng ở tầng truy xuất.** `MATCHES` không thể đưa nguyên biểu thức chính quy vào `LIKE` (dấu `.` hay `\d` sẽ không khớp gì); hệ thống chỉ dùng đoạn literal bắt buộc dài nhất của biểu thức (ví dụ `acunet` cho `acunet.x-\d+`) để thu hẹp, và bỏ thu hẹp nếu biểu thức có phép chọn `|`. `EXISTS` được đẩy xuống SQL thành điều kiện "trường khác rỗng" để giới hạn hàng không che mất kết quả.
+
 ### 4.5.2. Độ phủ nguồn
 
-Mỗi bước khai báo `source_kind` (`process`, `web`, `dns`, `authentication`, `file`, `smb`). Adapter ánh xạ loại nguồn sang các giá trị `native_type` tương ứng và đếm số bản ghi trong cửa sổ bằng một truy vấn có tham số. Nếu adapter không có phương thức này (như adapter Splunk hiện tại), độ phủ được ghi là "không kiểm tra được", và luật khuyến nghị hạ độ tin cậy tương ứng.
+Mỗi bước khai báo `source_kind` (`process`, `web`, `dns`, `authentication`, `file`, `smb`). Adapter ánh xạ loại nguồn sang các giá trị `native_type` tương ứng và có ba truy vấn có tham số: đếm bản ghi trong cửa sổ (tuỳ chọn theo host), liệt kê loại sự kiện `native_type/event_id` kèm số lượng, và liệt kê các host thực sự ghi nguồn. Nếu adapter không có các phương thức này (như adapter Splunk hiện tại), độ phủ được ghi là "không kiểm tra được", và luật khuyến nghị hạ độ tin cậy tương ứng.
+
+**Phạm vi host ngầm.** Hàm `able_drive` suy ra một host từ `able.location` (token đầu tiên trông giống tên máy, ví dụ `we1149srv`), một tài khoản từ `able.actor` và các literal cụ thể từ `able.behavior`/`able.evidence`; chúng được thêm vào mọi bước. Đây là hành vi có chủ ý của thiết kế Execute từ phiên bản trước nhưng không hiển thị trong predicate, nên đồ án bổ sung ba biện pháp: (i) báo cáo ghi rõ phạm vi thực tế; (ii) độ phủ được đếm cả trong phạm vi host; (iii) khi phạm vi host không có dữ liệu mà cửa sổ có, hệ thống chạy lại không lọc host. Lý do cần cả ba được nêu ở mục 7.2.2: trong dữ liệu thực nghiệm, máy được nêu trong `location` của cả ba PoC rỗng không ghi nguồn tương ứng, nên các PoC này chưa từng thực sự tìm kiếm trên dữ liệu nào.
 
 ### 4.5.3. Giới hạn cửa sổ và thời lượng
 
@@ -88,7 +94,7 @@ Trường `max_duration` làm hai việc: cắt cửa sổ telemetry dài hơn t
 - `ESCALATE_TO_IR`: chuỗi khớp đủ và judge nhận định có dấu hiệu độc hại với độ tin cậy từ 0,7.
 - `INVESTIGATE_FURTHER`: có bản ghi khớp nhưng chuỗi chưa đủ, hoặc ngữ cảnh chưa chứng minh.
 - `TUNE_POC_OR_CLOSE`: chuỗi khớp đủ nhưng judge thấy hoạt động hợp lệ; nên thêm điều kiện loại trừ hoặc đóng.
-- `COLLECT_DATA_THEN_RERUN`: không có hit và có nguồn cần thiết với 0 bản ghi trong cửa sổ; không có dữ liệu thì không có kết luận.
+- `COLLECT_DATA_THEN_RERUN`: không có hit và có nguồn cần thiết với 0 bản ghi trong cửa sổ (hoặc 0 bản ghi trong phạm vi host mà không có lần chạy lại không lọc host); không có dữ liệu thì không có kết luận.
 - `CLOSE_WITH_CAVEAT`: không có hit trong khi nguồn có dữ liệu; có thể đóng nhưng phải ghi rõ giới hạn.
 
 ### 4.6.2. Cây quyết định
@@ -103,7 +109,9 @@ Bảng: Luật xác định khuyến nghị và độ tin cậy
 | Mọi bước khớp, judge không rõ hoặc không có | `INVESTIGATE_FURTHER` | MEDIUM |
 | Chỉ khớp một phần | `INVESTIGATE_FURTHER` | LOW (không judge) hoặc MEDIUM |
 | Không khớp, một nguồn cần thiết có 0 bản ghi | `COLLECT_DATA_THEN_RERUN` | HIGH |
-| Không khớp, nguồn có dữ liệu | `CLOSE_WITH_CAVEAT` | MEDIUM |
+| Không khớp, nguồn có dữ liệu nhưng 0 bản ghi của host PoC; chạy lại không lọc host vẫn 0 | `CLOSE_WITH_CAVEAT` | MEDIUM |
+| Như trên nhưng chạy lại không lọc host có hit ở host khác | `INVESTIGATE_FURTHER` | LOW |
+| Không khớp, nguồn có dữ liệu trong phạm vi tìm | `CLOSE_WITH_CAVEAT` | MEDIUM |
 | Không khớp, không kiểm tra được độ phủ | `CLOSE_WITH_CAVEAT` | LOW |
 
 ### 4.6.3. Lý giải các quyết định thiết kế
@@ -115,6 +123,8 @@ Bảng: Luật xác định khuyến nghị và độ tin cậy
 **Judge chỉ đẩy một bậc và chỉ khi tự tin.** Judge dưới 0,7 không thay đổi kết quả. Advisor không thay đổi `disposition` hay `confidence`.
 
 **Thiếu nguồn là kết luận riêng.** Khi một nguồn cần thiết có 0 bản ghi, kết quả được gọi bằng tên riêng chứ không gộp vào "rỗng"; đây là hiện thực trực tiếp của nguyên tắc ở mục 2.5.
+
+**Phạm vi rỗng khác với dữ liệu rỗng.** Nguồn có dữ liệu trong cửa sổ nhưng không có bản ghi của host mà PoC nhắm tới là trường hợp thứ ba, không phải "thiếu nguồn" và cũng không phải "không có hoạt động". Hệ thống không tự chọn một cách đọc: nó chạy lại không lọc host và để kết quả quyết định. Nếu vẫn không có hit, khuyến nghị là đóng kèm cảnh báo (và nói rõ PoC chưa từng được thử trên host đó); nếu có hit ở host khác, khuyến nghị là điều tra với độ tin cậy thấp vì bằng chứng nằm ngoài phạm vi mà PoC khai báo.
 
 ### 4.6.4. Lựa chọn xếp hạng
 

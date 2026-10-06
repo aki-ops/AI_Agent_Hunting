@@ -7,7 +7,7 @@ do PEAK `able_table` viết) và `peak_hunt_plan.md` (kế hoạch do PEAK plann
 
 | PoC | Cửa sổ | Execute | Khuyến nghị | Tin cậy |
 |---|---|---|---|---|
-| `poc-joomla-rce` | 2016-08-10 21:36–22:00 | MATCHED, 199 bản ghi, 2/2 bước | `ESCALATE_TO_IR` | MEDIUM |
+| `poc-joomla-rce` | 2016-08-10 21:36–22:00 | MATCHED, 200 bản ghi hiển thị (≥1999 và ≥2000 khớp, quét chạm giới hạn), 2/2 bước | `ESCALATE_TO_IR` | MEDIUM |
 | `poc-bruteforce-we1149srv` | 2016-08-21 | EMPTY | `CLOSE_WITH_CAVEAT` | MEDIUM |
 | `poc-c2-beacon-networkfilter` | 2016-08-21 | EMPTY | `CLOSE_WITH_CAVEAT` | MEDIUM |
 | `poc-pdf-exploit-enc` | 2016-08-21 | EMPTY | `CLOSE_WITH_CAVEAT` | MEDIUM |
@@ -18,10 +18,12 @@ do PEAK `able_table` viết) và `peak_hunt_plan.md` (kế hoạch do PEAK plann
   chỉ MEDIUM vì PoC không có bước nào kiểm tra kết quả (status/response): dữ liệu chứng minh có *quét/thăm dò*,
   chưa chứng minh *khai thác thành công*. Báo cáo nêu rõ các câu hỏi cần trả lời trước khi chuyển IR (host
   `splunk-02` là sensor hay endpoint, có log phía server không).
-- **Ba PoC còn lại rỗng**, nguồn telemetry có dữ liệu trong cửa sổ nên không phải `COLLECT_DATA`. Nhưng "có
-  nguồn" chưa chắc "có đúng loại sự kiện": theo `docs/EVAL-GROUND-TRUTH.md` bộ dữ liệu hiện chưa có 4625 (đăng nhập
-  thất bại), PowerShell mã hoá thật hay beacon `networkfilter`. Đừng đọc `CLOSE_WITH_CAVEAT` là "sạch"; các caveat và
-  gợi ý của PEAK (mở rộng cửa sổ, thêm sourcetype) nằm trong từng báo cáo.
+- **Ba PoC còn lại rỗng** và đáng đọc kỹ. `able.location` của cả ba chứa `we1149srv`, nên mọi bước bị lọc ngầm theo `host = we1149srv`;
+  host này **không ghi** nguồn tương ứng (authentication 20.657 dòng trong cửa sổ nhưng 0 dòng của host này; web 566 dòng đều của `splunk-02`;
+  process 129.775 dòng nhưng 0 của host này). Báo cáo hiển thị phạm vi đó và hệ thống đã chạy lại từng PoC **không lọc host**
+  (`unscoped_probe/` trong lần chạy gốc): vẫn 0 bản ghi ở mọi host. Vì vậy `CLOSE_WITH_CAVEAT` (MEDIUM) ở đây nghĩa là "dữ liệu hiện có không chứa
+  dấu hiệu này ở đâu cả", chứ không phải "sạch": theo `docs/EVAL-GROUND-TRUTH.md` bộ dữ liệu chưa có 4625, PowerShell mã hoá thật hay beacon
+  `networkfilter`, và báo cáo liệt kê loại sự kiện thực có của từng nguồn (vd. chỉ `authentication/4624`).
 
 ## Lưu ý trung thực
 

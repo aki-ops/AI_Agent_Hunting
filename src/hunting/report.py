@@ -46,11 +46,28 @@ def render_recommendation(rec: Recommendation, meta: dict[str, Any], act_block: 
     for opt in rec.options:
         lines.append(f"| {opt.rank} | `{opt.action}` ({DISPOSITION_LABEL[opt.action]}) | {opt.rationale} |")
 
-    lines += ["", "## Bằng chứng", "", "| Bước | Predicate | Nguồn | Bản ghi nguồn trong cửa sổ | Khớp |", "|---|---|---|---|---|"]
+    lines += [
+        "", "## Bằng chứng", "",
+        "| Bước | Predicate | Nguồn | Bản ghi nguồn trong cửa sổ | Trong phạm vi lọc | Khớp (hiển thị / tổng) |",
+        "|---|---|---|---|---|---|",
+    ]
     for s in ev.steps:
         cov = "không kiểm tra được" if s.source_rows_in_window is None else f"{s.source_rows_in_window:,}"
-        lines.append(f"| `{s.step_id}` | `{s.predicate}` | {s.source_kind} | {cov} | {s.row_count} |")
-    lines += ["", f"Tổng {ev.observations} bản ghi khớp; {ev.matched_steps}/{ev.total_steps} bước có kết quả."]
+        in_scope = "không kiểm tra được" if s.source_rows_in_scope is None else f"{s.source_rows_in_scope:,}"
+        if s.matched_total > s.row_count or s.scan_truncated:
+            hit = f"{s.row_count} / {'≥' if s.scan_truncated else ''}{s.matched_total}"
+        else:
+            hit = str(s.row_count)
+        lines.append(f"| `{s.step_id}` | `{s.predicate}` | {s.source_kind} | {cov} | {in_scope} | {hit} |")
+    if ev.scope.get("host") or ev.scope.get("actor") or ev.scope.get("observables"):
+        lines += ["", "**Phạm vi truy vấn thực tế** (ngoài predicate, suy ra từ ABLE của PoC):"]
+        if ev.scope.get("host"):
+            lines.append(f"- host = `{ev.scope['host']}`")
+        if ev.scope.get("actor"):
+            lines.append(f"- tài khoản chứa `{ev.scope['actor']}`")
+        if ev.scope.get("observables"):
+            lines.append("- chuỗi bổ sung (AND): " + ", ".join(f"`{o}`" for o in ev.scope["observables"]))
+    lines += ["", f"Tổng {ev.observations} bản ghi hiển thị làm bằng chứng; {ev.matched_steps}/{ev.total_steps} bước có kết quả."]
     if ev.first_seen:
         lines.append(f"Hit đầu tiên {ev.first_seen}, hit cuối {ev.last_seen}.")
     for name, values in ev.pivots.items():
