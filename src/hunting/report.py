@@ -103,13 +103,47 @@ def render_recommendation(rec: Recommendation, meta: dict[str, Any], act_block: 
         f"Trạng thái: **{(act_block.get('validation') or {}).get('status', 'DRAFT')}** (chưa chạy trên Splunk thật).",
         "", "```spl", str(act_block.get("detection_spl", "")), "```",
         "", "## Chi phí và tái lập", "",
-        f"- LLM (judge + advisor): {meta.get('llm_calls', 0)} lần gọi, {meta.get('llm_tokens', 0)} token. "
-        "Các agent bên trong PEAK Assistant tự tạo client riêng nên chưa được đo.",
+        f"- LLM (judge + advisor): {meta.get('llm_calls', 0)} lần gọi, {meta.get('llm_tokens', 0)} token.",
+        *_llm_all_lines(meta),
         f"- Thời gian chạy bước Execute (gồm lệnh gọi judge): {meta.get('hunt_seconds', 0):.2f}s",
         f"- Ledger: `{meta.get('ledger_path')}`",
         "",
     ]
     return "\n".join(lines)
+
+
+def _llm_all_lines(meta: dict[str, Any]) -> list[str]:
+    """Metered usage of every request (PEAK agents included), the models that really answered, and the safeguards used."""
+    lines: list[str] = []
+    if meta.get("llm_all_calls"):
+        lines.append(
+            f"- Toàn bộ LLM (gồm các agent trong PEAK): {meta['llm_all_calls']} lần gọi, {meta.get('llm_all_tokens', 0):,} token "
+            f"({meta.get('llm_prompt_tokens', 0):,} vào / {meta.get('llm_completion_tokens', 0):,} ra)."
+            + (f" {meta['llm_unmetered_calls']} lần gọi dạng stream không có số token." if meta.get("llm_unmetered_calls") else "")
+        )
+    used = meta.get("models_used") or {}
+    if used:
+        lines.append(
+            f"- Model thực sự trả lời (cấu hình: `{meta.get('model_configured')}`): "
+            + ", ".join(f"`{name}` ({v['calls']} lần)" for name, v in used.items())
+        )
+    if meta.get("model_switches"):
+        lines.append("- Đã chuyển model dự phòng: " + "; ".join(meta["model_switches"]))
+    if meta.get("token_budget"):
+        state = "ĐÃ CHẠM — các lời gọi sau đó bị từ chối, kết quả có thể thiếu" if meta.get("token_budget_exhausted") else "chưa chạm"
+        lines.append(f"- Ngân sách token mỗi PoC: {meta['token_budget']:,} ({state}).")
+    cache = meta.get("prepare_cache")
+    if cache and cache != "disabled":
+        label = {"hit": "dùng lại kết quả đã lưu (PEAK không được gọi)", "miss": "chạy mới và đã lưu", "refresh": "chạy mới theo yêu cầu và ghi đè"}.get(cache, cache)
+        lines.append(f"- Cache Prepare: {label}.")
+    votes = meta.get("judge_votes")
+    if votes:
+        temp = meta.get("temperature")
+        lines.append(
+            f"- Judge: {votes} lần gọi lấy đa số; temperature {'mặc định của nhà cung cấp' if temp is None else temp}."
+            + (" Dữ liệu gửi LLM đã được che host/user/IP." if meta.get("redacted") else "")
+        )
+    return lines
 
 
 def render_summary(items: list[dict[str, Any]]) -> str:

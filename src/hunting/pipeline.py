@@ -7,14 +7,15 @@ from pathlib import Path
 from typing import Any
 
 from hunting.act import commit_act
-from hunting.llm import PeakLlm
-from hunting.peak import PrepareError, missing_prepare_fields
+from hunting.llm import METER, PeakLlm
+from hunting.peak import PrepareError, able_drive, missing_prepare_fields
 from hunting.poc import PocAgent
 from hunting.poc.library import POC_LIBRARY
 from hunting.poc.models import PoC
 from hunting.poc.reporter import build_poc_act_block
 from hunting.prepare import run_prepare
 from hunting.recommend import advise, decide, summarize_evidence
+from hunting.redact import RedactingAdapter, Redactor
 from hunting.report import render_recommendation
 
 
@@ -29,15 +30,31 @@ def run_poc(
     data_source: str,
     peak_timeout: int = 420,
     use_research: bool = False,
+    cache_dir: Path | None = None,
+    refresh_prepare: bool = False,
+    judge_votes: int = 3,
+    token_budget: int | None = None,
+    redactor: Redactor | None = None,
 ) -> dict[str, Any]:
     """Run one PoC and write its recommendation. Returns a summary row."""
     missing = missing_prepare_fields(poc)
     if missing:
         raise PrepareError(f"PoC {poc.poc_id}: PEAK Prepare incomplete ({', '.join(missing)})")
     out_dir.mkdir(parents=True, exist_ok=True)
+    METER.begin(token_budget if llm is not None else None)
+    switches_before = len(llm.model_switches) if llm is not None else 0
+    configured_model = llm.settings.model if llm is not None else None
+    if redactor is not None:
+        redactor.learn_values("host", [able_drive(poc.actor, poc.behavior, poc.location, poc.evidence).host])
+        adapter_for_agent: Any = RedactingAdapter(adapter, redactor)
+    else:
+        adapter_for_agent = adapter
 
     # 1) Prepare: PEAK Assistant writes the ABLE table and the hunt plan.
-    prepare = run_prepare(poc, data_document, llm, timeout=peak_timeout, use_research=use_research)
+    prepare = run_prepare(
+        poc, data_document, llm, timeout=peak_timeout, use_research=use_research,
+        cache_dir=cache_dir, refresh=refresh_prepare,
+    )
     (out_dir / "peak_able.md").write_text(prepare.able_markdown + "\n", encoding="utf-8")
     (out_dir / "peak_hunt_plan.md").write_text(prepare.hunt_plan_markdown + "\n", encoding="utf-8")
 
@@ -46,10 +63,11 @@ def run_poc(
     # 2) Execute: deterministic literal predicates against the adapter (+ advisory judge).
     POC_LIBRARY[poc.poc_id] = poc
     agent = PocAgent(
-        adapter=adapter,
+        adapter=adapter_for_agent,
         ledger_dir=out_dir,
         judge_caller=llm,
         enable_judge=llm is not None,
+        judge_votes=judge_votes,
     )
     t0 = time.perf_counter()
     result = agent.run(poc.poc_id, time_window=window, request_id=f"{poc.poc_id}", enforce_prepare=True)
@@ -70,6 +88,11 @@ def run_poc(
             "total_steps": len(poc.steps),
         }
     rec = decide(poc, evidence, result.judgment)
+    if redactor is not None:
+        for name in ("host", "user", "ip"):
+            redactor.learn_values(name, [value for value, _ in evidence.pivots.get(name, [])])
+        for hosts in evidence.source_hosts.values():
+            redactor.learn_values("host", [value for value, _ in hosts])
     if llm is not None:
         advise(rec, poc, prepare.able_markdown, prepare.hunt_plan_markdown, llm)
     llm_calls = (llm.calls - llm_before[0]) if llm else 0  # judge + advisor (PEAK agents are not metered)
@@ -95,6 +118,23 @@ def run_poc(
         "hunt_seconds": hunt_seconds,
         "ledger_path": result.ledger_path,
     }
+    snap = METER.snapshot()
+    meta |= {
+        "model_configured": configured_model,
+        "models_used": snap["by_model"],
+        "model_switches": list(llm.model_switches[switches_before:]) if llm is not None else [],
+        "llm_all_calls": snap["calls"],
+        "llm_all_tokens": snap["total_tokens"],
+        "llm_prompt_tokens": snap["prompt_tokens"],
+        "llm_completion_tokens": snap["completion_tokens"],
+        "llm_unmetered_calls": snap["unmetered_calls"],
+        "token_budget": snap["budget"],
+        "token_budget_exhausted": bool(snap["budget"]) and snap["total_tokens"] >= snap["budget"],
+        "prepare_cache": prepare.cache,
+        "redacted": redactor is not None,
+        "judge_votes": judge_votes if llm is not None else 0,
+        "temperature": llm.settings.temperature if llm is not None else None,
+    }
     (out_dir / "recommendation.md").write_text(render_recommendation(rec, meta, act_block), encoding="utf-8")
     payload = rec.to_dict()
     payload["execution"] = {
@@ -112,4 +152,6 @@ def run_poc(
         "disposition": rec.disposition,
         "confidence": rec.confidence,
         "used_peak": prepare.used_peak,
+        "models": sorted(snap["by_model"]),
+        "llm_all_tokens": snap["total_tokens"],
     }

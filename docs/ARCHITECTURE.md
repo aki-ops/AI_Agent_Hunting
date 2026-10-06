@@ -69,3 +69,17 @@ người săn và rủi ro nếu quyết định sai.
 ## 5. Khôi phục engine cũ
 
 `git checkout v6-engine-final`, hoặc đọc tài liệu trong `docs/archive/v6-engine/`.
+
+## 6. Vận hành LLM (độ tin cậy, chi phí, dữ liệu)
+
+Mọi thứ dưới đây nằm ngoài đường bằng chứng: không có mục nào cho LLM tạo hay sửa bản ghi.
+
+| Vấn đề | Cơ chế | Ghi chú |
+|---|---|---|
+| Biết model nào thực sự trả lời (`LLM_MODEL=auto`) và tốn bao nhiêu | `llm.METER`: bọc `AsyncCompletions.create` của SDK OpenAI nên đếm **mọi** lời gọi, kể cả agent bên trong PEAK; ghi `models_used`, `llm_all_tokens` vào `meta` | Lời gọi dạng stream không có `usage` nên chỉ đếm số lần (`llm_unmetered_calls`) |
+| Chi phí vượt tầm | `--token-budget N` (mỗi PoC); chạm trần thì `TokenBudgetExceeded`, không retry | Prepare rơi về ABLE/kế hoạch của PoC; judge/advisor ghi lý do; báo cáo nêu "ĐÃ CHẠM" |
+| Judge dao động | `LLM_TEMPERATURE` (mặc định 0, tự bỏ nếu model từ chối) và `--judge-votes` (mặc định 3): đa số, tin cậy = thấp nhất trong nhóm đa số, không đa số → INCONCLUSIVE 0 | Luật vẫn chỉ cho judge nhích tối đa một bậc, chỉ khi ≥ 0,7 |
+| Model/endpoint hỏng | `LLM_MODEL_FALLBACKS`: sau khi retry hết, chuyển sang model kế tiếp (dính cho cả agent PEAK và các lời gọi sau); `LLM_MIN_INTERVAL` giãn cách | Chuyển model được ghi vào `meta.model_switches` |
+| Chạy lại tốn 12–15 phút | Cache Prepare theo `(PoC, mô tả dữ liệu, model, phiên bản PEAK)`; `--refresh-prepare` bỏ qua cache | Chỉ lưu kết quả PEAK thành công; chạy lại cho đúng cùng ABLE/kế hoạch |
+| Dữ liệu rời khỏi máy | `--redact`: che host/user/IP (và mọi IPv4) trong prompt gửi judge/advisor, khôi phục trong phản hồi (kể cả JSON có `\`); cảnh báo khi endpoint không phải localhost | Không che chuỗi tự do (dòng lệnh, URL, domain) và không che văn bản PoC/mô tả dữ liệu gửi cho PEAK Prepare; dữ liệu thật dùng model cục bộ (Ollama/vLLM, chỉ cần đổi `.env`) hoặc `--offline` |
+

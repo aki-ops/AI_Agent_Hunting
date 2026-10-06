@@ -249,10 +249,12 @@ class PocAgent:
         judge_caller: Callable[[str, int], str] | None = None,
         enable_judge: bool = False,
         use_able_host: bool = True,
+        judge_votes: int = 1,
     ) -> None:
         self.adapter = adapter
         # False drops the host filter inferred from ABLE `location` (used for the unscoped probe).
         self.use_able_host = use_able_host
+        self.judge_votes = judge_votes
         self.llm_caller = llm_caller
         self.llm_tracker = llm_tracker
         self.ledger_dir = Path(ledger_dir) if ledger_dir else Path("artifacts") / "poc_hunts"
@@ -593,6 +595,7 @@ class PocAgent:
                 total_observations=len(all_observations),
                 time_window=time_window,
                 llm_caller=self.judge_caller,
+                votes=self.judge_votes,
             )
             result.judgment = judgment
             result.judgment_llm_calls = j_calls

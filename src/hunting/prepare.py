@@ -22,9 +22,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import io
+import json
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from hunting.llm import PeakLlm, retry_async, run_async
@@ -47,6 +50,7 @@ class PrepareResult:
     hunt_plan_markdown: str = ""
     research_markdown: str = ""
     notes: list[str] = field(default_factory=list)
+    cache: str = "disabled"  # disabled | miss | hit | refresh
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -55,7 +59,31 @@ class PrepareResult:
             "hunt_plan_markdown": self.hunt_plan_markdown,
             "research_markdown": self.research_markdown,
             "notes": list(self.notes),
+            "cache": self.cache,
         }
+
+
+def _peak_version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("peak-assistant")
+    except Exception:  # not installed / no metadata
+        return "unknown"
+
+
+def prepare_cache_key(poc: PoC, data_document: str, model: str, use_research: bool) -> str:
+    """Stable key: the PoC content, the data description, the model and PEAK's version decide the output."""
+    payload = {
+        "poc": poc.render(), "data": data_document, "model": model, "research": use_research,
+        "context": LOCAL_CONTEXT, "peak": _peak_version(), "schema": 1,
+    }
+    blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _cache_path(cache_dir: Path, poc: PoC, key: str) -> Path:
+    return Path(cache_dir) / "prepare" / f"{poc.poc_id}-{key[:16]}.json"
 
 
 def hypothesis_text(poc: PoC) -> str:
@@ -193,9 +221,37 @@ def run_prepare(
     timeout: int = 420,
     use_research: bool = False,
     attempts: int = 2,
+    cache_dir: str | Path | None = None,
+    refresh: bool = False,
 ) -> PrepareResult:
-    """Run PEAK Prepare for one PoC; degrade to the PoC's own plan with a recorded reason."""
+    """Run PEAK Prepare for one PoC; degrade to the PoC's own plan with a recorded reason.
+
+    With ``cache_dir`` the successful PEAK output is stored under a key made of the PoC, the data
+    description, the model and PEAK's version, so a rerun of the same PoC is instant and reproduces the
+    same ABLE/plan text. ``refresh`` ignores a cached entry and overwrites it. Fallback (non-PEAK)
+    output is never cached.
+    """
     result = PrepareResult(used_peak=False)
+    cache_file: Path | None = None
+    if llm is not None and cache_dir is not None:
+        model = getattr(getattr(llm, "settings", None), "model", "unknown")
+        key = prepare_cache_key(poc, data_document, model, use_research)
+        cache_file = _cache_path(Path(cache_dir), poc, key)
+        result.cache = "refresh" if refresh else "miss"
+        if cache_file.exists() and not refresh:
+            try:
+                data = json.loads(cache_file.read_text(encoding="utf-8"))
+                hit = PrepareResult(
+                    used_peak=True,
+                    able_markdown=data["able_markdown"],
+                    hunt_plan_markdown=data["hunt_plan_markdown"],
+                    research_markdown=data.get("research_markdown", ""),
+                    notes=[*data.get("notes", []), f"prepare cache hit ({key[:12]}): PEAK not called; delete the entry or use --refresh-prepare to regenerate"],
+                    cache="hit",
+                )
+                return hit
+            except (OSError, ValueError, KeyError):
+                result.notes.append("prepare cache entry unreadable; regenerated")
     if llm is None:
         result.able_markdown, result.hunt_plan_markdown = offline_able(poc), offline_plan(poc)
         result.research_markdown = research_document(poc)
@@ -209,9 +265,25 @@ def run_prepare(
         except Exception as exc:  # PEAK/LLM failure must never abort the hunt
             result.notes.extend(attempt_result.notes)
             result.notes.append(f"PEAK Prepare attempt {attempt}/{attempts} failed ({type(exc).__name__}: {str(exc)[:300]})")
+            switch = getattr(llm, "switch_model", None)
+            if callable(switch) and switch():
+                result.notes.append(f"switched to fallback model {llm.settings.model}")
             continue
         attempt_result.notes = [*result.notes, *attempt_result.notes]
         attempt_result.used_peak = True
+        attempt_result.cache = result.cache
+        if cache_file is not None:
+            try:
+                cache_file.parent.mkdir(parents=True, exist_ok=True)
+                cache_file.write_text(json.dumps({
+                    "able_markdown": attempt_result.able_markdown,
+                    "hunt_plan_markdown": attempt_result.hunt_plan_markdown,
+                    "research_markdown": attempt_result.research_markdown,
+                    "notes": attempt_result.notes,
+                    "model": getattr(getattr(llm, "settings", None), "model", "unknown"),
+                }, ensure_ascii=False, indent=1), encoding="utf-8")
+            except OSError as exc:
+                attempt_result.notes.append(f"prepare cache not written: {exc}")
         return attempt_result
     result.notes.append("fell back to the PoC's own ABLE/plan")
     result.able_markdown = offline_able(poc)

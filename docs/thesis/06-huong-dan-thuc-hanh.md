@@ -26,7 +26,7 @@ Cài đặt này chỉ kéo theo `pydantic`, `pyyaml`, `requests`, cùng `pytest
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-Kết quả mong đợi: `93 passed, 8 skipped`. Tám bài bị bỏ qua cần máy chủ Splunk thật tại cổng 8089 và tự bỏ qua khi không có.
+Kết quả mong đợi: `108 passed, 8 skipped`. Tám bài bị bỏ qua cần máy chủ Splunk thật tại cổng 8089 và tự bỏ qua khi không có.
 
 ### 6.1.3. Cài thêm PEAK Assistant (tuỳ chọn)
 

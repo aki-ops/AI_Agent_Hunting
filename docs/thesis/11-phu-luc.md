@@ -153,6 +153,8 @@ python main.py [--poc FILE ...] [--poc-dir DIR] [--window START/END]
                [--provider {cdb,splunk}] [--db PATH]
                [--splunk-url URL] [--splunk-user USER] [--splunk-index INDEX] [--splunk-manifest FILE]
                [--env FILE] [--model NAME] [--offline] [--research] [--peak-timeout SECONDS]
+               [--judge-votes N] [--token-budget N] [--redact]
+               [--cache-dir DIR] [--no-cache] [--refresh-prepare]
                [--out DIR]
 ```
 
@@ -168,6 +170,9 @@ Bảng: Biến môi trường
 | `LLM_MODEL` | (không) | Tên mô hình; `--model` ghi đè |
 | `LLM_TIMEOUT` | 600 | Hạn của mỗi lời gọi (giây) |
 | `LLM_MAX_TOKENS` | 16000 | Giới hạn token đầu ra |
+| `LLM_MODEL_FALLBACKS` | (không) | Mô hình dự phòng, cách nhau bằng dấu phẩy; chuyển khi mô hình chính hỏng hẳn |
+| `LLM_TEMPERATURE` | 0 | Temperature của judge và advisor; `none` = mặc định nhà cung cấp |
+| `LLM_MIN_INTERVAL` | 0 | Số giây tối thiểu giữa hai lời gọi judge/advisor |
 | `SPLUNK_URL` | `https://localhost:8089` | Địa chỉ REST của Splunk |
 | `SPLUNK_USER` | `admin` | Tài khoản Splunk |
 | `SPLUNK_PASSWORD` | (bắt buộc với `--provider splunk`) | Mật khẩu Splunk |
@@ -193,11 +198,11 @@ Bảng: Các khoá cấp cao của `recommendation.json`
 | `advisor_note` | chuỗi | Ghi chú về trạng thái advisor (ví dụ khi thất bại) |
 | `execution` | đối tượng | `verdict` (MATCHED/EMPTY), `window`, `scope_note`, `ir_escalation_path` |
 | `peak` | đối tượng | `used_peak`, `able_markdown`, `hunt_plan_markdown`, `research_markdown`, `notes` |
-| `meta` | đối tượng | `data_source`, `used_peak`, `peak_notes`, `able_file`, `plan_file`, `llm_calls`, `llm_tokens`, `hunt_seconds`, `ledger_path` |
+| `meta` | đối tượng | `data_source`, `used_peak`, `peak_notes`, `able_file`, `plan_file`, `llm_calls`, `llm_tokens`, `hunt_seconds`, `ledger_path`, `model_configured`, `models_used`, `model_switches`, `llm_all_calls`, `llm_all_tokens`, `token_budget`, `token_budget_exhausted`, `prepare_cache`, `redacted`, `judge_votes`, `temperature` |
 
 ## Phụ lục E. Danh sách kiểm thử
 
-Bảng: Phân bố 101 bài kiểm thử theo tệp
+Bảng: Phân bố 116 bài kiểm thử theo tệp
 | Tệp | Số bài | Nội dung |
 |---|---|---|
 | `test_pipeline.py` | 25 | Luật khuyến nghị, advisor, cấu hình LLM, PEAK, độ phủ CDB, CLI |
@@ -207,10 +212,11 @@ Bảng: Phân bố 101 bài kiểm thử theo tệp
 | `test_v5_adapters.py` | 5 | Hợp đồng adapter và kiểm soát truy vấn |
 | `test_peak_execute.py` | 2 | Phân tích kế hoạch PEAK thành quan sát cụ thể |
 | `test_scope_and_caps.py` | 15 | Phạm vi host ngầm, giới hạn hàng, `MATCHES`/`EXISTS`, độ phủ theo loại sự kiện, cửa sổ SPL |
+| `test_llm_ops.py` | 15 | Đếm token và ngân sách, mô hình dự phòng, temperature, bỏ phiếu judge, cache Prepare, che dữ liệu, chạy đầu cuối |
 
 Các bài của `test_pipeline.py` (tên rút gọn): `test_disposition_rules` (11 tổ hợp); `test_escalate_is_high_only_when_an_outcome_field_is_tested`; `test_empty_result_never_reads_as_clean_when_source_missing`; `test_advisor_parses_json_and_survives_garbage`; `test_advisor_retries_until_usable_and_accepts_drifted_shapes`; `test_llm_settings_from_env_file`; `test_llm_settings_rejects_placeholders`; `test_prepare_without_llm_uses_poc_plan_and_says_so`; `test_prepare_degrades_when_peak_agents_fail`; `test_prepare_retries_a_transient_peak_failure`; `test_retry_async_recovers_from_transient_errors_and_reraises_persistent_ones`; `test_cdb_source_presence_and_description`; `test_cli_offline_end_to_end`; `test_cli_requires_a_poc`; `test_cli_runs_without_any_llm_configuration`.
 
-Lệnh chạy: `python -m pytest tests -q` (kết quả: 93 đạt, 8 bỏ qua) và `python -m ruff check src tests` (không báo lỗi).
+Lệnh chạy: `python -m pytest tests -q` (kết quả: 108 đạt, 8 bỏ qua) và `python -m ruff check src tests` (không báo lỗi).
 
 ## Phụ lục F. Kết quả từng lần chạy
 
@@ -237,13 +243,13 @@ AI_Agent_Hunting/
 ├── .env.example            # mẫu cấu hình LLM
 ├── pocs/                   # 4 PoC; examples/ chứa PoC mẫu
 ├── src/hunting/
-│   ├── llm.py  prepare.py  recommend.py  report.py  pipeline.py  cli.py
+│   ├── llm.py  redact.py  prepare.py  recommend.py  report.py  pipeline.py  cli.py
 │   ├── poc/                # mô hình PoC, tác tử thực thi, judge
 │   ├── adapters/           # CDB (SQLite) và Splunk
 │   ├── act/                # SPL, backlog, stakeholder
 │   └── peak.py  contracts/  capabilities/  controller/  query_safety/
 ├── scripts/                # nạp BOTS v1 vào SQLite
-├── tests/unit/             # 101 bài kiểm thử
+├── tests/unit/             # 116 bài kiểm thử
 ├── results/botsv1-peak-run/# kết quả đã commit
 └── docs/                   # kiến trúc, định dạng PoC, báo cáo, thesis/, archive/
 ```

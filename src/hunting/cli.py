@@ -12,6 +12,7 @@ from hunting.llm import LlmUnavailable, build_llm
 from hunting.peak import PrepareError
 from hunting.pipeline import run_poc
 from hunting.poc import poc_from_file
+from hunting.redact import Redactor
 from hunting.report import render_summary
 
 
@@ -37,6 +38,16 @@ def _parser() -> argparse.ArgumentParser:
     llm.add_argument("--offline", action="store_true", help="skip PEAK Assistant and every LLM call (deterministic only)")
     llm.add_argument("--research", action="store_true", help="also run PEAK's researcher team (needs MCP research servers)")
     llm.add_argument("--peak-timeout", type=int, default=420, help="seconds allowed per PEAK step [default: 420]")
+    llm.add_argument("--judge-votes", type=int, default=3, metavar="N",
+                     help="judge calls per PoC with hits; majority verdict, lowest confidence of the majority [default: 3]")
+    llm.add_argument("--token-budget", type=int, default=0, metavar="N",
+                     help="max LLM tokens per PoC (all agents); 0 = unlimited. Later calls are refused once reached")
+    llm.add_argument("--redact", action="store_true",
+                     help="mask host/user/IP values in everything sent to the judge and advisor (restored in the report)")
+    llm.add_argument("--cache-dir", default="artifacts/.cache", metavar="DIR",
+                     help="cache for PEAK Prepare output, keyed by PoC+data+model [default: artifacts/.cache]")
+    llm.add_argument("--no-cache", action="store_true", help="do not read or write the Prepare cache")
+    llm.add_argument("--refresh-prepare", action="store_true", help="regenerate PEAK Prepare output and overwrite the cache")
     p.add_argument("--out", help="output directory [default: artifacts/runs/<UTC time>]")
     return p
 
@@ -81,10 +92,18 @@ def main(argv: list[str] | None = None) -> int:
 
     out_root = Path(args.out) if args.out else Path("artifacts") / "runs" / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     llm = None
+    redactor = Redactor() if args.redact else None
     if not args.offline:
         try:
-            llm = build_llm(args.env, work_dir=out_root / ".peak", model=args.model)
-            print(f"[+] LLM via PEAK model factory: model={llm.settings.model}")
+            llm = build_llm(args.env, work_dir=out_root / ".peak", model=args.model, redactor=redactor)
+            fallbacks = f" fallbacks={','.join(llm.settings.fallbacks)}" if llm.settings.fallbacks else ""
+            print(f"[+] LLM via PEAK model factory: model={llm.settings.model}{fallbacks}")
+            if not llm.settings.is_local and redactor is None:
+                print(
+                    "[!] The LLM endpoint is not local: evidence rows (hosts, users, IPs, command lines) are sent to it. "
+                    "Use --redact to mask host/user/IP, a local model, or --offline for sensitive data.",
+                    file=sys.stderr,
+                )
         except LlmUnavailable as exc:
             print(
                 f"[i] LLM is optional and not available ({exc}). Running the deterministic hunt only; "
@@ -108,6 +127,8 @@ def main(argv: list[str] | None = None) -> int:
                 poc, adapter, window=window, out_dir=out_root / poc.poc_id, llm=llm,
                 data_document=data_document, data_source=data_source,
                 peak_timeout=args.peak_timeout, use_research=args.research,
+                cache_dir=None if args.no_cache else Path(args.cache_dir), refresh_prepare=args.refresh_prepare,
+                judge_votes=args.judge_votes, token_budget=args.token_budget or None, redactor=redactor,
             )
         except (PrepareError, ValueError, OSError) as exc:
             failed += 1

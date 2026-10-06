@@ -19,24 +19,25 @@ PEAK Assistant được khai báo là phụ thuộc **tuỳ chọn** (`pip insta
 
 ## 5.2. Cấu trúc mã nguồn
 
-Sau khi làm gọn, `src/hunting/` gồm các mô-đun sau với tổng khoảng 8.700 dòng.
+Sau khi làm gọn, `src/hunting/` gồm các mô-đun sau với tổng khoảng 9.200 dòng.
 
 Bảng: Cấu trúc mã nguồn
 | Đường dẫn | Dòng | Vai trò |
 |---|---|---|
-| `llm.py` | ~215 | Cấu hình LLM, gọi lại, bộ gọi đồng bộ |
-| `prepare.py` | ~220 | Cầu nối PEAK Assistant |
+| `llm.py` | ~415 | Cấu hình LLM, gọi lại, mô hình dự phòng, bộ đếm token, bộ gọi đồng bộ |
+| `redact.py` | ~140 | Che host/user/IP trước khi gửi LLM, khôi phục khi nhận |
+| `prepare.py` | ~290 | Cầu nối PEAK Assistant, cache kết quả Prepare |
 | `recommend.py` | ~500 | Tóm tắt bằng chứng, luật khuyến nghị, advisor |
-| `report.py` | ~130 | Dựng báo cáo Markdown và bảng tổng hợp |
-| `pipeline.py` | ~115 | Điều phối một PoC từ đầu đến cuối |
-| `cli.py` | ~130 | Dòng lệnh |
+| `report.py` | ~160 | Dựng báo cáo Markdown và bảng tổng hợp |
+| `pipeline.py` | ~155 | Điều phối một PoC từ đầu đến cuối |
+| `cli.py` | ~150 | Dòng lệnh |
 | `poc/` | ~1.700 | Mô hình PoC, nạp JSON, tác tử thực thi, judge, báo cáo |
 | `adapters/` | ~3.300 | Adapter CDB và Splunk, danh sách cho phép, kiểm soát |
 | `act/` | ~365 | Bản nháp SPL, backlog, ghi chú stakeholder |
 | `contracts/`, `capabilities/`, `controller/`, `query_safety/` | ~1.550 | Hợp đồng dữ liệu mà adapter cần, theo dõi chi phí |
 | `peak.py` | ~450 | Cổng Prepare, phân tích thời lượng, cửa sổ, ABLE → quan sát cụ thể |
 
-Hai nguyên tắc tổ chức: các mô-đun mới (`llm`, `prepare`, `recommend`, `report`, `pipeline`, `cli`) chỉ phụ thuộc vào `poc/` và `adapters/` qua giao diện công khai; và không có mô-đun nào của lõi phụ thuộc trực tiếp vào PEAK ngoài `prepare.py` và `llm.py`.
+Hai nguyên tắc tổ chức: các mô-đun mới (`llm`, `redact`, `prepare`, `recommend`, `report`, `pipeline`, `cli`) chỉ phụ thuộc vào `poc/` và `adapters/` qua giao diện công khai; và không có mô-đun nào của lõi phụ thuộc trực tiếp vào PEAK ngoài `prepare.py` và `llm.py`.
 
 ## 5.3. Lớp LLM (`llm.py`)
 
@@ -161,7 +162,7 @@ Mô-đun `report.py` dựng báo cáo Markdown bằng tiếng Việt với các 
 
 ## 5.9. Kiểm thử
 
-Bộ kiểm thử gồm 101 bài, trong đó 93 chạy được và 8 bị bỏ qua vì cần Splunk thật. Kết quả cuối: 93 đạt, 8 bỏ qua, mã kiểm tra tĩnh `ruff` không báo lỗi. Các bài mới (`tests/unit/test_pipeline.py` và `tests/unit/test_scope_and_caps.py`) kiểm tra:
+Bộ kiểm thử gồm 116 bài, trong đó 108 chạy được và 8 bị bỏ qua vì cần Splunk thật. Kết quả cuối: 108 đạt, 8 bỏ qua, mã kiểm tra tĩnh `ruff` không báo lỗi. Các bài mới (`tests/unit/test_pipeline.py`, `tests/unit/test_scope_and_caps.py` và `tests/unit/test_llm_ops.py`) kiểm tra:
 
 - **Luật khuyến nghị:** 11 tổ hợp tham số (bằng chứng × judge) ứng với bảng luật; chuỗi một phần không escalate dù judge tin cậy cao; trần độ tin cậy khi chưa có bước kiểm tra kết quả và mở trần khi có.
 - **Rỗng không thành sạch:** thiếu nguồn cho `COLLECT_DATA_THEN_RERUN` với câu cảnh báo.
@@ -170,6 +171,7 @@ Bộ kiểm thử gồm 101 bài, trong đó 93 chạy được và 8 bị bỏ 
 - **Chịu lỗi PEAK:** khi PEAK ném lỗi thì quay về PoC và có ghi chú; lỗi thoáng qua được thử lại thành công; cơ chế `retry_async` thành công sau vài lần và ném lại lỗi dai dẳng.
 - **Độ phủ CDB:** đếm theo loại nguồn (và theo host), cơ cấu loại sự kiện, host ghi nguồn, mô tả dữ liệu.
 - **Phạm vi ngầm và giới hạn hàng (mục 7.4):** phạm vi host rỗng phải được ghi nhận và chạy lại không lọc host (cả hai nhánh có hit và không hit); báo cáo ghi `hiển thị / tổng` khi chạm trần 100 hàng; `MATCHES` với regex thật tìm được; `EXISTS` không bị che bởi giới hạn quét; `_regex_literal` chỉ thu hẹp, không bỏ sót; cửa sổ SPL lấy từ PoC.
+- **Vận hành LLM (mục 7.5.4):** bộ đếm token thấy mô hình thực sự trả lời và dừng ở ngân sách; mô hình dự phòng thay thế và giữ nguyên; temperature bị bỏ khi mô hình từ chối; bỏ phiếu judge (đa số, không đa số); cache Prepare (trúng, trượt, làm mới, đổi mô hình, không lưu khi lỗi); che dữ liệu cả khi giá trị xuất hiện dạng thoát JSON và khôi phục ở phản hồi.
 - **Đầu cuối:** chạy CLI trên một CSDL nhỏ ở chế độ `--offline`, và chạy CLI khi không có tệp `.env` nào.
 
 Các bài này không gọi LLM thật; việc gọi thật được kiểm chứng bằng thực nghiệm ở Chương 7.

@@ -158,9 +158,26 @@ Hai điều kiện cần đọc cẩn thận. Một: nhóm "HTTP 200 nhưng khô
 
 Kết luận cho yêu cầu ban đầu "gọi được API miễn phí hay không": **có**, ít nhất với một mô hình, và hệ thống chạy trọn vẹn. Đồng thời mục 6.2.2 bảo đảm rằng nếu không có khoá, hệ thống vẫn chạy ở chế độ không LLM.
 
+### 7.5.4. Các cơ chế vận hành LLM
+
+Joomla được chạy hai lần liên tiếp với `--redact` và mô hình `auto`, dùng cùng thư mục cache.
+
+Bảng: Hai lần chạy Joomla với cache Prepare và che dữ liệu
+| Chỉ số | Lần 1 (cache miss) | Lần 2 (cache hit) |
+|---|---|---|
+| Cache Prepare | chạy mới, đã lưu | dùng lại, PEAK không được gọi |
+| Lời gọi LLM (mọi agent) | 9 | 4 |
+| Token (mọi agent) | 69.140 | 13.928 |
+| Mô hình thực sự trả lời | `deepseek/deepseek-v4.1-flash` | `deepseek/deepseek-v4.1-flash` |
+| Phiếu judge | 0,85 / 0,92 / 0,90 | 0,85 / 0,85 / 0,95 |
+| Kết luận | `ESCALATE_TO_IR` (MEDIUM) | `ESCALATE_TO_IR` (MEDIUM) |
+| Bảng ABLE | giống nhau từng ký tự | giống nhau từng ký tự |
+
+Cache bỏ bước tốn nhất (hai phần PEAK) và cho đúng cùng bảng ABLE. Lần chạy đầu mất khoảng 164 giây tính từ lúc ghi cấu hình đến lúc ra tổng hợp, lần hai khoảng 46 giây. Cả hai lần judge đều thống nhất `TRUE_POSITIVE` nhưng độ tin cậy khác nhau, đúng như đã nêu ở mục 8.3.6. Kiểm tra tay các lời nhắc gửi đi trong bài kiểm thử đầu cuối cho thấy tên máy, tên người dùng và IP không xuất hiện trong văn bản gửi judge và advisor, còn báo cáo vẫn hiện giá trị thật. Mỗi cơ chế (hết ngân sách, chuyển mô hình dự phòng, bỏ temperature khi mô hình từ chối, không cache khi PEAK lỗi) có bài kiểm thử riêng, không cần LLM thật.
+
 ## 7.6. Kiểm thử đơn vị và tính hồi quy
 
-Bộ kiểm thử có 101 bài: 93 đạt và 8 bị bỏ qua (cần Splunk); `ruff` không báo lỗi. Hai nhóm bài có ý nghĩa cho luận văn.
+Bộ kiểm thử có 116 bài: 108 đạt và 8 bị bỏ qua (cần Splunk); `ruff` không báo lỗi. Hai nhóm bài có ý nghĩa cho luận văn.
 
 - **Bất biến kiến trúc được khoá bằng kiểm thử:** chuỗi một phần không escalate; judge dưới ngưỡng không đổi luật; kết quả rỗng khi thiếu nguồn cho `COLLECT_DATA_THEN_RERUN`; advisor lỗi không đổi `disposition`; khoá API không có trong cấu hình.
 - **Bài hồi quy cho lỗi thật:** `EQUALS` không khớp `splunk-powershell.exe`; `EXISTS` rỗng không khớp; `retry_async` thành công sau lỗi thoáng qua và ném lại lỗi dai dẳng; CLI chạy được khi không có `.env`; phạm vi host rỗng được ghi nhận và chạy lại không lọc host (cả nhánh không hit và nhánh có hit ở host khác); báo cáo ghi `hiển thị / tổng`; `MATCHES` với regex thật tìm được; `EXISTS` không bị che bởi giới hạn quét.
@@ -182,7 +199,7 @@ Bảng: Đối chiếu yêu cầu và kết quả
 | NFR2 | Đạt | Cùng số bản ghi hiển thị qua ba cấu hình |
 | NFR3 | Đạt từng phần | Gọi lại và fallback có kiểm thử; lỗi 404 thật chỉ có kiểm thử mô phỏng và quan sát gián tiếp |
 | NFR4 | Đạt | Quét không thấy khoá trong `artifacts/runs/*`, `results`, `docs` |
-| NFR5 | Đạt | Khoảng 8.700 dòng trong `src/` |
+| NFR5 | Đạt | Khoảng 9.200 dòng trong `src/` |
 | NFR6 | Đạt | Thẻ `v6-engine-final`, nhánh `pre-peak-snapshot` |
 
 ## 7.8. Thời gian chạy
@@ -195,7 +212,7 @@ Phần tất định nhanh: tìm kiếm trên 4,4 triệu dòng mất vài giây
 
 1. **Splunk thật.** Chưa chạy adapter Splunk hoặc kiểm tra SPL do hệ thống sinh ra trên một máy chủ Splunk.
 2. **`--research`.** Tác tử nghiên cứu của PEAK (cần máy chủ MCP) chưa được thử.
-3. **Retry trên 404 thật.** Cơ chế gọi lại chỉ được kiểm thử bằng lỗi mô phỏng; trong các lần chạy cuối không gặp lại lỗi 404 nên chưa quan sát nó cứu một lần chạy thật.
+3. **Mô hình dự phòng trên lỗi thật.** Việc chuyển mô hình dự phòng chỉ được kiểm thử bằng lỗi mô phỏng, chưa gặp lỗi thật trong các lần chạy. **Retry trên 404 thật.** Cơ chế gọi lại chỉ được kiểm thử bằng lỗi mô phỏng; trong các lần chạy cuối không gặp lại lỗi 404 nên chưa quan sát nó cứu một lần chạy thật.
 4. **Adapter Splunk với các thay đổi truy xuất mới.** Giới hạn quét 2.000 hàng và tham số `require_nonempty` chưa được chạy trên Splunk thật; adapter này cũng chưa có độ phủ theo host hay theo loại sự kiện.
 5. **Recall.** Chỉ đo được một pha tấn công thật (Joomla); ba pha còn lại thiếu dữ liệu nên chưa đo được khả năng phát hiện. Không có số liệu về độ chính xác tổng thể nào có thể tuyên bố.
 6. **Số lần lặp.** Mỗi cấu hình chỉ chạy đầy đủ một đến vài lần; chưa có thống kê về độ biến thiên của judge hoặc advisor ngoài các con số rời rạc đã nêu.

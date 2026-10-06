@@ -44,7 +44,7 @@ Các mục tiêu cụ thể:
 1. Một kiến trúc ghép PEAK Assistant (không tất định) với bộ thực thi tất định, trong đó ranh giới tin cậy được ghi rõ và được kiểm thử.
 2. Bộ luật khuyến nghị có giải thích, xử lý riêng bốn trường hợp dễ nhầm: chuỗi khớp một phần, kết quả khớp nhưng chưa chứng minh thành công, kết quả rỗng do thiếu dữ liệu, và kết quả rỗng do phạm vi tìm kiếm (host) không có dữ liệu.
 3. Cơ chế vận hành LLM thực tế: gọi lại có backoff, quay về chế độ không LLM khi lỗi, chấp nhận nhiều dạng đầu ra JSON, và chế độ hoàn toàn không cần LLM.
-4. Làm gọn kho từ khoảng 36.400 dòng xuống khoảng 8.700 dòng mã nguồn mà vẫn giữ khả năng khôi phục engine cũ.
+4. Làm gọn kho từ khoảng 36.400 dòng xuống khoảng 9.200 dòng mã nguồn mà vẫn giữ khả năng khôi phục engine cũ.
 5. Bộ kết quả thực nghiệm và hướng dẫn thực hành có thể tái chạy.
 
 ## 1.7. Bố cục luận văn

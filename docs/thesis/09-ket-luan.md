@@ -4,7 +4,7 @@
 
 Đồ án đã tái cấu trúc một kho mã săn mối đe dọa cỡ lớn thành một hệ thống nhỏ gọn, tích hợp PEAK Assistant của Cisco Talos cho pha Prepare, giữ pha Execute tất định trên telemetry, và bổ sung pha Act dưới dạng khuyến nghị có xếp hạng để người săn quyết định. Các mục tiêu đề ra ở mục 1.3 được đánh giá như sau.
 
-- **Làm gọn kho:** mã nguồn giảm từ khoảng 36.400 xuống khoảng 8.700 dòng, số tệp kiểm thử từ khoảng 80 xuống 6 (101 bài kiểm thử, 93 đạt và 8 bỏ qua vì cần Splunk), bảo toàn khả năng khôi phục qua thẻ `v6-engine-final`.
+- **Làm gọn kho:** mã nguồn giảm từ khoảng 36.400 xuống khoảng 9.200 dòng, số tệp kiểm thử từ khoảng 80 xuống 6 (116 bài kiểm thử, 108 đạt và 8 bỏ qua vì cần Splunk), bảo toàn khả năng khôi phục qua thẻ `v6-engine-final`.
 - **Tích hợp PEAK Assistant:** cầu nối `prepare.py` gọi `able_table` và `plan_hunt`, chạy thành công trên cả bốn PoC với hai cấu hình LLM khác nhau, có gọi lại có backoff và quay về chế độ không LLM khi lỗi.
 - **Khuyến nghị hỗ trợ quyết định:** năm loại khuyến nghị, độ tin cậy, lý do, giới hạn, lựa chọn xếp hạng, câu hỏi và rủi ro; mọi khuyến nghị có `decision_required = true`.
 - **LLM tuỳ chọn:** hệ thống chạy trọn vẹn với `--offline` hoặc khi `.env` chưa điền, có kiểm thử riêng, và có thể chọn mô hình miễn phí qua `--model`; một mô hình miễn phí (`nvidia/nemotron-3-super-120b-a12b:free`) đã chạy hết bốn PoC cho cùng khuyến nghị như mô hình trả phí.
@@ -30,7 +30,7 @@ Các hướng được sắp theo mức độ cấp thiết, từ sửa các thi
 **Trung hạn (nâng chất lượng).**
 5. Chạy PoC trên nhiều cửa sổ (quét toàn bộ 28 ngày theo từng ngày) và báo tỷ lệ ngày có hit.
 6. Biến thể vị từ có kiểm soát: một tập quy tắc viết lại (ví dụ `-enc` và `-EncodedCommand`) áp dụng tất định chứ không để LLM tự nới.
-7. Đo token của PEAK bằng proxy HTTP hoặc bằng cách bọc ứng dụng khách mô hình; báo cáo chi phí đầy đủ.
+7. Mở rộng `--redact` sang chuỗi tự do (dòng lệnh, URL, tên miền) và sang văn bản gửi cho PEAK Prepare; thử với mô hình cục bộ trên dữ liệu thật.
 8. Hiệu chỉnh ngưỡng judge trên một tập có nhãn: lấy các pha tấn công khác của BOTS v1 và v2, đo tỷ lệ judge trùng nhãn.
 9. Làm giàu bằng ngữ cảnh tài sản (vai trò máy, tài khoản dịch vụ) để khuyến nghị không còn phải nhắc "xác nhận vai trò máy".
 

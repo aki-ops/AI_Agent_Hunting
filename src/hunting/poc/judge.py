@@ -232,6 +232,7 @@ def judge_run(
     time_window: str,
     llm_caller,
     max_tokens: int = 2000,
+    votes: int = 1,
 ) -> tuple[Judgment, int, int]:
     """Run the LLM judge over a finished PoC run.
 
@@ -260,22 +261,58 @@ def judge_run(
         )
 
     prompt = render_prompt(brief, max_tokens=max_tokens)
-    try:
-        response = llm_caller(prompt, max_tokens)
-    except Exception as exc:
-        return (
-            Judgment(
-                verdict=INCONCLUSIVE,
-                confidence=0.0,
-                rationale=f"Judge call failed: {exc}",
-                notes=["judge_call_failed"],
-            ),
-            1,
-            0,
-        )
+    judgments: list[Judgment] = []
+    calls = tokens = 0
+    for _ in range(max(1, int(votes))):
+        try:
+            response = llm_caller(prompt, max_tokens)
+        except Exception as exc:
+            calls += 1
+            judgments.append(
+                Judgment(
+                    verdict=INCONCLUSIVE,
+                    confidence=0.0,
+                    rationale=f"Judge call failed: {exc}",
+                    notes=["judge_call_failed"],
+                )
+            )
+            continue
+        calls += 1
+        tokens += len(prompt) + len(response or "")
+        judgments.append(parse_judgment(response or ""))
+    return combine_judgments(judgments), calls, tokens
 
-    tokens = len(prompt) + len(response or "")
-    return parse_judgment(response or ""), 1, tokens
+
+def combine_judgments(judgments: list[Judgment]) -> Judgment:
+    """Majority vote over repeated judge calls; the judge is advisory and unstable, so disagreement is made visible.
+
+    * one vote -> returned unchanged;
+    * a strict majority verdict wins and takes the LOWEST confidence among its voters;
+    * no strict majority (e.g. 1-1-1 or 1-1) -> INCONCLUSIVE with confidence 0, which the rules treat as "judge unsure".
+    """
+    if len(judgments) == 1:
+        return judgments[0]
+    tally: dict[str, list[Judgment]] = {}
+    for j in judgments:
+        tally.setdefault(j.verdict, []).append(j)
+    verdict, group = max(tally.items(), key=lambda item: len(item[1]))
+    summary = ", ".join(f"{j.verdict} {j.confidence:.2f}" for j in judgments)
+    if len(group) * 2 <= len(judgments):
+        return Judgment(
+            verdict=INCONCLUSIVE,
+            confidence=0.0,
+            rationale="Repeated judge calls did not agree on a verdict, so no judgment is offered.",
+            notes=[f"judge_votes: {summary}", "no_majority"],
+        )
+    best = max(group, key=lambda j: j.confidence)
+    notes = [f"judge_votes: {summary}", f"majority {len(group)}/{len(judgments)}; confidence = lowest among the majority"]
+    return Judgment(
+        verdict=verdict,
+        confidence=min(j.confidence for j in group),
+        rationale=best.rationale,
+        notes=[*best.notes, *notes],
+        raw_response=best.raw_response,
+    )
 
 
 __all__ = [
@@ -285,6 +322,7 @@ __all__ = [
     "INCONCLUSIVE",
     "NO_SIGNAL",
     "judge_run",
+    "combine_judgments",
     "parse_judgment",
     "build_evidence_brief",
     "render_prompt",

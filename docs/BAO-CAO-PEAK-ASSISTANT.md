@@ -7,14 +7,14 @@ Kết quả gốc nằm ở [`results/botsv1-peak-run/`](../results/botsv1-peak-
 
 > Cập nhật: model LLM đã đổi từ `meta/muse-spark-1.3-contributor` (hay trả 404 thoáng qua) sang `auto` (OpenRouter tự chọn model). Kết quả dưới đây là của lần chạy với `auto`; khuyến nghị giống lần chạy với Meta Muse.
 
-- Repo được làm gọn: mã nguồn `src/` từ **36.376 dòng xuống 8.700 dòng**. Engine v6 (ClaimGraph, CapabilityGraph, planner,
+- Repo được làm gọn: mã nguồn `src/` từ **36.376 dòng xuống 9.200 dòng**. Engine v6 (ClaimGraph, CapabilityGraph, planner,
   evidence, reporter) bị loại khỏi nhánh chính; chỉ giữ đường chạy PoC, adapter CDB/Splunk và các contract adapter cần.
 - Phần **Prepare** của PEAK giờ do **PEAK Assistant (Cisco Talos)** làm: bảng ABLE (`able_table`) và kế hoạch hunt
   (`plan_hunt`, planner + critic). Phần **Execute** vẫn tất định. Phần **Act** là mới: khuyến nghị có xếp hạng để
   **người săn quyết định**, hệ thống không tự hành động.
 - Chạy 4 PoC có sẵn trên BOTS v1 (4.417.543 dòng) với PEAK và LLM thật: 1 PoC khớp (khuyến nghị chuyển IR, tin cậy
   trung bình), 3 PoC rỗng (khuyến nghị đóng kèm cảnh báo, chưa phải "sạch").
-- 93 test pass, 8 test bị skip (cần Splunk thật tại localhost:8089), `ruff` sạch.
+- 108 test pass, 8 test bị skip (cần Splunk thật tại localhost:8089), `ruff` sạch.
 
 ## 2. Đã thay đổi gì
 
@@ -22,7 +22,7 @@ Kết quả gốc nằm ở [`results/botsv1-peak-run/`](../results/botsv1-peak-
 
 | Hạng mục | Trước | Sau |
 |---|---|---|
-| Mã nguồn `src/` | 36.376 dòng | 8.700 dòng (gồm ~1.140 dòng mới) |
+| Mã nguồn `src/` | 36.376 dòng | 9.200 dòng (gồm ~1.640 dòng mới) |
 | File test (`.py`) | 80 | 6 file `test_*.py` (test của engine đã xoá; test PoC, Act, adapter được giữ, thêm `test_pipeline.py`) |
 | Tài liệu gốc | 6 file kiến trúc v6 ở thư mục gốc | chuyển vào `docs/archive/v6-engine/`; paper vào `docs/archive/paper/` |
 | `artifacts/`, `report.md`, `baseline_*`, `templates/`, kết quả cũ | tracked trong git | gỡ khỏi git; `artifacts/` và `data/` nằm trong `.gitignore` |
@@ -95,7 +95,7 @@ trước khi đóng**, không phải "không có tấn công".
 
 | Việc | Kết quả |
 |---|---|
-| Test | 93 passed, 8 skipped (đều là test Splunk live: không có Splunk tại localhost:8089), `ruff` sạch |
+| Test | 108 passed, 8 skipped (đều là test Splunk live: không có Splunk tại localhost:8089), `ruff` sạch |
 | Test mới (`test_pipeline.py`) | luật khuyến nghị theo bảng, advisor với JSON lỗi, fallback khi PEAK hỏng, thử lại khi lỗi thoáng qua, độ phủ nguồn CDB, CLI end-to-end offline |
 | Chạy thật (`LLM_MODEL=auto`) | 4/4 PoC có PEAK, 0 traceback, không phải gọi lại lần nào, advisor đủ cho cả 4 |
 | Lộ khoá | đã kiểm tra: khoá API không xuất hiện trong file output nào |
@@ -121,6 +121,10 @@ Lỗi đã gặp và cách xử lý:
 - PEAK Assistant tự nhận là proof-of-concept chưa qua kiểm thử bảo mật; chỉ nên chạy cục bộ.
 - Tôi sửa 4 file PoC (thêm `time_window`, JSON được định dạng lại). Phần `src/hunting/peak.py` còn vài hàm của cổng Prepare cũ
   (wizard, dump plan) không còn được CLI mới gọi.
+
+## 5b. Gia cố phần LLM
+
+Thêm sau lượt rà soát: `UsageMeter` đếm token của mọi agent (kể cả trong PEAK) và ghi model thực sự trả lời; `--token-budget`; `LLM_MODEL_FALLBACKS`; temperature 0 và judge bỏ phiếu 3 lần (đa số, tin cậy thấp nhất); cache Prepare (`--refresh-prepare`); `--redact` che host/user/IP (không che chuỗi tự do). Chạy thật Joomla hai lần: lần 1 tốn 9 lời gọi/69.140 token, lần 2 trúng cache còn 4 lời gọi/13.928 token, ABLE giống từng ký tự, cả hai `ESCALATE_TO_IR`. Phiếu judge vẫn lệch (0,85/0,92/0,90 rồi 0,85/0,85/0,95) dù temperature 0, nên bỏ phiếu giảm chứ không loại bỏ dao động. Chưa kiểm chứng: chuyển model dự phòng trên lỗi thật. Chi tiết: `docs/ARCHITECTURE.md` mục 6.
 
 ## 6. Đề xuất tiếp theo
 

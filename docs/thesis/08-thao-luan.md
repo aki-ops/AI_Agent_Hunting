@@ -20,7 +20,7 @@ Bảng: So sánh ba cách tiếp cận
 | Kết quả cuối | Tài liệu kế hoạch | Nhãn và nhận định judge | Khuyến nghị có lý do, giới hạn, rủi ro |
 | Xử lý kết quả rỗng | Không áp dụng | Nhãn EMPTY | Độ phủ nguồn, `COLLECT_DATA_THEN_RERUN` |
 | Chạy khi không có LLM | Không | Một phần | Có, đầy đủ |
-| Kích thước mã | Lớn | ~36.400 dòng | ~8.700 dòng |
+| Kích thước mã | Lớn | ~36.400 dòng | ~9.200 dòng |
 
 Đây không phải so sánh hiệu năng; ba hệ thống phục vụ mục đích khác nhau. PEAK Assistant mạnh ở chỗ cộng tác với người săn qua giao diện trò chuyện, điều mà v7 chủ ý không làm: v7 coi PoC là đầu vào đã được người săn chốt.
 
@@ -42,7 +42,7 @@ Máy xuất hiện nhiều nhất trong kết quả Joomla là `splunk-02`, th�
 
 ### 8.3.4. Đo lường chi phí LLM
 
-Số token chỉ tính judge và advisor. Các tác tử bên trong PEAK Assistant tạo ứng dụng khách riêng nên chưa được đo, trong khi đó mới là phần tốn nhất. Muốn đo cần can thiệp vào PEAK hoặc dùng bộ đếm ở tầng proxy.
+Bản đầu chỉ đếm token của judge và advisor, trong khi các tác tử bên trong PEAK mới là phần tốn nhất. Hiện nay `UsageMeter` bọc hàm tạo hoàn thành trò chuyện của SDK OpenAI nên đếm cả hai. Một lần chạy Joomla với `auto` cho thấy khoảng cách: judge và advisor dùng 16.116 token, còn toàn bộ chuỗi là 69.140 token trong 9 lời gọi, tức PEAK chiếm khoảng bốn phần năm. Giới hạn còn lại là các lời gọi dạng stream không trả khối `usage`; chúng chỉ được đếm số lần (`llm_unmetered_calls`). Trong các lần chạy đã thực hiện số này bằng 0. Người dùng có thể đặt trần bằng `--token-budget`.
 
 ### 8.3.5. Phụ thuộc vào một dự án chứng minh khái niệm
 
@@ -50,7 +50,7 @@ PEAK Assistant tự nhận là chưa qua kiểm thử bảo mật và không có
 
 ### 8.3.6. Tính không tất định của LLM
 
-Cùng bằng chứng nhưng judge có thể cho độ tin cậy khác nhau (0,85 đến 0,97 trong các lần chạy). Thiết kế đã giới hạn ảnh hưởng của sự dao động này (chỉ đẩy một bậc, chỉ khi ≥ 0,7), nhưng ngưỡng 0,7 và 0,8 được chọn theo kinh nghiệm chứ chưa hiệu chỉnh trên tập dữ liệu có nhãn.
+Cùng bằng chứng nhưng judge có thể cho độ tin cậy khác nhau (0,85 đến 0,97 trong các lần chạy). Thiết kế đã giới hạn ảnh hưởng của sự dao động này (chỉ đẩy một bậc, chỉ khi ≥ 0,7), nhưng ngưỡng 0,7 và 0,8 được chọn theo kinh nghiệm chứ chưa hiệu chỉnh trên tập dữ liệu có nhãn. Để giảm dao động, judge nay chạy ở temperature 0 và ba lần, lấy đa số với độ tin cậy thấp nhất trong nhóm đa số. Ở temperature 0 hai lần chạy liên tiếp vẫn cho ba phiếu khác nhau (0,85/0,92/0,90 rồi 0,85/0,85/0,95) dù cùng nhãn `TRUE_POSITIVE`, nên temperature 0 không đảm bảo kết quả lặp lại; bỏ phiếu chỉ làm lộ và giảm độ lệch. Mô hình `auto` còn có thể đổi nhà cung cấp giữa các lần, vì vậy báo cáo ghi mô hình thực sự trả lời (`deepseek/deepseek-v4.1-flash` trong hai lần chạy này) và khi cần tái lập nên cố định `--model`.
 
 ## 8.4. Các mối đe dọa đối với tính hợp lệ
 
@@ -64,7 +64,7 @@ Cùng bằng chứng nhưng judge có thể cho độ tin cậy khác nhau (0,85
 
 ## 8.5. An toàn và trách nhiệm khi dùng
 
-Khuyến nghị không phải kết luận pháp lý hay lệnh hành động. Hai rủi ro thực tế cần nêu rõ cho người dùng. Thứ nhất, **rò rỉ dữ liệu**: nội dung telemetry rút gọn và mô tả cấu trúc dữ liệu được gửi tới nhà cung cấp LLM; chế độ `--offline` hoặc mô hình cục bộ là lựa chọn cho dữ liệu nhạy cảm. Thứ hai, **tin cậy thái quá**: một báo cáo trình bày đẹp bằng tiếng Việt dễ khiến người đọc bỏ qua giới hạn. Thiết kế đã đặt giới hạn lên cao trong báo cáo và dùng ngôn ngữ trực tiếp, nhưng không thể thay thế sự đào tạo người dùng. Cuối cùng, hệ thống không thực hiện hành động phản ứng nào; mọi bước cô lập, chặn hay xoá đều thuộc về con người.
+Khuyến nghị không phải kết luận pháp lý hay lệnh hành động. Hai rủi ro thực tế cần nêu rõ cho người dùng. Thứ nhất, **rò rỉ dữ liệu**: nội dung telemetry rút gọn và mô tả cấu trúc dữ liệu được gửi tới nhà cung cấp LLM; chế độ `--offline`, mô hình cục bộ hoặc ít nhất `--redact` là lựa chọn cho dữ liệu nhạy cảm (nhưng `--redact` không che chuỗi tự do). Thứ hai, **tin cậy thái quá**: một báo cáo trình bày đẹp bằng tiếng Việt dễ khiến người đọc bỏ qua giới hạn. Thiết kế đã đặt giới hạn lên cao trong báo cáo và dùng ngôn ngữ trực tiếp, nhưng không thể thay thế sự đào tạo người dùng. Cuối cùng, hệ thống không thực hiện hành động phản ứng nào; mọi bước cô lập, chặn hay xoá đều thuộc về con người.
 
 ## 8.6. Bài học rút ra
 
