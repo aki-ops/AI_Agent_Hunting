@@ -342,3 +342,16 @@ def test_pipeline_with_redaction_votes_and_metadata(monkeypatch, tmp_path: Path)
     assert any("judge_votes" in n for n in data["judge"]["notes"])
     md = (out / "recommendation.md").read_text(encoding="utf-8")
     assert "che host/user/IP" in md and "WS-ALICE-01" in md
+
+
+def test_a_broken_local_install_does_not_burn_a_fallback_model(monkeypatch, tmp_path: Path):
+    _fast_retry(monkeypatch)
+
+    async def broken(self, prompt, system):
+        raise ModuleNotFoundError("No module named 'pydantic_core._pydantic_core'")
+
+    monkeypatch.setattr(PeakLlm, "_ask", broken)
+    llm = PeakLlm(_settings(fallbacks=("b", "c")), tmp_path / "model_config.json")
+    with pytest.raises(ModuleNotFoundError):
+        llm("x")
+    assert llm.settings.model == "a" and llm.model_switches == []

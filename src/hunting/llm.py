@@ -330,9 +330,12 @@ class PeakLlm:
         self._last_call = 0.0
 
     # -- model fallback ------------------------------------------------------------------
-    def switch_model(self) -> bool:
-        """Move to the next fallback model (sticky: PEAK agents and later calls use it too)."""
-        if not self._fallbacks:
+    def switch_model(self, error: BaseException | None = None) -> bool:
+        """Move to the next fallback model (sticky: PEAK agents and later calls use it too).
+
+        A broken local installation (ImportError) is not the model's fault, so it never burns a fallback.
+        """
+        if isinstance(error, ImportError) or not self._fallbacks:
             return False
         previous = self.settings.model
         self.settings = replace(self.settings, model=self._fallbacks.pop(0))
@@ -391,8 +394,8 @@ class PeakLlm:
                 break
             except TokenBudgetExceeded:
                 raise
-            except Exception:
-                if not self.switch_model():
+            except Exception as exc:
+                if not self.switch_model(exc):
                     raise
         return self.redactor.unmask(text) if self.redactor else text
 

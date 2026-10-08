@@ -266,7 +266,7 @@ def run_prepare(
             result.notes.extend(attempt_result.notes)
             result.notes.append(f"PEAK Prepare attempt {attempt}/{attempts} failed ({type(exc).__name__}: {str(exc)[:300]})")
             switch = getattr(llm, "switch_model", None)
-            if callable(switch) and switch():
+            if callable(switch) and switch(exc):
                 result.notes.append(f"switched to fallback model {llm.settings.model}")
             continue
         attempt_result.notes = [*result.notes, *attempt_result.notes]
