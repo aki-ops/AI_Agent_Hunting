@@ -1,5 +1,5 @@
-"""Telemetry adapters: CDB (SQLite) and live Splunk."""
+"""Telemetry adapters. The CDB (SQLite) adapter is the only one kept on this branch;
+the live Splunk adapter lives on branch ``splunk-adapter``."""
 from hunting.adapters.cdb_adapter import CdbAdapter
-from hunting.adapters.splunk_adapter import SplunkLiveAdapter
 
-__all__ = ["CdbAdapter", "SplunkLiveAdapter"]
+__all__ = ["CdbAdapter"]

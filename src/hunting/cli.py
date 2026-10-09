@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,12 +25,7 @@ def _parser() -> argparse.ArgumentParser:
     src.add_argument("--poc-dir", metavar="DIR", help="run every *.json PoC in this directory")
     src.add_argument("--window", help="telemetry window 'START/END' (ISO-8601 UTC); overrides each PoC's time_window")
     prov = p.add_argument_group("telemetry provider")
-    prov.add_argument("--provider", choices=["cdb", "splunk"], default="cdb")
-    prov.add_argument("--db", default="data/botsv1_eval.sqlite", help="SQLite CDB path (provider cdb)")
-    prov.add_argument("--splunk-url", default=os.getenv("SPLUNK_URL", "https://localhost:8089"))
-    prov.add_argument("--splunk-user", default=os.getenv("SPLUNK_USER", "admin"))
-    prov.add_argument("--splunk-index", default=os.getenv("SPLUNK_INDEX", "botsv1"))
-    prov.add_argument("--splunk-manifest", default=None)
+    prov.add_argument("--db", default="data/botsv1_eval.sqlite", help="SQLite CDB path")
     llm = p.add_argument_group("PEAK Assistant / LLM")
     llm.add_argument("--env", default=".env", help="env file with LLM_ENDPOINT, LLM_API_KEY, LLM_MODEL")
     llm.add_argument("--model", help="override LLM_MODEL from the env file (e.g. a free OpenRouter model)")
@@ -60,20 +54,6 @@ def _collect(args: argparse.Namespace) -> list[Path]:
 
 
 def _adapter(args: argparse.Namespace):
-    if args.provider == "splunk":
-        from hunting.adapters import SplunkLiveAdapter
-
-        password = os.getenv("SPLUNK_PASSWORD", "")
-        if not password:
-            raise SystemExit("[-] provider splunk needs SPLUNK_PASSWORD in the environment")
-        adapter = SplunkLiveAdapter(
-            splunk_url=args.splunk_url, auth=(args.splunk_user, password),
-            index=args.splunk_index, manifest_path=args.splunk_manifest,
-        )
-        return adapter, f"Splunk {args.splunk_url} index={args.splunk_index}", (
-            f"# Local telemetry: Splunk index `{args.splunk_index}`\n"
-            "Field names follow the declarative manifest; use index and sourcetype filters on every search."
-        )
     from hunting.adapters import CdbAdapter
 
     db = Path(args.db)
