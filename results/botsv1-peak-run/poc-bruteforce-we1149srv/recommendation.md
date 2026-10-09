@@ -54,29 +54,29 @@ No adapter hits and no escalation evidence; result is 'absence of evidence', not
 
 ## Gợi ý bước tiếp theo (từ kế hoạch PEAK, LLM)
 
-1. **Chạy lại predicate cmdline CONTAINS 'Logon Failed' trên toàn bộ cửa sổ khuyến nghị 2016-08-01T00:00:00Z/2016-08-28T23:59:00Z, không lọc host, nguồn authentication; sau đó lọc riêng host we1149srv để xác nhận có/không có bản ghi.** — Cửa sổ đã chạy chỉ 2016-08-21, còn PEAK khuyến nghị 28 ngày; host we1149srv có 0 bản ghi authentication nên cần kiểm tra lại toàn cửa sổ.
-2. **Liệt kê giá trị distinct của host trong nguồn authentication/4624, đối chiếu với source_hosts (we9748srv, we5364srv, we1864srv), và xác minh ánh xạ host we1149srv từ able.location.** — Scope host we1149srv không ghi nhận nguồn authentication; cần loại trừ sai tên host hoặc sai ánh xạ tài sản.
-3. **Thống kê top giá trị của trường action và status trên bản ghi authentication/4624 trong cửa sổ, tìm giá trị thể hiện thất bại (failure/denied/audit failure) nếu có.** — Predicate cmdline CONTAINS 'Logon Failed' trả 0; PEAK nói thất bại có thể nằm ở action/status, và local telemetry không có event_id 4625.
-4. **Nếu we1149srv là public-facing, pivot sang nguồn web_request cùng host/domain/ip/time window để xác định traffic bên ngoài; chỉ dùng để tương quan thời điểm, không dùng để xác nhận logon failure.** — PEAK xác định web_request là nguồn phụ để nhận diện server public-facing và thời điểm tấn công.
-5. **Kiểm tra process_creation và smb trong ±1 giờ quanh bất kỳ web_request hoặc authentication bất thường (nếu có) để tìm dấu hiệu đăng nhập thành công hoặc hậu khai thác.** — PEAK đề xuất pivot hậu burst sang process_creation và smb nếu nghi ngờ compromise sau brute force.
+1. **Kiểm tra lại toàn bộ telemetry authentication trong cửa sổ mở rộng (toàn bộ thời gian có sẵn) để tìm cmdline chứa 'Logon Failed' (không phân biệt hoa thường).** — Đảm bảo không bỏ lỡ do cửa sổ thời gian quá hẹp.
+2. **Lọc sự kiện authentication có event_id = 4625 (nếu có) hoặc trường action/status chỉ ra thất bại, để xác thực các попытка đăng nhập thất bại mà không phụ thuộc vào chuỗi cmdline.** — Một số hệ thống ghi thất bại qua event_id hoặc trường trạng thái thay vì chuỗi cmdline.
+3. **Thống kê số lượng sự kiện authentication thất bại theo host và user trong các khoảng thời gian ngắn (ví dụ 5 phút) để phát hiện bursts, bất kể nội dung cmdline.** — Brute force thường biểu hiện qua nhiều lần thất bại liên tiếp từ cùng host/user.
+4. **Kiểm tra xem có trường hoặc thẻ nào chỉ ra host là public‑facing (ví dụ cổng DMZ, danh sách tài sản) trong telemetry hoặc tài sản bên ngoài; nếu không có, sử dụng danh sách host được cung cấp bởi quản trị để hạn chế tìm kiếm.** — Yếu tố location trong hypothesis cần xác định host tiếp xúc internet.
+5. **Xác nhận rằng trường cmdline được điền đầy đủ và không bị truncate trong các bản ghi authentication; chạy truy vấn chọn một số mẫu cmdline để xem nội dung thực tế.** — Nếu trường cmdline trống hoặc không chứa chuỗi mong đợi, predicate sẽ luôn trả về 0.
 
 _Gợi ý bước tiếp theo do LLM tạo từ kế hoạch PEAK; chỉ mang tính tham khảo._
 
 **Câu hỏi để người săn tự trả lời trước khi quyết định**
 
-- Vì sao scope host là we1149srv? Ánh xạ từ able.location có đáng tin không, và có khả năng sai tên host so với source_hosts không?
-- Danh sách source_hosts chỉ có we9748srv/we5364srv/we1864srv với tổng 400, trong khi source_rows_in_window là 20,657; danh sách đó là top hay đầy đủ?
-- Nguồn authentication có trường action/status không? Nếu có, giá trị nào biểu thị thất bại?
-- Có telemetry web_request cho we1149srv trong cửa sổ không? Có event_id 4625 hoặc nguồn failed logon nào khác không?
-- Cửa sổ 28 ngày đầy đủ có sẵn không, hay chỉ có 2016-08-21?
+- Có bất kỳ trường nào khác như status, action, hoặc event_id chỉ ra đăng nhập thất bại ngoài chuỗi 'Logon Failed' trong cmdline không?
+- Dữ liệu telemetry có bao gồm danh sách tài sản hoặc thẻ đánh dấu host là public‑facing (DMZ, internet‑exposed) không?
+- Có thể mở rộng cửa sổ thời gian ngoài 2016‑08‑21 → 2016‑08‑22 để xem xét thời gian dài hơn không?
+- Ngoài bảng authentication, có bất kỳ nguồn log bảo mật nào khác (ví dụ Windows Security logs, VPN logs) được thu thập không?
+- Trường cmdline trong các bản ghi authentication có thường được điền và có thể chứa các biến thể như 'failed logon', 'logon failure', 'authentication failed' không?
 
 **Rủi ro nếu quyết định sai**
 
-- Bỏ sót brute force do scope host we1149srv không có bản ghi authentication; PoC chưa từng chạy trên host đó.
-- Predicate literal cmdline CONTAINS 'Logon Failed' quá hẹp; nếu action/status không mã hóa thất bại và không có 4625, không thể xác nhận failed authentication.
-- Cửa sổ hiện tại chỉ 1 ngày thay vì 28 ngày khuyến nghị, có thể bỏ lỡ burst.
-- Event_id 4624 thường là thành công; dùng nó cho failed logon có thể sai ngữ nghĩa nếu không có trường bổ trợ.
-- Không có mẫu/top_values/samples nên không thể phân biệt brute force, password spraying hay lỗi người dùng.
+- Do không có trường hoặc thẻ xác định host public‑facing, hunt có thể bỏ qua các cuộc tấn công thực sự đối với máy chủ tiếp xúc internet hoặc báo falsa positive trên hệ thống nội bộ.
+- Nếu chuỗi 'Logon Failed' không xuất hiện trong cmdline do định dạng log khác, predicate sẽ luôn trả về 0 dẫn tới false negative.
+- Thiếu dữ liệu về reputations IP hoặc geo‑location làm hạn chế khả năng xác định nguồn tấn công độc hại.
+- Cửa sổ thời gian được sử dụng trong lần chạy ban đầu có thể quá ngắn, không khớp với thời gian thực sự của cuộc tấn công.
+- Sự phụ thuộc vào một trường duy nhất (cmdline) để xác định thất bại làm giảm độ bền của hunt nếu trường đó bị lỗi hoặc không được điền đầy đủ.
 
 ## Kế hoạch từ PEAK Assistant
 
@@ -97,6 +97,10 @@ search index="botsv1" match(cmdline, "(?i)Logon Failed") user="admin" earliest=1
 
 ## Chi phí và tái lập
 
-- LLM (judge + advisor): 1 lần gọi, 7004 token. Các agent bên trong PEAK Assistant tự tạo client riêng nên chưa được đo.
-- Thời gian chạy bước Execute (gồm lệnh gọi judge): 6.13s
-- Ledger: `artifacts\runs\v2\poc-bruteforce-we1149srv\poc-bruteforce-we1149srv.json`
+- LLM (judge + advisor): 1 lần gọi, 6629 token.
+- Toàn bộ LLM (gồm các agent trong PEAK): 4 lần gọi, 21,546 token (12,017 vào / 9,529 ra).
+- Model thực sự trả lời (cấu hình: `nvidia/nemotron-3-super-120b-a12b:free`): `nvidia/nemotron-3-super-120b-a12b:free` (4 lần)
+- Cache Prepare: chạy mới và đã lưu.
+- Judge: 3 lần gọi lấy đa số; temperature 0.0.
+- Thời gian chạy bước Execute (gồm lệnh gọi judge): 4.87s
+- Ledger: `artifacts\runs\full\poc-bruteforce-we1149srv\poc-bruteforce-we1149srv.json`

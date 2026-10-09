@@ -16,7 +16,7 @@
 
 - 2/2 bước PoC có kết quả, tổng 200 bản ghi khớp.
 - Khoảng thời gian hit: 2016-08-10T21:36:45Z → 2016-08-10T21:40:57Z.
-- Judge (advisory) đánh giá TRUE_POSITIVE, độ tin cậy 0.85.
+- Judge (advisory) đánh giá TRUE_POSITIVE, độ tin cậy 0.92.
 - Độ tin cậy bị hạ xuống MEDIUM: PoC không có bước nào kiểm tra kết quả (status/action) nên chưa chứng minh được tấn công thành công.
 
 **Cần lưu ý (giới hạn của kết luận)**
@@ -56,38 +56,33 @@ Hit đầu tiên 2016-08-10T21:36:45Z, hit cuối 2016-08-10T21:40:57Z.
 
 ## Judge (LLM, chỉ tham khảo)
 
-**TRUE_POSITIVE** — độ tin cậy 0.85
+**TRUE_POSITIVE** — độ tin cậy 0.92
 
-Requests to /acunetix-wvs-test-for-some-inexistent-file and random 8-character URIs followed by Joomla component enumeration (/joomla/components/com_jnews/..., /joomla/index.php...) within a tight 21:36-21:40 window match automated Joomla vulnerability scanning/exploitation activity from the BOTS v1 real attack, not routine user traffic.
-- Acunetix scanner signature and randomized paths indicate automated reconnaissance.
-- Joomla component paths align with the PoC's Joomla RCE compromise hypothesis.
-- No change-ticket or sanctioned-scan metadata is present in the provided rows.
+Requests include a known vulnerable Joomla component (open-flash-chart.swf) and subsequent access to Joomla paths, preceded by random strings and a vulnerability scanner test, indicating active exploitation within the PoC timeframe.
+- Random URI strings and Acunetix test suggest automated scanning; no benign context observed.
+- judge_votes: TRUE_POSITIVE 0.92, TRUE_POSITIVE 0.92, TRUE_POSITIVE 0.92
+- majority 3/3; confidence = lowest among the majority
 
 ## Gợi ý bước tiếp theo (từ kế hoạch PEAK, LLM)
 
-1. **Truy vấn web_request trong cửa sổ 2016-08-10T21:36:00Z–22:00:00Z, lọc domain EQUALS imreallynotbatman.com, nhóm theo action và status; nếu trường action/status không có hoặc rỗng, ghi nhận là telemetry thiếu.** — Bước PoC chưa kiểm tra status/action nên chưa biết request nào thành công; cần xác định 200/302/403/404/500 để đánh giá khả năng khai thác.
-2. **Lấy đầy đủ các bản ghi khớp cho hai bước s1-victim-site và s2-joomla-path (matched_total khoảng 1999–2000 nhưng row_count 100, scan_truncated=true) bằng phân trang hoặc nới ngưỡng.** — Dữ liệu bị cắt nên mới thấy 200/2000 bản ghi; cần xem toàn bộ URI, IP, timestamp để tìm payload search/mailto và mẫu bất thường.
-3. **Kiểm tra process_creation trên host splunk-02 trong và sau cửa sổ 21:36–21:40, event_id 4688 hoặc 1, tìm tiến trình con bất thường, cmdline lạ, image ngoài tiến trình web.** — RCE thành công thường tạo process_creation trên web server; đây là mắt xích còn thiếu để nâng độ tin cậy.
-4. **Truy vấn web_request với domain EQUALS imreallynotbatman.com và cmdline CONTAINS search hoặc cmdline CONTAINS mailto trong cùng cửa sổ; nhóm theo ip, cmdline, action, status.** — Giả thuyết nêu Joomla search/mailto; cần tách hai thành phần này khỏi các đường dẫn Joomla hợp lệ khác.
-5. **Pivot IP 40.80.148.42 sang các nguồn web_request, authentication, dns, smb trong cùng ngày 2016-08-10 để xem còn tương tác ngoài imreallynotbatman.com hoặc dấu hiệu C2/lateral movement.** — Một IP nguồn chiếm toàn bộ 200 bản ghi; cần xác định phạm vi hoạt động và hậu quả sau khai thác.
+1. **Lọc các bản ghi web_request có domain EQUALS imreallynotbatman.com AND (cmdline CONTAINS "/index.php?option=com_search" OR cmdline CONTAINS "/index.php?option=com_mailto")** — Thu hẹp tập trung vào các thành phần Joomla search/mailto mà hypothesis mô tả, giảm nhiễu từ các truy vấn Joomla khác.
+2. **Trích xuất phần uri từ cmdline (sau "site=<host> uri=") và kiểm tra các dấu hiệu payload đáng ngờ như chuỗi base64 dài, từ khóa eval(, system(, cmd=, id=, dấu phân cách ;, &&, |, hoặc các biến số PHP như ${** — Nếu cuộc khai thác được đặt trong query string, các dấu hiệu này có thể hiện trong uri và giúp xác định nỗ lực thực thi mã từ xa.
+3. **Thực hiện thống kê theo host và ip với khoang thời gian 1 giờ (bin(timestamp, 1h)) để xem số lượng yêu cầu và thời gian đầu tiên/cuối cùng** — Phát hiện quét bursty (nhiều yêu cầu trong thời gian ngắn) hoặc hoạt động low-and-slow từ một nguồn cụ thể, giúp xác định mức độ nghi ngờ.
+4. **Tìm kiếm các yêu cầu sau này tới các đường dẫn thường được dùng để đặt webshell sau khai thác Joomla (ví dụ: /tmp/, /images/, /administrator/, /components/, /templates/, /cache/) trong cùng khoảng thời gian** — Nếu khai thác thành công, attacker thường truy cập các đường dẫn này để duy trì quyền hoặc tải công cụ thêm; việc không có truy vấn như vậy cũng là một dấu hiệu cần lưu ý.
 
 _Gợi ý bước tiếp theo do LLM tạo từ kế hoạch PEAK; chỉ mang tính tham khảo._
 
 **Câu hỏi để người săn tự trả lời trước khi quyết định**
 
-- Trường action và status trong web_request có giá trị cụ thể nào cho các bản ghi đã khớp, và có request POST hoặc payload search/mailto nào không?
-- Có telemetry process_creation (4688/1) trên splunk-02 trong khoảng 21:36–22:00 ngày 2016-08-10 không, và có tiến trình con nào đáng ngờ?
-- Vì sao matched_total khoảng 1999–2000 nhưng row_count chỉ 100 và scan_truncated=true; có thể lấy đủ dữ liệu không?
-- Có log WAF, web server access log, hoặc EDR bổ sung để xác nhận exploit thành công hay không?
-- IP 40.80.148.42 có phải external/attacker hay là scanner/proxy dùng chung, và có hoạt động khác trong ngày không?
+- Trong khoảng thời gian từ 2016-08-10T21:30:00Z đến 2016-08-10T22:00:00Z, có bản ghi process_creation hoặc authentication nào cho host splunk-02 hoặc IP 40.80.148.42 không?
+- Có bất kỳ dữ liệu luồng mạng (NetFlow, proxy logs) nào cho cùng IP/domain trong cùng cửa sổ thời gian để xác định xem có phản hồi không thường见 (ví dụ: kết nối outbound tới địa chỉ đáng ngờ) không?
+- Trường cmdline có chứa thông tin user-agent hoặc các header HTTP khác không? Nếu có, chúng ta có thể kiểm tra sự bất thường trong user-agent để phát hiện công cụ quét conhecido.
 
 **Rủi ro nếu quyết định sai**
 
-- Nhiều đường dẫn /joomla/ có thể là truy cập hợp lệ; cmdline CONTAINS /joomla/ có thể khớp nhầm, làm tăng false positive.
-- Không có kiểm tra status/action trong PoC nên chưa chứng minh được khai thác thành công; confidence chỉ MEDIUM.
-- Dữ liệu bị cắt (scan_truncated) nên bằng chứng chưa đầy đủ, có thể bỏ sót request quan trọng hoặc payload.
-- Thiếu process_creation/EDR/WAF/web server log để xác nhận RCE, hậu khai thác, hoặc exfiltration.
-- Cửa sổ hit ngắn (21:36:45–21:40:57) có thể chỉ là giai đoạn scan ban đầu, chưa thấy toàn bộ chuỗi tấn công.
+- Các quy tắc chỉ dựa trên URI; nếu attacker đặt payload trong body, header hoặc cookie, chúng ta sẽ không thể thấy chúng, dẫn đến false negative.
+- Thiếu trường trạng thái HTTP (status/action) trong web_request khiến chúng ta không thể xác định xem yêu cầu thành công (200) hoặc bị chặn (403/404), do đó độ tin cậy của việc khai thác thành công vẫn thấp.
+- Có khả năng lưu lượng truy vấn hợp lệ tới thành phần search/mailto của Joomla (ví dụ: người dùng thực sự tìm kiếm) gây ra false positive nếu không có dấu hiệu payload đáng ngờ.
 
 ## Kế hoạch từ PEAK Assistant
 
@@ -96,6 +91,7 @@ Chi tiết: `peak_able.md` (bảng ABLE) và `peak_hunt_plan.md` (hunt plan).
 - research: PoC references (PEAK researcher not requested)
 - ABLE: PEAK able_table
 - plan: PEAK hunt_planner + hunt_plan_critic
+- prepare cache hit (504477ddb57f): PEAK not called; delete the entry or use --refresh-prepare to regenerate
 
 ## Act: bản nháp phát hiện (SPL)
 
@@ -108,6 +104,10 @@ search index="botsv1" domain="imreallynotbatman.com" match(cmdline, "(?i)/joomla
 
 ## Chi phí và tái lập
 
-- LLM (judge + advisor): 2 lần gọi, 9524 token. Các agent bên trong PEAK Assistant tự tạo client riêng nên chưa được đo.
-- Thời gian chạy bước Execute (gồm lệnh gọi judge): 16.09s
-- Ledger: `artifacts\runs\v2\poc-joomla-rce\poc-joomla-rce.json`
+- LLM (judge + advisor): 4 lần gọi, 11091 token.
+- Toàn bộ LLM (gồm các agent trong PEAK): 4 lần gọi, 11,091 token (8,075 vào / 3,016 ra).
+- Model thực sự trả lời (cấu hình: `nvidia/nemotron-3-super-120b-a12b:free`): `nvidia/nemotron-3-super-120b-a12b:free` (4 lần)
+- Cache Prepare: dùng lại kết quả đã lưu (PEAK không được gọi).
+- Judge: 3 lần gọi lấy đa số; temperature 0.0.
+- Thời gian chạy bước Execute (gồm lệnh gọi judge): 19.84s
+- Ledger: `artifacts\runs\full\poc-joomla-rce\poc-joomla-rce.json`

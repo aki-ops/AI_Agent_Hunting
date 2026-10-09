@@ -54,29 +54,25 @@ No adapter hits and no escalation evidence; result is 'absence of evidence', not
 
 ## Gợi ý bước tiếp theo (từ kế hoạch PEAK, LLM)
 
-1. **Mở rộng cửa sổ quét từ 2016-08-21T00:00:00Z/2016-08-22T00:00:00Z lên toàn bộ dataset cục bộ 2016-08-01T00:00:00Z–2016-08-28T23:59:00Z, rồi chạy lại các predicate trực tiếp trên nguồn `web_request`: `domain EQUALS ad.networkfilter.co`, `cmdline CONTAINS ad.networkfilter.co`, `cmdline CONTAINS /banner/`, `cmdline CONTAINS site=ad.networkfilter.co`, không lọc host.** — 
-2. **Chạy predicate `native_type EQUALS process_creation` và `cmdline CONTAINS ad.networkfilter.co` trên cùng cửa sổ mở rộng, mọi host, vì đây là nguồn hỗ trợ nếu URL/host xuất hiện trong dòng lệnh tiến trình.** — 
-3. **Kiểm tra phân bố host của nguồn `web`: đếm `web_request` theo `host` trong cửa sổ mở rộng, xác nhận `we1149srv` có bản ghi nào không và làm rõ vì sao `splunk-02` giữ 566 bản ghi thay vì host đích.** — 
-4. **Nếu giao với cửa sổ DNS 2016-08-24T10:25:02Z–16:34:35Z, chạy `native_type EQUALS dns` + `domain EQUALS ad.networkfilter.co`; ngoài khoảng này không thể xác nhận phân giải DNS.** — 
-5. **Xác minh ngữ nghĩa trường `ip` và `port` trên `web_request` (client/source so với server/destination) trước khi pivot egress; nếu không xác định được, đánh dấu telemetry thiếu.** — 
+1. **Kiểm tra toàn bộ sự kiện web_request trong cửa sổ để xác nhận có bất kỳ bản ghi nào chứa domain ad.networkfilter.co (không lọc host)** — Đảm bảo rằng việc không có kết quả không do lỗi lọc host hoặc predicate.
+2. **Kiểm tra sự kiện web_request cho cmdline chứa '/banner/' trong toàn bộ cửa sổ (không lọc host)** — Xác nhận xem mẫu URI đặc trưng của BOTS v1 có xuất hiện nào không.
+3. **Kiểm tra sự kiện dns cho các truy vấn domain chứa ad.networkfilter.co trong cửa sổ** — DNS lookup có thể xảy ra trước HTTP request; nếu không có, giảm khả năng beacon.
+4. **Kiểm tra sự kiện process_creation (event_id 4688 hoặc 1) để tìm các tiến trình có khả năng thực hiện yêu cầu HTTP outbound (ví dụ: image có chứa 'curl', 'wget', 'powershell', 'bitsadmin') trong cửa sổ** — Nếu không có web request, có thể beacon được thực hiện qua các công cụ khác; kiểm tra để tìm dấu hiệu thực thi.
+5. **Xác nhận tính đầy đủ của nguồn telemetry web: đếm tổng số bản ghi web_request trong cửa sổ và so sánh với tổng số bản ghi được báo cáo (566) để chắc chắn không có mất dữ liệu** — Đảm bảo rằng telemetry web thực sự tồn tại và đủ để thực hiện hunt.
 
 _Gợi ý bước tiếp theo do LLM tạo từ kế hoạch PEAK; chỉ mang tính tham khảo._
 
 **Câu hỏi để người săn tự trả lời trước khi quyết định**
 
-- Cửa sổ đã chạy có bị giới hạn ở 2016-08-21/2016-08-22 thay vì toàn bộ 2016-08-01–2016-08-28 không, và vì sao?
-- Vì sao nguồn `web` trong cửa sổ chỉ có host `splunk-02` với 566 bản ghi, còn host đích `we1149srv` có 0 bản ghi? Đây là do forwarder, scope sai hay host đó không ghi `web_request`?
-- Các predicate `domain EQUALS ad.networkfilter.co` và `cmdline CONTAINS site=ad.networkfilter.co` đã được chạy chưa? EVIDENCE SUMMARY chỉ thấy hai bước `cmdline CONTAINS`.
-- Nguồn nào sẽ cung cấp `web_request` cho `we1149srv` nếu host đó thực sự cần kiểm tra, và có bản ghi nào ngoài `splunk-02` không?
-- Dữ liệu `dns` chỉ có trong 2016-08-24T10:25:02Z–16:34:35Z; có cần ưu tiên kiểm tra chồng lấn này không?
+- Có bất kỳ sự kiện web_request nào trong cửa sổ có trường domain hoặc cmdline chứa chuỗi 'ad.networkfilter.co' không?
+- Có sự kiện dns nào cho domain ad.networkfilter.co trong cửa sổ không?
+- Có sự kiện process_creation nào liên quan đến các công cụ thường dùng để thực hiện HTTP outbound (curl, wget, powershell, bitsadmin) trong cửa sổ không?
 
 **Rủi ro nếu quyết định sai**
 
-- Kết luận âm tính có thể sai do scope host rỗng: host `we1149srv` không có bản ghi `web` trong cửa sổ, nên PoC chưa từng được thử trên host đó theo nghĩa telemetry.
-- Cửa sổ quét một ngày không đại diện toàn bộ dataset 2016-08-01–2016-08-28; beacon có thể nằm ngoài ngày 2016-08-21/22.
-- Chưa thấy predicate `domain EQUALS ad.networkfilter.co` và `cmdline CONTAINS site=ad.networkfilter.co` trong EVIDENCE SUMMARY, nên độ phủ IOC theo schema `web_request` chưa đầy đủ.
-- `process_creation` không thể tự chứng minh outbound HTTP beaconing; `dns` bị giới hạn thời gian; ngữ nghĩa `ip`/`port` chưa xác định.
-- 0 match chỉ đúng với predicate literal, loại sự kiện hiện có và cửa sổ đã quét; không loại trừ C2 dùng host/URI khác, mã hóa, hoặc telemetry không ghi nhận.
+- Giả âm positif: việc không tìm thấy dấu hiệu có thể do telemetry bị thiếu hoặc không ghi lại các kết nối outbound.
+- Giả âm dương: nếu có beacon nhưng sử dụng mã hóa hoặc các cổng không chuẩn (không phải HTTP) thì hunt dựa trên web_request sẽ không phát hiện.
+- Rủi ro về thời gian: cửa sổ hiện tại (2016-08-21 đến 2016-08-22) có thể không chứa hoạt động beacon nếu nó xảy ra ngoài khoảng thời gian này.
 
 ## Kế hoạch từ PEAK Assistant
 
@@ -97,6 +93,10 @@ search index="botsv1" match(cmdline, "(?i)ad.networkfilter.co") match(cmdline, "
 
 ## Chi phí và tái lập
 
-- LLM (judge + advisor): 1 lần gọi, 6695 token. Các agent bên trong PEAK Assistant tự tạo client riêng nên chưa được đo.
-- Thời gian chạy bước Execute (gồm lệnh gọi judge): 6.16s
-- Ledger: `artifacts\runs\v2\poc-c2-beacon-networkfilter\poc-c2-beacon-networkfilter.json`
+- LLM (judge + advisor): 1 lần gọi, 4637 token.
+- Toàn bộ LLM (gồm các agent trong PEAK): 4 lần gọi, 18,292 token (12,904 vào / 5,388 ra).
+- Model thực sự trả lời (cấu hình: `nvidia/nemotron-3-super-120b-a12b:free`): `nvidia/nemotron-3-super-120b-a12b:free` (4 lần)
+- Cache Prepare: chạy mới và đã lưu.
+- Judge: 3 lần gọi lấy đa số; temperature 0.0.
+- Thời gian chạy bước Execute (gồm lệnh gọi judge): 4.95s
+- Ledger: `artifacts\runs\full\poc-c2-beacon-networkfilter\poc-c2-beacon-networkfilter.json`

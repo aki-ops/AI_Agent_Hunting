@@ -1,7 +1,7 @@
 # Kết quả chạy 4 PoC có sẵn qua PEAK Assistant (BOTS v1)
 
 Lệnh: `python main.py --poc-dir pocs --db data/botsv1_eval.sqlite` (cdb 4,417,543 dòng, PEAK Assistant + LLM thật).
-Model: `LLM_MODEL=auto` (OpenRouter Auto Router tự chọn model cho từng request, nên nội dung LLM kém tái lập hơn model cố định; model Meta Muse đã bị bỏ vì hay trả 404).
+Model: `nvidia/nemotron-3-super-120b-a12b:free` (OpenRouter, giá 0; model dự phòng `nvidia/nemotron-3-ultra-550b-a55b:free`, `poolside/laguna-s-2.1:free`, không phải dùng). Số dư tài khoản không đổi sau lần chạy. Model miễn phí đôi khi lẫn chữ nước khác vào câu tiếng Việt do LLM viết (vd. "thường见", "conhecido" ở phần câu hỏi của Joomla); phần này không ảnh hưởng bằng chứng hay khuyến nghị. Các lần chạy bằng `auto` (DeepSeek) cho cùng khuyến nghị và nằm trong luận văn, không nằm ở thư mục này.
 Mỗi thư mục con có `recommendation.md/json` (khuyến nghị cho người quyết định), `peak_able.md` (bảng ABLE
 do PEAK `able_table` viết) và `peak_hunt_plan.md` (kế hoạch do PEAK planner + critic viết).
 
@@ -27,7 +27,9 @@ do PEAK `able_table` viết) và `peak_hunt_plan.md` (kế hoạch do PEAK plann
 
 ## Lưu ý trung thực
 
-- Judge/advisor/PEAK là LLM, kết quả mỗi lần chạy có thể khác; phần tất định (số bản ghi, disposition khi cùng judge) tái lập được.
-- Endpoint LLM thỉnh thoảng trả 404 `model_not_found`; mỗi bước (ABLE, kế hoạch, judge, advisor) tự gọi lại với backoff 3s/10s/25s. Lần chạy này không có lần gọi lại nào (endpoint ổn định), nên cơ chế đó chỉ được kiểm bằng unit test. Advisor thử lại tối đa 3 lần nếu model trả JSON lỗi.
+- Judge/advisor/PEAK là LLM, kết quả mỗi lần chạy có thể khác; phần tất định (số bản ghi, disposition khi cùng judge) tái lập được. Judge chạy 3 lần (đa số), temperature 0.
+- Bước Prepare của Joomla được lấy từ cache của một lần chạy trước cùng model và cùng PoC (báo cáo ghi `prepare cache hit`); ba PoC còn lại gọi PEAK mới.
+- Endpoint LLM thỉnh thoảng trả lỗi thoáng qua; mỗi bước tự gọi lại với backoff 3s/10s/25s rồi chuyển model dự phòng. Lần chạy này không gặp lỗi nào, nên việc gọi lại và chuyển model dự phòng chỉ được kiểm bằng unit test. Advisor thử lại tối đa 3 lần nếu model trả JSON lỗi.
 - Bản nháp SPL trong báo cáo chưa được kiểm tra trên Splunk thật.
-- Số token của các agent bên trong PEAK chưa được đo.
+- Token của mọi agent (kể cả PEAK) được đo và ghi trong `recommendation.json` (`meta`). Lời gọi dạng stream sẽ không có số token; lần chạy này không có.
+- Chưa chạy trên Splunk thật: bản nháp SPL và adapter Splunk chưa được kiểm chứng.

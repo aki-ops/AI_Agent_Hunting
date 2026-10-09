@@ -1,130 +1,68 @@
-# Hypothesis
-Brute force login against a public-facing server. Repeated failed authentication events target user accounts on a host. The encoded `cmdline` row carries `Logon Failed` for failed attempts. Candidate detection predicates: `cmdline CONTAINS "Logon Failed"` and optionally `user EQUALS "admin"`.
+**Hypothesis**  
+Brute force login against a public‑facing server. Repeated failed authentication events target user accounts on a host, and the `cmdline` field contains the string **“Logon Failed”** for each failed attempt.
 
-# Recommended Time Frame
-Full available CDB telemetry window: **2016-08-01T00:00:00Z through 2016-08-28T23:59:00Z**. Use the full 28-day range to establish baseline authentication failure volume, then focus on **5-minute buckets** for burst detection. If a burst is identified, pivot **±1 hour** around the burst for surrounding authentication, web, process, and SMB context.
+**Recommended Time Frame**  
+No specific time window is prescribed in the hypothesis. The available telemetry spans **2016‑08‑01 00:00:00 Z to 2016‑08‑28 23:59:00 Z**; the hunt can be run over the full dataset or any sub‑range of interest (e.g., the previous 7 days if a more recent window is desired).
 
-# ABLE Table
-| Element | Details |
-| --- | --- |
-| Actor | Not specified. Treat as an external attacker or automated bot attempting brute-force login against a public-facing server. No named actor or tooling is provided. |
-| Behavior | Repeated failed authentication events targeting user accounts on a host; brute-force login attempt (MITRE ATT&CK T1110). Detection focus is an authentication failure burst. Candidate predicates: `cmdline CONTAINS "Logon Failed"`; `user EQUALS "admin"`. |
-| Location | Public-facing or internet-facing server and its authentication telemetry. Pivot on `host`, `user`, `ip`, and `timestamp`. If web-facing, correlate with `web_request` rows for the same host, domain, IP, and time window. |
-| Evidence | CDB events table. Primary source: `native_type EQUALS authentication` (`event_id 4624`). Search for `cmdline CONTAINS "Logon Failed"`; optionally `user EQUALS "admin"`; inspect `action`/`status` for failure outcome. Aggregate or count by `host`, `user`, and `ip` over short time windows to find bursts. Secondary source: `web_request` rows use `domain` and `cmdline` text such as `site=<host> uri=<path>` to identify public-facing server traffic, but those rows do not show logon failures. The local telemetry does not include Windows event ID 4625; failed authentication must be inferred from `cmdline` text or `action`/`status`, not from `event_id`. |
+**ABLE Table**
 
-# Data
-| Data Source | Native Type / Event ID | Key Fields | Relevance |
-| --- | --- | --- | --- |
-| CDB events table (equivalent `index=cdb`) | `authentication` / `4624` | `timestamp`, `event_id`, `native_type`, `host`, `user`, `ip`, `cmdline`, `action`, `status` | Primary source for failed-logon burst detection. Use `cmdline CONTAINS "Logon Failed"` and optionally `user EQUALS "admin"`. |
-| CDB events table | `web_request` / `-` | `timestamp`, `native_type`, `host`, `domain`, `ip`, `port`, `cmdline` | Secondary source to identify public-facing server traffic and correlate attack timing. Cannot confirm authentication failure. |
-| CDB events table | `process_creation` / `4688`, `1` | `timestamp`, `event_id`, `native_type`, `host`, `user`, `pid`, `ppid`, `image`, `cmdline` | Post-burst follow-up if a successful logon or compromise is suspected. |
-| CDB events table | `smb` / `5140`, `5145`, `4648` | `timestamp`, `event_id`, `native_type`, `host`, `user`, `ip`, `file_path`, `cmdline` | Post-burst follow-up for lateral movement or file share access after possible successful authentication. |
+| ABLE Element | Content |
+|--------------|---------|
+| **Actor** | Unspecified / generic threat actor (no specific group named) |
+| **Behavior** | Brute force login – repeated failed authentication attempts against user accounts |
+| **Location** | Public‑facing server (internet‑exposed host) |
+| **Evidence** | Authentication events (`native_type = authentication`, `event_id = 4624`) where `cmdline` **CONTAINS** `Logon Failed`. Evidence can be refined by `host`, `user`, `ip`, and temporal bursts (multiple failures from the same host/user within a short time window). |
 
-# Hunt Procedure
-All SPL below is an **equivalent detection draft only**. The deterministic executor uses the literal predicates listed in each step; SPL is provided for analyst reference and tuning.
+**Data**
 
-1. **Identify failed authentication candidates.**
-   - Predicates: `native_type EQUALS authentication`; `event_id EQUALS 4624`; `cmdline CONTAINS "Logon Failed"`.
-   - Optional high-priority filter: `user EQUALS admin`.
-   - Equivalent SPL:
-     ```spl
-     index=cdb native_type=authentication event_id=4624 cmdline="*Logon Failed*"
-     | stats count by host user ip
-     | sort -count
+| Data Source (Table) | native_type | event_id | Key Fields Relevant to Hunt | Relevance |
+|---------------------|-------------|----------|-----------------------------|-----------|
+| `events` (SQLite)   | authentication | 4624 | `timestamp`, `host`, `user`, `cmdline`, `ip`, `action`, `status` | Contains the authentication logs needed to detect failed logons (`cmdline CONTAINS Logon Failed`). |
+| `events` (SQLite)   | authentication | 4624 (success) | `timestamp`, `host`, `user`, `cmdline`, `ip` | Optional pivot to see if any successful logon followed a burst of failures (`cmdline CONTAINS Logon Success`). |
+| `events` (SQLite)   | any (for context) | — | `host`, `ip`, `domain` | May help infer whether a host is public‑facing if external tagging or IP reputation data were present (not available in the current schema). |
+
+**Hunt Procedure**
+
+1. **Select failed authentication events**  
+   - Predicate: `native_type EQUALS authentication AND event_id EQUALS 4624 AND cmdline CONTAINS Logon Failed`  
+   - Return fields: `timestamp`, `host`, `user`, `ip`, `cmdline`.
+
+2. **(Optional) Restrict to known public‑facing hosts**  
+   - If the environment provides a tag or list of external hosts, apply: `host EQUALS <external‑host‑list>` or `ip NOT IN <internal‑ranges>`.  
+   - *Note:* The current schema does **not** contain an explicit field marking a host as public‑facing; this step can only be performed if external context is added elsewhere. If unavailable, proceed with all hosts and acknowledge the limitation.
+
+3. **Aggregate failures by host and user over a short time window**  
+   - Use a time‑bucketed count (e.g., 5‑minute intervals) to spot bursts:  
      ```
-   - Interpretation: Lists hosts, users, and source IPs with failed-logon text. If no rows contain `cmdline CONTAINS "Logon Failed"`, the available CDB data cannot confirm failed authentication from `cmdline`. Inspect `action` and `status` for failure outcome.
-
-2. **Establish baseline failed-authentication volume.**
-   - Predicates: same as step 1.
-   - Aggregation: count failed rows by `host`, `user`, `ip`, and 5-minute `_time` buckets over the full 28-day range.
-   - Equivalent SPL:
-     ```spl
-     index=cdb native_type=authentication event_id=4624 cmdline="*Logon Failed*"
-     | bin _time span=5m
-     | stats count by _time host user ip
-     | stats max(count) as max_5m avg(count) as avg_5m by host user ip
-     | sort -max_5m
+     | tstats count WHERE native_type=authentication event_id=4624 cmdline="*Logon Failed*" 
+       BY host user _time span=5m
      ```
-   - Interpretation: Use `max_5m` and `avg_5m` to tune the burst threshold. A starting threshold is `count > 10` per 5-minute window, but it must be adjusted to the observed baseline.
+   - In pure predicate terms, this step can be approximated by:  
+     - Filter as in Step 1.  
+     - Sort results by `timestamp`.  
+     - For each `host`/`user` pair, count events where the difference between successive timestamps ≤ 300 seconds (5 min).  
+   - Flag pairs where the count ≥ threshold (e.g., **≥ 10 failures** within the window).
 
-3. **Detect authentication failure bursts.**
-   - Predicates: same as step 1.
-   - Aggregation: count failed rows in 5-minute buckets by `host`, `user`, and `ip`.
-   - Equivalent SPL:
-     ```spl
-     index=cdb native_type=authentication event_id=4624 cmdline="*Logon Failed*"
-     | bin _time span=5m
-     | stats count by _time host user ip
-     | where count > 10
-     | sort -_time
-     ```
-   - Interpretation: Any returned row is a burst candidate. If the burst includes `user=admin`, prioritize it. Tune the `count > 10` threshold based on step 2.
+4. **Extract candidate brute‑force incidents**  
+   - For each flagged `host`/`user` pair, return the earliest and latest `timestamp` in the burst, the list of `ip` addresses observed, and the raw `cmdline` values.
 
-4. **Determine whether the burst targets a privileged account.**
-   - Predicates: from step 3 results, filter `user EQUALS admin`.
-   - Also compare against all users:
-     ```spl
-     index=cdb native_type=authentication event_id=4624 cmdline="*Logon Failed*"
-     | bin _time span=5m
-     | stats count by _time host user ip
-     | where count > 10
-     | sort -count
-     ```
-   - Interpretation: Bursts targeting `admin` are higher severity. Non-admin failures may also be brute force, user error, or spraying; do not ignore them without checking step 5.
+5. **Check for subsequent successful logon (optional pivot)**  
+   - Predicate: `native_type EQUALS authentication AND event_id EQUALS 4624 AND cmdline CONTAINS Logon Success AND host EQUALS <candidate host> AND user EQUALS <candidate user> AND timestamp > <burst end time>`  
+   - If a success follows a burst, note it as a potential compromise; if none, the activity remains a failed brute‑force attempt.
 
-5. **Distinguish brute force from password spraying.**
-   - Predicates: same as step 1.
-   - Pivot: count distinct users and total failures by `_time`, `host`, and `ip`.
-   - Equivalent SPL:
-     ```spl
-     index=cdb native_type=authentication event_id=4624 cmdline="*Logon Failed*"
-     | bin _time span=5m
-     | stats dc(user) as users count by _time host ip
-     | where users > 1 and count > 10
-     ```
-   - Interpretation: Many users from one IP suggests password spraying. Many failures against one user from one IP suggests brute force. Many source IPs targeting one user suggests distributed brute force. If `user=admin` is the only targeted account, treat as focused brute force.
+6. **Enrich with network context (if available)**  
+   - Join on `ip` to see if the source address belongs to known malicious IP lists, geo‑locations, or ASNs.  
+   - *Limitation:* The provided `events` table does not contain reputation fields; this enrichment would require external look‑ups not present in the current data.
 
-6. **Correlate with public-facing web traffic.**
-   - Predicates: `native_type EQUALS web_request`; `host EQUALS <flagged_host>` or `ip EQUALS <flagged_ip>`; time window around the burst.
-   - Use `domain` and `cmdline` text such as `site=<host> uri=<path>`.
-   - Equivalent SPL:
-     ```spl
-     index=cdb native_type=web_request (host=<flagged_host> OR cmdline="*site=<flagged_host>*")
-     | bin _time span=5m
-     | stats count by _time host domain ip cmdline
-     | sort -_time
-     ```
-   - Interpretation: Helps confirm the server is web-facing and may show scanning or attack traffic. It **cannot** confirm failed authentication. If no `web_request` rows exist for the host, public-facing status is not proven by this telemetry.
+7. **Report findings**  
+   - Produce a table with columns: `detected_at` (burst start), `host`, `user`, `failure_count`, `source_ip_list`, `time_window_minutes`, `followed_by_success (yes/no)`, and any relevant notes (e.g., “no external‑host tag available”).  
+   - Highlight any bursts that exceed the threshold and involve hosts suspected of being public‑facing.
 
-7. **Check for successful authentication after the burst.**
-   - Predicates: `native_type EQUALS authentication`; `event_id EQUALS 4624`; `cmdline CONTAINS "Logon Success"`; `host EQUALS <flagged_host>`; `user EQUALS <target_user>`; `ip EQUALS <source_ip>`; timestamp within the window after the burst.
-   - Equivalent SPL:
-     ```spl
-     index=cdb native_type=authentication event_id=4624 cmdline="*Logon Success*" host=<flagged_host> user=<target_user> ip=<source_ip>
-     | bin _time span=5m
-     | stats count by _time host user ip action status
-     ```
-   - Interpretation: A successful logon after many failures indicates possible compromise. Use `action` or `status` if they encode success. If no success rows exist, the burst may have been unsuccessful or the available data may be incomplete.
+**Where the Available Data Cannot Answer a Question**
 
-8. **If success is found, hunt post-compromise activity.**
-   - Process predicates: `native_type EQUALS process_creation`; `host EQUALS <flagged_host>`; `user EQUALS <target_user>`; `event_id EQUALS 4688 or 1`; time window after success.
-   - SMB predicates: `native_type EQUALS smb`; `event_id EQUALS 5140 or 5145 or 4648`; `host EQUALS <flagged_host>`; `user EQUALS <target_user>`; time window after success.
-   - Equivalent SPL:
-     ```spl
-     index=cdb native_type=process_creation host=<flagged_host> user=<target_user> event_id IN (4688,1)
-     | stats count by _time pid ppid image cmdline
-     | sort _time
-     ```
-     ```spl
-     index=cdb native_type=smb host=<flagged_host> user=<target_user> event_id IN (5140,5145,4648)
-     | stats count by _time event_id file_path cmdline ip
-     | sort _time
-     ```
-   - Interpretation: Look for suspicious child processes, credential access tooling, lateral movement, or unexpected file share access shortly after the suspected successful authentication.
+- **Public‑facing server identification:** The schema lacks a field or tag that explicitly marks a host as internet‑exposed. Without external context (e.g., asset inventory, IP reputation, or DMZ labeling), the hunt cannot definitively restrict to public‑facing servers; it must either rely on administrator‑supplied host lists or accept that some detected bursts may occur on internal systems.  
+- **Reputation / threat‑intel on source IPs:** No columns for IP reputation, geo‑location, or ASN are present, so determining whether the source addresses are known malicious or originate from unexpected geographic regions requires external look‑ups outside the provided SQLite table.  
 
-9. **Document limitations and gaps.**
-   - Local telemetry lacks Windows event ID `4625`; failed authentication is inferred from `cmdline CONTAINS "Logon Failed"` or from `action`/`status`. If `action`/`status` does not encode failure and `cmdline` lacks `"Logon Failed"`, failed authentication cannot be confirmed from the available CDB data.
-   - `web_request` rows do not record logon failures; they can only support public-facing server correlation.
-   - The starting threshold `count > 10` per 5-minute window is a baseline hypothesis and must be tuned to the environment.
-   - The data may identify a failed-logon burst but may not definitively distinguish brute force from password spraying, user error, or vulnerability scanning without additional context.
-   - No named actor or tooling is provided; attribution is not possible from this telemetry alone.
+---  
+
+*All steps above are expressed as literal predicates (`EQUALS`, `CONTAINS`, etc.) or as equivalent SPL `tstats` drafts that can be executed against the `events` table.*

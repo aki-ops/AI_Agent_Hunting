@@ -1,6 +1,6 @@
 # Chương 7. Thực nghiệm và đánh giá
 
-Chương này trình bày các lần chạy thật của hệ thống. Mọi con số lấy từ tệp kết quả trong `results/botsv1-peak-run/` và `artifacts/runs/`, hoặc từ lệnh kiểm tra chạy lại khi viết chương này. Phần nào chưa kiểm chứng được sẽ được nêu rõ ở mục 7.9.
+Chương này trình bày các lần chạy thật của hệ thống. Mọi con số lấy từ tệp kết quả trong `results/botsv1-peak-run/` (lần chạy cuối bằng mô hình miễn phí Nemotron) và `artifacts/runs/` (các lần chạy `auto` và so sánh, không đưa vào kho mã), hoặc từ lệnh kiểm tra chạy lại khi viết chương này. Phần nào chưa kiểm chứng được sẽ được nêu rõ ở mục 7.9.
 
 ## 7.1. Thiết lập thực nghiệm
 

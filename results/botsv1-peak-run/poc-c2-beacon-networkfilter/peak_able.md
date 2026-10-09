@@ -1,18 +1,15 @@
-# PEAK ABLE Table: Command and Control Beaconing
+# PEAK ABLE Table: C2 Beaconing via HTTP
 
 *Hypothesis: C2 beacon to ad.networkfilter.co (BOTS v1 known IOC). Outbound HTTP request to ad.networkfilter.co, the ad-fraud beacon seen in BOTS v1.*
 
-| ABLE Element | |
-|---|---|
-| Actor | Not a specific named threat group in the supplied material; associated with the BOTS v1 ad-fraud beacon and known IOC ad.networkfilter.co. |
-| Behavior | Outbound HTTP command-and-control beaconing to ad.networkfilter.co, likely GET requests and possibly a /banner/ path. MITRE ATT&CK T1071.001 - Application Layer Protocol: Web. |
-| Location | Internal hosts making outbound HTTP to the internet and the network perimeter/egress web traffic. In local telemetry, primary source is the CDB SQLite table `events` with `native_type` = `web_request`; related endpoint telemetry is `process_creation`. |
-| Evidence | Primary: `native_type EQUALS web_request` and (`domain EQUALS ad.networkfilter.co` OR `cmdline CONTAINS ad.networkfilter.co` OR `cmdline CONTAINS /banner/` OR `cmdline CONTAINS site=ad.networkfilter.co`). Supporting: `native_type EQUALS process_creation` and `cmdline CONTAINS ad.networkfilter.co`. Pivot on `host`, `user`, `ip`, `port`, and `timestamp` to scope affected hosts and frequency. |
+| ABLE Element | Details |
+|--------------|---------|
+| Actor | Threat actor using the ad.networkfilter.co C2 infrastructure (associated with BOTS v1 ad‑fraud campaign); specific actor not identified in the hypothesis. |
+| Behavior | Outbound HTTP request to the domain **ad.networkfilter.co** (C2 beaconing), observable as a web request with the site in the `domain` field or the string `ad.networkfilter.co` appearing in the `cmdline` of a web request event. |
+| Location | Internal hosts that have outbound internet access (e.g., workstations, servers) within the monitored network; the beacon originates from inside and travels to the external C2 host. |
+| Evidence | - `web_request` events where `domain` CONTAINS `ad.networkfilter.co` (or `cmdline` CONTAINS `ad.networkfilter.co`).<br>- Corresponding `process_creation` events that spawned the process making the web request (to link beacon to a specific executable).<br>- Optional: `cmdline` CONTAINS `/banner/` to capture the known ad‑fraud beacon pattern. |
 
-Notes:
-- Local `web_request` schema has no dedicated URI column; the URI is embedded in `cmdline` as `site=<host> uri=<path>`.
-- The strongest local predicates are `domain EQUALS ad.networkfilter.co`, `cmdline CONTAINS ad.networkfilter.co`, and `cmdline CONTAINS /banner/` on `web_request` rows.
-- `process_creation` only helps if the URL or host appears in a process command line; it cannot independently prove outbound HTTP beaconing.
-- `dns` telemetry exists but is limited to 2016-08-24 10:25:02–16:34:35 in the local table, so it cannot confirm resolution across the full 2016-08-01–2016-08-28 dataset.
-- SPL-equivalent detection draft only: `index=... native_type=web_request (domain="ad.networkfilter.co" OR cmdline="*ad.networkfilter.co*" OR cmdline="*/banner/*")`; the deterministic executor should use literal field/operator/value predicates, not SPL.
-- The available data can show matching HTTP requests, but it cannot by itself prove malicious intent, actor attribution, or beaconing cadence without time-based aggregation and baseline comparison.
+**Notes**
+- The local telemetry includes a `web_request` native type with a `domain` field that stores the target host, making the primary detection predicate straightforward.
+- If only `cmdline` is available (e.g., for non‑web request logs), use `cmdline CONTAINS ad.networkfilter.co` as a fallback.
+- No direct DNS or authentication events are required for this specific beacon detection, but they can be used for additional context (e.g., prior DNS lookup of ad.networkfilter.co).

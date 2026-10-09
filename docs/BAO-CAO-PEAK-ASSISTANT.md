@@ -1,7 +1,7 @@
 # Báo cáo: tích hợp PEAK Assistant, làm gọn repo và chạy 4 PoC có sẵn
 
 Branch `peak-assistant-integration` (bản gốc: tag `v6-engine-final`, branch `pre-peak-snapshot`).
-Kết quả gốc nằm ở [`results/botsv1-peak-run/`](../results/botsv1-peak-run/).
+Kết quả gốc nằm ở [`results/botsv1-peak-run/`](../results/botsv1-peak-run/) (lần chạy bằng model miễn phí `nvidia/nemotron-3-super-120b-a12b:free`, cùng khuyến nghị với lần chạy `auto` mô tả bên dưới; số token và thời gian trong báo cáo này là của lần chạy `auto`).
 
 ## 1. Tóm tắt
 

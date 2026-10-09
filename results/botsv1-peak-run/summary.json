@@ -5,7 +5,11 @@
     "observations": 0,
     "disposition": "CLOSE_WITH_CAVEAT",
     "confidence": "MEDIUM",
-    "used_peak": true
+    "used_peak": true,
+    "models": [
+      "nvidia/nemotron-3-super-120b-a12b:free"
+    ],
+    "llm_all_tokens": 21546
   },
   {
     "poc_id": "poc-c2-beacon-networkfilter",
@@ -13,7 +17,11 @@
     "observations": 0,
     "disposition": "CLOSE_WITH_CAVEAT",
     "confidence": "MEDIUM",
-    "used_peak": true
+    "used_peak": true,
+    "models": [
+      "nvidia/nemotron-3-super-120b-a12b:free"
+    ],
+    "llm_all_tokens": 18292
   },
   {
     "poc_id": "poc-joomla-rce",
@@ -21,7 +29,11 @@
     "observations": 200,
     "disposition": "ESCALATE_TO_IR",
     "confidence": "MEDIUM",
-    "used_peak": true
+    "used_peak": true,
+    "models": [
+      "nvidia/nemotron-3-super-120b-a12b:free"
+    ],
+    "llm_all_tokens": 11091
   },
   {
     "poc_id": "poc-pdf-exploit-enc",
@@ -29,6 +41,10 @@
     "observations": 0,
     "disposition": "CLOSE_WITH_CAVEAT",
     "confidence": "MEDIUM",
-    "used_peak": true
+    "used_peak": true,
+    "models": [
+      "nvidia/nemotron-3-super-120b-a12b:free"
+    ],
+    "llm_all_tokens": 20017
   }
 ]
