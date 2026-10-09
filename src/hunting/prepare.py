@@ -130,19 +130,28 @@ def offline_plan(poc: PoC) -> str:
 async def _peak_prepare(
     poc: PoC, data_document: str, timeout: int, use_research: bool, result: PrepareResult,
 ) -> None:
+    await _peak_prepare_texts(
+        hypothesis=hypothesis_text(poc), research=research_document(poc), data_document=data_document,
+        local_context=LOCAL_CONTEXT, technique=poc.topic or poc.name, timeout=timeout,
+        use_research=use_research, result=result,
+    )
+
+
+async def _peak_prepare_texts(
+    *, hypothesis: str, research: str, data_document: str, local_context: str, technique: str,
+    timeout: int, use_research: bool, result: PrepareResult,
+) -> None:
+    """The PEAK Prepare calls, on plain text inputs (shared by the PoC pipeline and the public-PoC planner)."""
     from peak_assistant.able_assistant import able_table
     from peak_assistant.planning_assistant import plan_hunt
     from peak_assistant.utils.result_extractors import extract_hunt_plan
-
-    hypothesis = hypothesis_text(poc)
-    research = research_document(poc)
 
     if use_research:
         try:
             from peak_assistant.research_assistant import researcher
             from peak_assistant.utils.result_extractors import extract_research_report
 
-            run = await asyncio.wait_for(researcher(technique=poc.topic or poc.name, local_context=LOCAL_CONTEXT), timeout)
+            run = await asyncio.wait_for(researcher(technique=technique, local_context=local_context), timeout)
             report = extract_research_report(run)
             if report and "no report generated" not in report.lower():
                 research = report
@@ -162,7 +171,7 @@ async def _peak_prepare(
                 hypothesis=hypothesis,
                 research_document=research,
                 local_data_document=data_document,
-                local_context=LOCAL_CONTEXT,
+                local_context=local_context,
             ),
             timeout,
         )
@@ -182,7 +191,7 @@ async def _peak_prepare(
                 hypothesis=hypothesis,
                 able_info=able,
                 data_discovery=data_document,
-                local_context=LOCAL_CONTEXT,
+                local_context=local_context,
             ),
             timeout,
         )
@@ -289,4 +298,75 @@ def run_prepare(
     result.able_markdown = offline_able(poc)
     result.hunt_plan_markdown = offline_plan(poc)
     result.research_markdown = research_document(poc)
+    return result
+
+
+def run_peak_texts(
+    *,
+    hypothesis: str,
+    research: str,
+    data_document: str,
+    local_context: str,
+    technique: str,
+    llm: PeakLlm | None,
+    timeout: int = 420,
+    attempts: int = 2,
+    cache_dir: str | Path | None = None,
+    refresh: bool = False,
+) -> PrepareResult:
+    """PEAK Prepare on plain text (used for public PoCs, where there is no ``PoC`` object).
+
+    Same behaviour as :func:`run_prepare`: cached on success, never raises, and returns ``used_peak=False`` with the
+    reason in ``notes`` when PEAK or the LLM is unavailable (the caller then plans without PEAK's text).
+    """
+    result = PrepareResult(used_peak=False)
+    if llm is None:
+        result.notes.append("PEAK Assistant not used (offline mode or LLM not configured)")
+        return result
+    model = getattr(getattr(llm, "settings", None), "model", "unknown")
+    key = hashlib.sha256(json.dumps(
+        [hypothesis, research, data_document, local_context, model, _peak_version(), "texts-1"], ensure_ascii=False
+    ).encode("utf-8")).hexdigest()
+    cache_file = Path(cache_dir) / "prepare-texts" / f"{key[:24]}.json" if cache_dir is not None else None
+    if cache_file is not None:
+        result.cache = "refresh" if refresh else "miss"
+        if cache_file.exists() and not refresh:
+            try:
+                data = json.loads(cache_file.read_text(encoding="utf-8"))
+                return PrepareResult(
+                    used_peak=True, able_markdown=data["able_markdown"], hunt_plan_markdown=data["hunt_plan_markdown"],
+                    research_markdown=data.get("research_markdown", ""), cache="hit",
+                    notes=[*data.get("notes", []), f"prepare cache hit ({key[:12]}): PEAK not called"],
+                )
+            except (OSError, ValueError, KeyError):
+                result.notes.append("prepare cache entry unreadable; regenerated")
+    for attempt in range(1, attempts + 1):
+        attempt_result = PrepareResult(used_peak=False)
+        try:
+            with _quiet_peak():
+                run_async(_peak_prepare_texts(
+                    hypothesis=hypothesis, research=research, data_document=data_document, local_context=local_context,
+                    technique=technique, timeout=timeout, use_research=False, result=attempt_result,
+                ))
+        except Exception as exc:  # PEAK/LLM failure must never abort planning
+            result.notes.extend(attempt_result.notes)
+            result.notes.append(f"PEAK Prepare attempt {attempt}/{attempts} failed ({type(exc).__name__}: {str(exc)[:300]})")
+            switch = getattr(llm, "switch_model", None)
+            if callable(switch) and switch(exc):
+                result.notes.append(f"switched to fallback model {llm.settings.model}")
+            continue
+        attempt_result.notes = [*result.notes, *attempt_result.notes]
+        attempt_result.used_peak = True
+        attempt_result.cache = result.cache
+        if cache_file is not None:
+            try:
+                cache_file.parent.mkdir(parents=True, exist_ok=True)
+                cache_file.write_text(json.dumps({
+                    "able_markdown": attempt_result.able_markdown, "hunt_plan_markdown": attempt_result.hunt_plan_markdown,
+                    "research_markdown": attempt_result.research_markdown, "notes": attempt_result.notes, "model": model,
+                }, ensure_ascii=False, indent=1), encoding="utf-8")
+            except OSError as exc:
+                attempt_result.notes.append(f"prepare cache not written: {exc}")
+        return attempt_result
+    result.notes.append("PEAK Prepare failed; planning continues without PEAK's ABLE/plan text")
     return result

@@ -84,6 +84,11 @@ def _adapter(args: argparse.Namespace):
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if raw and raw[0] in ("plan", "verify", "schema"):  # Prepare-only workflow for public PoCs
+        from hunting.plan_cli import main as plan_main
+
+        return plan_main(raw)
     args = _parser().parse_args(argv)
     files = _collect(args)
     if not files:

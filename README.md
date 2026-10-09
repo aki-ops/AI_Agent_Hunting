@@ -15,6 +15,21 @@ PoC (JSON) ──► PEAK Assistant: ABLE table + hunt plan (planner/critic)    
 Bất biến: LLM không tạo hay sửa bằng chứng; bản ghi chỉ đến từ adapter. Kết quả rỗng khi nguồn telemetry
 không có dữ liệu được báo là `COLLECT_DATA_THEN_RERUN`, không phải "sạch".
 
+## Hướng mới: Prepare-only từ PoC công khai
+
+Dự án đang chuyển trọng tâm sang đúng chữ **P** của PEAK: đọc PoC công khai (CVE, repo GitHub nhiều sao), dựng **kế hoạch săn**
+(giai đoạn tấn công → dấu vết → truy vấn SPL chỉ đọc → giới hạn → điểm dừng) rồi giao cho đội Execute. Sau khi họ chạy, `verify`
+quyết định chấp nhận kết quả hay sinh vòng pivot tiếp theo. Không đụng hệ thống nội bộ, không chạy PoC.
+
+```bash
+python main.py plan --cve CVE-2021-44228 --min-stars 500      # cần LLM trong .env; --no-peak để bỏ PEAK (nhanh, ít token)
+python main.py verify --plan artifacts/plans/CVE-2021-44228/iter1/plan.json --results results.json
+python main.py schema --out schemas/                           # JSON Schema của HuntPlan và ResultBundle
+```
+
+Chi tiết, hợp đồng dữ liệu, mô hình an toàn và giới hạn: [`docs/PREPARE-WORKFLOW.md`](docs/PREPARE-WORKFLOW.md). Pipeline Prepare→Execute→Act
+bên dưới vẫn còn, dùng làm bộ thử cục bộ trên dữ liệu BOTS v1 công khai.
+
 ## Cài đặt (Python ≥ 3.12)
 
 ```bash
