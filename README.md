@@ -17,9 +17,33 @@ không có dữ liệu được báo là `COLLECT_DATA_THEN_RERUN`, không phả
 
 ## Hướng mới: Prepare-only từ PoC công khai
 
-Dự án đang chuyển trọng tâm sang đúng chữ **P** của PEAK: đọc PoC công khai (CVE, repo GitHub nhiều sao), dựng **kế hoạch săn**
-(giai đoạn tấn công → dấu vết → truy vấn SPL chỉ đọc → giới hạn → điểm dừng) rồi giao cho đội Execute. Sau khi họ chạy, `verify`
-quyết định chấp nhận kết quả hay sinh vòng pivot tiếp theo. Không đụng hệ thống nội bộ, không chạy PoC.
+Dự án chỉ làm đúng chữ **P** (Prepare) của khung PEAK. Đầu vào là PoC công khai (CVE, repo GitHub nhiều sao). Đầu ra là
+**kế hoạch săn**: giả sử PoC này được dùng để tấn công, các giai đoạn tấn công, dấu vết mỗi giai đoạn, truy vấn SPL chỉ đọc, giới hạn
+và điểm dừng. Đội Execute chạy kế hoạch trên dữ liệu của họ; sau đó `verify` quyết định chấp nhận kết quả hay sinh vòng pivot tiếp theo.
+Không đụng hệ thống nội bộ, không chạy PoC.
+
+![Pipeline Prepare-only: nguồn công khai → kế hoạch → đội Execute → xác minh → quyết định](docs/images/pipeline-prepare-only.png)
+
+### Vai trò từng phần
+
+| Phần (hàm chính) | Vai trò | Dùng LLM? |
+|---|---|---|
+| **Nguồn công khai** (NVD, GitHub) | Cho biết lỗ hổng là gì (CVSS, phiên bản, có bị khai thác ngoài thực tế không) và PoC làm gì. Chỉ đọc văn bản, qua 3 host cố định. | Không |
+| **1. `gather()` + `Fetcher`** | Thu thập tình báo, có cache; chọn repo theo số sao, bỏ fork, file nhị phân và file nhiễu. | Không |
+| **2. `extract_indicators()` + `digest()`** | Trích tất định các dấu vết (tham số HTTP, chuỗi payload, tên miền out-of-band, tên file...) và gói văn bản cho LLM. Danh sách này dùng để đối chiếu, nhằm không để LLM bịa. | Không |
+| **3. `run_peak_texts()`** (tuỳ chọn) | PEAK Assistant viết bảng ABLE và kế hoạch săn làm ngữ cảnh. Chỉ thấy văn bản công khai và mô tả nguồn dữ liệu chung. Tốn nhiều token. | Có |
+| **4. `build_plan()`** | LLM đề xuất giai đoạn tấn công, dấu vết và truy vấn SPL. PoC được coi là dữ liệu không tin cậy, không phải chỉ dẫn. | Có |
+| **5. `assemble()` + `check_spl()`** | Chốt chặn an toàn: chỉ cho truy vấn chỉ đọc trong danh sách lệnh cho phép, tự gắn cửa sổ thời gian và trần dòng; truy vấn sai bị gửi lại để sửa (tối đa 3 lượt), vẫn sai thì loại. | Không |
+| **6. Phần mã tự thêm** | Điểm dừng theo mức ý nghĩa của giai đoạn, truy vấn kiểm tra độ phủ nguồn, giới hạn, nhãn xuất xứ. LLM không quyết định các thứ này. | Không |
+| **7. `write_plan()`** | Ghi `plan.json`, `plan.md`, `queries.spl`, `result.template.json` và schema, tức là các tài liệu bàn giao. | Không |
+| **Người săn đọc `plan.md`** | Kiểm tra truy vấn có bắt đúng tấn công không trước khi giao. Bộ kiểm tra chỉ bảo đảm an toàn và hình thức, không bảo đảm đúng nội dung. | |
+| **Đội Execute** (ngoài dự án) | `bind()` ánh xạ placeholder sang index thật, chạy truy vấn trên Splunk của họ rồi trả `ResultBundle`. Dữ liệu nội bộ ở lại bên họ. | |
+| **`verify()`** | Kiểm tra giao thức, tính trạng thái từng truy vấn, độ phủ và từng giai đoạn, rồi chọn quyết định theo thứ tự ưu tiên. | Không |
+| **Quyết định** | `ESCALATE_AFFECTED` (chuyển IR), `ACCEPT_NO_EVIDENCE` (không phải "sạch"), `COLLECT_DATA`/`RERUN_INCOMPLETE`, `REFINE` (vòng pivot N+1, cửa sổ ±1 giờ), `STOP_REVIEW`/`REJECT_RESULTS`. Chỉ hỗ trợ; người săn chốt. | |
+
+Vòng lặp dừng khi chuyển IR, chấp nhận, hết 3 vòng, hoặc không còn giá trị mới để pivot.
+
+### Lệnh
 
 ```bash
 python main.py plan --cve CVE-2021-44228 --min-stars 500      # cần LLM trong .env; --no-peak để bỏ PEAK (nhanh, ít token)
@@ -27,8 +51,8 @@ python main.py verify --plan artifacts/plans/CVE-2021-44228/iter1/plan.json --re
 python main.py schema --out schemas/                           # JSON Schema của HuntPlan và ResultBundle
 ```
 
-Chi tiết, hợp đồng dữ liệu, mô hình an toàn và giới hạn: [`docs/PREPARE-WORKFLOW.md`](docs/PREPARE-WORKFLOW.md). Pipeline Prepare→Execute→Act
-bên dưới vẫn còn, dùng làm bộ thử cục bộ trên dữ liệu BOTS v1 công khai.
+Chi tiết, hợp đồng dữ liệu, mô hình an toàn và giới hạn: [`docs/PREPARE-WORKFLOW.md`](docs/PREPARE-WORKFLOW.md). Pipeline
+Prepare→Execute→Act bên dưới vẫn còn, dùng làm bộ thử cục bộ trên dữ liệu BOTS v1 công khai.
 
 ## Cài đặt (Python ≥ 3.12)
 
