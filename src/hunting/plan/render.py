@@ -100,6 +100,8 @@ def render_plan_md(plan: HuntPlan) -> str:
                 basis = "có trong PoC" if o.basis == "from_poc" else "suy luận (không thấy nguyên văn trong PoC)"
                 lines.append(f"| {o.kind} | `{o.value.replace('|', '\\|')}` | {basis} |")
             lines.append("")
+        if not s.queries:
+            lines += ["> ⚠ Giai đoạn này không còn truy vấn hợp lệ nào (bộ kiểm tra đã loại, xem mục cuối): chưa kiểm tra được gì ở đây.", ""]
         for q in s.queries:
             lines += [f"**{q.query_id}** — {q.purpose} (nguồn `{q.data_source}`" + ("" if q.grounded is None else (", có chuỗi lấy từ PoC" if q.grounded else ", KHÔNG có chuỗi nào lấy nguyên văn từ PoC")) + ")", ""]
             lines += _code(q.spl)

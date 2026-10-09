@@ -135,6 +135,33 @@ def check_spl(spl: str) -> tuple[str | None, list[str], list[str]]:
     return " | ".join([re.sub(r"\s+", " ", rebuilt_first).strip(), *rest]), [], notes
 
 
+_PARENT_FILTER = re.compile(
+    r"(?i)(?<![A-Za-z_])parent_process(?:_name|_path|_exec)?\s*(?:=|\s+IN\b)|\b(?:match|like)\s*\(\s*parent_process\w*"
+)
+_FILE_FILTER = re.compile(r"(?i)(?<![A-Za-z_])(?:file_name|file_path|registry_\w+)\s*(?:=|\s+IN\b)")
+PARENT_HINT = (
+    'filter parent_process_name (or parent_process) to the process family of the vulnerable service, for example '
+    'parent_process_name IN ("java","java.exe") for a Java application server, "w3wp.exe" for IIS, "httpd", "nginx", '
+    '"php-fpm" or "php" for web servers; administrators also run whoami and shells, so a bare child-process hit proves nothing'
+)
+
+
+def parent_process_problem(spl: str, data_source: str) -> str | None:
+    """Post-exploitation checks on process telemetry must be tied to the service that was attacked.
+
+    ``whoami``, a shell or ``curl`` started by an administrator looks exactly like the same command started through a
+    web shell. Only the parent tells them apart, so an endpoint search that does not *filter* on the parent process
+    (a mention in ``stats ... by`` or ``table`` does not count) is rejected. File and registry searches are exempt.
+    """
+    if data_source != "endpoint":
+        return None
+    segments, _ = _scan(spl)
+    filtering = " | ".join(s for i, s in enumerate(segments) if i == 0 or re.match(r"(?i)(?:where|regex|search)\b", s))
+    if _PARENT_FILTER.search(filtering) or _FILE_FILTER.search(filtering):
+        return None
+    return "an endpoint (process) search has no filter on the parent process: " + PARENT_HINT
+
+
 def spl_literal(value: str) -> str | None:
     """Quote an observed value for use inside a refine query, or ``None`` if it is not boring enough to embed."""
     value = str(value or "").strip()

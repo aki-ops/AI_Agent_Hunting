@@ -498,6 +498,31 @@ def test_cli_plan_without_llm_saves_the_intel_and_exits_cleanly(monkeypatch, tmp
     assert (tmp_path / "CVE-2099-0001" / "intel.json").exists() and "LLM is needed" in capsys.readouterr().err
 
 
+def test_cli_plan_reads_the_public_source_tokens_from_the_env_file(monkeypatch, tmp_path: Path):
+    from hunting import plan_cli
+
+    seen = {}
+
+    class Recorder:
+        def __init__(self, cache_dir, **kwargs):
+            seen.update(kwargs)
+
+    def stop(*a, **k):
+        raise IntelError("stop here")
+
+    monkeypatch.setattr(plan_cli, "Fetcher", Recorder)
+    monkeypatch.setattr(plan_cli, "gather", stop)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("NVD_API_KEY", raising=False)
+    env = tmp_path / ".env"
+    env.write_text("GITHUB_TOKEN=ghp_FROM_FILE\nNVD_API_KEY=nvd_FROM_FILE\n", encoding="utf-8")
+    assert plan_cli.main(["plan", "--cve", "CVE-2099-0001", "--env", str(env), "--cache-dir", str(tmp_path / "c")]) == 2
+    assert seen == {"github_token": "ghp_FROM_FILE", "nvd_key": "nvd_FROM_FILE"}
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_FROM_ENV")  # the process environment wins over the file
+    plan_cli.main(["plan", "--cve", "CVE-2099-0001", "--env", str(env), "--cache-dir", str(tmp_path / "c")])
+    assert seen["github_token"] == "ghp_FROM_ENV"
+
+
 def test_cli_plan_rejects_a_malformed_cve_before_any_network(tmp_path: Path, capsys):
     from hunting import plan_cli
 

@@ -19,7 +19,8 @@ from typing import Any, Callable, get_args
 
 from hunting.intel import IntelBundle, digest, grounded
 from hunting.plan.catalog import CATALOG, PHASES, catalog_text
-from hunting.plan.safety import check_spl, coverage_probe
+from hunting.plan.language import foreign_words, vocabulary
+from hunting.plan.safety import PARENT_HINT, check_spl, coverage_probe, parent_process_problem
 from hunting.plan.schema import (
     Applicability,
     HuntPlan,
@@ -99,6 +100,9 @@ SEARCH RULES (a validator rejects anything else; rejected searches are discarded
   controllers, generic Java user agents, DNS to cloud services), narrow it - for example external destinations only:
   | where NOT (cidrmatch("10.0.0.0/8", dest) OR cidrmatch("172.16.0.0/12", dest) OR cidrmatch("192.168.0.0/16", dest))
   - or require a second condition, and say in benign_notes why it can still be noisy.
+- Post-exploitation searches on the endpoint source (a shell, whoami, curl or any other child process) must be tied to the
+  attacked service: %(parent_hint)s.
+  A validator rejects an endpoint process search without such a parent filter (file and registry searches are exempt).
 - Be honest about visibility: ordinary web access logs do not record POST bodies or most headers. If a signature only
   shows up when the log records bodies/headers (WAF, app log), say so in the purpose or benign_notes and add a second
   search for something the normal logs DO contain (the URI of a dropped file, a process tree, an outbound connection).
@@ -109,7 +113,8 @@ SEARCH RULES (a validator rejects anything else; rejected searches are discarded
 - The extracted observables are candidates: some (for example paths served by the attacker's own helper server) are not
   requests the victim receives. Judge each by the code or README context before using it.
 - Write title, hypothesis, descriptions, purposes and notes in Vietnamese with diacritics; keep technical terms, product
-  names, paths and SPL in their original form.
+  names, paths and SPL in their original form. Use ONLY Vietnamese and English words: never a word of another language
+  (Polish, Portuguese, Spanish, German, ...) and no Chinese, Russian or Arabic characters. A validator flags such words.
 
 OUTPUT SHAPE
 %(shape)s
@@ -131,6 +136,9 @@ TIPS
 - Never copy code or payloads that contain double quotes or brackets into a literal. Use a SHORT stable fragment instead
   (a parameter name, a path, a header name). If a double quote is unavoidable, escape it as \\" inside the SPL string.
 - "unbalanced double quote" means an odd number of unescaped double quotes in the search.
+- An endpoint search over processes needs a filter on the parent process: %(parent_hint)s.
+- A problem starting with "language:" lists words that are neither Vietnamese nor English. Rewrite those sentences in
+  Vietnamese; do not just delete the word, and do not translate technical terms, product names or paths.
 
 PROBLEMS
 %(problems)s
@@ -194,13 +202,20 @@ def _quoted_literals(spl: str) -> list[str]:
 _FOREIGN = re.compile("[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]")
 
 
-def _scrub(text: Any, where: str, problems: list[str], notes: list[str]) -> str:
-    """Human-readable fields must be Vietnamese/English. Small models sometimes leak CJK/Cyrillic characters mid-word."""
+def _scrub(text: Any, where: str, problems: list[str], notes: list[str], known: frozenset[str] | None = None) -> str:
+    """Human-readable fields must be Vietnamese/English. Small models sometimes leak CJK/Cyrillic characters or words of
+    another Latin-script language mid-sentence (``known``: words the PoC/CVE text itself uses, never flagged)."""
     value = str(text or "")
     if _FOREIGN.search(value):
         problems.append(f"{where}: contains Chinese/Japanese/Korean/Cyrillic/Arabic characters; rewrite it in Vietnamese")
         notes.append(f"{where}: removed foreign-script characters")
         value = _FOREIGN.sub("", value)
+    if known is not None:
+        stray = foreign_words(value, known)
+        if stray:
+            listed = ", ".join(stray[:6])
+            problems.append(f"language: {where}: words that are neither Vietnamese nor English: {listed}")
+            notes.append(f"{where}: possible foreign-language words left in the text: {listed}")
     return value
 
 
@@ -219,6 +234,7 @@ def assemble(data: dict[str, Any], bundle: IntelBundle, *, limits: Limits) -> tu
     if not isinstance(raw_stages, list) or not raw_stages:
         return [], ['"stages" is missing or empty'], dropped, notes
     kinds = set(get_args(ObservableKind))
+    known = vocabulary(digest(bundle))
     for i, raw in enumerate(raw_stages[:8], 1):
         if not isinstance(raw, dict):
             problems.append(f"stage {i} is not an object")
@@ -235,7 +251,7 @@ def assemble(data: dict[str, Any], bundle: IntelBundle, *, limits: Limits) -> tu
             observables.append(Observable(
                 kind=kind if kind in kinds else "other", value=value,  # type: ignore[arg-type]
                 basis="from_poc" if grounded(value, bundle) else "inferred",
-                note=_scrub(o.get("note", ""), f"{sid}.observable", problems, notes)[:300],
+                note=_scrub(o.get("note", ""), f"{sid}.observable", problems, notes, known)[:300],
             ))
         queries: list[Query] = []
         for j, q in enumerate((raw.get("queries") or [])[:4], 1):
@@ -253,21 +269,26 @@ def assemble(data: dict[str, Any], bundle: IntelBundle, *, limits: Limits) -> tu
                 problems.append(f"{qid}: " + "; ".join(errors))
                 dropped.append(f"{qid}: " + "; ".join(errors))
                 continue
+            parent = parent_process_problem(spl, source)
+            if parent:
+                problems.append(f"{qid}: {parent}")
+                dropped.append(f"{qid}: {parent}")
+                continue
             notes += [f"{qid}: {n}" for n in qnotes]
             literals = _quoted_literals(spl)
             queries.append(Query(
-                query_id=qid, purpose=_scrub(q.get("purpose", ""), f"{qid}.purpose", problems, notes)[:300], data_source=source, spl=spl,  # type: ignore[arg-type]
+                query_id=qid, purpose=_scrub(q.get("purpose", ""), f"{qid}.purpose", problems, notes, known)[:300], data_source=source, spl=spl,  # type: ignore[arg-type]
                 expected_fields=[str(x)[:60] for x in (q.get("expected_fields") or []) if str(x).strip()][:12],
-                benign_notes=_scrub(q.get("benign_notes", ""), f"{qid}.benign_notes", problems, notes)[:400], role="detect",
+                benign_notes=_scrub(q.get("benign_notes", ""), f"{qid}.benign_notes", problems, notes, known)[:400], role="detect",
                 grounded=any(grounded(x, bundle) for x in literals) if literals else None,
             ))
         if not queries:
             problems.append(f"{sid} ('{raw.get('name', '?')}') has no valid search")
         stages.append(Stage(
-            stage_id=sid, name=_scrub(raw.get("name", sid), f"{sid}.name", problems, notes)[:120], phase=_norm_phase(raw.get("phase")),
+            stage_id=sid, name=_scrub(raw.get("name", sid), f"{sid}.name", problems, notes, known)[:120], phase=_norm_phase(raw.get("phase")),
             technique_ids=[str(t) for t in (raw.get("technique_ids") or []) if isinstance(t, str)],
             significance=sig,  # type: ignore[arg-type]
-            description=_scrub(raw.get("description", ""), f"{sid}.description", problems, notes)[:800], observables=observables,
+            description=_scrub(raw.get("description", ""), f"{sid}.description", problems, notes, known)[:800], observables=observables,
             data_sources=sorted({q.data_source for q in queries}),  # type: ignore[type-var]
             queries=queries, depends_on=[f"S{i - 1}"] if i > 1 else [], stop_conditions=default_stops(sig, limits.max_rows_per_query),
         ))
@@ -293,6 +314,7 @@ def build_plan(
     peak_plan = (peak.hunt_plan_markdown[:5000] if peak and peak.used_peak else "(not available)")
     prompt = PLANNER_PROMPT % {
         "catalog": catalog_text(), "shape": _SHAPE, "digest": digest_text, "able": peak_able, "plan": peak_plan,
+        "parent_hint": PARENT_HINT,
     }
     data: dict[str, Any] | None = None
     best: tuple[list[Stage], list[str], list[str], list[str], dict[str, Any]] | None = None
@@ -300,7 +322,7 @@ def build_plan(
     problems: list[str] = ["the reply was not a JSON object"]
     for attempt in range(1, attempts + 1):
         reply = llm(prompt if attempt == 1 or not last_reply else REPAIR_PROMPT % {
-            "problems": "\n".join(f"- {p}" for p in problems[:14]), "previous": last_reply[:9000],
+            "problems": "\n".join(f"- {p}" for p in problems[:14]), "previous": last_reply[:9000], "parent_hint": PARENT_HINT,
         }, 12000, system=PLANNER_SYSTEM)
         last_reply = reply or ""
         data = extract_json(last_reply)
@@ -313,6 +335,8 @@ def build_plan(
             best = (stages, problems, dropped, notes, data)
         if not problems:
             break
+        if attempt >= 2 and all(p.startswith("language:") for p in problems):
+            break  # only wording is left after a rewrite: keep the plan, stray words are listed in plan.dropped
     if best is None:
         raise PlanError(
             "the planner produced no valid search after repair attempts: " + "; ".join(problems[:5]), last_reply=last_reply
@@ -342,8 +366,8 @@ def build_plan(
     cve = bundle.primary_cve
     label = cve.cve_id if cve else bundle.query
     sink: list[str] = []
-    title = _scrub(data.get("title") or f"Kế hoạch săn {label}", "title", sink, sink)[:160]
-    hypothesis = _scrub(data.get("hypothesis"), "hypothesis", sink, sink).strip() or (
+    title = _scrub(data.get("title") or f"Kế hoạch săn {label}", "title", sink, sink, vocabulary(digest_text))[:160]
+    hypothesis = _scrub(data.get("hypothesis"), "hypothesis", sink, sink, vocabulary(digest_text)).strip() or (
         f"Giả sử PoC công khai của {label} được dùng để tấn công hệ thống; kiểm tra xem hệ thống có dấu hiệu bị khai thác không."
     )
     app = data.get("applicability") if isinstance(data.get("applicability"), dict) else {}

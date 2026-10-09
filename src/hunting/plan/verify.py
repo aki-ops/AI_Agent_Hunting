@@ -229,6 +229,8 @@ def verify(plan: HuntPlan, bundle: ResultBundle) -> tuple[Verification, HuntPlan
         hits = sum(h for _, st, h, _ in states if st == "HIT")
         truncated = any(t for _, st, _, t in states if st == "HIT")
         errors = [q.query_id for q, st, _, _ in states if st in ("ERROR", "NOT_RUN")]
+        if not stage.queries:
+            errors = ["(giai đoạn không có truy vấn hợp lệ trong kế hoạch)"]
         empty_sources = [s for s in stage.data_sources if coverage.get(s) == "empty"]
         notes: list[str] = []
         if hits:

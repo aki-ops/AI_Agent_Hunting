@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from hunting.intel import Fetcher, IntelError, digest, gather
-from hunting.llm import METER, LlmUnavailable, build_llm
+from hunting.llm import METER, LlmUnavailable, build_llm, load_dotenv
 from hunting.plan import (
     PEAK_LOCAL_CONTEXT,
     Limits,
@@ -67,7 +68,12 @@ def _parser() -> argparse.ArgumentParser:
 
 def _plan(args: argparse.Namespace) -> int:
     METER.begin(args.token_budget or None)
-    fetcher = Fetcher(Path(args.cache_dir) / "intel")
+    file_env = load_dotenv(args.env)  # GITHUB_TOKEN / NVD_API_KEY: process environment first, then the .env file
+    fetcher = Fetcher(
+        Path(args.cache_dir) / "intel",
+        github_token=os.environ.get("GITHUB_TOKEN") or file_env.get("GITHUB_TOKEN", ""),
+        nvd_key=os.environ.get("NVD_API_KEY") or file_env.get("NVD_API_KEY", ""),
+    )
     try:
         bundle = gather(
             fetcher, cve=args.cve, repo=args.repo, query=args.query,
