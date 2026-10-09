@@ -15,7 +15,7 @@ Read `docs/ARCHITECTURE.md` for the pipeline, the recommendation rules and known
 
 1. `src/hunting/llm.py` — `.env` → PEAK `model_config.json`; one LLM path for PEAK agents and our judge/advisor.
 2. `src/hunting/prepare.py` — PEAK bridge with offline fallback.
-3. `src/hunting/poc/` + `src/hunting/adapters/` — PoC model/loader, executor, CDB and Splunk adapters.
+3. `src/hunting/poc/` + `src/hunting/adapters/` — PoC model/loader, executor and the CDB adapter (the live Splunk adapter lives on branch `splunk-adapter`).
 4. `src/hunting/recommend.py` — dispositions and confidence rules.
 5. `pocs/` — BOTS v1 PoCs; `data/botsv1_eval.sqlite` (git-ignored, rebuild via `scripts/`).
 

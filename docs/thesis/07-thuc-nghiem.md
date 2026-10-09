@@ -177,7 +177,7 @@ Cache bỏ bước tốn nhất (hai phần PEAK) và cho đúng cùng bảng AB
 
 ## 7.6. Kiểm thử đơn vị và tính hồi quy
 
-Bộ kiểm thử có 116 bài: 108 đạt và 8 bị bỏ qua (cần Splunk); `ruff` không báo lỗi. Hai nhóm bài có ý nghĩa cho luận văn.
+Bộ kiểm thử có 146 bài, tất cả đạt; `ruff` không báo lỗi. Tám bài kiểm thử Splunk thật đã đi cùng adapter sang nhánh `splunk-adapter`. Hai nhóm bài có ý nghĩa cho luận văn.
 
 - **Bất biến kiến trúc được khoá bằng kiểm thử:** chuỗi một phần không escalate; judge dưới ngưỡng không đổi luật; kết quả rỗng khi thiếu nguồn cho `COLLECT_DATA_THEN_RERUN`; advisor lỗi không đổi `disposition`; khoá API không có trong cấu hình.
 - **Bài hồi quy cho lỗi thật:** `EQUALS` không khớp `splunk-powershell.exe`; `EXISTS` rỗng không khớp; `retry_async` thành công sau lỗi thoáng qua và ném lại lỗi dai dẳng; CLI chạy được khi không có `.env`; phạm vi host rỗng được ghi nhận và chạy lại không lọc host (cả nhánh không hit và nhánh có hit ở host khác); báo cáo ghi `hiển thị / tổng`; `MATCHES` với regex thật tìm được; `EXISTS` không bị che bởi giới hạn quét.
@@ -199,7 +199,7 @@ Bảng: Đối chiếu yêu cầu và kết quả
 | NFR2 | Đạt | Cùng số bản ghi hiển thị qua ba cấu hình |
 | NFR3 | Đạt từng phần | Gọi lại và fallback có kiểm thử; lỗi 404 thật chỉ có kiểm thử mô phỏng và quan sát gián tiếp |
 | NFR4 | Đạt | Quét không thấy khoá trong `artifacts/runs/*`, `results`, `docs` |
-| NFR5 | Đạt | Khoảng 9.200 dòng trong `src/` |
+| NFR5 | Đạt | Khoảng 9.400 dòng trong `src/` (gồm luồng Prepare-only) |
 | NFR6 | Đạt | Thẻ `v6-engine-final`, nhánh `pre-peak-snapshot` |
 
 ## 7.8. Thời gian chạy
@@ -210,10 +210,54 @@ Phần tất định nhanh: tìm kiếm trên 4,4 triệu dòng mất vài giây
 
 Để tránh hiểu nhầm về phạm vi, danh sách sau nêu rõ những điều đồ án chưa làm được.
 
-1. **Splunk thật.** Chưa chạy adapter Splunk hoặc kiểm tra SPL do hệ thống sinh ra trên một máy chủ Splunk.
+1. **Splunk thật.** Chưa kiểm tra SPL do hệ thống sinh ra (bản nháp ở pipeline PoC và truy vấn trong kế hoạch Prepare-only) trên một máy chủ Splunk.
 2. **`--research`.** Tác tử nghiên cứu của PEAK (cần máy chủ MCP) chưa được thử.
 3. **Mô hình dự phòng trên lỗi thật.** Việc chuyển mô hình dự phòng chỉ được kiểm thử bằng lỗi mô phỏng, chưa gặp lỗi thật trong các lần chạy. **Retry trên 404 thật.** Cơ chế gọi lại chỉ được kiểm thử bằng lỗi mô phỏng; trong các lần chạy cuối không gặp lại lỗi 404 nên chưa quan sát nó cứu một lần chạy thật.
-4. **Adapter Splunk với các thay đổi truy xuất mới.** Giới hạn quét 2.000 hàng và tham số `require_nonempty` chưa được chạy trên Splunk thật; adapter này cũng chưa có độ phủ theo host hay theo loại sự kiện.
+4. **Adapter Splunk với các thay đổi truy xuất mới.** Adapter đã chuyển sang nhánh `splunk-adapter`; giới hạn quét 2.000 hàng và tham số `require_nonempty` chưa được chạy trên Splunk thật ở đó, và adapter chưa có độ phủ theo host hay theo loại sự kiện.
 5. **Recall.** Chỉ đo được một pha tấn công thật (Joomla); ba pha còn lại thiếu dữ liệu nên chưa đo được khả năng phát hiện. Không có số liệu về độ chính xác tổng thể nào có thể tuyên bố.
 6. **Số lần lặp.** Mỗi cấu hình chỉ chạy đầy đủ một đến vài lần; chưa có thống kê về độ biến thiên của judge hoặc advisor ngoài các con số rời rạc đã nêu.
 7. **Chất lượng nội dung do PEAK viết.** Hệ thống kiểm tra PEAK có chạy và có trả cấu trúc, nhưng không có người chuyên gia nào chấm chất lượng ABLE hay kế hoạch.
+
+## 7.10. Thực nghiệm luồng Prepare-only
+
+Mục này báo cáo các lần chạy của luồng mới với mô hình miễn phí `nvidia/nemotron-3-super-120b-a12b:free` (số dư tài khoản không đổi sau mọi lần chạy). Không có lần chạy nào dùng dữ liệu nội bộ; kết quả thực thi trong thử nghiệm xác minh là giả lập và được nêu rõ.
+
+### 7.10.1. Hai CVE công khai
+
+Bảng: Các lần lập kế hoạch từ PoC công khai
+| CVE | Cấu hình | Kho PoC | Giai đoạn | Truy vấn | Độ phủ | Lời gọi LLM | Token |
+|---|---|---|---|---|---|---|---|
+| Log4Shell (CVE-2021-44228) | có PEAK | 3 kho, ≥ 1.800 sao | 3 | 7 | 4 | 18 | 375.916 (khoảng 10 phút) |
+| Log4Shell | `--no-peak`, bản đầu | 3 kho | 4 | 8 | — | — | khoảng 16–19 nghìn |
+| Log4Shell | `--no-peak`, sau hai quy tắc mới | 3 kho | 3 | 4 | 3 | 1 | 13.142 |
+| Spring4Shell (CVE-2022-22965) | có PEAK, bản sửa | 3 kho (2.351, 376, 325 sao) | 4 | 4 | 2 | — | — |
+| Spring4Shell | `--no-peak`, sau hai quy tắc mới | 3 kho | 3 | 3 | 2 | 2 | 22.726 |
+
+Các con số "—" là chỗ không còn ghi lại được. Phần PEAK chiếm hầu hết token, tương tự pipeline PoC (mục 7.8). Mỗi dòng là *một* lần chạy với mô hình không tất định, nên bảng cho thấy cỡ độ lớn chứ không cho thấy hiệu quả của từng quy tắc.
+
+Một số quan sát cụ thể:
+
+- **Dấu vết đúng đặc trưng.** Với Spring4Shell, danh sách ứng viên ban đầu thiếu `class.module.classLoader...`, dấu hiệu cốt lõi của lỗ hổng. Nguyên nhân là biểu thức chính quy chỉ nhận tham số dạng đơn giản, và README chiếm hết chỗ trước tệp khai thác. Sau khi sửa biểu thức (tham số có dấu chấm, header tuỳ biến) và ưu tiên tệp khai thác trước README trong bản tóm tắt, các lần chạy đều có dấu hiệu này, cùng `tomcatwar.jsp` và `spring-form.war`.
+- **Lỗi thật khi lập kế hoạch.** Lần đầu có PEAK trên Spring4Shell, mô hình viết dấu ngoặc kép lệch trong SPL ở cả ba lượt sửa ("unbalanced double quote") nên không còn truy vấn hợp lệ nào và chương trình dừng với `PlanError`. Lời nhắc sửa lỗi được bổ sung gợi ý cụ thể (truy vấn đơn giản, đoạn ngắn ổn định thay vì dán payload có dấu ngoặc kép); lần chạy sau đạt.
+- **Quy tắc tiến trình cha.** Trong lần chạy Log4Shell `--no-peak` gần nhất, giai đoạn `impact` có một truy vấn endpoint mà mô hình tự viết với `parent_process_name="java"`, và không có truy vấn nào bị loại. Đây chỉ cho thấy lời nhắc mới được mô hình làm theo trong một lần chạy, không phải bằng chứng rằng quy tắc luôn được tuân thủ; các bài kiểm thử đơn vị mới khoá phần mã (truy vấn thiếu tiến trình cha bị gửi lại, rồi bị loại nếu không sửa).
+- **Chữ lẫn ngôn ngữ.** Trước khi có bộ phát hiện, `plan.md` của Spring4Shell có các từ "przeciwko" (tiếng Ba Lan), "tentativa" (Bồ Đào Nha), "ungewö" (Đức) và "explotación" (Tây Ban Nha) lẫn trong câu tiếng Việt, mà bộ lọc ký tự không bắt được. Trong lần chạy Spring4Shell sau khi có bộ phát hiện, nó gắn cờ từ `debug`, một từ tiếng Anh hợp lệ chưa có trong từ vựng, và tốn thêm một lời gọi viết lại (22.726 token cho hai lời gọi). Từ vựng đã được bổ sung `debug` cùng các từ kỹ thuật cùng loại; đây là chi phí điển hình của một dương tính giả.
+- **Một giai đoạn không còn truy vấn** (khi quy tắc loại hết truy vấn của nó) trước đây sẽ bị `verify` đọc là `CLEAR`. Đã sửa: giai đoạn đó là `INCOMPLETE`, `plan.md` in cảnh báo, và có bài kiểm thử.
+
+### 7.10.2. Đo bộ phát hiện ngôn ngữ
+
+Hai phép đo nhỏ trên chính mã (không phải trên đầu ra LLM):
+
+- **Độ nhạy:** 62 từ ngoại ngữ thật thuộc chín ngôn ngữ (Bồ Đào Nha, Tây Ban Nha, Đức, Pháp, Ba Lan, Ý, Indonesia, Hà Lan, Thổ Nhĩ Kỳ), mỗi từ đặt vào một câu tiếng Việt: bắt được 62/62 (một tập con của danh sách này nằm trong bài kiểm thử đơn vị). Từ ngắn dưới 4 chữ cái cố ý không xét nên không nằm trong phép đo, và danh sách do tác giả chọn nên 62/62 không phải độ nhạy trên đầu ra thật của mô hình.
+- **Dương tính giả:** chạy trên khoảng 17.000 từ văn xuôi tiếng Việt xen thuật ngữ tiếng Anh (README, hai tài liệu thiết kế, báo cáo và sáu chương đầu của luận văn), không từ tiếng Việt nào bị gắn cờ. Lần đầu có 126 từ khác nhau bị gắn cờ, toàn từ tiếng Anh kỹ thuật (`judge`, `adapter`, `placeholder`...); sau khi bổ sung từ vựng còn 8 từ khác nhau (11 lần xuất hiện, như `temperature`, `pytest`, `ruff`). **Từ vựng được chỉnh trên chính tập này, nên con số 8 là lạc quan;** dương tính giả trên văn bản mới sẽ cao hơn, và chi phí của nó là một lời gọi viết lại.
+
+### 7.10.3. Vòng xác minh bằng kết quả giả lập
+
+Vòng `verify` được thử với `ResultBundle` do tác giả dựng tay (nêu rõ là giả lập) trên kế hoạch Log4Shell. Vòng 1 cho `REFINE`: thư mục `iter2/` chứa các giai đoạn pivot theo nguồn tấn công và host bị nhắm, cửa sổ thu về một giờ quanh các mốc thời gian trong mẫu. Vòng 2, sau khi kết quả giả lập cho truy vấn pivot ở giai đoạn `impact` có dòng, cho `ESCALATE_AFFECTED`. Đây chỉ chứng minh bộ máy chạy đúng logic đã thiết kế, không chứng minh pivot tìm đúng thứ cần tìm. Các bài kiểm thử đơn vị phủ thêm các nhánh còn lại: kết quả toàn rỗng thành `ACCEPT_NO_EVIDENCE` kèm câu "không phải kết luận sạch"; nguồn rỗng thành `COLLECT_DATA`; truy vấn lỗi hoặc thiếu thành `RERUN_INCOMPLETE`; `plan_id` sai thành `REJECT_RESULTS`; giá trị chứa ký tự nguy hiểm không được nhúng vào truy vấn pivot; số vòng tối đa dừng ở `STOP_REVIEW`.
+
+### 7.10.4. Điều chưa kiểm chứng ở luồng này
+
+- Mọi truy vấn trong kế hoạch **chưa chạy trên Splunk thật**, kể cả truy vấn độ phủ `tstats`; tên trường theo CIM có thể khác ở mỗi nơi.
+- Vòng `verify` chưa nhận **kết quả thật** của một đội thực thi.
+- Chất lượng truy vấn (có bắt đúng tấn công không) chưa được chuyên gia chấm; bộ kiểm tra chỉ đảm bảo an toàn và hình thức.
+- Hai quy tắc mới (tiến trình cha, ngôn ngữ) mới được thử bằng bài kiểm thử đơn vị và vài lần chạy không PEAK; chưa chạy lại cấu hình có PEAK sau khi thêm chúng.
+- Chọn PoC theo số sao là tín hiệu yếu; kho có thể lỗi thời, đã lưu trữ hoặc sai (kế hoạch ghi cảnh báo `archived`, `below_threshold`).

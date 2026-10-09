@@ -74,3 +74,21 @@ Khuyến nghị không phải kết luận pháp lý hay lệnh hành động. H
 - Đọc báo cáo như một người dùng. Lỗi độ tin cậy HIGH vô căn cứ không làm hỏng bất kỳ bài kiểm thử nào, nó chỉ lộ ra khi đọc câu "chưa chứng minh được thành công" mà vẫn thấy HIGH.
 - Đầu ra của LLM cần được kiểm tra về hình thức và về sự vắng mặt: cả hai lỗi 6 và 7 đều ở dạng "trông hợp lệ nhưng thực chất trống hoặc là thông báo lỗi".
 - Làm gọn có thể là một đóng góp. Bỏ khoảng 28.000 dòng mã mà không đổi kết quả khiến hệ thống dễ giải thích hơn nhiều, nhưng cần thẻ git để việc bỏ đi không là mất mát.
+
+## 8.7. Hạn chế và rủi ro của hướng Prepare-only
+
+**Kiểm tra an toàn không phải kiểm tra đúng.** `check_spl` chứng minh một truy vấn chỉ đọc và có giới hạn, không chứng minh nó bắt đúng tấn công. Ví dụ điển hình: truy vấn trên đường dẫn `/greeting` của ứng dụng minh hoạ trong PoC trông hợp lệ nhưng ít khi trùng hệ thống thật; truy vấn trên `uri_query` bỏ sót kiểu tấn công gửi tham số trong thân POST vì nhật ký web thường không ghi thân. Người săn phải đọc `plan.md` trước khi giao đi.
+
+**Điểm dừng chủ yếu là khai báo.** `verify` chỉ thực sự đọc hành động `escalate` từ kế hoạch; các hành động khác (`narrow`, `collect_data`, `stop_stage`) được ghi vào báo cáo nhưng quyết định cuối do thứ tự cố định ở mục 4.9.4. Sửa tay `stop_conditions` ngoài `escalate` sẽ không đổi hành vi.
+
+**"Kết quả" là số dòng.** Một truy vấn `stats count by src` trúng 1.000 sự kiện từ ba nguồn chỉ trả ba dòng. Ngưỡng và trần dòng vì vậy phản ánh độ rộng của kết quả hơn là số sự kiện.
+
+**Quy tắc tiến trình cha dựa vào mô hình biết tên tiến trình.** Ép lọc theo tiến trình cha làm giảm báo nhầm, nhưng nếu mô hình chọn sai họ tiến trình (ví dụ `java` cho một dịch vụ chạy bằng `javaw` hay bằng tên đóng gói khác) thì truy vấn hợp lệ về hình thức nhưng bỏ sót. Các truy vấn pivot do mã sinh (`P2`) không có ràng buộc này vì mã không biết dịch vụ; chúng bị giới hạn bằng host và cửa sổ thời gian, và kết quả của chúng luôn cần người đọc, vì mã không có đường cơ sở để phân biệt shell hợp lệ.
+
+**Bộ phát hiện ngôn ngữ là heuristic.** Từ vựng tiếng Anh do tác giả soạn nên dương tính giả có chi phí là một lời gọi; từ ngoại ngữ ngắn hơn 4 chữ cái, tên riêng viết hoa đầu câu, và từ ngoại ngữ trùng một âm tiết tiếng Việt hợp lệ sẽ lọt. Nó chỉ bảo vệ chất lượng văn bản cho người đọc, không phải một biện pháp an ninh.
+
+**Hạn mức và tính ổn định của nguồn.** GitHub không token chỉ cho 60 yêu cầu mỗi giờ; kết quả tìm kiếm theo số sao thay đổi theo thời gian, nên cùng lệnh có thể ra tập kho khác. Mô hình miễn phí cho chất lượng không đều (lỗi ngoặc kép, chữ ngoại ngữ) và mỗi lần chạy khác nhau.
+
+**Rủi ro an ninh của chính đầu vào.** README và mã PoC có thể chứa lệnh giả mạo nhắm vào LLM (prompt injection). Giảm thiểu bằng hàng rào dữ liệu và nhãn không tin cậy, nhưng quan trọng hơn là *đầu ra của LLM không bao giờ được thực thi và không bao giờ rời dự án mà chưa qua kiểm tra tĩnh*, nên kịch bản xấu nhất là kế hoạch kém chất lượng chứ không phải lệnh nguy hiểm. Dự án cũng không tải hay chạy mã PoC; nó chỉ đọc văn bản.
+
+**Đánh giá lại hướng đi.** So với pipeline cũ, hướng Prepare-only đánh đổi khả năng tự kiểm tra trên dữ liệu thật để lấy ranh giới dữ liệu sạch. Đổi lại, phần khó nhất là phần dự án không còn kiểm soát: chất lượng truy vấn khi chạy ở môi trường khác. Cách giảm rủi ro hợp lý là hợp đồng dữ liệu rõ (schema, truy vấn độ phủ, `ACCEPT_NO_EVIDENCE` không là "sạch") và một vòng phản hồi qua `verify`, đúng những gì dự án đã làm; nhưng vòng đó chưa được kiểm chứng với kết quả thật.

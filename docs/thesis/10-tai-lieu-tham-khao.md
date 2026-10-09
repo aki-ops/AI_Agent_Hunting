@@ -17,5 +17,10 @@
 [15] Splunk. *Boss of the SOC (BOTS) Dataset Version 1*. https://github.com/splunk/botsv1
 [16] Cichonski, P., Millar, T., Grance, T., Scarfone, K. *Computer Security Incident Handling Guide*. NIST Special Publication 800-61 Rev. 2, 2012.
 [17] OWASP Foundation. *OWASP Top 10 for Large Language Model Applications*. https://owasp.org/www-project-top-10-for-large-language-model-applications/
+[18] NIST. *National Vulnerability Database: CVE API 2.0*. https://nvd.nist.gov/developers/vulnerabilities
+[19] GitHub. *REST API documentation* (search repositories, git trees). https://docs.github.com/en/rest
+[20] CISA. *Known Exploited Vulnerabilities Catalog*. https://www.cisa.gov/known-exploited-vulnerabilities-catalog
 
 *Ghi chú:* các tài liệu [1]–[5] và [15] được kiểm tra bằng tìm kiếm trên web vào thời điểm viết luận văn. Các tài liệu [6]–[14], [16], [17] được trích theo hiểu biết của tác giả về thông tin xuất bản; người nộp luận văn nên đối chiếu năm, số trang và đường dẫn với nguồn gốc trước khi nộp.
+
+*Ghi chú thêm:* [18] và [19] được chính hệ thống gọi trực tiếp khi chạy thực nghiệm ở mục 7.10; [20] chỉ được tham chiếu gián tiếp qua cờ KEV mà NVD trả về, đường dẫn chưa được kiểm tra riêng.

@@ -133,7 +133,7 @@ Mỗi khuyến nghị đi kèm danh sách lựa chọn khả dĩ, xếp theo ưu
 ## 4.7. Thiết kế bảo mật và quyền riêng tư
 
 - **Bí mật:** khoá API chỉ nằm trong `.env` và biến môi trường của tiến trình. Tệp `model_config.json` sinh ra chỉ chứa `${LLM_API_KEY}` và `${PEAK_LLM_BASE_URL}`. Đã kiểm tra rằng khoá không xuất hiện trong bất kỳ tệp kết quả nào.
-- **Truy vấn:** mọi giá trị đưa vào SQL đều là tham số; tên cột và thao tác đi qua danh sách cho phép (`allowlist`); cửa sổ thời gian được kiểm tra định dạng; với Splunk có thêm cổng AST kiểm tra truy vấn gốc chỉ đọc.
+- **Truy vấn:** mọi giá trị đưa vào SQL đều là tham số; tên cột và thao tác đi qua danh sách cho phép (`allowlist`); cửa sổ thời gian được kiểm tra định dạng.
 - **Dữ liệu gửi cho LLM:** đây là rủi ro cần nêu rõ. Judge nhận tối đa mười hàng đã rút gọn, advisor nhận bản tóm tắt bằng chứng gồm tối đa năm hàng mẫu và các giá trị phổ biến, và PEAK nhận mô tả cấu trúc dữ liệu cùng kết quả đếm. Nếu endpoint LLM nằm ngoài tổ chức, các đoạn telemetry này rời khỏi môi trường. Có ba lớp giảm thiểu: cảnh báo khi endpoint không nằm trên máy cục bộ; cờ `--redact` thay tên máy, tên người dùng và mọi địa chỉ IPv4 bằng token ổn định (`<HOST_1>`, `<USER_2>`, `<IP_3>`) trong mọi lời nhắc gửi judge và advisor rồi khôi phục trong báo cáo; và với dữ liệu thật nên dùng mô hình cục bộ (Ollama, vLLM, chỉ cần đổi `.env`) hoặc `--offline`. `--redact` không che chuỗi tự do (dòng lệnh, URL, tên miền) và không che văn bản PoC cùng mô tả dữ liệu gửi cho PEAK, nên nó giảm rủi ro chứ không loại bỏ.
 
 - **Vận hành LLM:** các cơ chế sau đều nằm ngoài đường bằng chứng. Bộ đếm `UsageMeter` bọc lời gọi `chat.completions.create` của SDK nên thấy mọi yêu cầu, kể cả của các tác tử PEAK, và ghi tên mô hình thực sự trả lời; `--token-budget` đặt trần token cho mỗi PoC (chạm trần thì lời gọi sau bị từ chối và không được gọi lại); `LLM_MODEL_FALLBACKS` chuyển sang mô hình dự phòng sau khi mô hình chính hỏng hẳn; judge chạy `--judge-votes` lần (mặc định 3) ở temperature 0 và lấy đa số, với độ tin cậy là mức thấp nhất trong nhóm đa số, còn không có đa số thì không đưa ra nhận định nào; kết quả Prepare được lưu theo khoá gồm nội dung PoC, mô tả dữ liệu, mô hình và phiên bản PEAK.
@@ -153,3 +153,75 @@ Bảng: Các tệp đầu ra của một PoC
 | `<poc_id>.json` | Sổ cái thực thi: từng bước, số hàng, hàng khớp, nhật ký tinh chỉnh |
 | `act/` | Bản nháp SPL và kết quả kiểm tra tĩnh, backlog, ghi chú stakeholder |
 | `ir/` | Gói bàn giao cho IR khi có hit |
+
+## 4.9. Thiết kế luồng Prepare-only
+
+### 4.9.1. Tổng quan
+
+Hình 6 trình bày luồng theo năm vùng. Vùng đầu là nguồn công khai. Vùng Prepare (do dự án này làm) gồm bảy bước, trong đó hai bước dùng LLM (PEAK và bộ lập kế hoạch) còn năm bước là mã tất định. Vùng Execute do đội khác thực hiện; ranh giới dữ liệu nằm ở đây: chỉ `ResultBundle` quay về. Vùng xác minh (`verify`) không dùng LLM. Vùng cuối là các quyết định, chỉ để hỗ trợ người săn.
+
+![Quy trình Prepare-only: từ PoC công khai đến kế hoạch săn, đội Execute chạy, xác minh và vòng pivot](assets/fig-6-prepare-only.png)
+
+Có hai quyết định thiết kế xuyên suốt. Thứ nhất, **LLM chỉ đề xuất, mã mới quyết định**: LLM nêu giai đoạn, dấu vết và truy vấn; mã kiểm tra từng thứ, và tự thêm điểm dừng, giới hạn, truy vấn độ phủ. Thứ hai, **dữ liệu đi một chiều**: văn bản công khai đi vào, kế hoạch đi ra, và chỉ kết quả đã được đội thực thi đồng ý trả mới quay lại.
+
+### 4.9.2. Mô hình dữ liệu
+
+Kế hoạch (`HuntPlan`) và kết quả (`ResultBundle`) đều là mô hình Pydantic có `schema_version` và được xuất thành JSON Schema (`plan.schema.json`, `result.schema.json`) để hai đội thống nhất hợp đồng.
+
+Bảng: Các trường chính của `HuntPlan`
+| Trường | Ý nghĩa |
+|---|---|
+| `hypothesis`, `applicability` | Giả thuyết "giả sử PoC này được dùng"; sản phẩm, phiên bản bị ảnh hưởng, điều kiện, khi nào không áp dụng |
+| `stages[]` | Giai đoạn tấn công: `phase` (chiến thuật ATT&CK), `technique_ids`, `significance`, `observables[]`, `queries[]`, `stop_conditions[]` |
+| `significance` | `context` (nhiễu mong đợi), `indicator` (nỗ lực khớp PoC), `impact` (thành công hoặc hậu khai thác); quyết định điểm dừng mặc định |
+| `observables[].basis` | `from_poc` nếu chuỗi có nguyên văn trong văn bản PoC/CVE đã thu thập, ngược lại `inferred` |
+| `queries[]` | SPL với placeholder `{{INDEX_*}}`, `{{EARLIEST}}`, `{{LATEST}}`, `{{MAX_ROWS}}`; `data_source`; `grounded`; `benign_notes` |
+| `coverage_probes[]` | Truy vấn `tstats` kiểm tra mỗi nguồn có dữ liệu trong cửa sổ (do mã sinh từ mẫu) |
+| `limits` | Cửa sổ, số truy vấn, số dòng và thời gian tối đa, số vòng, chỉ đọc |
+| `provenance`, `dropped` | Nguồn gốc (không chạy PoC, không dùng dữ liệu nội bộ, mô hình, PEAK); truy vấn bị loại và ghi chú của bộ kiểm tra |
+
+`ResultBundle` gồm `plan_id`, `iteration` và với mỗi truy vấn: `status` (`ok`, `error`, `timeout`, `skipped`), `row_count`, `truncated` và `sample` tối đa 25 dòng. "Kết quả" của một truy vấn là số dòng trả về, nên truy vấn `stats count by ...` trả vài dòng chứ không phải số sự kiện.
+
+### 4.9.3. Kiểm tra truy vấn trước khi rời dự án
+
+Hàm `check_spl` biến một truy vấn do LLM viết thành dạng chuẩn hoặc từ chối. Nguyên tắc là *từ chối trừ khi chắc chắn vô hại*: truy vấn phải bắt đầu bằng `search`, có đúng một `index={{INDEX_*}}` thuộc nhóm cho phép, chỉ dùng lệnh trong danh sách cho phép (không `delete`, `outputlookup`, `sendemail`, `rest`, `join`, `map`), không truy vấn con, không macro, không `$token$`, có bộ lọc ngoài chỉ mục, tối đa 1.500 ký tự và 10 công đoạn. Mã tự gỡ `earliest/latest` do LLM viết, chèn cửa sổ từ placeholder và thêm `head {{MAX_ROWS}}`. Trong Splunk `field="x"` là khớp chính xác, nên mảnh payload như `${jndi:ldap://` sẽ không bao giờ khớp; mã tự bọc `*...*` và ghi chú lại.
+
+Hai quy tắc được thêm vào về sau, sau khi quan sát đầu ra thật.
+
+- **Hậu khai thác phải gắn với dịch vụ bị tấn công.** `whoami` hay một shell do quản trị viên chạy trông y hệt khi chạy qua webshell; chỉ tiến trình cha mới phân biệt được. Do đó truy vấn trên nguồn `endpoint` phải *lọc* theo `parent_process_name` hoặc `parent_process` (nhắc tới trong `stats ... by` không tính). Truy vấn thiếu bị gửi lại để sửa kèm gợi ý (ví dụ `java` với ứng dụng Java, `w3wp.exe` với IIS); còn thiếu thì bị loại và ghi vào `dropped`. Truy vấn về file hay registry được miễn.
+- **Chữ lẫn ngôn ngữ khác.** Mô hình miễn phí đôi khi chèn một từ ngoại ngữ vào câu tiếng Việt (`przeciwko`, `tentativa`, `explotación`, `ungewö`). Bộ lọc ký tự CJK/Cyrillic/Ả Rập không bắt được chữ Latin. Mô-đun `language.py` xét từng từ: chữ cái không có trong tiếng Việt lẫn tiếng Anh thì chắc chắn lạ; từ là một âm tiết tiếng Việt hợp lệ (phụ âm đầu, nguyên âm, phụ âm cuối, bỏ dấu thanh) thì tiếng Việt; còn lại phải nằm trong từ vựng tiếng Anh dùng trong kế hoạch, hoặc trong chính văn bản PoC/CVE, hoặc là mã định danh, từ viết tắt, tên riêng, nếu không thì bị gắn cờ. Việc gắn cờ chỉ yêu cầu viết lại một lần và liệt kê từ còn sót; không loại truy vấn.
+
+Một giai đoạn mất hết truy vấn vì bị loại được in cảnh báo trong `plan.md`, và `verify` coi giai đoạn đó là `INCOMPLETE`, không bao giờ `CLEAR`.
+
+### 4.9.4. Xác minh và vòng săn tiếp
+
+`verify` nhận `HuntPlan` và `ResultBundle` và chạy tuần tự các bước sau, không có lời gọi LLM nào.
+
+1. **Giao thức:** `plan_id` khác thì từ chối cả bộ (`REJECT_RESULTS`); truy vấn không có trong kế hoạch bị bỏ qua và ghi lại; mẫu quá 25 dòng bị cắt.
+2. **Trạng thái truy vấn:** `HIT`, `ZERO`, `ERROR`, `NOT_RUN`; kết quả bị cắt khi `truncated` hoặc số dòng chạm trần.
+3. **Độ phủ:** mỗi truy vấn `C-*` cho biết nguồn có dữ liệu (`present`), rỗng (`empty`) hay chưa biết (`unknown`).
+4. **Trạng thái giai đoạn:** `HIT`, `INCOMPLETE`, `NO_DATA`, `CLEAR`.
+5. **Quyết định theo thứ tự ưu tiên.**
+
+Bảng: Thứ tự quyết định của `verify`
+| # | Điều kiện | Quyết định |
+|---|---|---|
+| 1 | Giai đoạn `impact` có kết quả và có hành động `escalate` | `ESCALATE_AFFECTED` |
+| 2 | Truy vấn của giai đoạn `impact` lỗi hoặc chưa chạy, và không có kết quả | `RERUN_INCOMPLETE` |
+| 3 | Có kết quả ở giai đoạn khác | `REFINE`, hoặc `STOP_REVIEW` nếu hết số vòng, không còn giá trị an toàn để pivot |
+| 4 | Có giai đoạn `INCOMPLETE` | `RERUN_INCOMPLETE` |
+| 5 | Có giai đoạn `NO_DATA` | `COLLECT_DATA` |
+| 6 | Còn lại | `ACCEPT_NO_EVIDENCE`, kèm câu "không phải kết luận sạch" |
+
+Vòng `REFINE` lấy từ các truy vấn trúng các giá trị `src`, `dest`/`host`, `user` (mỗi loại tối đa ba giá trị phổ biến nhất, bỏ giá trị đã pivot) và thu cửa sổ về `[sớm nhất − 1 giờ, muộn nhất + 1 giờ]`. Giá trị lấy từ log có thể do kẻ tấn công kiểm soát nên chỉ được nhúng vào truy vấn nếu qua bộ lọc ký tự nghiêm ngặt (`spl_literal`; `9.9.9.9\" | delete` bị loại), và truy vấn pivot vẫn qua `check_spl`. Ba giai đoạn pivot cố định: yêu cầu web từ nguồn tấn công; tiến trình shell hoặc công cụ tải về trên host bị nhắm cùng DNS tới tên miền out-of-band; kết nối đi ra ngoài dải IP riêng cùng hoạt động xác thực. Vòng dừng khi chuyển IR, chấp nhận, hết số vòng tối đa (3) hoặc không còn giá trị mới để pivot.
+
+### 4.9.5. Ranh giới tin cậy
+
+Bảng: Ai tin ai trong luồng Prepare-only
+| Dữ liệu | Nguồn | Cách đối xử |
+|---|---|---|
+| README, mã PoC, mô tả CVE | Internet | Không tin cậy: đặt trong hàng rào `<<< >>>` gắn nhãn "UNTRUSTED DATA"; system prompt yêu cầu bỏ qua mọi chỉ dẫn trong đó |
+| Đầu ra của LLM | Mô hình | Không tin cậy: không bao giờ thực thi; qua `check_spl`, đối chiếu `grounded`, quy tắc tiến trình cha, bộ phát hiện ngôn ngữ |
+| Điểm dừng, giới hạn, truy vấn độ phủ | Mã của dự án | Sinh từ mẫu, không do LLM quyết định |
+| Kết quả thực thi | Đội Execute | Kiểm tra giao thức; giá trị trong mẫu có thể do kẻ tấn công kiểm soát nên chỉ nhúng qua `spl_literal` |
+| Yêu cầu HTTP ra ngoài | Dự án | Chỉ GET, https, ba host cho phép; chuyển hướng cũng bị kiểm tra lại từng bước (tối đa ba lần); khoá API chỉ đi cùng yêu cầu tới host của nó |

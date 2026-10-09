@@ -13,13 +13,13 @@ Bảng: Công nghệ sử dụng
 | SQLite | Kho telemetry CDB | Thư viện chuẩn `sqlite3` |
 | Pydantic, PyYAML, requests | Hợp đồng dữ liệu, đọc cấu hình, gọi HTTP | Phụ thuộc lõi |
 | pytest, ruff | Kiểm thử, kiểm tra kiểu mã | Phụ thuộc phát triển |
-| Splunk REST API | Adapter Splunk (tuỳ chọn) | Chưa chạy trên máy chủ thật trong đồ án |
+| NVD API 2.0, GitHub REST API | Nguồn tình báo công khai cho luồng Prepare-only | Chỉ GET; khoá `NVD_API_KEY`, `GITHUB_TOKEN` là tuỳ chọn |
 
 PEAK Assistant được khai báo là phụ thuộc **tuỳ chọn** (`pip install -e ".[peak]"`), nhờ đó cài đặt lõi không phải kéo theo AutoGen, Streamlit và nhiều thư viện khác. Mọi `import` vào PEAK nằm trong thân hàm, nên mô-đun của hệ thống nạp được cả khi PEAK chưa cài.
 
 ## 5.2. Cấu trúc mã nguồn
 
-Sau khi làm gọn, `src/hunting/` gồm các mô-đun sau với tổng khoảng 9.200 dòng.
+Sau khi làm gọn, `src/hunting/` gồm các mô-đun sau với tổng khoảng 9.400 dòng, trong đó khoảng 2.300 dòng thuộc luồng Prepare-only (`intel/`, `plan/`, `plan_cli.py`).
 
 Bảng: Cấu trúc mã nguồn
 | Đường dẫn | Dòng | Vai trò |
@@ -30,11 +30,14 @@ Bảng: Cấu trúc mã nguồn
 | `recommend.py` | ~500 | Tóm tắt bằng chứng, luật khuyến nghị, advisor |
 | `report.py` | ~160 | Dựng báo cáo Markdown và bảng tổng hợp |
 | `pipeline.py` | ~155 | Điều phối một PoC từ đầu đến cuối |
-| `cli.py` | ~150 | Dòng lệnh |
+| `cli.py` | ~140 | Dòng lệnh của pipeline PoC (chuyển `plan`, `verify`, `schema` sang `plan_cli.py`) |
+| `plan_cli.py` | ~165 | Dòng lệnh `plan`, `verify`, `schema` của luồng Prepare-only |
+| `intel/` | ~700 | Thu thập tình báo: `http.py` (Fetcher), `sources.py` (NVD, GitHub), `extract.py` (dấu vết), `gather.py` (gom và tóm tắt cho LLM) |
+| `plan/` | ~1.620 | `schema.py`, `catalog.py`, `safety.py`, `language.py`, `build.py`, `render.py`, `verify.py`, `files.py` |
 | `poc/` | ~1.700 | Mô hình PoC, nạp JSON, tác tử thực thi, judge, báo cáo |
-| `adapters/` | ~3.300 | Adapter CDB và Splunk, danh sách cho phép, kiểm soát |
+| `adapters/` | ~1.170 | Adapter CDB, danh sách cho phép, kiểm soát |
 | `act/` | ~365 | Bản nháp SPL, backlog, ghi chú stakeholder |
-| `contracts/`, `capabilities/`, `controller/`, `query_safety/` | ~1.550 | Hợp đồng dữ liệu mà adapter cần, theo dõi chi phí |
+| `contracts/`, `controller/` | ~1.320 | Hợp đồng dữ liệu mà adapter cần, theo dõi chi phí |
 | `peak.py` | ~450 | Cổng Prepare, phân tích thời lượng, cửa sổ, ABLE → quan sát cụ thể |
 
 Hai nguyên tắc tổ chức: các mô-đun mới (`llm`, `redact`, `prepare`, `recommend`, `report`, `pipeline`, `cli`) chỉ phụ thuộc vào `poc/` và `adapters/` qua giao diện công khai; và không có mô-đun nào của lõi phụ thuộc trực tiếp vào PEAK ngoài `prepare.py` và `llm.py`.
@@ -132,7 +135,7 @@ Adapter CDB mở một tệp SQLite và hiện thực `execute_query` với các
 - `source_presence(window, source_kind)`: đếm số bản ghi trong cửa sổ có `native_type` thuộc tập tương ứng với loại nguồn; trả `None` nếu loại nguồn không biết.
 - `describe_data()`: tạo tài liệu Markdown mô tả bảng, các cột, và với mỗi cặp `(native_type, event_id)` là số dòng, thời điểm đầu và cuối. Đây chính là "tài liệu dữ liệu cục bộ" mà PEAK nhận.
 
-Adapter Splunk (`SplunkLiveAdapter`) giữ nguyên từ phiên bản trước: gọi REST API, kiểm tra cú pháp SPL qua điểm cuối parser mà không chạy tìm kiếm, và có cổng AST cho truy vấn gốc. Tám kiểm thử dành cho Splunk thật tự bỏ qua khi không có máy chủ tại cổng 8089.
+Adapter Splunk trực tiếp (`SplunkLiveAdapter`, khoảng 2.100 dòng, cùng cổng AST `query_safety/`, mô hình `capabilities/`, hai tệp khai báo `configs/splunk_*.yaml` và hai tệp kiểm thử) đã được chuyển sang nhánh `splunk-adapter`. Lý do: bản nộp không có máy chủ Splunk để kiểm chứng, tám kiểm thử dành cho Splunk thật luôn bị bỏ qua, và khoảng 2.300 dòng chưa từng được chạy là gánh nặng bảo trì. Nhánh chính chỉ giữ adapter CDB; mã Splunk vẫn nguyên vẹn ở nhánh riêng và trong lịch sử git.
 
 ## 5.7. Khuyến nghị và báo cáo
 
@@ -158,11 +161,11 @@ Mô-đun `report.py` dựng báo cáo Markdown bằng tiếng Việt với các 
 
 ## 5.8. Dòng lệnh
 
-`cli.py` dùng `argparse` với các nhóm đối số: đầu vào PoC (`--poc`, `--poc-dir`, `--window`), nhà cung cấp telemetry (`--provider`, `--db`, các tham số Splunk), LLM (`--env`, `--model`, `--offline`, `--research`, `--peak-timeout`) và `--out`. Với mỗi PoC, lỗi nạp hoặc lỗi cổng Prepare được in ra và tính vào mã thoát, nhưng không dừng các PoC còn lại. Sau cùng ghi `summary.md` và `summary.json`.
+`cli.py` dùng `argparse` với các nhóm đối số: đầu vào PoC (`--poc`, `--poc-dir`, `--window`), CSDL telemetry (`--db`), LLM (`--env`, `--model`, `--offline`, `--research`, `--peak-timeout`) và `--out`. Với mỗi PoC, lỗi nạp hoặc lỗi cổng Prepare được in ra và tính vào mã thoát, nhưng không dừng các PoC còn lại. Sau cùng ghi `summary.md` và `summary.json`.
 
 ## 5.9. Kiểm thử
 
-Bộ kiểm thử gồm 116 bài, trong đó 108 chạy được và 8 bị bỏ qua vì cần Splunk thật. Kết quả cuối: 108 đạt, 8 bỏ qua, mã kiểm tra tĩnh `ruff` không báo lỗi. Các bài mới (`tests/unit/test_pipeline.py`, `tests/unit/test_scope_and_caps.py` và `tests/unit/test_llm_ops.py`) kiểm tra:
+Bộ kiểm thử gồm 146 bài, tất cả chạy được và đều đạt (sau khi chuyển adapter Splunk sang nhánh riêng không còn bài nào bị bỏ qua); mã kiểm tra tĩnh `ruff` không báo lỗi. Các bài của pipeline PoC (`tests/unit/test_pipeline.py`, `tests/unit/test_scope_and_caps.py` và `tests/unit/test_llm_ops.py`) kiểm tra:
 
 - **Luật khuyến nghị:** 11 tổ hợp tham số (bằng chứng × judge) ứng với bảng luật; chuỗi một phần không escalate dù judge tin cậy cao; trần độ tin cậy khi chưa có bước kiểm tra kết quả và mở trần khi có.
 - **Rỗng không thành sạch:** thiếu nguồn cho `COLLECT_DATA_THEN_RERUN` với câu cảnh báo.
@@ -175,3 +178,29 @@ Bộ kiểm thử gồm 116 bài, trong đó 108 chạy được và 8 bị bỏ
 - **Đầu cuối:** chạy CLI trên một CSDL nhỏ ở chế độ `--offline`, và chạy CLI khi không có tệp `.env` nào.
 
 Các bài này không gọi LLM thật; việc gọi thật được kiểm chứng bằng thực nghiệm ở Chương 7.
+
+## 5.10. Cài đặt luồng Prepare-only
+
+### 5.10.1. Thu thập tình báo (`intel/`)
+
+`Fetcher` (`http.py`) là điểm duy nhất gọi mạng. Nó chỉ gửi GET, từ chối mọi URL không phải https hoặc có host ngoài ba host cho phép, giới hạn kích thước (2 MB cho JSON, 60 KB cho tệp văn bản) và thời gian (25 giây), từ chối nội dung nhị phân (có byte `\x00` trong 2 KB đầu) và lưu đệm 24 giờ trên đĩa để không đốt hạn mức 60 yêu cầu mỗi giờ của GitHub khi chưa có token. Khoá API chỉ được gắn vào yêu cầu tới host của nó. Chuyển hướng không được `requests` tự theo (`allow_redirects=False`): `Fetcher` tự đọc `Location`, kiểm tra lại https và host ở mỗi bước, tối đa ba bước; một chuyển hướng sang host lạ, hạ xuống `http://` hay lặp vô hạn đều bị từ chối. Quy tắc này được thêm sau khi rà soát phát hiện rằng việc kiểm tra host chỉ áp dụng cho URL đầu tiên.
+
+`nvd_lookup` lấy mô tả, CVSS, CWE, sản phẩm và phiên bản bị ảnh hưởng (rút từ CPE) và cờ CISA KEV mà NVD mang sẵn. `github_search` tìm theo tên CVE, sắp theo số sao, bỏ kho fork; kho đủ `--min-stars` được lấy, nếu không có kho nào đủ thì lấy vài kho tốt nhất, gắn cờ `below_threshold` và cảnh báo tín hiệu yếu. `repo_material` lấy cây tệp của kho bằng một lời gọi, loại tệp nhiễu (LICENSE, `node_modules`, ảnh, tệp lớn hơn 200 KB), chấm điểm (mẫu nuclei và tệp tên `exploit`/`poc`/`scan` cao hơn README) rồi đọc tối đa sáu tệp. Không có kho nào bị clone, cài hay chạy.
+
+`extract_indicators` (`extract.py`) trích dấu vết bằng biểu thức chính quy: đường dẫn HTTP, tham số HTTP dạng `a.b.c.d` (như `class.module.classLoader...`), header tuỳ biến, chuỗi `${...:...}`, tên miền out-of-band đã biết, giao thức (`ldap://`), tên tệp, lệnh, User-Agent; mỗi loại giữ 12 giá trị xuất hiện nhiều nhất. Đây chỉ là *ứng viên*: có thể là đường dẫn trên máy chủ phụ của kẻ tấn công chứ không phải thứ nạn nhân nhận. `digest` (`gather.py`) gói sự thật về CVE, danh sách dấu vết và nội dung tệp (tệp khai thác và mẫu nuclei được ưu tiên trước README, gấp đôi chỗ) trong khoảng 16.000 ký tự, mỗi tệp đặt trong `<<< >>>` kèm nhãn không tin cậy.
+
+### 5.10.2. Lập kế hoạch (`plan/build.py`)
+
+`build_plan` gửi một lời nhắc gồm nhiệm vụ, định nghĩa ba mức `significance`, luật viết SPL (kèm danh mục nguồn và tên trường theo Splunk CIM), hình dạng JSON mong muốn, bản tóm tắt tình báo và phần văn bản của PEAK. Phản hồi được `assemble` chuyển thành các đối tượng đã kiểm tra: `significance` lạ thành `indicator`; mã kỹ thuật sai định dạng `Txxxx` bị bỏ; dấu vết được gắn `from_poc` nếu chuỗi có nguyên văn trong tình báo (hàm `grounded`), nếu không thì `inferred`; `data_source` ngoài bảy nguồn thì loại truy vấn; truy vấn qua `check_spl` và quy tắc tiến trình cha; chữ mô tả qua `_scrub` (ký tự lạ và từ lạ). Sau đó mã tự thêm điểm dừng theo `significance` (`default_stops`), truy vấn độ phủ cho mỗi nguồn có dùng, giới hạn và nhãn xuất xứ.
+
+Nếu có vấn đề (JSON hỏng, truy vấn bị loại, thiếu giai đoạn `impact`, chữ lạ), lần sau gửi `REPAIR_PROMPT` gồm danh sách lỗi và câu trả lời trước, tối đa ba lượt, giữ bản có nhiều truy vấn hợp lệ nhất. Vấn đề chỉ về chữ (tiền tố `language:`) thì chỉ được một lượt viết lại, rồi kế hoạch được giữ và từ còn sót được liệt kê trong `dropped`, để không tốn thêm lời gọi cho lỗi không ảnh hưởng an toàn. Hết lượt mà chưa có truy vấn hợp lệ nào thì ném `PlanError` và lưu câu trả lời cuối ra `planner_last_reply.txt`. Lời nhắc sửa lỗi có các gợi ý cụ thể, bổ sung sau khi mô hình miễn phí viết dấu ngoặc kép lệch ở cả ba lượt sửa Spring4Shell và không còn truy vấn nào dùng được.
+
+### 5.10.3. Bộ kiểm tra ngôn ngữ và quy tắc tiến trình cha
+
+`language.foreign_words(text, known)` bỏ qua đoạn mã trong dấu huyền, URL, chuỗi có ký tự định danh (`/ \ . _ = : $ { } [ ] * | @ # 0-9`), từ viết tắt, tên riêng và từ dưới 4 chữ cái. Với các từ còn lại: chữ cái ngoài tiếng Việt và tiếng Anh thì gắn cờ ngay; từ khớp mẫu âm tiết tiếng Việt (`phụ âm đầu? + nguyên âm 1–3 + phụ âm cuối?`, sau khi bỏ dấu thanh) thì bỏ qua; từ có trong từ vựng tiếng Anh (khoảng 1.500 từ gốc cùng các biến cách `-s`, `-es`, `-ed`, `-ing`, `-ly`, `-er`) hoặc trong `known` (từ vựng của chính văn bản PoC/CVE) thì bỏ qua. Từ điển tiếng Anh do tác giả soạn, không dùng danh sách tần suất của bên thứ ba vì giấy phép của chúng không rõ ràng cho một kho công khai.
+
+`safety.parent_process_problem(spl, data_source)` chỉ áp dụng cho nguồn `endpoint`: tách các công đoạn bằng `_scan`, chỉ xét phần lọc (câu `search` đầu, `where`, `regex`, `search`), và chấp nhận khi có `parent_process[_name|_path]` đi với `=`, `IN`, hoặc `match(...)`/`like(...)`, hoặc khi truy vấn lọc theo `file_name`/`file_path`/registry. Chỉ liệt kê trường trong `stats ... by` hay `table` thì không đủ.
+
+### 5.10.4. Xác minh và dòng lệnh
+
+`verify` (`plan/verify.py`, khoảng 365 dòng) hiện thực các bước ở mục 4.9.4 bằng mã thuần. `extract_leads` chỉ đọc các truy vấn trúng; `_pivot_stages` dựng ba giai đoạn pivot từ mẫu cố định, mỗi giá trị đi qua `spl_literal`. `plan_cli.py` cung cấp ba lệnh: `plan` (thu thập, lập kế hoạch và ghi `plan.json`, `plan.md`, `queries.spl`, `result.template.json`, các tệp `peak_*.md` và hai schema), `verify` (đọc kế hoạch và kết quả, ghi `verification.md`, `verification.json` và nếu cần thư mục vòng kế tiếp `iterN/`) và `schema`. Cờ `--no-peak` bỏ PEAK để chạy nhanh và ít token; không cấu hình LLM thì `plan` vẫn thu thập và lưu tình báo rồi dừng với mã thoát 3, còn `verify` và `schema` không cần LLM. Phần mới có 48 bài kiểm thử (`test_intel_plan.py` 40 bài và `test_plan_language_parent.py` 8 bài), không gọi mạng thật hay LLM thật: dùng phiên HTTP giả và bộ gọi LLM kịch bản.

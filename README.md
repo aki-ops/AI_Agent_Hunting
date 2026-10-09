@@ -7,7 +7,7 @@ mối đe dọa quyết định. Hệ thống không tự hành động.
 
 ```text
 PoC (JSON) ──► PEAK Assistant: ABLE table + hunt plan (planner/critic)      [LLM, tham khảo]
-          ──► Execute: predicate field/op/value trên CDB hoặc Splunk        [tất định, không LLM]
+          ──► Execute: predicate field/op/value trên CDB (SQLite)           [tất định, không LLM]
           ──► Judge + Advisor (LLM) + luật tất định                          [tham khảo]
           ──► recommendation.md / .json  → NGƯỜI QUYẾT ĐỊNH
 ```
@@ -33,7 +33,7 @@ Không đụng hệ thống nội bộ, không chạy PoC.
 | **2. `extract_indicators()` + `digest()`** | Trích tất định các dấu vết (tham số HTTP, chuỗi payload, tên miền out-of-band, tên file...) và gói văn bản cho LLM. Danh sách này dùng để đối chiếu, nhằm không để LLM bịa. | Không |
 | **3. `run_peak_texts()`** (tuỳ chọn) | PEAK Assistant viết bảng ABLE và kế hoạch săn làm ngữ cảnh. Chỉ thấy văn bản công khai và mô tả nguồn dữ liệu chung. Tốn nhiều token. | Có |
 | **4. `build_plan()`** | LLM đề xuất giai đoạn tấn công, dấu vết và truy vấn SPL. PoC được coi là dữ liệu không tin cậy, không phải chỉ dẫn. | Có |
-| **5. `assemble()` + `check_spl()`** | Chốt chặn an toàn: chỉ cho truy vấn chỉ đọc trong danh sách lệnh cho phép, tự gắn cửa sổ thời gian và trần dòng; truy vấn sai bị gửi lại để sửa (tối đa 3 lượt), vẫn sai thì loại. | Không |
+| **5. `assemble()` + `check_spl()`** | Chốt chặn an toàn: chỉ cho truy vấn chỉ đọc trong danh sách lệnh cho phép, tự gắn cửa sổ thời gian và trần dòng; truy vấn process trên endpoint buộc phải lọc theo tiến trình cha (không thì `whoami` của quản trị viên cũng khớp); chữ lẫn ngôn ngữ khác bị yêu cầu viết lại; truy vấn sai bị gửi lại để sửa (tối đa 3 lượt), vẫn sai thì loại. | Không |
 | **6. Phần mã tự thêm** | Điểm dừng theo mức ý nghĩa của giai đoạn, truy vấn kiểm tra độ phủ nguồn, giới hạn, nhãn xuất xứ. LLM không quyết định các thứ này. | Không |
 | **7. `write_plan()`** | Ghi `plan.json`, `plan.md`, `queries.spl`, `result.template.json` và schema, tức là các tài liệu bàn giao. | Không |
 | **Người săn đọc `plan.md`** | Kiểm tra truy vấn có bắt đúng tấn công không trước khi giao. Bộ kiểm tra chỉ bảo đảm an toàn và hình thức, không bảo đảm đúng nội dung. | |
@@ -116,7 +116,7 @@ ruff check .
 | `src/hunting/llm.py` | `.env` → cấu hình `model_config.json` của PEAK; caller đồng bộ dùng chung client PEAK |
 | `src/hunting/prepare.py` | cầu nối PEAK: `able_table`, `plan_hunt` (tuỳ chọn `researcher`); có fallback offline |
 | `src/hunting/poc/` | mô hình PoC, loader JSON, agent thực thi, judge |
-| `src/hunting/adapters/` | CDB (SQLite) và Splunk live; `source_presence`, `describe_data` |
+| `src/hunting/adapters/` | adapter CDB (SQLite); `source_presence`, `describe_data`. Adapter Splunk live nằm ở nhánh `splunk-adapter` |
 | `src/hunting/recommend.py` | luật khuyến nghị + advisor |
 | `src/hunting/pipeline.py`, `cli.py`, `report.py` | điều phối, CLI, báo cáo |
 | `pocs/` | PoC mẫu (BOTS v1) |

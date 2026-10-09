@@ -30,7 +30,7 @@ Bảng: Yêu cầu chức năng
 |---|---|---|
 | FR1 | Nạp PoC từ tệp JSON, kiểm tra các trường Prepare bắt buộc | Vấn đề 2 |
 | FR2 | Gọi PEAK Assistant sinh bảng ABLE và kế hoạch săn cho mỗi PoC | Vấn đề 2 |
-| FR3 | Thực thi các vị từ literal trên telemetry qua adapter (CDB, Splunk) | Giữ giá trị đường PoC |
+| FR3 | Thực thi các vị từ literal trên telemetry qua adapter (CDB) | Giữ giá trị đường PoC |
 | FR4 | Kiểm tra độ phủ của từng nguồn dữ liệu trong cửa sổ thời gian | Vấn đề 3 |
 | FR5 | Sinh khuyến nghị xếp hạng với lý do, giới hạn, câu hỏi, rủi ro | Vấn đề 3 |
 | FR6 | Chạy được nhiều PoC một lần và tổng hợp bảng kết quả | Vấn đề 1 |
@@ -79,3 +79,27 @@ Từ vấn đề và yêu cầu, năm bất biến được đặt ra và áp d�
 3. **Vắng dữ liệu không thành "sạch".** Nguồn có 0 bản ghi trong cửa sổ cho `COLLECT_DATA_THEN_RERUN`; kết quả rỗng khi nguồn có dữ liệu vẫn kèm cảnh báo về giới hạn.
 4. **Người quyết định cuối cùng.** Mọi khuyến nghị có `decision_required = true`; hệ thống không thực hiện hành động phản ứng.
 5. **LLM là tuỳ chọn.** Mọi chức năng cốt lõi chạy được khi không có LLM; LLM chỉ làm giàu thêm.
+
+## 3.7. Định hướng mới: chỉ làm pha Prepare
+
+Sau khi pipeline PoC → Prepare → Execute → Act chạy được trên dữ liệu BOTS v1, phạm vi được thu hẹp lại theo hướng sau. Dự án chỉ đảm nhận chữ **P** của khung PEAK. Pha Execute và Act do một đội khác làm trên hệ thống của họ; dự án này **không đụng vào hệ thống nội bộ** để tránh lộ lọt thông tin. Đầu vào là PoC công khai trên Internet (CVE, kho GitHub có nhiều sao). Đầu ra là một kế hoạch dạng "giả sử PoC này được dùng để tấn công, hãy kiểm tra hệ thống có dính không": các giai đoạn tấn công, truy vấn tìm kiếm, giới hạn và điểm dừng. Khi đội kia chạy xong và trả kết quả, dự án **xác minh**: chấp nhận kết quả, hoặc chạy lại kế hoạch xuất phát từ kết quả đó để săn tiếp.
+
+Bảng: Yêu cầu của luồng Prepare-only
+| Mã | Yêu cầu |
+|---|---|
+| PR1 | Thu thập tình báo công khai chỉ bằng yêu cầu GET tới một danh sách host cố định (NVD, GitHub, raw.githubusercontent.com), có giới hạn kích thước và thời gian, không tải về hay chạy mã PoC |
+| PR2 | Trích dấu vết bằng quy tắc tất định và đối chiếu mọi dấu vết do LLM nêu với văn bản PoC/CVE (có trong PoC hay chỉ suy luận) |
+| PR3 | Kế hoạch là dữ liệu có schema: giai đoạn tấn công, dấu vết, truy vấn, giới hạn, điểm dừng, nguồn gốc |
+| PR4 | Mọi truy vấn do LLM viết phải qua kiểm tra tĩnh trước khi rời dự án; truy vấn không hợp lệ bị loại và ghi lý do |
+| PR5 | Truy vấn dùng placeholder cho chỉ mục và thời gian, không biết gì về hạ tầng nội bộ |
+| PR6 | Xác minh kết quả không dùng LLM; kết quả rỗng không bao giờ là "sạch" |
+| PR7 | Vòng săn tiếp có điều kiện dừng (chuyển IR, chấp nhận, số vòng tối đa, hết dấu vết mới) |
+| PR8 | Đọc được bằng mắt (Markdown) và bằng máy (JSON Schema); phần xác minh và schema chạy không cần LLM |
+
+Có hai phương án. Giữ nguyên pipeline cũ và thêm một nhánh đầu vào công khai sẽ buộc dự án vẫn chạm vào dữ liệu telemetry. Chọn hướng Prepare-only thì ranh giới rõ hơn: dự án chỉ nhận văn bản công khai và kết quả đã được đội kia đồng ý trả, nên bề mặt rò rỉ nhỏ hơn rất nhiều; đổi lại dự án không còn tự kiểm tra được truy vấn của mình trên dữ liệu thật. Phương án thứ hai được chọn. Pipeline cũ vẫn còn trong kho làm bộ thử cục bộ trên dữ liệu công khai.
+
+Ba bất biến được thêm vào năm bất biến ở mục 3.6:
+
+6. **Không đụng hệ thống nội bộ, không chạy PoC.** Dự án chỉ đọc văn bản công khai và kết quả do đội thực thi trả về.
+7. **Nội dung Internet và đầu ra LLM đều là dữ liệu không tin cậy.** README và mã khai thác có thể chứa lệnh giả mạo nhắm vào LLM; giá trị trong log kết quả có thể do kẻ tấn công kiểm soát.
+8. **Không truy vấn nào rời dự án mà chưa qua kiểm tra tĩnh.** LLM không quyết định điểm dừng, giới hạn hay truy vấn độ phủ; các thứ đó do mã sinh.

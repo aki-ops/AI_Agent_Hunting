@@ -26,7 +26,7 @@ Cài đặt này chỉ kéo theo `pydantic`, `pyyaml`, `requests`, cùng `pytest
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-Kết quả mong đợi: `108 passed, 8 skipped`. Tám bài bị bỏ qua cần máy chủ Splunk thật tại cổng 8089 và tự bỏ qua khi không có.
+Kết quả mong đợi: `146 passed`.
 
 ### 6.1.3. Cài thêm PEAK Assistant (tuỳ chọn)
 
@@ -141,7 +141,6 @@ Bảng: Tham chiếu nhanh tuỳ chọn dòng lệnh
 | `--poc FILE` (lặp được), `--poc-dir DIR` | Chọn PoC |
 | `--window START/END` | Ghi đè cửa sổ thời gian của mọi PoC |
 | `--db PATH` | Đường dẫn CSDL SQLite |
-| `--provider splunk` kèm `--splunk-url`, `--splunk-user`, `--splunk-index` | Dùng Splunk thay cho SQLite |
 | `--env FILE`, `--model TÊN` | Tệp cấu hình LLM; ghi đè mô hình |
 | `--offline` | Bỏ hoàn toàn PEAK và mọi lời gọi LLM |
 | `--research` | Bật tác tử nghiên cứu của PEAK (cần máy chủ MCP) |
@@ -208,14 +207,7 @@ Bảng: Lỗi thường gặp khi viết PoC
 
 ## 6.7. Dùng với Splunk thật
 
-Adapter Splunk dùng REST API. Cần đặt mật khẩu qua biến môi trường (không qua dòng lệnh):
-
-```bash
-set SPLUNK_PASSWORD=...
-.venv\Scripts\python.exe main.py --poc-dir pocs --provider splunk --splunk-url https://localhost:8089 --splunk-user admin --splunk-index botsv1
-```
-
-Cần lưu ý trung thực: trong khuôn khổ đồ án, adapter này chỉ được kiểm thử bằng các bài tự bỏ qua khi không có máy chủ; chưa có lần chạy đầy đủ nào trên Splunk thật. Adapter Splunk cũng chưa có phương thức `source_presence`, nên với Splunk độ phủ nguồn được ghi là "không kiểm tra được" và kết quả rỗng sẽ có độ tin cậy `LOW`. Người dùng nên chạy thử trên một chỉ mục nhỏ và tự đối chiếu số bản ghi trước khi tin kết quả.
+Adapter Splunk trực tiếp không còn trong nhánh chính; nó nằm ở nhánh `splunk-adapter` (`git checkout splunk-adapter`) cùng các tham số `--provider splunk`, `--splunk-url`, `--splunk-user`, `--splunk-index` và biến `SPLUNK_PASSWORD`. Cần lưu ý trung thực: adapter đó chưa từng chạy trên Splunk thật trong đồ án, chưa có `source_presence` nên độ phủ nguồn được ghi là "không kiểm tra được" và kết quả rỗng có độ tin cậy `LOW`. Với luồng Prepare-only (mục 6.10) không cần adapter nào: đội thực thi tự chạy các truy vấn `queries.spl` trên Splunk của họ.
 
 ## 6.8. Xử lý sự cố
 
@@ -234,3 +226,44 @@ Bảng: Sự cố thường gặp và cách xử lý
 ## 6.9. Quy trình tái lập kết quả của luận văn
 
 Để chạy lại thực nghiệm của Chương 7: dựng CSDL (6.3.2), điền `.env`, rồi chạy `main.py --poc-dir pocs --out artifacts/runs/tai-lap`. Phần tất định (số bản ghi khớp, độ phủ) phải giống hệt; phần LLM (văn bản ABLE, kế hoạch, nhận định judge, số token) sẽ khác từng lần, chỉ kết luận (disposition, độ tin cậy) được kỳ vọng ổn định. Thư mục `results/botsv1-peak-run/` lưu bản chạy đã dùng trong luận văn.
+
+## 6.10. Chạy luồng Prepare-only
+
+### 6.10.1. Lập kế hoạch từ một CVE
+
+Cần `.env` có LLM (xem 6.2). Không cần dữ liệu telemetry hay Splunk.
+
+```bash
+python main.py plan --cve CVE-2022-22965 --min-stars 200 --out artifacts/plans
+python main.py plan --cve CVE-2022-22965 --min-stars 200 --no-peak   # nhanh, ít token hơn nhiều
+python main.py plan --repo owner/name                                  # từ một kho PoC cụ thể
+python main.py plan --query "log4j poc" --min-stars 500                 # tìm theo từ khoá
+```
+
+Chú ý hạn mức GitHub: không có `GITHUB_TOKEN` thì chỉ 60 yêu cầu mỗi giờ (một lần lập kế hoạch tốn khoảng 23 yêu cầu, có lưu đệm). Có thể đặt `GITHUB_TOKEN` và `NVD_API_KEY` trong `.env`.
+
+Thư mục kết quả `artifacts/plans/<CVE>/` có `intel.json` và `intel_digest.md` (đúng đoạn văn bản LLM đã đọc), hai schema, và `iter1/` với `plan.md` (bản cho người), `plan.json` (bản cho máy), `queries.spl`, `result.template.json`, `peak_able.md`, `peak_hunt_plan.md`.
+
+### 6.10.2. Đọc `plan.md` trước khi giao đi
+
+Bộ kiểm tra chỉ bảo đảm an toàn và hình thức, không bảo đảm truy vấn bắt đúng tấn công. Người săn nên kiểm tra: dấu vết có thực sự là thứ nạn nhân nhận được không (đường dẫn của ứng dụng minh hoạ trong PoC thường không có ở hệ thống thật); truy vấn có dùng nhật ký mà môi trường thực sự ghi (nhật ký web thường không ghi thân POST); truy vấn hậu khai thác có lọc theo tiến trình cha đúng với dịch vụ không; mục "Đã loại bỏ / ghi chú" ở cuối để biết truy vấn nào bị loại và từ lạ nào còn sót.
+
+### 6.10.3. Giao cho đội thực thi, rồi xác minh
+
+Đội thực thi gắn placeholder bằng hàm `bind` (ánh xạ nguồn sang chỉ mục thật; ánh xạ thiếu hoặc có ký tự lạ bị từ chối), chạy các truy vấn độ phủ `C-*` trước rồi các truy vấn còn lại, rồi điền `result.template.json` thành một `ResultBundle`. Sau đó:
+
+```bash
+python main.py verify --plan artifacts/plans/CVE-2022-22965/iter1/plan.json --results results.json
+```
+
+Kết quả là `verification.md` kèm một trong các quyết định ở mục 4.9.4. Với `REFINE`, thư mục `iter2/` chứa kế hoạch pivot để giao đội thực thi lần nữa. Lệnh `main.py schema --out schemas/` xuất hai JSON Schema để hai đội thống nhất hợp đồng.
+
+Bảng: Từ quyết định của `verify` đến việc cần làm
+| Quyết định | Việc cần làm |
+|---|---|
+| `ESCALATE_AFFECTED` | Chuyển IR kèm bằng chứng; không mở rộng thêm |
+| `ACCEPT_NO_EVIDENCE` | Ghi nhận "không thấy trong phạm vi đã quét"; không báo là sạch |
+| `COLLECT_DATA` | Bổ sung telemetry cho nguồn rỗng rồi chạy lại |
+| `RERUN_INCOMPLETE` | Chạy lại truy vấn lỗi hoặc chưa chạy (kể cả giai đoạn không có truy vấn hợp lệ) |
+| `REFINE` | Giao `iterN/` cho đội thực thi để pivot |
+| `STOP_REVIEW`, `REJECT_RESULTS` | Người đọc quyết định (hết vòng, hết giá trị pivot, hoặc kết quả thuộc kế hoạch khác) |

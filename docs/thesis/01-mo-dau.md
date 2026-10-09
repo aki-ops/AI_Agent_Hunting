@@ -26,14 +26,15 @@ Các mục tiêu cụ thể:
 - Bảo đảm LLM là tuỳ chọn: không cấu hình LLM thì hệ thống vẫn chạy.
 - Chạy bốn PoC có sẵn trên bộ dữ liệu Boss of the SOC v1, ghi nhận kết quả, lỗi và hạn chế một cách trung thực.
 - Viết tài liệu hướng dẫn thực hành đủ để một người mới cài đặt, chạy, đọc kết quả và tự viết PoC.
+- Chuyển trọng tâm sang pha Prepare thuần: từ PoC công khai (NVD, GitHub) sinh kế hoạch săn đã qua kiểm tra an toàn, bàn giao cho đội thực thi và xác minh kết quả họ trả về, không chạm vào hệ thống nội bộ.
 
 ## 1.4. Đối tượng và phạm vi
 
 Đối tượng nghiên cứu là quy trình săn theo giả thuyết (hypothesis-driven hunting) của PEAK, trong đó giả thuyết đã được cụ thể hoá thành PoC. Phạm vi gồm:
 
-- **Trong phạm vi:** pha Prepare qua PEAK Assistant (ABLE, kế hoạch săn); pha Execute trên hai loại telemetry là cơ sở dữ liệu SQLite (CDB) và Splunk; pha Act dạng khuyến nghị, bản nháp truy vấn SPL, backlog và ghi chú cho các bên liên quan; kiểm chứng trên Boss of the SOC v1.
+- **Trong phạm vi:** pha Prepare qua PEAK Assistant (ABLE, kế hoạch săn); pha Execute trên telemetry là cơ sở dữ liệu SQLite (CDB) (adapter Splunk trực tiếp được chuyển sang nhánh riêng `splunk-adapter`); pha Act dạng khuyến nghị, bản nháp truy vấn SPL, backlog và ghi chú cho các bên liên quan; kiểm chứng trên Boss of the SOC v1; và luồng Prepare-only: thu thập PoC công khai, lập và kiểm tra kế hoạch săn, xác minh kết quả do đội khác trả về. Luồng này không truy cập hệ thống nội bộ và không chạy PoC.
 - **Ngoài phạm vi:** săn theo đường cơ sở (baseline) và săn có hỗ trợ mô hình học máy (M-ATH) của PEAK; huấn luyện mô hình; tự động hoá hành động phản ứng sự cố; đánh giá định lượng độ chính xác trên nhiều bộ dữ liệu.
-- **Giới hạn đã biết:** bộ dữ liệu có nhãn tấn công hạn chế; adapter Splunk và bản nháp SPL chưa được chạy trên một máy chủ Splunk thật trong đồ án này.
+- **Giới hạn đã biết:** bộ dữ liệu có nhãn tấn công hạn chế; bản nháp SPL và các truy vấn trong kế hoạch Prepare-only chưa được chạy trên một máy chủ Splunk thật trong đồ án này; vòng xác minh mới chỉ thử bằng kết quả giả lập.
 
 ## 1.5. Phương pháp nghiên cứu
 
@@ -44,9 +45,12 @@ Các mục tiêu cụ thể:
 1. Một kiến trúc ghép PEAK Assistant (không tất định) với bộ thực thi tất định, trong đó ranh giới tin cậy được ghi rõ và được kiểm thử.
 2. Bộ luật khuyến nghị có giải thích, xử lý riêng bốn trường hợp dễ nhầm: chuỗi khớp một phần, kết quả khớp nhưng chưa chứng minh thành công, kết quả rỗng do thiếu dữ liệu, và kết quả rỗng do phạm vi tìm kiếm (host) không có dữ liệu.
 3. Cơ chế vận hành LLM thực tế: gọi lại có backoff, quay về chế độ không LLM khi lỗi, chấp nhận nhiều dạng đầu ra JSON, và chế độ hoàn toàn không cần LLM.
-4. Làm gọn kho từ khoảng 36.400 dòng xuống khoảng 9.200 dòng mã nguồn mà vẫn giữ khả năng khôi phục engine cũ.
+4. Làm gọn kho từ khoảng 36.400 dòng xuống khoảng 9.400 dòng mã nguồn (gồm khoảng 2.300 dòng của luồng Prepare-only, sau khi chuyển adapter Splunk khoảng 2.300 dòng sang nhánh riêng) mà vẫn giữ khả năng khôi phục engine cũ.
 5. Bộ kết quả thực nghiệm và hướng dẫn thực hành có thể tái chạy.
+6. Luồng Prepare-only: biến PoC công khai thành `HuntPlan` có schema, trong đó mọi truy vấn do LLM viết bị duyệt tĩnh trước khi rời dự án, dấu vết được đối chiếu với văn bản PoC để không để LLM bịa, và điểm dừng, giới hạn, truy vấn độ phủ do mã sinh chứ không do LLM.
+7. Hai quy tắc kiểm tra mới cho phần LLM viết: truy vấn hậu khai thác trên dữ liệu tiến trình phải lọc theo tiến trình cha, và bộ phát hiện từ lẫn ngôn ngữ khác (không cần dữ liệu ngoài) cho chữ tiếng Việt.
+8. Bộ xác minh `verify` tất định, trả sáu quyết định và sinh vòng pivot an toàn, trong đó kết quả rỗng không bao giờ được gọi là "sạch".
 
 ## 1.7. Bố cục luận văn
 
-Chương 2 trình bày cơ sở lý thuyết. Chương 3 phân tích bài toán và yêu cầu. Chương 4 mô tả thiết kế kiến trúc và bộ luật khuyến nghị. Chương 5 mô tả cài đặt. Chương 6 là hướng dẫn thực hành. Chương 7 trình bày thực nghiệm và đánh giá. Chương 8 thảo luận hạn chế. Chương 9 kết luận và đề xuất hướng phát triển. Phần phụ lục cung cấp tệp PoC mẫu, báo cáo mẫu, tham chiếu dòng lệnh, cấu hình, danh sách kiểm thử và bảng thuật ngữ.
+Chương 2 trình bày cơ sở lý thuyết. Chương 3 phân tích bài toán và yêu cầu. Chương 4 mô tả thiết kế kiến trúc và bộ luật khuyến nghị. Chương 5 mô tả cài đặt. Chương 6 là hướng dẫn thực hành. Chương 7 trình bày thực nghiệm và đánh giá. Chương 8 thảo luận hạn chế. Chương 9 kết luận và đề xuất hướng phát triển. Hướng Prepare-only được trình bày ở các mục 3.7, 4.9, 5.10, 6.10, 7.10 và 8.7. Phần phụ lục cung cấp tệp PoC mẫu, báo cáo mẫu, tham chiếu dòng lệnh, cấu hình, danh sách kiểm thử và bảng thuật ngữ.

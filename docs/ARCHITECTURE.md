@@ -56,8 +56,9 @@ người săn và rủi ro nếu quyết định sai.
 - Độ phủ kiểm tra *có nguồn* (và trong phạm vi host), chưa tự đối chiếu *đúng loại sự kiện* với predicate
   (vd. có đăng nhập thành công nhưng không có 4625). Với kết quả rỗng, báo cáo liệt kê các loại sự kiện thực có
   (`native_type/event_id`) để người săn tự đối chiếu.
-- Adapter Splunk chưa có `source_presence`/`source_breakdown`, và các thay đổi truy xuất ở §4 (giới hạn quét 2000,
-  `require_nonempty`) chưa được chạy trên Splunk thật.
+- Adapter Splunk live đã chuyển sang nhánh `splunk-adapter` (nhánh `huy` chỉ giữ adapter CDB). Nó chưa có
+  `source_presence`/`source_breakdown`, và các thay đổi truy xuất ở §4 (giới hạn quét 2000, `require_nonempty`) chưa được
+  chạy trên Splunk thật.
 - Judge và các agent PEAK không tất định; kết quả LLM chạy lại có thể khác. Phần tất định (hits, disposition
   khi cùng judge) thì tái lập được.
 - Các lần gọi LLM bên trong PEAK (ABLE, planner, critic) chưa được đo token/chi phí vì PEAK tự tạo client.

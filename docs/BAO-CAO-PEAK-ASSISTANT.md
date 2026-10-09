@@ -1,5 +1,8 @@
 # Báo cáo: tích hợp PEAK Assistant, làm gọn repo và chạy 4 PoC có sẵn
 
+> Bản ghi của đợt chạy trên dữ liệu BOTS v1, trước khi dự án chuyển sang hướng Prepare-only (xem `docs/PREPARE-WORKFLOW.md`). Số liệu
+> ở đây (108 pass, 8 skip) là của thời điểm đó; adapter Splunk live về sau được chuyển sang nhánh `splunk-adapter`.
+
 Branch `peak-assistant-integration` (bản gốc: tag `v6-engine-final`, branch `pre-peak-snapshot`).
 Kết quả gốc nằm ở [`results/botsv1-peak-run/`](../results/botsv1-peak-run/) (lần chạy bằng model miễn phí `nvidia/nemotron-3-super-120b-a12b:free`, cùng khuyến nghị với lần chạy `auto` mô tả bên dưới; số token và thời gian trong báo cáo này là của lần chạy `auto`).
 

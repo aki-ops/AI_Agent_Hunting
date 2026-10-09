@@ -109,11 +109,23 @@ vài dòng, không phải số sự kiện).
 5. Ở vòng pivot, giá trị lấy từ log (có thể do kẻ tấn công kiểm soát) chỉ được nhúng vào truy vấn qua `spl_literal` (bộ lọc ký tự
    nghiêm ngặt) và truy vấn pivot vẫn qua `check_spl`.
 6. Truy vấn lạ trong kết quả, `plan_id` sai, mẫu quá 25 dòng đều bị ghi vào `protocol_issues`; kết quả của kế hoạch khác bị từ chối.
+7. **Hậu khai thác phải gắn với dịch vụ bị tấn công.** Truy vấn trên nguồn `endpoint` (tiến trình) bắt buộc *lọc* theo
+   `parent_process_name`/`parent_process` (ví dụ `java` với ứng dụng Java, `w3wp.exe` với IIS); chỉ nhắc tới trường này trong
+   `stats ... by` thì không tính. Lý do: `whoami` hay một shell do quản trị viên chạy trông y hệt khi chạy qua webshell, chỉ tiến trình cha
+   phân biệt được. Truy vấn thiếu bị gửi lại để sửa; còn thiếu sau các lượt sửa thì bị loại và ghi vào `dropped`. Truy vấn về file/registry được miễn.
+   Một giai đoạn mất hết truy vấn được in cảnh báo trong `plan.md`, và `verify` coi là `INCOMPLETE` (không bao giờ `CLEAR`).
+8. **Chữ lẫn ngôn ngữ khác.** Ngoài việc loại ký tự CJK/Cyrillic/Ả Rập, `plan/language.py` phát hiện từ không phải tiếng Việt
+   cũng không phải tiếng Anh (`przeciwko`, `tentativa`, `explotación`, `ungewö...`): chữ cái không có trong tiếng Việt lẫn tiếng Anh
+   thì chắc chắn; từ nào không phải âm tiết tiếng Việt hợp lệ, không có trong từ vựng tiếng Anh dùng trong kế hoạch và không xuất hiện trong
+   văn bản PoC/CVE thì bị gắn cờ. Việc này chỉ yêu cầu viết lại một lần (không loại truy vấn) và liệt kê từ còn sót trong `dropped`.
+   Đây là heuristic cho trường văn bản để người đọc, không phải biện pháp an ninh.
+9. Mọi yêu cầu HTTP ra ngoài chỉ tới 3 host cho phép; **chuyển hướng cũng bị kiểm tra lại từng bước** (https, đúng host, tối đa 3 lần),
+   và khoá API chỉ đi cùng yêu cầu tới host của nó.
 
 ## 6. Giới hạn đã biết
 
 - **Chất lượng truy vấn phụ thuộc vào LLM.** Mô hình miễn phí dùng để thử (Nemotron) đôi khi chọn nguồn dữ liệu chưa tối ưu hoặc lẫn
-  ký tự nước ngoài trong chữ tiếng Việt (mã tự loại các ký tự CJK/Cyrillic/Ả Rập). Bộ kiểm tra chỉ bảo đảm *an toàn và hình thức*,
+  từ nước ngoài trong chữ tiếng Việt (mã loại ký tự CJK/Cyrillic/Ả Rập và yêu cầu viết lại từ Latin ngoại ngữ, xem mục 5, ý 8). Bộ kiểm tra chỉ bảo đảm *an toàn và hình thức*,
   không bảo đảm truy vấn *bắt đúng* tấn công. Người săn phải đọc kế hoạch trước khi giao cho đội Execute.
 - **Chưa chạy SPL trên Splunk thật** (cũng như các lệnh `tstats` độ phủ). Tên trường theo CIM có thể khác ở mỗi nơi.
 - `ACCEPT_NO_EVIDENCE` chỉ nói "không thấy trong phạm vi đã quét", không bao giờ là "sạch": chỉ các biến thể nêu trong kế hoạch được tìm.
