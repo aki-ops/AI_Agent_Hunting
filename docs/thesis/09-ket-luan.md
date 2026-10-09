@@ -4,7 +4,7 @@
 
 Đồ án đã tái cấu trúc một kho mã săn mối đe dọa cỡ lớn thành một hệ thống nhỏ gọn, tích hợp PEAK Assistant của Cisco Talos cho pha Prepare, giữ pha Execute tất định trên telemetry, và bổ sung pha Act dưới dạng khuyến nghị có xếp hạng để người săn quyết định. Các mục tiêu đề ra ở mục 1.3 được đánh giá như sau.
 
-- **Làm gọn kho:** mã nguồn giảm từ khoảng 36.400 xuống khoảng 9.400 dòng (gồm khoảng 2.300 dòng của luồng Prepare-only), số tệp kiểm thử từ khoảng 80 xuống 9 (146 bài, đều đạt; adapter Splunk khoảng 2.300 dòng cùng tám bài kiểm thử Splunk thật đã chuyển sang nhánh `splunk-adapter`), bảo toàn khả năng khôi phục qua thẻ `v6-engine-final`.
+- **Làm gọn kho:** mã nguồn giảm từ khoảng 36.400 xuống khoảng 9.400 dòng (gồm khoảng 2.300 dòng của luồng Prepare-only), số tệp kiểm thử từ khoảng 80 xuống 9 (146 bài, đều đạt; adapter Splunk khoảng 2.300 dòng cùng tám bài kiểm thử Splunk thật đã gỡ khỏi nhánh chính, còn ở commit `4dace56`), bảo toàn khả năng khôi phục qua thẻ `v6-engine-final`.
 - **Tích hợp PEAK Assistant:** cầu nối `prepare.py` gọi `able_table` và `plan_hunt`, chạy thành công trên cả bốn PoC với hai cấu hình LLM khác nhau, có gọi lại có backoff và quay về chế độ không LLM khi lỗi.
 - **Khuyến nghị hỗ trợ quyết định:** năm loại khuyến nghị, độ tin cậy, lý do, giới hạn, lựa chọn xếp hạng, câu hỏi và rủi ro; mọi khuyến nghị có `decision_required = true`.
 - **LLM tuỳ chọn:** hệ thống chạy trọn vẹn với `--offline` hoặc khi `.env` chưa điền, có kiểm thử riêng, và có thể chọn mô hình miễn phí qua `--model`; một mô hình miễn phí (`nvidia/nemotron-3-super-120b-a12b:free`) đã chạy hết bốn PoC cho cùng khuyến nghị như mô hình trả phí.

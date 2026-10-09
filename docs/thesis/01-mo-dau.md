@@ -32,7 +32,7 @@ Các mục tiêu cụ thể:
 
 Đối tượng nghiên cứu là quy trình săn theo giả thuyết (hypothesis-driven hunting) của PEAK, trong đó giả thuyết đã được cụ thể hoá thành PoC. Phạm vi gồm:
 
-- **Trong phạm vi:** pha Prepare qua PEAK Assistant (ABLE, kế hoạch săn); pha Execute trên telemetry là cơ sở dữ liệu SQLite (CDB) (adapter Splunk trực tiếp được chuyển sang nhánh riêng `splunk-adapter`); pha Act dạng khuyến nghị, bản nháp truy vấn SPL, backlog và ghi chú cho các bên liên quan; kiểm chứng trên Boss of the SOC v1; và luồng Prepare-only: thu thập PoC công khai, lập và kiểm tra kế hoạch săn, xác minh kết quả do đội khác trả về. Luồng này không truy cập hệ thống nội bộ và không chạy PoC.
+- **Trong phạm vi:** pha Prepare qua PEAK Assistant (ABLE, kế hoạch săn); pha Execute trên telemetry là cơ sở dữ liệu SQLite (CDB) (adapter Splunk trực tiếp được gỡ khỏi nhánh chính, mã cũ còn ở commit `4dace56`); pha Act dạng khuyến nghị, bản nháp truy vấn SPL, backlog và ghi chú cho các bên liên quan; kiểm chứng trên Boss of the SOC v1; và luồng Prepare-only: thu thập PoC công khai, lập và kiểm tra kế hoạch săn, xác minh kết quả do đội khác trả về. Luồng này không truy cập hệ thống nội bộ và không chạy PoC.
 - **Ngoài phạm vi:** săn theo đường cơ sở (baseline) và săn có hỗ trợ mô hình học máy (M-ATH) của PEAK; huấn luyện mô hình; tự động hoá hành động phản ứng sự cố; đánh giá định lượng độ chính xác trên nhiều bộ dữ liệu.
 - **Giới hạn đã biết:** bộ dữ liệu có nhãn tấn công hạn chế; bản nháp SPL và các truy vấn trong kế hoạch Prepare-only chưa được chạy trên một máy chủ Splunk thật trong đồ án này; vòng xác minh mới chỉ thử bằng kết quả giả lập.
 
@@ -45,7 +45,7 @@ Các mục tiêu cụ thể:
 1. Một kiến trúc ghép PEAK Assistant (không tất định) với bộ thực thi tất định, trong đó ranh giới tin cậy được ghi rõ và được kiểm thử.
 2. Bộ luật khuyến nghị có giải thích, xử lý riêng bốn trường hợp dễ nhầm: chuỗi khớp một phần, kết quả khớp nhưng chưa chứng minh thành công, kết quả rỗng do thiếu dữ liệu, và kết quả rỗng do phạm vi tìm kiếm (host) không có dữ liệu.
 3. Cơ chế vận hành LLM thực tế: gọi lại có backoff, quay về chế độ không LLM khi lỗi, chấp nhận nhiều dạng đầu ra JSON, và chế độ hoàn toàn không cần LLM.
-4. Làm gọn kho từ khoảng 36.400 dòng xuống khoảng 9.400 dòng mã nguồn (gồm khoảng 2.300 dòng của luồng Prepare-only, sau khi chuyển adapter Splunk khoảng 2.300 dòng sang nhánh riêng) mà vẫn giữ khả năng khôi phục engine cũ.
+4. Làm gọn kho từ khoảng 36.400 dòng xuống khoảng 9.400 dòng mã nguồn (gồm khoảng 2.300 dòng của luồng Prepare-only, sau khi gỡ adapter Splunk khoảng 2.300 dòng) mà vẫn giữ khả năng khôi phục engine cũ.
 5. Bộ kết quả thực nghiệm và hướng dẫn thực hành có thể tái chạy.
 6. Luồng Prepare-only: biến PoC công khai thành `HuntPlan` có schema, trong đó mọi truy vấn do LLM viết bị duyệt tĩnh trước khi rời dự án, dấu vết được đối chiếu với văn bản PoC để không để LLM bịa, và điểm dừng, giới hạn, truy vấn độ phủ do mã sinh chứ không do LLM.
 7. Hai quy tắc kiểm tra mới cho phần LLM viết: truy vấn hậu khai thác trên dữ liệu tiến trình phải lọc theo tiến trình cha, và bộ phát hiện từ lẫn ngôn ngữ khác (không cần dữ liệu ngoài) cho chữ tiếng Việt.

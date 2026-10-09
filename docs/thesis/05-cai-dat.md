@@ -135,7 +135,7 @@ Adapter CDB mở một tệp SQLite và hiện thực `execute_query` với các
 - `source_presence(window, source_kind)`: đếm số bản ghi trong cửa sổ có `native_type` thuộc tập tương ứng với loại nguồn; trả `None` nếu loại nguồn không biết.
 - `describe_data()`: tạo tài liệu Markdown mô tả bảng, các cột, và với mỗi cặp `(native_type, event_id)` là số dòng, thời điểm đầu và cuối. Đây chính là "tài liệu dữ liệu cục bộ" mà PEAK nhận.
 
-Adapter Splunk trực tiếp (`SplunkLiveAdapter`, khoảng 2.100 dòng, cùng cổng AST `query_safety/`, mô hình `capabilities/`, hai tệp khai báo `configs/splunk_*.yaml` và hai tệp kiểm thử) đã được chuyển sang nhánh `splunk-adapter`. Lý do: bản nộp không có máy chủ Splunk để kiểm chứng, tám kiểm thử dành cho Splunk thật luôn bị bỏ qua, và khoảng 2.300 dòng chưa từng được chạy là gánh nặng bảo trì. Nhánh chính chỉ giữ adapter CDB; mã Splunk vẫn nguyên vẹn ở nhánh riêng và trong lịch sử git.
+Adapter Splunk trực tiếp (`SplunkLiveAdapter`, khoảng 2.100 dòng, cùng cổng AST `query_safety/`, mô hình `capabilities/`, hai tệp khai báo `configs/splunk_*.yaml` và hai tệp kiểm thử) đã được gỡ khỏi nhánh chính (mã còn nguyên ở commit `4dace56`). Lý do: bản nộp không có máy chủ Splunk để kiểm chứng, tám kiểm thử dành cho Splunk thật luôn bị bỏ qua, và khoảng 2.300 dòng chưa từng được chạy là gánh nặng bảo trì. Nhánh chính chỉ giữ adapter CDB; mã Splunk vẫn nguyên vẹn trong lịch sử git (commit `4dace56`).
 
 ## 5.7. Khuyến nghị và báo cáo
 
@@ -165,7 +165,7 @@ Mô-đun `report.py` dựng báo cáo Markdown bằng tiếng Việt với các 
 
 ## 5.9. Kiểm thử
 
-Bộ kiểm thử gồm 146 bài, tất cả chạy được và đều đạt (sau khi chuyển adapter Splunk sang nhánh riêng không còn bài nào bị bỏ qua); mã kiểm tra tĩnh `ruff` không báo lỗi. Các bài của pipeline PoC (`tests/unit/test_pipeline.py`, `tests/unit/test_scope_and_caps.py` và `tests/unit/test_llm_ops.py`) kiểm tra:
+Bộ kiểm thử gồm 146 bài, tất cả chạy được và đều đạt (sau khi gỡ adapter Splunk không còn bài nào bị bỏ qua); mã kiểm tra tĩnh `ruff` không báo lỗi. Các bài của pipeline PoC (`tests/unit/test_pipeline.py`, `tests/unit/test_scope_and_caps.py` và `tests/unit/test_llm_ops.py`) kiểm tra:
 
 - **Luật khuyến nghị:** 11 tổ hợp tham số (bằng chứng × judge) ứng với bảng luật; chuỗi một phần không escalate dù judge tin cậy cao; trần độ tin cậy khi chưa có bước kiểm tra kết quả và mở trần khi có.
 - **Rỗng không thành sạch:** thiếu nguồn cho `COLLECT_DATA_THEN_RERUN` với câu cảnh báo.

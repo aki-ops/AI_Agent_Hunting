@@ -207,7 +207,7 @@ Bảng: Lỗi thường gặp khi viết PoC
 
 ## 6.7. Dùng với Splunk thật
 
-Adapter Splunk trực tiếp không còn trong nhánh chính; nó nằm ở nhánh `splunk-adapter` (`git checkout splunk-adapter`) cùng các tham số `--provider splunk`, `--splunk-url`, `--splunk-user`, `--splunk-index` và biến `SPLUNK_PASSWORD`. Cần lưu ý trung thực: adapter đó chưa từng chạy trên Splunk thật trong đồ án, chưa có `source_presence` nên độ phủ nguồn được ghi là "không kiểm tra được" và kết quả rỗng có độ tin cậy `LOW`. Với luồng Prepare-only (mục 6.10) không cần adapter nào: đội thực thi tự chạy các truy vấn `queries.spl` trên Splunk của họ.
+Adapter Splunk trực tiếp không còn trong nhánh chính; nó chỉ còn trong lịch sử git (commit `4dace56`; xem bằng `git show 4dace56:src/hunting/adapters/splunk_adapter.py`) cùng các tham số `--provider splunk`, `--splunk-url`, `--splunk-user`, `--splunk-index` và biến `SPLUNK_PASSWORD`. Cần lưu ý trung thực: adapter đó chưa từng chạy trên Splunk thật trong đồ án, chưa có `source_presence` nên độ phủ nguồn được ghi là "không kiểm tra được" và kết quả rỗng có độ tin cậy `LOW`. Với luồng Prepare-only (mục 6.10) không cần adapter nào: đội thực thi tự chạy các truy vấn `queries.spl` trên Splunk của họ.
 
 ## 6.8. Xử lý sự cố
 

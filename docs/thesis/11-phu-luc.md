@@ -188,7 +188,7 @@ Bảng: Biến môi trường
 | `GITHUB_TOKEN` | (không) | Tuỳ chọn, cho `plan`: nâng hạn mức GitHub từ 60 yêu cầu mỗi giờ; chỉ gửi tới `api.github.com` |
 | `NVD_API_KEY` | (không) | Tuỳ chọn, cho `plan`: khoá NVD; chỉ gửi tới `services.nvd.nist.gov` |
 
-Biến môi trường của tiến trình, nếu có, được ưu tiên hơn giá trị trong `.env`; `--model` ưu tiên hơn cả hai. Các biến `SPLUNK_*` và cờ `--provider splunk` thuộc adapter Splunk ở nhánh `splunk-adapter`.
+Biến môi trường của tiến trình, nếu có, được ưu tiên hơn giá trị trong `.env`; `--model` ưu tiên hơn cả hai. Các biến `SPLUNK_*` và cờ `--provider splunk` thuộc adapter Splunk, chỉ còn trong lịch sử git (commit `4dace56`).
 
 ## Phụ lục D. Lược đồ `recommendation.json`
 
@@ -225,7 +225,7 @@ Bảng: Phân bố 146 bài kiểm thử theo tệp
 | `test_intel_plan.py` | 40 | Luồng Prepare-only: `Fetcher` (host cho phép, chuyển hướng, hạn mức, token), NVD/GitHub, trích dấu vết, `check_spl`, dựng kế hoạch và sửa lỗi, `bind`, `verify`, vòng pivot, dòng lệnh |
 | `test_plan_language_parent.py` | 8 | Bộ phát hiện từ ngoại ngữ, quy tắc tiến trình cha, một lượt viết lại cho lỗi chữ, giai đoạn mất hết truy vấn |
 
-Tám bài kiểm thử Splunk thật và các bài về adapter Splunk (16 bài trong `test_splunk_live_adapter.py` và 3 bài trong `test_v5_adapters.py`) đã chuyển sang nhánh `splunk-adapter`; hai bài CDB còn lại của tệp sau nằm ở `test_cdb_adapter.py`.
+Tám bài kiểm thử Splunk thật và các bài về adapter Splunk (16 bài trong `test_splunk_live_adapter.py` và 3 bài trong `test_v5_adapters.py`) đã gỡ khỏi nhánh chính (còn ở commit `4dace56`); hai bài CDB còn lại của tệp sau nằm ở `test_cdb_adapter.py`.
 
 Các bài của `test_pipeline.py` (tên rút gọn): `test_disposition_rules` (11 tổ hợp); `test_escalate_is_high_only_when_an_outcome_field_is_tested`; `test_empty_result_never_reads_as_clean_when_source_missing`; `test_advisor_parses_json_and_survives_garbage`; `test_advisor_retries_until_usable_and_accepts_drifted_shapes`; `test_llm_settings_from_env_file`; `test_llm_settings_rejects_placeholders`; `test_prepare_without_llm_uses_poc_plan_and_says_so`; `test_prepare_degrades_when_peak_agents_fail`; `test_prepare_retries_a_transient_peak_failure`; `test_retry_async_recovers_from_transient_errors_and_reraises_persistent_ones`; `test_cdb_source_presence_and_description`; `test_cli_offline_end_to_end`; `test_cli_requires_a_poc`; `test_cli_runs_without_any_llm_configuration`.
 
@@ -261,7 +261,7 @@ AI_Agent_Hunting/
 │   ├── intel/              # NVD, GitHub, trích dấu vết, tóm tắt cho LLM
 │   ├── plan/               # HuntPlan, kiểm tra SPL, ngôn ngữ, dựng kế hoạch, xác minh
 │   ├── poc/                # mô hình PoC, tác tử thực thi, judge
-│   ├── adapters/           # CDB (SQLite); Splunk ở nhánh splunk-adapter
+│   ├── adapters/           # CDB (SQLite); Splunk: commit 4dace56
 │   ├── act/                # SPL, backlog, stakeholder
 │   └── peak.py  contracts/  controller/
 ├── scripts/                # nạp BOTS v1 vào SQLite
@@ -277,7 +277,7 @@ Bảng: Thuật ngữ và từ viết tắt
 |---|---|
 | ABLE | Actor, Behavior, Location, Evidence: mô hình mô tả giả thuyết của PEAK |
 | Advisor | Lời gọi LLM sinh bước tiếp theo, câu hỏi và rủi ro; không đổi kết luận |
-| Adapter | Lớp truy cập telemetry (CDB/SQLite; adapter Splunk ở nhánh riêng) |
+| Adapter | Lớp truy cập telemetry (CDB/SQLite; adapter Splunk chỉ còn trong lịch sử git) |
 | ATT&CK | Cơ sở tri thức chiến thuật và kỹ thuật của MITRE |
 | BOTS | Boss of the SOC, bộ dữ liệu và cuộc thi của Splunk |
 | CIM | Common Information Model của Splunk: tên trường chuẩn dùng trong truy vấn của kế hoạch |

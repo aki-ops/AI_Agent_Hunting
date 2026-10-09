@@ -177,7 +177,7 @@ Cache bỏ bước tốn nhất (hai phần PEAK) và cho đúng cùng bảng AB
 
 ## 7.6. Kiểm thử đơn vị và tính hồi quy
 
-Bộ kiểm thử có 146 bài, tất cả đạt; `ruff` không báo lỗi. Tám bài kiểm thử Splunk thật đã đi cùng adapter sang nhánh `splunk-adapter`. Hai nhóm bài có ý nghĩa cho luận văn.
+Bộ kiểm thử có 146 bài, tất cả đạt; `ruff` không báo lỗi. Tám bài kiểm thử Splunk thật đã đi cùng adapter, chỉ còn ở commit `4dace56`. Hai nhóm bài có ý nghĩa cho luận văn.
 
 - **Bất biến kiến trúc được khoá bằng kiểm thử:** chuỗi một phần không escalate; judge dưới ngưỡng không đổi luật; kết quả rỗng khi thiếu nguồn cho `COLLECT_DATA_THEN_RERUN`; advisor lỗi không đổi `disposition`; khoá API không có trong cấu hình.
 - **Bài hồi quy cho lỗi thật:** `EQUALS` không khớp `splunk-powershell.exe`; `EXISTS` rỗng không khớp; `retry_async` thành công sau lỗi thoáng qua và ném lại lỗi dai dẳng; CLI chạy được khi không có `.env`; phạm vi host rỗng được ghi nhận và chạy lại không lọc host (cả nhánh không hit và nhánh có hit ở host khác); báo cáo ghi `hiển thị / tổng`; `MATCHES` với regex thật tìm được; `EXISTS` không bị che bởi giới hạn quét.
@@ -213,7 +213,7 @@ Phần tất định nhanh: tìm kiếm trên 4,4 triệu dòng mất vài giây
 1. **Splunk thật.** Chưa kiểm tra SPL do hệ thống sinh ra (bản nháp ở pipeline PoC và truy vấn trong kế hoạch Prepare-only) trên một máy chủ Splunk.
 2. **`--research`.** Tác tử nghiên cứu của PEAK (cần máy chủ MCP) chưa được thử.
 3. **Mô hình dự phòng trên lỗi thật.** Việc chuyển mô hình dự phòng chỉ được kiểm thử bằng lỗi mô phỏng, chưa gặp lỗi thật trong các lần chạy. **Retry trên 404 thật.** Cơ chế gọi lại chỉ được kiểm thử bằng lỗi mô phỏng; trong các lần chạy cuối không gặp lại lỗi 404 nên chưa quan sát nó cứu một lần chạy thật.
-4. **Adapter Splunk với các thay đổi truy xuất mới.** Adapter đã chuyển sang nhánh `splunk-adapter`; giới hạn quét 2.000 hàng và tham số `require_nonempty` chưa được chạy trên Splunk thật ở đó, và adapter chưa có độ phủ theo host hay theo loại sự kiện.
+4. **Adapter Splunk với các thay đổi truy xuất mới.** Adapter đã được gỡ khỏi nhánh chính (còn ở commit `4dace56`); giới hạn quét 2.000 hàng và tham số `require_nonempty` chưa được chạy trên Splunk thật ở đó, và adapter chưa có độ phủ theo host hay theo loại sự kiện.
 5. **Recall.** Chỉ đo được một pha tấn công thật (Joomla); ba pha còn lại thiếu dữ liệu nên chưa đo được khả năng phát hiện. Không có số liệu về độ chính xác tổng thể nào có thể tuyên bố.
 6. **Số lần lặp.** Mỗi cấu hình chỉ chạy đầy đủ một đến vài lần; chưa có thống kê về độ biến thiên của judge hoặc advisor ngoài các con số rời rạc đã nêu.
 7. **Chất lượng nội dung do PEAK viết.** Hệ thống kiểm tra PEAK có chạy và có trả cấu trúc, nhưng không có người chuyên gia nào chấm chất lượng ABLE hay kế hoạch.

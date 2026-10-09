@@ -116,7 +116,7 @@ ruff check .
 | `src/hunting/llm.py` | `.env` → cấu hình `model_config.json` của PEAK; caller đồng bộ dùng chung client PEAK |
 | `src/hunting/prepare.py` | cầu nối PEAK: `able_table`, `plan_hunt` (tuỳ chọn `researcher`); có fallback offline |
 | `src/hunting/poc/` | mô hình PoC, loader JSON, agent thực thi, judge |
-| `src/hunting/adapters/` | adapter CDB (SQLite); `source_presence`, `describe_data`. Adapter Splunk live nằm ở nhánh `splunk-adapter` |
+| `src/hunting/adapters/` | adapter CDB (SQLite); `source_presence`, `describe_data`. Adapter Splunk live chỉ còn trong lịch sử git (commit `4dace56`) |
 | `src/hunting/recommend.py` | luật khuyến nghị + advisor |
 | `src/hunting/pipeline.py`, `cli.py`, `report.py` | điều phối, CLI, báo cáo |
 | `pocs/` | PoC mẫu (BOTS v1) |
