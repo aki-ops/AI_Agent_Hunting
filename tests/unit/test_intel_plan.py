@@ -33,7 +33,8 @@ class FakeSession:
     def __init__(self, routes):
         self.routes, self.calls = routes, []
 
-    def get(self, url, params=None, headers=None, timeout=None, stream=None):
+    def get(self, url, params=None, headers=None, timeout=None, stream=None, allow_redirects=True):
+        assert allow_redirects is False, "the Fetcher must never let requests follow redirects on its own"
         self.calls.append((url, params, headers))
         for prefix, response in self.routes.items():
             if url.startswith(prefix):
@@ -123,6 +124,42 @@ def test_fetcher_reports_rate_limit_and_sends_a_token_only_to_github(tmp_path: P
     gh, nvd = session.calls[0][2], session.calls[1][2]
     assert gh["Authorization"] == "Bearer ghp_SECRET" and "apiKey" not in gh
     assert nvd["apiKey"] == "nvdkey" and "Authorization" not in nvd
+
+
+def test_redirects_are_followed_only_inside_the_allow_list_and_secrets_stay_with_their_host(tmp_path: Path):
+    ok = FakeSession({
+        "https://api.github.com/old": FakeResponse(301, b"", {"Location": "/repositories/42"}),
+        "https://api.github.com/repositories/42": _json({"id": 42}),
+    })
+    f = Fetcher(tmp_path / "c", session=ok, github_token="ghp_SECRET", nvd_key="")
+    assert f.json("https://api.github.com/old") == {"id": 42}
+    assert [c[0] for c in ok.calls] == ["https://api.github.com/old", "https://api.github.com/repositories/42"]
+
+    # to a host outside the allow-list: refused, and the second request is never sent
+    evil = FakeSession({"https://api.github.com/x": FakeResponse(302, b"", {"Location": "https://evil.example/steal"}),
+                        "https://evil.example/": _json({"leak": 1})})
+    with pytest.raises(IntelError, match="allow-list"):
+        Fetcher(tmp_path / "c2", session=evil, github_token="ghp_SECRET").json("https://api.github.com/x")
+    assert [c[0] for c in evil.calls] == ["https://api.github.com/x"]
+
+    # downgrade to plain http, even on an allowed host, is refused as well
+    plain = FakeSession({"https://api.github.com/y": FakeResponse(307, b"", {"Location": "http://api.github.com/y"})})
+    with pytest.raises(IntelError, match="allow-list"):
+        Fetcher(tmp_path / "c3", session=plain, github_token="").json("https://api.github.com/y")
+
+    # an allowed host redirecting to another allowed host does not carry the first host's token along
+    cross = FakeSession({
+        "https://api.github.com/z": FakeResponse(302, b"", {"Location": "https://services.nvd.nist.gov/ok"}),
+        "https://services.nvd.nist.gov/ok": _json({}),
+    })
+    Fetcher(tmp_path / "c4", session=cross, github_token="ghp_SECRET", nvd_key="").json("https://api.github.com/z")
+    assert "Authorization" in cross.calls[0][2] and "Authorization" not in cross.calls[1][2]
+
+    # loops stop
+    loop = FakeSession({"https://api.github.com/": FakeResponse(302, b"", {"Location": "https://api.github.com/again"})})
+    with pytest.raises(IntelError, match="too many"):
+        Fetcher(tmp_path / "c5", session=loop, github_token="").json("https://api.github.com/start")
+    assert len(loop.calls) == 4  # first request + 3 followed hops
 
 
 def test_nvd_and_github_parsing(tmp_path: Path):

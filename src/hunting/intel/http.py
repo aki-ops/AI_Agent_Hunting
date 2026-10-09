@@ -2,7 +2,7 @@
 
 Design rules (the inputs are untrusted internet content):
 
-* only GET, only to a fixed allow-list of public hosts;
+* only GET, only to a fixed allow-list of public hosts, redirects included (each hop is re-checked, at most 3);
 * hard caps on size and time, text only (binary content is refused);
 * everything is cached on disk, so reruns do not burn the unauthenticated GitHub quota (60 requests/hour);
 * a token (``GITHUB_TOKEN`` / ``NVD_API_KEY``) is optional, sent only to its own host, and never logged.
@@ -16,11 +16,13 @@ import re
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 
 ALLOWED_HOSTS = {"api.github.com", "raw.githubusercontent.com", "services.nvd.nist.gov"}
+MAX_REDIRECTS = 3
+_REDIRECT_CODES = {301, 302, 303, 307, 308}
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -91,20 +93,39 @@ class Fetcher:
         headers.update(extra or {})
         return headers
 
-    def _get(self, url: str, params: dict[str, Any] | None, extra: dict[str, str] | None) -> requests.Response:
+    @staticmethod
+    def _check(url: str) -> str:
         host = urlparse(url).hostname or ""
         if host not in ALLOWED_HOSTS or not url.startswith("https://"):
             raise IntelError(f"refusing to fetch {url!r}: host not in the allow-list {sorted(ALLOWED_HOSTS)}")
+        return host
+
+    def _get(self, url: str, params: dict[str, Any] | None, extra: dict[str, str] | None) -> requests.Response:
+        host = self._check(url)
         last: Exception | None = None
-        for attempt in range(3):
+        hops = 0
+        attempt = 0
+        while attempt < 3:
             try:
                 self.requests_made += 1
                 resp = self.session.get(
-                    url, params=params, headers=self._headers(host, extra), timeout=self.timeout, stream=True
+                    url, params=params, headers=self._headers(host, extra), timeout=self.timeout, stream=True,
+                    allow_redirects=False,  # never let requests follow a redirect to a host we did not vet
                 )
             except requests.RequestException as exc:
                 last = exc
-                time.sleep(1.5 * (attempt + 1))
+                attempt += 1
+                time.sleep(1.5 * attempt)
+                continue
+            if resp.status_code in _REDIRECT_CODES:
+                target = resp.headers.get("location") or resp.headers.get("Location") or ""
+                resp.close()
+                hops += 1
+                if not target or hops > MAX_REDIRECTS:
+                    raise IntelError(f"{host} redirected without a usable target or too many times: refused")
+                url = urljoin(url, target)
+                host = self._check(url)  # a redirect to a host outside the allow-list is refused
+                params = None  # the Location already carries its query string
                 continue
             if resp.status_code in (403, 429) and resp.headers.get("x-ratelimit-remaining") == "0":
                 reset = resp.headers.get("x-ratelimit-reset", "?")
@@ -113,7 +134,8 @@ class Fetcher:
                 )
             if resp.status_code >= 500:
                 last = IntelError(f"{host} answered {resp.status_code}")
-                time.sleep(1.5 * (attempt + 1))
+                attempt += 1
+                time.sleep(1.5 * attempt)
                 continue
             return resp
         raise IntelError(f"could not reach {host}: {last}")
