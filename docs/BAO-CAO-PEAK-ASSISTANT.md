@@ -24,11 +24,11 @@ Kết quả gốc nằm ở [`results/botsv1-peak-run/`](../results/botsv1-peak-
 |---|---|---|
 | Mã nguồn `src/` | 36.376 dòng | 9.200 dòng (gồm ~1.640 dòng mới) |
 | File test (`.py`) | 80 | 6 file `test_*.py` (test của engine đã xoá; test PoC, Act, adapter được giữ, thêm `test_pipeline.py`) |
-| Tài liệu gốc | 6 file kiến trúc v6 ở thư mục gốc | chuyển vào `docs/archive/v6-engine/`; paper vào `docs/archive/paper/` |
+| Tài liệu gốc | 6 file kiến trúc v6 ở thư mục gốc | ban đầu chuyển vào `docs/archive/` (về sau gỡ hẳn khỏi cây làm việc; còn trong lịch sử git) |
 | `artifacts/`, `report.md`, `baseline_*`, `templates/`, kết quả cũ | tracked trong git | gỡ khỏi git; `artifacts/` và `data/` nằm trong `.gitignore` |
 | Python | ≥3.10 | ≥3.12 (PEAK Assistant yêu cầu) |
 
-Không mất gì: engine cũ khôi phục bằng `git checkout v6-engine-final`; tài liệu cũ vẫn còn trong `docs/archive/`.
+Không mất gì: engine cũ khôi phục bằng `git checkout v6-engine-final`; tài liệu cũ vẫn còn trong lịch sử git (`git show 9d49fe1:docs/<tên file>`).
 
 ### 2.2 Tích hợp PEAK Assistant
 

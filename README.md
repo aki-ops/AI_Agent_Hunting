@@ -121,4 +121,5 @@ ruff check .
 | `src/hunting/pipeline.py`, `cli.py`, `report.py` | điều phối, CLI, báo cáo |
 | `pocs/` | PoC mẫu (BOTS v1) |
 | `docs/ARCHITECTURE.md`, `docs/BAO-CAO-PEAK-ASSISTANT.md` | kiến trúc, luật khuyến nghị, giới hạn; báo cáo thay đổi và kết quả |
-| `docs/archive/` | engine v6 (ClaimGraph) và paper cũ; khôi phục code bằng tag `v6-engine-final` |
+| `src/hunting/intel/`, `src/hunting/plan/`, `plan_cli.py` | hướng Prepare-only: tình báo công khai → `HuntPlan` → `verify` (xem mục đầu và `docs/PREPARE-WORKFLOW.md`) |
+| (lịch sử git) | engine v6 (ClaimGraph) và tài liệu cũ nằm trong lịch sử git: `git checkout v6-engine-final` (commit `9d49fe1`, có trong lịch sử nhánh `huy`) |

@@ -2,7 +2,12 @@
 
 Read `docs/ARCHITECTURE.md` for the pipeline, the recommendation rules and known limits.
 
-## Flow
+## Two workflows
+
+1. **Prepare-only (current direction)**: `main.py plan --cve ...` -> `src/hunting/intel/` (NVD, GitHub) -> `src/hunting/plan/` (`build.py` LLM + `safety.py` checks -> `HuntPlan`) -> another team executes -> `main.py verify` (`plan/verify.py`) decides accept / pivot round. See `docs/PREPARE-WORKFLOW.md`.
+2. **Lab harness** on public BOTS v1 data (below).
+
+## Flow (lab harness)
 
 `PoC JSON → PEAK Assistant (ABLE + hunt plan) → deterministic Execute → rules + judge + advisor → recommendation`
 
@@ -20,4 +25,4 @@ Read `docs/ARCHITECTURE.md` for the pipeline, the recommendation rules and known
 2. Matching is literal and reproducible: same PoC + same data = same rows.
 3. Missing telemetry or an unproven outcome lowers confidence; it never turns into "benign".
 4. The hunter decides; every recommendation is `decision_required`.
-5. PEAK agent calls are not metered (they build their own clients); judge/advisor calls are.
+5. Every LLM call, including PEAK's agents, is metered by `llm.UsageMeter` (SDK hook); `--token-budget` caps it.

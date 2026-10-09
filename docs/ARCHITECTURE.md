@@ -68,7 +68,7 @@ người săn và rủi ro nếu quyết định sai.
 
 ## 5. Khôi phục engine cũ
 
-`git checkout v6-engine-final`, hoặc đọc tài liệu trong `docs/archive/v6-engine/`.
+`git checkout v6-engine-final` (commit `9d49fe1`, có trong lịch sử nhánh `huy`); tài liệu cũ đọc bằng `git show 9d49fe1:docs/<tên file>`.
 
 ## 6. Vận hành LLM (độ tin cậy, chi phí, dữ liệu)
 
