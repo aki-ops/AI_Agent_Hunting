@@ -261,3 +261,14 @@ Vòng `verify` được thử với `ResultBundle` do tác giả dựng tay (nê
 - Chất lượng truy vấn (có bắt đúng tấn công không) chưa được chuyên gia chấm; bộ kiểm tra chỉ đảm bảo an toàn và hình thức.
 - Hai quy tắc mới (tiến trình cha, ngôn ngữ) mới được thử bằng bài kiểm thử đơn vị và vài lần chạy không PEAK; chưa chạy lại cấu hình có PEAK sau khi thêm chúng.
 - Chọn PoC theo số sao là tín hiệu yếu; kho có thể lỗi thời, đã lưu trữ hoặc sai (kế hoạch ghi cảnh báo `archived`, `below_threshold`).
+
+### 7.10.5. Phiên bản 0.4: độc lập mô hình, quy trình và gắn truy vấn
+
+Các phép thử sau chạy bằng 189 kiểm thử tự động và các lần chạy thật trên CVE-2021-44228.
+
+- **Độc lập mô hình (đã đo ở mức không có LLM).** Với Log4Shell, ba cấu hình cho cùng `core_digest` `ab80eec6…` và cùng `plan_digest`: `--offline`, LLM lỗi xác thực (khoá hết hạn, HTTP 401), và ba mô hình miễn phí bị từ chối (HTTP 404 hết công suất). Trong kiểm thử tự động, năm cấu hình giả lập (mô hình mạnh, yếu, nói lan man, sập, không mô hình) cho phần lõi giống hệt và cùng quyết định `verify` trên cùng kết quả thực thi.
+- **Gắn truy vấn.** `bind` bị thử với `index=*`, `_internal`, thiếu ánh xạ cho một nguồn, cửa sổ 200 ngày và cửa sổ trong tương lai; cả năm trường hợp đều bị từ chối và không ghi file. Một lần gắn hợp lệ cho 12 truy vấn với mốc thời gian dạng epoch tuyệt đối.
+- **Xác minh bằng kết quả giả lập.** Năm kịch bản (chưa ký, sai digest, đã ký và sạch, đã ký có sự kiện giai đoạn `impact`, đã ký có sự kiện giai đoạn `indicator`) cho lần lượt `REJECT_RESULTS`, `REJECT_RESULTS`, `ACCEPT_NO_EVIDENCE`, `ESCALATE_AFFECTED`, `REFINE`. Kịch bản cuối tạo vòng hai với `plan_digest` mới.
+- **Lỗi thật được phát hiện.** Khi NVD mất DNS giữa chừng, CVE do người dùng yêu cầu bị thay bằng một CVE được README nhắc tới; đã sửa để CVE yêu cầu luôn là CVE chính. Phần lõi ban đầu nhận cả biểu thức chính quy (`Java/.*`) và biến trong mã PoC (`{self.secret}`) làm dấu vết; đã lọc.
+
+**Chưa kiểm chứng:** chưa có lần gọi LLM thành công nào với phiên bản 0.4 vì các mô hình miễn phí của nhà cung cấp mới bị giới hạn theo tài khoản. Vì vậy chưa đo được việc mô hình mạnh hơn cho nhiều gợi ý hữu ích hơn bao nhiêu, và chưa đo chất lượng gợi ý. Chưa có Splunk thật.

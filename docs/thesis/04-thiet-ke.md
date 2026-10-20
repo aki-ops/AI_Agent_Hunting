@@ -225,3 +225,11 @@ Bảng: Ai tin ai trong luồng Prepare-only
 | Điểm dừng, giới hạn, truy vấn độ phủ | Mã của dự án | Sinh từ mẫu, không do LLM quyết định |
 | Kết quả thực thi | Đội Execute | Kiểm tra giao thức; giá trị trong mẫu có thể do kẻ tấn công kiểm soát nên chỉ nhúng qua `spl_literal` |
 | Yêu cầu HTTP ra ngoài | Dự án | Chỉ GET, https, ba host cho phép; chuyển hướng cũng bị kiểm tra lại từng bước (tối đa ba lần); khoá API chỉ đi cùng yêu cầu tới host của nó |
+
+### 4.9.6. Ba bảo đảm của phiên bản 0.4
+
+**Lõi tất định và gợi ý của LLM.** Mỗi giai đoạn và truy vấn của kế hoạch mang trường `origin`. Phần `core` do mô-đun `plan/core.py` dựng từ các dấu vết đã trích trong văn bản PoC/CVE: giai đoạn S1 (ngữ cảnh: User-Agent, đường dẫn), S2 (nỗ lực khai thác: chuỗi payload, tham số, header), S3 (hậu khai thác: tên miền out-of-band, tệp do PoC tạo, tiến trình con của dịch vụ bị tấn công khi suy ra được họ tiến trình cha từ tên sản phẩm trong CVE). Điểm dừng, giới hạn và truy vấn độ phủ cũng sinh từ mẫu. LLM chỉ được đề xuất tối đa hai giai đoạn bổ sung, mỗi giai đoạn tối đa hai truy vấn, mang `origin="llm"`, đi qua cùng bộ kiểm tra, và không bao giờ có điểm dừng `escalate`. Hai bản băm tách bạch hai phần: `core_digest` chỉ phủ phần lõi (không đổi theo mô hình), `plan_digest` phủ toàn bộ nội dung người duyệt.
+
+**Quy trình từng bước cho con người.** Từ kế hoạch, `plan/runbook.py` sinh `RUNBOOK.md` không dùng LLM: R0 duyệt kế hoạch, R1 gắn chỉ mục và thời gian, kiểm tra độ phủ, một bước cho mỗi truy vấn (kèm mục "ghi lại" và "dừng nếu"), một cổng quyết định của người sau mỗi giai đoạn, nộp kết quả, quyết định cuối. Kết quả trả về phải nhắc `plan_digest`, `approved_by`, `approved_at`; thiếu hoặc sai thì `verify` trả `REJECT_RESULTS`. Gợi ý của LLM chỉ được tính khi liệt kê trong `accepted_llm_stages`, và kể cả khi đó kết quả chỉ để tham khảo.
+
+**Kiểm tra SPL hai lần.** `check_spl` chạy lúc lập kế hoạch; lệnh `bind` chạy `lint_bound` trên truy vấn sau khi gắn giá trị thật. `bind` chèn mốc thời gian tuyệt đối, từ chối `index=*`, chỉ mục nội bộ, cửa sổ rộng quá 90 ngày hoặc kết thúc trong tương lai, thiếu `head N`, lệnh giữ cả tập kết quả trong bộ nhớ (`eventstats`, `streamstats`, `mvexpand`, `makemv`), nhóm hoặc khử trùng theo `_raw`, `limit=0` và `sort 0`. Việc từ chối là toàn lô: có lỗi nào thì không ghi file nào.
