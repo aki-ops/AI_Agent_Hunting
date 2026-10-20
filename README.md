@@ -56,6 +56,43 @@ Chi tiết, hợp đồng dữ liệu, mô hình an toàn và giới hạn: [`do
 **Ba bảo đảm của hướng Prepare-only (v0.4):** (1) phần lõi của kế hoạch do mã dựng, không đổi theo model (`core_digest`); LLM chỉ thêm gợi ý có nhãn, người chấp nhận từng cái; (2) mỗi kế hoạch có `RUNBOOK.md` từng bước với cổng quyết định của người, kết quả phải mang `plan_digest` + người duyệt; (3) `main.py bind` từ chối `index=*`, thiếu mốc thời gian, cửa sổ > 90 ngày, lệnh ngốn bộ nhớ. Chi tiết: mục 5b của `docs/PREPARE-WORKFLOW.md`.
 Prepare→Execute→Act bên dưới vẫn còn, dùng làm bộ thử cục bộ trên dữ liệu BOTS v1 công khai.
 
+## Kết quả chạy thử v0.4 và đối chiếu 3 tiêu chí
+
+Chạy thật với Log4Shell (CVE-2021-44228), `deepseek-flash`, không PEAK (`--no-peak`): 2 lời gọi LLM, 16.839 token. Kết quả đọc ngay tại
+[`results/prepare-log4shell-v04/`](results/prepare-log4shell-v04/): [`plan.md`](results/prepare-log4shell-v04/plan.md) (kế hoạch cho người đọc),
+[`RUNBOOK.md`](results/prepare-log4shell-v04/RUNBOOK.md) (quy trình từng bước), [`plan.json`](results/prepare-log4shell-v04/plan.json) (bản máy đọc).
+
+**Kế hoạch gồm những gì**
+
+| Phần | Nội dung | Ai tạo |
+|---|---|---|
+| S1 ngữ cảnh | 2 truy vấn: User-Agent của công cụ quét, đường dẫn trong PoC | mã (`core`) |
+| S2 nỗ lực khai thác | 1 truy vấn: chuỗi payload `${jndi:...}` và biến thể che giấu | mã (`core`) |
+| S3 hậu khai thác | 5 truy vấn: DNS và proxy tới tên miền out-of-band, tệp do PoC tạo (web và endpoint), tiến trình con bất thường của dịch vụ Java (có lọc tiến trình cha) | mã (`core`) |
+| L1, L2 gợi ý | 4 truy vấn: JNDI trong log ứng dụng, `JndiLookup`, kết nối cổng 1389/1099, tải tệp `.class` qua proxy | LLM, có nhãn, người chấp nhận từng cái |
+| Độ phủ | 6 truy vấn `tstats` kiểm tra nguồn có dữ liệu không (rỗng không có nghĩa là sạch) | mã |
+| Quy trình | 27 bước `R0..R26` (8 bước tuỳ chọn cho gợi ý LLM), 14 bước có câu hỏi chỉ người trả lời được (5 cổng cuối giai đoạn) | mã |
+
+**Kiến trúc để đạt các mục tiêu**
+
+```
+PoC/CVE công khai ─► gather ─┬─► CORE (mã, tất định) ──────┐
+                             └─► LLM (tuỳ chọn) ─► gợi ý ───┴─► kế hoạch + RUNBOOK + core_digest/plan_digest
+   NGƯỜI duyệt (R0) ─► bind (chỉ mục thật + mốc thời gian tuyệt đối, lint lần 2) ─► queries.bound.spl
+   Đội Execute chạy tuần tự, mỗi giai đoạn có cổng người ─► results.json (kèm plan_digest + người duyệt)
+   verify (không LLM): ACCEPT / ESCALATE / REFINE / COLLECT_DATA ... ─► NGƯỜI quyết định cuối
+```
+
+**Đã đáp ứng 3 tiêu chí chưa?** Trả lời thẳng: đáp ứng ở mức thiết kế và kiểm tra tự động, chưa đáp ứng ở mức thực chiến.
+
+| Tiêu chí | Đáp ứng | Bằng chứng | Chưa có / giới hạn |
+|---|---|---|---|
+| 1. Không phụ thuộc model | **Một phần.** Phần quyết định thì có; chất lượng gợi ý thì không | Cùng `core_digest` `ab80eec6…` ở 5 cấu hình thật: không LLM, khoá hết hạn (401), model bị từ chối (404), và hai lần chạy LLM thật `deepseek-flash`, `deepseek-v4-pro`; hai lần sau chỉ `plan_digest` khác vì gợi ý khác (4 so với 2 truy vấn). Test tự động: 5 model giả lập cho cùng lõi và cùng quyết định `verify` | "Hiệu quả tương đương" **chưa đúng** với gợi ý: model mạnh/yếu cho gợi ý khác nhau, chất lượng chưa đo. Mới thử 1 CVE, 2 model cùng hãng. Lõi hẹp: chỉ tìm chuỗi có trong PoC |
+| 2. Người quyết định từng bước | **Có ở mức cơ chế** | Runbook 27 bước, mỗi truy vấn một bước kèm "ghi lại" và "dừng nếu"; kết quả thiếu người duyệt hoặc sai `plan_digest` bị `REJECT_RESULTS` (thử 2 kịch bản); `verify` chỉ gợi ý, luôn `human_required` | Chưa có đội Execute và người thật chạy theo runbook. Cổng duyệt chỉ kiểm được tên người và digest, không kiểm được họ có đọc |
+| 3. SPL an toàn, đúng ngày giờ | **Có ở mức kiểm tra tĩnh** | `bind` từ chối `index=*`, `_internal`, thiếu ánh xạ, cửa sổ 200 ngày, cửa sổ tương lai (5/5 bị chặn, không ghi file); mốc thời gian luôn là epoch tuyệt đối, tối đa 90 ngày; bắt buộc `head N`; cấm `eventstats`/`streamstats`/`mvexpand`, group theo `_raw`, `limit=0`. 18 truy vấn của kế hoạch này qua `lint_bound` | **Chưa chạy trên Splunk thật**: tên trường CIM, `tstats`, tải thực tế chưa kiểm. Không thay được hạn mức tìm kiếm theo vai trò phía Splunk |
+
+Kiểm thử: 189 test pass. Kế hoạch bằng `--offline` (không LLM) chạy được toàn bộ; xem [`docs/PREPARE-WORKFLOW.md`](docs/PREPARE-WORKFLOW.md) mục 5b.
+
 ## Cài đặt (Python ≥ 3.12)
 
 ```bash

@@ -1,0 +1,1470 @@
+{
+  "schema_version": "1",
+  "plan_id": "hp-cve-2021-44228-361ea8a4",
+  "iteration": 1,
+  "parent_plan_id": null,
+  "title": "Kế hoạch săn CVE-2021-44228",
+  "hypothesis": "Giả sử PoC công khai của CVE-2021-44228 được dùng để tấn công hệ thống của chúng ta; kiểm tra xem hệ thống có dấu hiệu bị khai thác không.",
+  "applicability": {
+    "products": [
+      "apache:log4j",
+      "siemens:6bk1602-0aa12-0tp0_firmware",
+      "siemens:6bk1602-0aa22-0tp0_firmware",
+      "siemens:6bk1602-0aa32-0tp0_firmware",
+      "siemens:6bk1602-0aa42-0tp0_firmware",
+      "siemens:6bk1602-0aa52-0tp0_firmware"
+    ],
+    "affected_versions": [
+      "siemens:6bk1602-0aa12-0tp0_firmware <2.7.0",
+      "siemens:6bk1602-0aa22-0tp0_firmware <2.7.0",
+      "siemens:6bk1602-0aa32-0tp0_firmware <2.7.0",
+      "siemens:6bk1602-0aa42-0tp0_firmware <2.7.0",
+      "siemens:6bk1602-0aa52-0tp0_firmware <2.7.0",
+      "apache:log4j >=2.0.1 <2.3.1",
+      "apache:log4j >=2.4.0 <2.12.2",
+      "apache:log4j >=2.13.0 <2.15.0"
+    ],
+    "preconditions": [
+      "Hệ thống chạy sản phẩm và phiên bản bị ảnh hưởng nêu trên, và dịch vụ có thể được kẻ tấn công truy cập tới."
+    ],
+    "not_applicable_if": [
+      "Sản phẩm không có trong hệ thống, đã vá lên phiên bản không bị ảnh hưởng, hoặc dịch vụ không thể truy cập từ nguồn tấn công."
+    ]
+  },
+  "stages": [
+    {
+      "stage_id": "S1",
+      "name": "Thăm dò và quét trước khi khai thác",
+      "phase": "reconnaissance",
+      "technique_ids": [
+        "T1595"
+      ],
+      "significance": "context",
+      "description": "Kẻ tấn công hoặc công cụ quét tự động thử User-Agent và đường dẫn đặc trưng của PoC để biết dịch vụ có dính lỗ hổng không. Đây là nhiễu mong đợi trên dịch vụ lộ ra ngoài: một kết quả khớp chưa cho thấy hệ thống bị xâm nhập.",
+      "observables": [
+        {
+          "kind": "user_agent",
+          "value": "log4j-scan (https://github.com/mazen160/log4j-scan)",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "http_path",
+          "value": "/ExecTemplateJDK",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "http_path",
+          "value": "/Exploit",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "http_path",
+          "value": "/poll",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "http_path",
+          "value": "/register",
+          "basis": "from_poc",
+          "note": ""
+        }
+      ],
+      "data_sources": [
+        "web"
+      ],
+      "queries": [
+        {
+          "query_id": "S1-Q1",
+          "purpose": "Yêu cầu web mang User-Agent của công cụ trong PoC",
+          "data_source": "web",
+          "language": "spl",
+          "spl": "search index={{INDEX_WEB}} earliest={{EARLIEST}} latest={{LATEST}} http_user_agent=\"*log4j-scan (https://github.com/mazen160/log4j-scan)*\" | stats count by src, dest, http_user_agent | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "src",
+            "dest",
+            "http_user_agent",
+            "count"
+          ],
+          "benign_notes": "Máy quét lỗ hổng hợp lệ của chính tổ chức hoặc của nhà cung cấp dịch vụ dùng cùng công cụ.",
+          "role": "detect",
+          "grounded": true,
+          "origin": "core"
+        },
+        {
+          "query_id": "S1-Q2",
+          "purpose": "Yêu cầu tới đường dẫn xuất hiện trong PoC",
+          "data_source": "web",
+          "language": "spl",
+          "spl": "search index={{INDEX_WEB}} earliest={{EARLIEST}} latest={{LATEST}} (uri_path=\"*/ExecTemplateJDK*\" OR uri_path=\"*/Exploit*\" OR uri_path=\"*/poll*\" OR uri_path=\"*/register*\") | stats count by src, dest, uri_path | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "src",
+            "dest",
+            "uri_path",
+            "count"
+          ],
+          "benign_notes": "Đường dẫn lấy từ ứng dụng minh hoạ trong PoC: có thể không tồn tại ở hệ thống thật, hoặc trùng đường dẫn hợp lệ của ứng dụng khác.",
+          "role": "detect",
+          "grounded": true,
+          "origin": "core"
+        }
+      ],
+      "depends_on": [],
+      "stop_conditions": [
+        {
+          "when": "no_data",
+          "threshold": null,
+          "action": "collect_data",
+          "note": "Nguồn dữ liệu không có sự kiện nào trong cửa sổ: dừng giai đoạn này; kết quả rỗng KHÔNG có nghĩa là sạch."
+        },
+        {
+          "when": "truncated",
+          "threshold": null,
+          "action": "narrow",
+          "note": "Chạm trần 200 dòng: thu hẹp (cửa sổ, host, giá trị) rồi chạy lại, không nới rộng."
+        },
+        {
+          "when": "error",
+          "threshold": null,
+          "action": "stop_stage",
+          "note": "Lỗi hoặc quá thời gian: báo cho người vận hành, không tự thử lại vô hạn."
+        },
+        {
+          "when": "budget_exceeded",
+          "threshold": null,
+          "action": "stop_plan",
+          "note": "Hết ngân sách truy vấn hoặc thời gian: dừng toàn kế hoạch và báo phần đã làm."
+        },
+        {
+          "when": "hits_ge",
+          "threshold": 1,
+          "action": "continue",
+          "note": "Nhiễu mong đợi trên dịch vụ lộ ra ngoài: chỉ ghi nhận, không coi là xâm nhập."
+        },
+        {
+          "when": "zero_hits",
+          "threshold": null,
+          "action": "continue",
+          "note": ""
+        }
+      ],
+      "origin": "core"
+    },
+    {
+      "stage_id": "S2",
+      "name": "Gửi payload khai thác",
+      "phase": "initial_access",
+      "technique_ids": [
+        "T1190"
+      ],
+      "significance": "indicator",
+      "description": "Yêu cầu chứa chuỗi payload, tham số hoặc header đặc trưng của PoC. Chứng minh có nỗ lực khai thác, chưa chứng minh thành công.",
+      "observables": [
+        {
+          "kind": "uri_pattern",
+          "value": "${sd:k5:-:}",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "uri_pattern",
+          "value": "${lower:d}",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "uri_pattern",
+          "value": "${lower:/}",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "uri_pattern",
+          "value": "${j${k8s:k5:-ND}",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "uri_pattern",
+          "value": "${lower:.}",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "uri_pattern",
+          "value": "${lower::}",
+          "basis": "from_poc",
+          "note": ""
+        }
+      ],
+      "data_sources": [
+        "web"
+      ],
+      "queries": [
+        {
+          "query_id": "S2-Q1",
+          "purpose": "Yêu cầu chứa chuỗi payload / tham số / header đặc trưng của PoC",
+          "data_source": "web",
+          "language": "spl",
+          "spl": "search index={{INDEX_WEB}} earliest={{EARLIEST}} latest={{LATEST}} (_raw=\"*${sd:k5:-:}*\" OR _raw=\"*${lower:d}*\" OR _raw=\"*${lower:/}*\" OR _raw=\"*${j${k8s:k5:-ND}*\" OR _raw=\"*${lower:.}*\" OR _raw=\"*${lower::}*\") | stats count by src, dest, uri_path | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "src",
+            "dest",
+            "uri_path",
+            "count"
+          ],
+          "benign_notes": "Nhật ký truy cập web thường không ghi thân POST và hầu hết header: kết quả rỗng ở đây KHÔNG loại trừ khai thác qua các kênh đó. Công cụ quét an ninh hợp lệ của tổ chức cũng có thể gửi cùng chuỗi.",
+          "role": "detect",
+          "grounded": true,
+          "origin": "core"
+        }
+      ],
+      "depends_on": [
+        "S1"
+      ],
+      "stop_conditions": [
+        {
+          "when": "no_data",
+          "threshold": null,
+          "action": "collect_data",
+          "note": "Nguồn dữ liệu không có sự kiện nào trong cửa sổ: dừng giai đoạn này; kết quả rỗng KHÔNG có nghĩa là sạch."
+        },
+        {
+          "when": "truncated",
+          "threshold": null,
+          "action": "narrow",
+          "note": "Chạm trần 200 dòng: thu hẹp (cửa sổ, host, giá trị) rồi chạy lại, không nới rộng."
+        },
+        {
+          "when": "error",
+          "threshold": null,
+          "action": "stop_stage",
+          "note": "Lỗi hoặc quá thời gian: báo cho người vận hành, không tự thử lại vô hạn."
+        },
+        {
+          "when": "budget_exceeded",
+          "threshold": null,
+          "action": "stop_plan",
+          "note": "Hết ngân sách truy vấn hoặc thời gian: dừng toàn kế hoạch và báo phần đã làm."
+        },
+        {
+          "when": "hits_ge",
+          "threshold": 1,
+          "action": "continue",
+          "note": "Có nỗ lực khớp PoC (chưa chứng minh thành công): ghi nhận, sang giai đoạn sau và pivot theo giá trị quan sát được."
+        },
+        {
+          "when": "zero_hits",
+          "threshold": null,
+          "action": "continue",
+          "note": "Không thấy nỗ lực khớp PoC trong cửa sổ."
+        }
+      ],
+      "origin": "core"
+    },
+    {
+      "stage_id": "S3",
+      "name": "Dấu hiệu thành công và hậu khai thác",
+      "phase": "execution",
+      "technique_ids": [
+        "T1059",
+        "T1071",
+        "T1505.003"
+      ],
+      "significance": "impact",
+      "description": "Dịch vụ bị khai thác kết nối ra ngoài (DNS/HTTP tới tên miền out-of-band), tạo tiến trình con bất thường hoặc có tệp thực thi mới (webshell). Mọi kết quả khớp cần người săn xem ngay.",
+      "observables": [
+        {
+          "kind": "oast_domain",
+          "value": "interact.sh",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "oast_domain",
+          "value": "dnslog.cn",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "oast_domain",
+          "value": "canarytokens.org",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "file_name",
+          "value": "login.jsp",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "file_name",
+          "value": "3-SNAPSHOT-all.jar",
+          "basis": "from_poc",
+          "note": ""
+        },
+        {
+          "kind": "file_name",
+          "value": "Get-Log4shellVuln.ps1",
+          "basis": "from_poc",
+          "note": ""
+        }
+      ],
+      "data_sources": [
+        "dns",
+        "endpoint",
+        "proxy",
+        "web"
+      ],
+      "queries": [
+        {
+          "query_id": "S3-Q1",
+          "purpose": "Truy vấn DNS tới tên miền out-of-band trong PoC (xác nhận khai thác)",
+          "data_source": "dns",
+          "language": "spl",
+          "spl": "search index={{INDEX_DNS}} earliest={{EARLIEST}} latest={{LATEST}} (query=\"*interact.sh*\" OR query=\"*dnslog.cn*\" OR query=\"*canarytokens.org*\") | stats count by src, query | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "src",
+            "query",
+            "count"
+          ],
+          "benign_notes": "Công cụ kiểm thử an ninh hợp lệ của tổ chức dùng cùng dịch vụ out-of-band.",
+          "role": "detect",
+          "grounded": true,
+          "origin": "core"
+        },
+        {
+          "query_id": "S3-Q2",
+          "purpose": "Kết nối HTTP(S) đi ra tới tên miền out-of-band trong PoC",
+          "data_source": "proxy",
+          "language": "spl",
+          "spl": "search index={{INDEX_PROXY}} earliest={{EARLIEST}} latest={{LATEST}} (url=\"*interact.sh*\" OR url=\"*dnslog.cn*\" OR url=\"*canarytokens.org*\") | stats count by src, dest, url | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "src",
+            "dest",
+            "url",
+            "count"
+          ],
+          "benign_notes": "Công cụ kiểm thử an ninh hợp lệ của tổ chức dùng cùng dịch vụ out-of-band.",
+          "role": "detect",
+          "grounded": true,
+          "origin": "core"
+        },
+        {
+          "query_id": "S3-Q3",
+          "purpose": "Truy cập tệp thực thi do PoC tạo (webshell)",
+          "data_source": "web",
+          "language": "spl",
+          "spl": "search index={{INDEX_WEB}} earliest={{EARLIEST}} latest={{LATEST}} uri_path=\"*login.jsp*\" | stats count by src, dest, uri_path, http_method | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "src",
+            "dest",
+            "uri_path",
+            "http_method",
+            "count"
+          ],
+          "benign_notes": "Tên tệp trùng một tệp hợp lệ của ứng dụng: so với nội dung tệp trên máy chủ.",
+          "role": "detect",
+          "grounded": true,
+          "origin": "core"
+        },
+        {
+          "query_id": "S3-Q4",
+          "purpose": "Tệp thực thi do PoC tạo xuất hiện trên máy chủ",
+          "data_source": "endpoint",
+          "language": "spl",
+          "spl": "search index={{INDEX_ENDPOINT}} earliest={{EARLIEST}} latest={{LATEST}} (file_name=\"login.jsp\" OR file_name=\"3-SNAPSHOT-all.jar\" OR file_name=\"Get-Log4shellVuln.ps1\") | stats count by dest, user, file_path, file_name | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "dest",
+            "user",
+            "file_path",
+            "file_name",
+            "count"
+          ],
+          "benign_notes": "Quản trị viên hoặc bản cài đặt hợp lệ tạo tệp trùng tên.",
+          "role": "detect",
+          "grounded": true,
+          "origin": "core"
+        },
+        {
+          "query_id": "S3-Q5",
+          "purpose": "Tiến trình con bất thường của dịch vụ bị tấn công (ứng dụng Java)",
+          "data_source": "endpoint",
+          "language": "spl",
+          "spl": "search index={{INDEX_ENDPOINT}} earliest={{EARLIEST}} latest={{LATEST}} parent_process_name IN (\"java\",\"java.exe\",\"javaw.exe\",\"tomcat*\") process_name IN (\"sh\",\"bash\",\"dash\",\"zsh\",\"cmd.exe\",\"powershell.exe\",\"pwsh.exe\",\"whoami\",\"curl\",\"wget\",\"nc\",\"ncat\") | stats count min(_time) as first_seen max(_time) as last_seen by dest, user, parent_process_name, process_name, process | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "dest",
+            "user",
+            "parent_process_name",
+            "process_name",
+            "process",
+            "count"
+          ],
+          "benign_notes": "Quản trị viên hoặc tác vụ bảo trì mở shell từ dịch vụ; so với tiến trình cha và thời điểm. Họ tiến trình cha suy ra từ tên sản phẩm trong CVE: kiểm tra đúng tên tiến trình ở môi trường của bạn.",
+          "role": "detect",
+          "grounded": true,
+          "origin": "core"
+        }
+      ],
+      "depends_on": [
+        "S2"
+      ],
+      "stop_conditions": [
+        {
+          "when": "no_data",
+          "threshold": null,
+          "action": "collect_data",
+          "note": "Nguồn dữ liệu không có sự kiện nào trong cửa sổ: dừng giai đoạn này; kết quả rỗng KHÔNG có nghĩa là sạch."
+        },
+        {
+          "when": "truncated",
+          "threshold": null,
+          "action": "narrow",
+          "note": "Chạm trần 200 dòng: thu hẹp (cửa sổ, host, giá trị) rồi chạy lại, không nới rộng."
+        },
+        {
+          "when": "error",
+          "threshold": null,
+          "action": "stop_stage",
+          "note": "Lỗi hoặc quá thời gian: báo cho người vận hành, không tự thử lại vô hạn."
+        },
+        {
+          "when": "budget_exceeded",
+          "threshold": null,
+          "action": "stop_plan",
+          "note": "Hết ngân sách truy vấn hoặc thời gian: dừng toàn kế hoạch và báo phần đã làm."
+        },
+        {
+          "when": "hits_ge",
+          "threshold": 1,
+          "action": "escalate",
+          "note": "Có dấu hiệu khai thác thành công: dừng mở rộng, chuyển IR kèm bằng chứng."
+        },
+        {
+          "when": "zero_hits",
+          "threshold": null,
+          "action": "continue",
+          "note": "Không thấy trong dữ liệu đã quét; vẫn phải xét độ phủ nguồn."
+        }
+      ],
+      "origin": "core"
+    },
+    {
+      "stage_id": "L1",
+      "name": "Payload JNDI lộ trong log ứng dụng Java",
+      "phase": "initial_access",
+      "technique_ids": [
+        "T1190"
+      ],
+      "significance": "indicator",
+      "description": "Khi kẻ tấn công gửi chuỗi ${jndi:...} vào header, tham số URL hoặc body POST, chính tầng Log4j/ứng dụng Java sẽ ghi lại nguyên văn chuỗi đó vào log ứng dụng (kể cả khi request bị WAF chặn hoặc không thành công). Đây là nguồn duy nhất nhìn thấy body POST và phần lớn header - những thứ access log của web server không ghi. Sau khi lookup thất bại, log còn chứa stack trace javax.naming (CommunicationException, NameNotFoundException) do ứng dụng cố kết nối tới máy chủ LDAP/RMI của kẻ tấn công.",
+      "observables": [
+        {
+          "kind": "log_message",
+          "value": "${jndi:",
+          "basis": "from_poc",
+          "note": "chuỗi lookup trong log ứng dụng, có thể bị URL-encode thành %24%7Bjndi"
+        },
+        {
+          "kind": "log_message",
+          "value": "javax.naming",
+          "basis": "inferred",
+          "note": "stack trace của lần lookup JNDI thất bại"
+        },
+        {
+          "kind": "file_name",
+          "value": "JndiLookup.class",
+          "basis": "from_poc",
+          "note": "xuất hiện trong log vá lỗi hoặc log khởi động, cần phân biệt với log tấn công"
+        }
+      ],
+      "data_sources": [
+        "app"
+      ],
+      "queries": [
+        {
+          "query_id": "L1-Q1",
+          "purpose": "Tìm chuỗi lookup JNDI trong log ứng dụng, nơi ghi được cả header và body POST mà access log web bỏ sót",
+          "data_source": "app",
+          "language": "spl",
+          "spl": "search index={{INDEX_APP}} earliest={{EARLIEST}} latest={{LATEST}} _raw=\"*${jndi:*\" | stats count by host, source, sourcetype | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "host",
+            "source",
+            "sourcetype"
+          ],
+          "benign_notes": "Có thể trùng với hoạt động quét lỗ hổng đã được phép, kiểm thử xâm nhập của đơn vị bảo mật, hoặc lập trình viên thử nghiệm tính năng lookup. Một số framework ghi log đã URL-encode nên cần tìm thêm biến thể %24%7Bjndi; log ứng dụng có thể bị đẩy vào index khác nhau tùy cấu hình.",
+          "role": "detect",
+          "grounded": true,
+          "origin": "llm"
+        },
+        {
+          "query_id": "L1-Q2",
+          "purpose": "Tìm lỗi lookup JNDI/class loading chứng tỏ ứng dụng đã thực sự cố gọi ra máy chủ ngoài",
+          "data_source": "app",
+          "language": "spl",
+          "spl": "search index={{INDEX_APP}} earliest={{EARLIEST}} latest={{LATEST}} (_raw=\"*javax.naming*\" OR _raw=\"*JndiLookup*\") | stats count by host, source, sourcetype | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "host",
+            "source",
+            "sourcetype"
+          ],
+          "benign_notes": "Ứng dụng dùng JNDI hợp lệ (LDAP/AD, nguồn dữ liệu) có thể sinh javax.naming khi máy chủ LDAP nội bộ gián đoạn; thông báo vá lỗi nhắc tới JndiLookup.class cũng khớp. Cần xem dest/host và thời điểm để loại trừ sự cố hạ tầng.",
+          "role": "detect",
+          "grounded": true,
+          "origin": "llm"
+        }
+      ],
+      "depends_on": [],
+      "stop_conditions": [
+        {
+          "when": "no_data",
+          "threshold": null,
+          "action": "collect_data",
+          "note": "Nguồn dữ liệu không có sự kiện nào trong cửa sổ: dừng giai đoạn này; kết quả rỗng KHÔNG có nghĩa là sạch."
+        },
+        {
+          "when": "truncated",
+          "threshold": null,
+          "action": "narrow",
+          "note": "Chạm trần 200 dòng: thu hẹp (cửa sổ, host, giá trị) rồi chạy lại, không nới rộng."
+        },
+        {
+          "when": "error",
+          "threshold": null,
+          "action": "stop_stage",
+          "note": "Lỗi hoặc quá thời gian: báo cho người vận hành, không tự thử lại vô hạn."
+        },
+        {
+          "when": "budget_exceeded",
+          "threshold": null,
+          "action": "stop_plan",
+          "note": "Hết ngân sách truy vấn hoặc thời gian: dừng toàn kế hoạch và báo phần đã làm."
+        },
+        {
+          "when": "hits_ge",
+          "threshold": 1,
+          "action": "continue",
+          "note": "Có nỗ lực khớp PoC (chưa chứng minh thành công): ghi nhận, sang giai đoạn sau và pivot theo giá trị quan sát được."
+        },
+        {
+          "when": "zero_hits",
+          "threshold": null,
+          "action": "continue",
+          "note": "Không thấy nỗ lực khớp PoC trong cửa sổ."
+        }
+      ],
+      "origin": "llm"
+    },
+    {
+      "stage_id": "L2",
+      "name": "Egress tới máy chủ LDAP/RMI của kẻ tấn công và tải class từ xa",
+      "phase": "command_and_control",
+      "technique_ids": [
+        "T1190",
+        "T1105",
+        "T1071"
+      ],
+      "significance": "impact",
+      "description": "Sau khi payload ${jndi:ldap://...} được xử lý, tiến trình Java của dịch vụ bị lỗi mở kết nối ra ngoài tới máy chủ LDAP/RMI của kẻ tấn công (thường cổng 1389 hoặc 1099) rồi tải class độc hại (Exploit.class, jar marshalsec) qua HTTP để thực thi. Đây là bước hậu khai thác mà core plan chưa phủ: core chỉ soi DNS/proxy theo domain OAST, không soi luồng mạng ra cổng LDAP/RMI bất thường và không soi việc tải tệp .class.",
+      "observables": [
+        {
+          "kind": "network",
+          "value": "dest_port 1389",
+          "basis": "inferred",
+          "note": "cổng LDAP do log4j-scan, marshalsec dùng cho callback"
+        },
+        {
+          "kind": "network",
+          "value": "dest_port 1099",
+          "basis": "inferred",
+          "note": "cổng RMI mặc định của PoC/ysoserial"
+        },
+        {
+          "kind": "url_scheme",
+          "value": "ldap://",
+          "basis": "from_poc",
+          "note": "scheme trong payload và trong URL tải class nếu proxy ghi nhận"
+        },
+        {
+          "kind": "file_name",
+          "value": "Exploit.class",
+          "basis": "inferred",
+          "note": "class độc hại được tải về từ máy chủ HTTP của kẻ tấn công"
+        }
+      ],
+      "data_sources": [
+        "network",
+        "proxy"
+      ],
+      "queries": [
+        {
+          "query_id": "L2-Q1",
+          "purpose": "Phát hiện máy chủ nội bộ mở kết nối ra ngoài tới cổng LDAP/RMI không chuẩn - dấu hiệu lookup JNDI đã được thực thi",
+          "data_source": "network",
+          "language": "spl",
+          "spl": "search index={{INDEX_NETWORK}} earliest={{EARLIEST}} latest={{LATEST}} (dest_port=1389 OR dest_port=1099) | stats count by src, dest, dest_port, transport, action | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "src",
+            "dest",
+            "dest_port",
+            "transport",
+            "action"
+          ],
+          "benign_notes": "Một số ứng dụng Java dùng RMI/JMX nội bộ trên 1099, công cụ giám sát hoặc máy chủ LDAP phòng lab dùng 1389; cần kiểm tra dest là hạ tầng nội bộ hay IP/domain lạ, và chỉ tin khi src là máy chủ chạy dịch vụ Java.",
+          "role": "detect",
+          "grounded": null,
+          "origin": "llm"
+        },
+        {
+          "query_id": "L2-Q2",
+          "purpose": "Phát hiện việc tải tệp .class hoặc jar lạ từ Internet - bước lấy mã thực thi sau lookup thành công",
+          "data_source": "proxy",
+          "language": "spl",
+          "spl": "search index={{INDEX_PROXY}} earliest={{EARLIEST}} latest={{LATEST}} (url=\"*.class\" OR url=\"*marshalsec*\") status=200 | stats count by src, dest, url | head {{MAX_ROWS}}",
+          "expected_fields": [
+            "src",
+            "dest",
+            "url",
+            "status"
+          ],
+          "benign_notes": "Ứng dụng Java, Maven/Gradle, ứng dụng nhúng hoặc công cụ quản trị có thể tải .class/jar hợp lệ từ kho lưu trữ nội bộ hoặc CDN; cần đối chiếu domain đích với danh sách nguồn tin cậy và thời điểm trùng với sự kiện bất thường trước đó. Nếu lưu lượng ra ngoài không qua proxy thì tìm kiếm này không thấy gì.",
+          "role": "detect",
+          "grounded": true,
+          "origin": "llm"
+        }
+      ],
+      "depends_on": [],
+      "stop_conditions": [
+        {
+          "when": "no_data",
+          "threshold": null,
+          "action": "collect_data",
+          "note": "Nguồn dữ liệu không có sự kiện nào trong cửa sổ: dừng giai đoạn này; kết quả rỗng KHÔNG có nghĩa là sạch."
+        },
+        {
+          "when": "truncated",
+          "threshold": null,
+          "action": "narrow",
+          "note": "Chạm trần 200 dòng: thu hẹp (cửa sổ, host, giá trị) rồi chạy lại, không nới rộng."
+        },
+        {
+          "when": "error",
+          "threshold": null,
+          "action": "stop_stage",
+          "note": "Lỗi hoặc quá thời gian: báo cho người vận hành, không tự thử lại vô hạn."
+        },
+        {
+          "when": "budget_exceeded",
+          "threshold": null,
+          "action": "stop_plan",
+          "note": "Hết ngân sách truy vấn hoặc thời gian: dừng toàn kế hoạch và báo phần đã làm."
+        },
+        {
+          "when": "hits_ge",
+          "threshold": 1,
+          "action": "continue",
+          "note": "Có nỗ lực khớp PoC (chưa chứng minh thành công): ghi nhận, sang giai đoạn sau và pivot theo giá trị quan sát được."
+        },
+        {
+          "when": "zero_hits",
+          "threshold": null,
+          "action": "continue",
+          "note": "Không thấy nỗ lực khớp PoC trong cửa sổ."
+        }
+      ],
+      "origin": "llm"
+    }
+  ],
+  "coverage_probes": [
+    {
+      "query_id": "C-app",
+      "purpose": "Kiểm tra nguồn 'app' có dữ liệu trong cửa sổ (rỗng ≠ sạch)",
+      "data_source": "app",
+      "language": "spl",
+      "spl": "| tstats count min(_time) as first_seen max(_time) as last_seen where index={{INDEX_APP}} earliest={{EARLIEST}} latest={{LATEST}} by sourcetype | head 20",
+      "expected_fields": [
+        "sourcetype",
+        "count"
+      ],
+      "benign_notes": "",
+      "role": "coverage",
+      "grounded": null,
+      "origin": "llm"
+    },
+    {
+      "query_id": "C-dns",
+      "purpose": "Kiểm tra nguồn 'dns' có dữ liệu trong cửa sổ (rỗng ≠ sạch)",
+      "data_source": "dns",
+      "language": "spl",
+      "spl": "| tstats count min(_time) as first_seen max(_time) as last_seen where index={{INDEX_DNS}} earliest={{EARLIEST}} latest={{LATEST}} by sourcetype | head 20",
+      "expected_fields": [
+        "sourcetype",
+        "count"
+      ],
+      "benign_notes": "",
+      "role": "coverage",
+      "grounded": null,
+      "origin": "core"
+    },
+    {
+      "query_id": "C-endpoint",
+      "purpose": "Kiểm tra nguồn 'endpoint' có dữ liệu trong cửa sổ (rỗng ≠ sạch)",
+      "data_source": "endpoint",
+      "language": "spl",
+      "spl": "| tstats count min(_time) as first_seen max(_time) as last_seen where index={{INDEX_ENDPOINT}} earliest={{EARLIEST}} latest={{LATEST}} by sourcetype | head 20",
+      "expected_fields": [
+        "sourcetype",
+        "count"
+      ],
+      "benign_notes": "",
+      "role": "coverage",
+      "grounded": null,
+      "origin": "core"
+    },
+    {
+      "query_id": "C-network",
+      "purpose": "Kiểm tra nguồn 'network' có dữ liệu trong cửa sổ (rỗng ≠ sạch)",
+      "data_source": "network",
+      "language": "spl",
+      "spl": "| tstats count min(_time) as first_seen max(_time) as last_seen where index={{INDEX_NETWORK}} earliest={{EARLIEST}} latest={{LATEST}} by sourcetype | head 20",
+      "expected_fields": [
+        "sourcetype",
+        "count"
+      ],
+      "benign_notes": "",
+      "role": "coverage",
+      "grounded": null,
+      "origin": "llm"
+    },
+    {
+      "query_id": "C-proxy",
+      "purpose": "Kiểm tra nguồn 'proxy' có dữ liệu trong cửa sổ (rỗng ≠ sạch)",
+      "data_source": "proxy",
+      "language": "spl",
+      "spl": "| tstats count min(_time) as first_seen max(_time) as last_seen where index={{INDEX_PROXY}} earliest={{EARLIEST}} latest={{LATEST}} by sourcetype | head 20",
+      "expected_fields": [
+        "sourcetype",
+        "count"
+      ],
+      "benign_notes": "",
+      "role": "coverage",
+      "grounded": null,
+      "origin": "core"
+    },
+    {
+      "query_id": "C-web",
+      "purpose": "Kiểm tra nguồn 'web' có dữ liệu trong cửa sổ (rỗng ≠ sạch)",
+      "data_source": "web",
+      "language": "spl",
+      "spl": "| tstats count min(_time) as first_seen max(_time) as last_seen where index={{INDEX_WEB}} earliest={{EARLIEST}} latest={{LATEST}} by sourcetype | head 20",
+      "expected_fields": [
+        "sourcetype",
+        "count"
+      ],
+      "benign_notes": "",
+      "role": "coverage",
+      "grounded": null,
+      "origin": "core"
+    }
+  ],
+  "limits": {
+    "lookback": "14d",
+    "window": null,
+    "max_rows_per_query": 200,
+    "max_queries": 30,
+    "query_timeout_s": 300,
+    "total_runtime_s": 3600,
+    "max_iterations": 3,
+    "read_only": true
+  },
+  "stop_rules": [
+    "Chỉ chạy truy vấn đọc (search); không ghi, không xoá, không gọi lệnh ngoài, không truy vấn con.",
+    "Mọi truy vấn phải có chỉ mục cụ thể và cửa sổ thời gian rõ ràng; không bao giờ index=* và không bao giờ thiếu earliest/latest.",
+    "Có sự kiện ở giai đoạn 'impact' (lõi): dừng mở rộng và báo người phụ trách IR ngay kèm bằng chứng; người quyết định có mở sự cố hay không.",
+    "Kết quả rỗng chỉ có nghĩa là không thấy trong dữ liệu và cửa sổ đã quét; nguồn không có dữ liệu thì dừng giai đoạn và bổ sung telemetry.",
+    "Gợi ý của LLM (origin llm) chỉ chạy nếu người duyệt chấp nhận, và không bao giờ dùng để leo thang.",
+    "Dừng sau 3 vòng hoặc khi vòng mới không còn dấu vết mới để pivot."
+  ],
+  "verification": {
+    "result_schema_version": "1",
+    "escalate_if": "một truy vấn của giai đoạn 'impact' trả về ít nhất một sự kiện",
+    "accept_clear_if": "mọi truy vấn phát hiện đã chạy (status ok, không bị cắt), mọi truy vấn độ phủ đều có dữ liệu và không giai đoạn nào có sự kiện",
+    "refine_if": "có sự kiện ở giai đoạn context/indicator hoặc kết quả bị cắt: pivot theo các giá trị quan sát được",
+    "collect_data_if": "truy vấn độ phủ không có dữ liệu ở một nguồn mà kế hoạch cần"
+  },
+  "intel": {
+    "cve_ids": [
+      "CVE-2021-44228"
+    ],
+    "summary": "Apache Log4j2 2.0-beta9 through 2.15.0 (excluding security releases 2.12.2, 2.12.3, and 2.3.1) JNDI features used in configuration, log messages, and parameters do not protect against attacker controlled LDAP and other JNDI related endpoints. An attacker who can control log messages or log message parameters can execute arbitrary code loaded from LDAP servers when message lookup substitution is enabled. From log4j 2.15.0, this behavior has been disabled by default. From version 2.16.0 (along with 2.12.2, 2.12.3, and 2.3.1), this functionality has been completely removed. Note that this vulnera",
+    "severity": "CRITICAL",
+    "cvss": 10.0,
+    "kev": true,
+    "poc_repos": [
+      {
+        "name": "fullhunt/log4j-scan",
+        "url": "https://github.com/fullhunt/log4j-scan",
+        "stars": 3428,
+        "archived": false
+      },
+      {
+        "name": "NCSC-NL/log4shell",
+        "url": "https://github.com/NCSC-NL/log4shell",
+        "stars": 1882,
+        "archived": true
+      },
+      {
+        "name": "kozmer/log4j-shell-poc",
+        "url": "https://github.com/kozmer/log4j-shell-poc",
+        "stars": 1847,
+        "archived": true
+      }
+    ],
+    "warnings": [
+      "NCSC-NL/log4shell is archived",
+      "kozmer/log4j-shell-poc is archived"
+    ]
+  },
+  "provenance": {
+    "created_at": "2026-10-20T08:40:38Z",
+    "tool_version": "0.4.0",
+    "llm_model": "deepseek-flash",
+    "peak_used": false,
+    "input_digest": "361ea8a443332834",
+    "core_digest": "ab80eec67e447ac128e4e4453c0f4219",
+    "plan_digest": "a2d86471f5839574eb97efe013e552d7",
+    "untrusted_input": true,
+    "poc_executed": false,
+    "internal_data_used": false
+  },
+  "peak": null,
+  "dropped": [
+    "note: bỏ user_agent 'Java/.*': giống biểu thức chính quy hoặc biến trong mã PoC, không phải giá trị thật",
+    "note: bỏ user_agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64': quá ngắn hoặc có ký tự không an toàn để nhúng vào truy vấn"
+  ],
+  "leads": [],
+  "runbook": [
+    {
+      "step_id": "R0",
+      "kind": "precheck",
+      "title": "Duyệt kế hoạch (người, trước khi chạy bất cứ thứ gì)",
+      "do": [
+        "Đọc plan.md từ đầu đến cuối, kể cả mục 'Đã loại bỏ / ghi chú của bộ kiểm tra'.",
+        "Đối chiếu mục 'Hệ thống nào có thể bị ảnh hưởng' với tài sản thật: có sản phẩm và phiên bản này không? Nếu không thì dừng và ghi 'không áp dụng'.",
+        "Đọc từng truy vấn lõi (nguồn gốc core): tên trường (CIM) có khớp dữ liệu của bạn không, chuỗi tìm có đúng thứ nạn nhân thật sự nhận không.",
+        "Với từng gợi ý của LLM (L1, L2): chấp nhận hoặc bỏ, ghi lại quyết định cho từng cái.",
+        "Ghi plan_digest ở đầu plan.md vào biên bản duyệt: kết quả trả về phải nhắc lại đúng giá trị này."
+      ],
+      "query_ids": [],
+      "record": [
+        "tên người duyệt (approved_by)",
+        "thời điểm duyệt (approved_at)",
+        "plan_digest",
+        "danh sách gợi ý LLM được chấp nhận / bỏ"
+      ],
+      "stop_if": [
+        "sản phẩm hoặc phiên bản không có trong hệ thống",
+        "không hiểu một truy vấn làm gì: không chạy thứ không hiểu"
+      ],
+      "human_decision": "Có duyệt kế hoạch này để chạy không? Công cụ không tự chạy bất cứ truy vấn nào.",
+      "optional": false
+    },
+    {
+      "step_id": "R1",
+      "kind": "bind",
+      "title": "Gắn chỉ mục và cửa sổ thời gian, kiểm tra truy vấn sau khi gắn",
+      "do": [
+        "Chọn cửa sổ thời gian cần xem (mặc định là lookback của kế hoạch). Cửa sổ phải có đầu và cuối rõ ràng và không rộng quá 90 ngày.",
+        "Ánh xạ mỗi nguồn dữ liệu của kế hoạch sang đúng MỘT chỉ mục thật. Không dùng '*', không dùng chỉ mục nội bộ (_internal, _audit).",
+        "Chạy: python main.py bind --plan plan.json --map web=<chỉ mục> --map endpoint=<chỉ mục> ... [--earliest ISO --latest ISO] --out queries.bound.spl",
+        "Nếu ở R0 bạn đã chấp nhận gợi ý của LLM, thêm --accept-llm L1,L2 (đúng các mã đã chấp nhận); mặc định chỉ gắn phần lõi.",
+        "Lệnh bind từ chối: index=*, thiếu earliest/latest, thiếu 'head N', chỉ mục sai định dạng, placeholder chưa gắn. Nếu bị từ chối thì sửa ánh xạ, đừng sửa tay SPL.",
+        "Mở queries.bound.spl và đọc lại từng dòng một lần nữa trước khi dán vào Splunk."
+      ],
+      "query_ids": [],
+      "record": [
+        "ánh xạ nguồn → chỉ mục đã dùng",
+        "cửa sổ earliest / latest đã dùng"
+      ],
+      "stop_if": [
+        "bind báo lỗi",
+        "không chắc chỉ mục nào chứa nguồn dữ liệu đó",
+        "chỉ mục quá lớn và chưa thử trên cửa sổ ngắn"
+      ],
+      "human_decision": "Chỉ mục và cửa sổ thời gian có đúng phạm vi được phép tìm không?",
+      "optional": false
+    },
+    {
+      "step_id": "R2",
+      "kind": "coverage",
+      "title": "Độ phủ C-app: nguồn 'app' có dữ liệu không",
+      "do": [
+        "Chạy truy vấn C-app trước mọi truy vấn phát hiện của nguồn này.",
+        "Kết quả rỗng ở nguồn không có dữ liệu không chứng minh điều gì: đó là lý do truy vấn này chạy trước."
+      ],
+      "query_ids": [
+        "C-app"
+      ],
+      "record": [
+        "status",
+        "row_count",
+        "các sourcetype thấy được và first_seen / last_seen"
+      ],
+      "stop_if": [
+        "nguồn rỗng: các giai đoạn dùng nguồn này chưa có giá trị, ghi 'cần bổ sung dữ liệu' (COLLECT_DATA)"
+      ],
+      "human_decision": "Nếu nguồn thiếu dữ liệu: bổ sung telemetry hay chấp nhận giới hạn này?",
+      "optional": true
+    },
+    {
+      "step_id": "R3",
+      "kind": "coverage",
+      "title": "Độ phủ C-dns: nguồn 'dns' có dữ liệu không",
+      "do": [
+        "Chạy truy vấn C-dns trước mọi truy vấn phát hiện của nguồn này.",
+        "Kết quả rỗng ở nguồn không có dữ liệu không chứng minh điều gì: đó là lý do truy vấn này chạy trước."
+      ],
+      "query_ids": [
+        "C-dns"
+      ],
+      "record": [
+        "status",
+        "row_count",
+        "các sourcetype thấy được và first_seen / last_seen"
+      ],
+      "stop_if": [
+        "nguồn rỗng: các giai đoạn dùng nguồn này chưa có giá trị, ghi 'cần bổ sung dữ liệu' (COLLECT_DATA)"
+      ],
+      "human_decision": "Nếu nguồn thiếu dữ liệu: bổ sung telemetry hay chấp nhận giới hạn này?",
+      "optional": false
+    },
+    {
+      "step_id": "R4",
+      "kind": "coverage",
+      "title": "Độ phủ C-endpoint: nguồn 'endpoint' có dữ liệu không",
+      "do": [
+        "Chạy truy vấn C-endpoint trước mọi truy vấn phát hiện của nguồn này.",
+        "Kết quả rỗng ở nguồn không có dữ liệu không chứng minh điều gì: đó là lý do truy vấn này chạy trước."
+      ],
+      "query_ids": [
+        "C-endpoint"
+      ],
+      "record": [
+        "status",
+        "row_count",
+        "các sourcetype thấy được và first_seen / last_seen"
+      ],
+      "stop_if": [
+        "nguồn rỗng: các giai đoạn dùng nguồn này chưa có giá trị, ghi 'cần bổ sung dữ liệu' (COLLECT_DATA)"
+      ],
+      "human_decision": "Nếu nguồn thiếu dữ liệu: bổ sung telemetry hay chấp nhận giới hạn này?",
+      "optional": false
+    },
+    {
+      "step_id": "R5",
+      "kind": "coverage",
+      "title": "Độ phủ C-network: nguồn 'network' có dữ liệu không",
+      "do": [
+        "Chạy truy vấn C-network trước mọi truy vấn phát hiện của nguồn này.",
+        "Kết quả rỗng ở nguồn không có dữ liệu không chứng minh điều gì: đó là lý do truy vấn này chạy trước."
+      ],
+      "query_ids": [
+        "C-network"
+      ],
+      "record": [
+        "status",
+        "row_count",
+        "các sourcetype thấy được và first_seen / last_seen"
+      ],
+      "stop_if": [
+        "nguồn rỗng: các giai đoạn dùng nguồn này chưa có giá trị, ghi 'cần bổ sung dữ liệu' (COLLECT_DATA)"
+      ],
+      "human_decision": "Nếu nguồn thiếu dữ liệu: bổ sung telemetry hay chấp nhận giới hạn này?",
+      "optional": true
+    },
+    {
+      "step_id": "R6",
+      "kind": "coverage",
+      "title": "Độ phủ C-proxy: nguồn 'proxy' có dữ liệu không",
+      "do": [
+        "Chạy truy vấn C-proxy trước mọi truy vấn phát hiện của nguồn này.",
+        "Kết quả rỗng ở nguồn không có dữ liệu không chứng minh điều gì: đó là lý do truy vấn này chạy trước."
+      ],
+      "query_ids": [
+        "C-proxy"
+      ],
+      "record": [
+        "status",
+        "row_count",
+        "các sourcetype thấy được và first_seen / last_seen"
+      ],
+      "stop_if": [
+        "nguồn rỗng: các giai đoạn dùng nguồn này chưa có giá trị, ghi 'cần bổ sung dữ liệu' (COLLECT_DATA)"
+      ],
+      "human_decision": "Nếu nguồn thiếu dữ liệu: bổ sung telemetry hay chấp nhận giới hạn này?",
+      "optional": false
+    },
+    {
+      "step_id": "R7",
+      "kind": "coverage",
+      "title": "Độ phủ C-web: nguồn 'web' có dữ liệu không",
+      "do": [
+        "Chạy truy vấn C-web trước mọi truy vấn phát hiện của nguồn này.",
+        "Kết quả rỗng ở nguồn không có dữ liệu không chứng minh điều gì: đó là lý do truy vấn này chạy trước."
+      ],
+      "query_ids": [
+        "C-web"
+      ],
+      "record": [
+        "status",
+        "row_count",
+        "các sourcetype thấy được và first_seen / last_seen"
+      ],
+      "stop_if": [
+        "nguồn rỗng: các giai đoạn dùng nguồn này chưa có giá trị, ghi 'cần bổ sung dữ liệu' (COLLECT_DATA)"
+      ],
+      "human_decision": "Nếu nguồn thiếu dữ liệu: bổ sung telemetry hay chấp nhận giới hạn này?",
+      "optional": false
+    },
+    {
+      "step_id": "R8",
+      "kind": "query",
+      "title": "Chạy S1-Q1: Yêu cầu web mang User-Agent của công cụ trong PoC",
+      "do": [
+        "Mở queries.bound.spl, chạy đúng truy vấn S1-Q1 (nguồn web). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "S1-Q1"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": false
+    },
+    {
+      "step_id": "R9",
+      "kind": "query",
+      "title": "Chạy S1-Q2: Yêu cầu tới đường dẫn xuất hiện trong PoC",
+      "do": [
+        "Mở queries.bound.spl, chạy đúng truy vấn S1-Q2 (nguồn web). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "S1-Q2"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": false
+    },
+    {
+      "step_id": "R10",
+      "kind": "gate",
+      "title": "Cổng S1: đánh giá giai đoạn 'Thăm dò và quét trước khi khai thác'",
+      "do": [
+        "Đối chiếu kết quả các truy vấn của giai đoạn với phần 'Điểm dừng' của giai đoạn trong plan.md.",
+        "Ghi nhận kết luận của người chạy (có / không có dấu hiệu, lý do) trước khi sang giai đoạn kế tiếp."
+      ],
+      "query_ids": [],
+      "record": [
+        "kết luận của giai đoạn do người chạy viết"
+      ],
+      "stop_if": [
+        "một truy vấn của giai đoạn lỗi hoặc chưa chạy: kết luận về giai đoạn này chưa có giá trị, chạy lại trước khi đi tiếp"
+      ],
+      "human_decision": "Giai đoạn này là nhiễu nền mong đợi. Ghi nhận, không coi là xâm nhập. Có sang giai đoạn kế tiếp không?",
+      "optional": false
+    },
+    {
+      "step_id": "R11",
+      "kind": "query",
+      "title": "Chạy S2-Q1: Yêu cầu chứa chuỗi payload / tham số / header đặc trưng của PoC",
+      "do": [
+        "Mở queries.bound.spl, chạy đúng truy vấn S2-Q1 (nguồn web). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "S2-Q1"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": false
+    },
+    {
+      "step_id": "R12",
+      "kind": "gate",
+      "title": "Cổng S2: đánh giá giai đoạn 'Gửi payload khai thác'",
+      "do": [
+        "Đối chiếu kết quả các truy vấn của giai đoạn với phần 'Điểm dừng' của giai đoạn trong plan.md.",
+        "Ghi nhận kết luận của người chạy (có / không có dấu hiệu, lý do) trước khi sang giai đoạn kế tiếp."
+      ],
+      "query_ids": [],
+      "record": [
+        "kết luận của giai đoạn do người chạy viết"
+      ],
+      "stop_if": [
+        "một truy vấn của giai đoạn lỗi hoặc chưa chạy: kết luận về giai đoạn này chưa có giá trị, chạy lại trước khi đi tiếp"
+      ],
+      "human_decision": "Giai đoạn này chỉ chứng minh có nỗ lực khai thác. Có ghi nhận và chạy vòng pivot (REFINE) để tìm hậu quả không?",
+      "optional": false
+    },
+    {
+      "step_id": "R13",
+      "kind": "query",
+      "title": "Chạy S3-Q1: Truy vấn DNS tới tên miền out-of-band trong PoC (xác nhận khai thác)",
+      "do": [
+        "Mở queries.bound.spl, chạy đúng truy vấn S3-Q1 (nguồn dns). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "S3-Q1"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": false
+    },
+    {
+      "step_id": "R14",
+      "kind": "query",
+      "title": "Chạy S3-Q2: Kết nối HTTP(S) đi ra tới tên miền out-of-band trong PoC",
+      "do": [
+        "Mở queries.bound.spl, chạy đúng truy vấn S3-Q2 (nguồn proxy). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "S3-Q2"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": false
+    },
+    {
+      "step_id": "R15",
+      "kind": "query",
+      "title": "Chạy S3-Q3: Truy cập tệp thực thi do PoC tạo (webshell)",
+      "do": [
+        "Mở queries.bound.spl, chạy đúng truy vấn S3-Q3 (nguồn web). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "S3-Q3"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": false
+    },
+    {
+      "step_id": "R16",
+      "kind": "query",
+      "title": "Chạy S3-Q4: Tệp thực thi do PoC tạo xuất hiện trên máy chủ",
+      "do": [
+        "Mở queries.bound.spl, chạy đúng truy vấn S3-Q4 (nguồn endpoint). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "S3-Q4"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": false
+    },
+    {
+      "step_id": "R17",
+      "kind": "query",
+      "title": "Chạy S3-Q5: Tiến trình con bất thường của dịch vụ bị tấn công (ứng dụng Java)",
+      "do": [
+        "Mở queries.bound.spl, chạy đúng truy vấn S3-Q5 (nguồn endpoint). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "S3-Q5"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": false
+    },
+    {
+      "step_id": "R18",
+      "kind": "gate",
+      "title": "Cổng S3: đánh giá giai đoạn 'Dấu hiệu thành công và hậu khai thác'",
+      "do": [
+        "Đối chiếu kết quả các truy vấn của giai đoạn với phần 'Điểm dừng' của giai đoạn trong plan.md.",
+        "Ghi nhận kết luận của người chạy (có / không có dấu hiệu, lý do) trước khi sang giai đoạn kế tiếp."
+      ],
+      "query_ids": [],
+      "record": [
+        "kết luận của giai đoạn do người chạy viết"
+      ],
+      "stop_if": [
+        "bất kỳ truy vấn nào có kết quả: DỪNG mở rộng, giữ nguyên bằng chứng, báo người phụ trách IR",
+        "một truy vấn của giai đoạn lỗi hoặc chưa chạy: kết luận về giai đoạn này chưa có giá trị, chạy lại trước khi đi tiếp"
+      ],
+      "human_decision": "Giai đoạn này là dấu hiệu thành công / hậu khai thác. Nếu có kết quả: có chuyển sự cố sang IR không? (công cụ chỉ gợi ý, người quyết định)",
+      "optional": false
+    },
+    {
+      "step_id": "R19",
+      "kind": "query",
+      "title": "Chạy L1-Q1: Tìm chuỗi lookup JNDI trong log ứng dụng, nơi ghi được cả header và body POST mà access log web bỏ sót",
+      "do": [
+        "CHỈ chạy nếu bạn đã chấp nhận gợi ý này của LLM ở bước R0; nếu không, bỏ qua bước này và ghi 'skipped'.",
+        "Mở queries.bound.spl, chạy đúng truy vấn L1-Q1 (nguồn app). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "L1-Q1"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": true
+    },
+    {
+      "step_id": "R20",
+      "kind": "query",
+      "title": "Chạy L1-Q2: Tìm lỗi lookup JNDI/class loading chứng tỏ ứng dụng đã thực sự cố gọi ra máy chủ ngoài",
+      "do": [
+        "CHỈ chạy nếu bạn đã chấp nhận gợi ý này của LLM ở bước R0; nếu không, bỏ qua bước này và ghi 'skipped'.",
+        "Mở queries.bound.spl, chạy đúng truy vấn L1-Q2 (nguồn app). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "L1-Q2"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": true
+    },
+    {
+      "step_id": "R21",
+      "kind": "gate",
+      "title": "Cổng L1: đánh giá giai đoạn 'Payload JNDI lộ trong log ứng dụng Java'",
+      "do": [
+        "Đối chiếu kết quả các truy vấn của giai đoạn với phần 'Điểm dừng' của giai đoạn trong plan.md.",
+        "Ghi nhận kết luận của người chạy (có / không có dấu hiệu, lý do) trước khi sang giai đoạn kế tiếp.",
+        "Giai đoạn này là gợi ý của LLM: kết quả chỉ để tham khảo, không dùng để leo thang."
+      ],
+      "query_ids": [],
+      "record": [
+        "kết luận của giai đoạn do người chạy viết"
+      ],
+      "stop_if": [
+        "một truy vấn của giai đoạn lỗi hoặc chưa chạy: kết luận về giai đoạn này chưa có giá trị, chạy lại trước khi đi tiếp"
+      ],
+      "human_decision": "Giai đoạn này chỉ chứng minh có nỗ lực khai thác. Có ghi nhận và chạy vòng pivot (REFINE) để tìm hậu quả không?",
+      "optional": true
+    },
+    {
+      "step_id": "R22",
+      "kind": "query",
+      "title": "Chạy L2-Q1: Phát hiện máy chủ nội bộ mở kết nối ra ngoài tới cổng LDAP/RMI không chuẩn - dấu hiệu lookup JNDI đã được thực thi",
+      "do": [
+        "CHỈ chạy nếu bạn đã chấp nhận gợi ý này của LLM ở bước R0; nếu không, bỏ qua bước này và ghi 'skipped'.",
+        "Mở queries.bound.spl, chạy đúng truy vấn L2-Q1 (nguồn network). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "L2-Q1"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": true
+    },
+    {
+      "step_id": "R23",
+      "kind": "query",
+      "title": "Chạy L2-Q2: Phát hiện việc tải tệp .class hoặc jar lạ từ Internet - bước lấy mã thực thi sau lookup thành công",
+      "do": [
+        "CHỈ chạy nếu bạn đã chấp nhận gợi ý này của LLM ở bước R0; nếu không, bỏ qua bước này và ghi 'skipped'.",
+        "Mở queries.bound.spl, chạy đúng truy vấn L2-Q2 (nguồn proxy). Không sửa SPL: muốn sửa thì dừng và quay lại R0 để duyệt lại.",
+        "Chạy riêng từng truy vấn, đợi xong rồi mới chạy cái kế tiếp (không chạy song song nhiều truy vấn).",
+        "Nếu chạy quá 300 giây: huỷ job và ghi status=timeout."
+      ],
+      "query_ids": [
+        "L2-Q2"
+      ],
+      "record": [
+        "status (ok / error / timeout)",
+        "row_count",
+        "truncated (true nếu chạm trần 200 dòng)",
+        "tối đa 25 dòng mẫu đầu, bỏ dữ liệu nhạy cảm không cần thiết (không dán toàn bộ log)"
+      ],
+      "stop_if": [
+        "status là error hoặc timeout: ghi lại, không tự thử lại vô hạn",
+        "kết quả chạm trần 200 dòng: dừng giai đoạn, thu hẹp (cửa sổ, host, giá trị) rồi duyệt lại"
+      ],
+      "human_decision": "",
+      "optional": true
+    },
+    {
+      "step_id": "R24",
+      "kind": "gate",
+      "title": "Cổng L2: đánh giá giai đoạn 'Egress tới máy chủ LDAP/RMI của kẻ tấn công và tải class từ xa'",
+      "do": [
+        "Đối chiếu kết quả các truy vấn của giai đoạn với phần 'Điểm dừng' của giai đoạn trong plan.md.",
+        "Ghi nhận kết luận của người chạy (có / không có dấu hiệu, lý do) trước khi sang giai đoạn kế tiếp.",
+        "Giai đoạn này là gợi ý của LLM: kết quả chỉ để tham khảo, không dùng để leo thang."
+      ],
+      "query_ids": [],
+      "record": [
+        "kết luận của giai đoạn do người chạy viết"
+      ],
+      "stop_if": [
+        "một truy vấn của giai đoạn lỗi hoặc chưa chạy: kết luận về giai đoạn này chưa có giá trị, chạy lại trước khi đi tiếp"
+      ],
+      "human_decision": "Giai đoạn này là dấu hiệu thành công / hậu khai thác. Nếu có kết quả: có chuyển sự cố sang IR không? (công cụ chỉ gợi ý, người quyết định)",
+      "optional": true
+    },
+    {
+      "step_id": "R25",
+      "kind": "handoff",
+      "title": "Điền kết quả và gửi để xác minh",
+      "do": [
+        "Điền result.template.json: plan_digest, approved_by, approved_at, executor, và kết quả từng truy vấn (đúng query_id).",
+        "Truy vấn không chạy thì để status=skipped; không xoá khỏi danh sách và không đoán kết quả.",
+        "Chạy: python main.py verify --plan plan.json --results results.json"
+      ],
+      "query_ids": [],
+      "record": [
+        "results.json đã điền",
+        "verification.md"
+      ],
+      "stop_if": [
+        "verify báo REJECT_RESULTS: kết quả không thuộc kế hoạch đã duyệt, kiểm tra plan_id và plan_digest"
+      ],
+      "human_decision": "",
+      "optional": false
+    },
+    {
+      "step_id": "R26",
+      "kind": "decision",
+      "title": "Đọc verification.md và quyết định (người)",
+      "do": [
+        "Đọc 'Quyết định' và 'Việc con người cần quyết định' trong verification.md; công cụ chỉ đưa gợi ý có lý do.",
+        "Nếu quyết định là REFINE: kế hoạch vòng sau là một kế hoạch MỚI, có plan_digest mới; duyệt lại từ R0.",
+        "Nếu ACCEPT_NO_EVIDENCE: ghi 'không thấy bằng chứng trong phạm vi đã quét', không ghi 'sạch'."
+      ],
+      "query_ids": [],
+      "record": [
+        "quyết định cuối cùng, người quyết định, thời điểm, lý do"
+      ],
+      "stop_if": [],
+      "human_decision": "Quyết định cuối cùng (chuyển IR / dừng / chạy vòng tiếp / bổ sung dữ liệu) thuộc về người. Công cụ không thực hiện hành động nào.",
+      "optional": false
+    }
+  ],
+  "manual_todo": []
+}
