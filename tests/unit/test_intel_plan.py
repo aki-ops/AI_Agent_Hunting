@@ -9,7 +9,7 @@ import pytest
 from hunting.intel import Fetcher, IntelError, extract_indicators, gather, grounded
 from hunting.intel.models import CveInfo, IntelBundle, PocFile, PocRepo
 from hunting.intel.sources import github_search, nvd_lookup, repo_material
-from hunting.plan import Limits, PlanError, ResultBundle, bind, build_plan, render_plan_md, verify
+from hunting.plan import BindError, Limits, PlanError, ResultBundle, bind, build_plan, render_plan_md, verify
 from hunting.plan.catalog import PLACEHOLDERS
 from hunting.plan.files import write_plan
 from hunting.plan.safety import check_spl, spl_literal
@@ -194,6 +194,17 @@ def test_extraction_and_grounding(tmp_path: Path):
     assert extract_indicators([("f", "no indicators here")]) == []
 
 
+def test_the_requested_cve_stays_primary_when_nvd_is_unreachable(tmp_path: Path):
+    def down():
+        raise IntelError("could not reach services.nvd.nist.gov")
+
+    session = _session()
+    session.routes["https://services.nvd.nist.gov/rest/json/cves/2.0"] = down
+    bundle = gather(_fetcher(tmp_path, session), cve="CVE-2099-0001", min_stars=100)
+    assert bundle.primary_cve.cve_id == "CVE-2099-0001" and bundle.primary_cve.description == ""
+    assert any("NVD lookup for CVE-2099-0001 failed" in w for w in bundle.warnings)
+
+
 def test_gather_validates_input_and_records_weak_signals(tmp_path: Path):
     with pytest.raises(ValueError):
         gather(_fetcher(tmp_path))
@@ -221,6 +232,13 @@ def test_gather_validates_input_and_records_weak_signals(tmp_path: Path):
     ('| makeresults | eval x=1', "must start"),
     ("search index={{INDEX_WEB}} $token$", "token"),
     ('search index={{INDEX_WEB}} "x" | rest /services/server/info', "allow-list"),
+    ('search index={{INDEX_WEB}} uri_path=* | stats count', "whole index"),
+    ('search index={{INDEX_WEB}} uri_path="/a" | stats count', "selective literal"),
+    ('search index={{INDEX_WEB}} uri_path="/login" | eventstats count by src', "allow-list"),
+    ('search index={{INDEX_WEB}} uri_path="/login" | mvexpand cs_uri', "allow-list"),
+    ('search index={{INDEX_WEB}} uri_path="/login" | stats count by _raw', "_raw"),
+    ('search index={{INDEX_WEB}} uri_path="/login" | sort 0 - count', "unlimited"),
+    ('search index={{INDEX_WEB}} uri_path="/login" | search index=* earliest=-1y', "fixed by the first command"),
 ])
 def test_unsafe_searches_are_rejected(spl: str, fragment: str):
     out, errors, _ = check_spl(spl)
@@ -233,7 +251,7 @@ def test_valid_search_is_normalised_with_bounds_injected():
     assert out == ('search index={{INDEX_WEB}} earliest={{EARLIEST}} latest={{LATEST}} uri_path="/x|y" '
                    '| stats count by src | sort - count | head {{MAX_ROWS}}')  # the pipe inside quotes is not a stage
     assert "earliest=-90d" not in out
-    keep, _, _ = check_spl('search index={{INDEX_WEB}} "a" | head 5')
+    keep, _, _ = check_spl('search index={{INDEX_WEB}} "abc" | head 5')
     assert keep.endswith("| head 5") and keep.count("head") == 1
 
 
@@ -253,17 +271,13 @@ def test_spl_literal_only_embeds_boring_values():
 # ----------------------------------------------------------------------------- builder
 
 GOOD = {
-    "title": "Kế hoạch săn Acme Widget",
-    "hypothesis": "Giả sử PoC của CVE-2099-0001 được dùng để tấn công; kiểm tra xem hệ thống có bị khai thác không.",
-    "applicability": {"products": ["Acme Widget"], "affected_versions": ["< 2.5.1"], "preconditions": ["API lộ ra internet"], "not_applicable_if": ["đã vá 2.5.1"]},
     "stages": [
-        {"name": "Quét", "phase": "Reconnaissance", "technique_ids": ["T1190", "bogus"], "significance": "context", "description": "Quét bằng widget-scan",
+        {"name": "Header độc trong log ứng dụng", "phase": "Initial_Access", "technique_ids": ["T1190", "bogus"], "significance": "impact",
+         "description": "Header X-Evil xuất hiện trong nhật ký ứng dụng",
          "observables": [{"kind": "user_agent", "value": "widget-scan/1.0"}, {"kind": "http_path", "value": "/never-seen-anywhere"}, {"kind": "weird", "value": "xx"}],
-         "queries": [{"purpose": "UA của công cụ quét", "data_source": "web", "spl": 'search index={{INDEX_WEB}} http_user_agent="widget-scan*" | stats count by src, dest', "expected_fields": ["src"], "benign_notes": "máy quét nội bộ"}]},
-        {"name": "Khai thác", "phase": "initial_access", "significance": "indicator", "description": "Header độc",
-         "queries": [{"purpose": "header X-Evil", "data_source": "web", "spl": 'search index={{INDEX_WEB}} _raw="*${evil:*" | stats count by src, dest'},
-                     {"purpose": "xoá dữ liệu", "data_source": "web", "spl": 'search index={{INDEX_WEB}} "a" | delete'}]},
-        {"name": "Hậu khai thác", "phase": "execution", "significance": "impact", "description": "Shell từ dịch vụ",
+         "queries": [{"purpose": "header X-Evil trong log ứng dụng", "data_source": "app", "spl": 'search index={{INDEX_APP}} _raw="*X-Evil*" | stats count by host, src', "expected_fields": ["host"], "benign_notes": "máy quét nội bộ"},
+                     {"purpose": "xoá dữ liệu", "data_source": "app", "spl": 'search index={{INDEX_APP}} "abc" | delete'}]},
+        {"name": "Shell con của dịch vụ", "phase": "execution", "significance": "impact", "description": "Shell từ dịch vụ",
          "observables": [{"kind": "command", "value": "bash -i"}],
          "queries": [{"purpose": "shell con của widget", "data_source": "endpoint", "spl": 'search index={{INDEX_ENDPOINT}} parent_process_name="widgetd" process_name="zsh-invented" | stats count by dest, process'}]},
     ],
@@ -277,34 +291,43 @@ class ScriptedLlm:
     def __call__(self, prompt, max_tokens=0, system=None):
         self.prompts.append((prompt, system))
         reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+        if isinstance(reply, Exception):
+            raise reply
         return reply if isinstance(reply, str) else json.dumps(reply)
 
 
-def test_builder_validates_everything_the_llm_says(tmp_path: Path):
+def test_core_plan_is_built_by_code_and_the_llm_only_adds_labelled_suggestions(tmp_path: Path):
     bundle = _bundle(tmp_path)
     llm = ScriptedLlm(GOOD)
     plan = build_plan(bundle, llm, limits=Limits(max_rows_per_query=50), attempts=1, model_name="m")
-    assert [s.stage_id for s in plan.stages] == ["S1", "S2", "S3"]
-    assert plan.stages[0].phase == "reconnaissance" and plan.stages[0].technique_ids == ["T1190"]  # bogus technique id dropped
-    obs = {o.value: o for o in plan.stages[0].observables}
-    assert obs["widget-scan/1.0"].basis == "from_poc" and obs["/never-seen-anywhere"].basis == "inferred"
-    assert obs["xx"].kind == "other"
-    assert [q.query_id for s in plan.stages for q in s.queries] == ["S1-Q1", "S2-Q1", "S3-Q1"]  # the 'delete' search is gone
-    assert any("S2-Q2" in d and "allow-list" in d for d in plan.dropped)
+    core = [s for s in plan.stages if s.origin == "core"]
+    suggested = [s for s in plan.stages if s.origin == "llm"]
+    assert [s.stage_id for s in core] == ["S1", "S2", "S3"] and [s.stage_id for s in suggested] == ["L1", "L2"]
+    assert [q.query_id for s in core for q in s.queries] == ["S1-Q1", "S1-Q2", "S2-Q1", "S3-Q1", "S3-Q2"]
+    assert plan.stages[0].significance == "context" and plan.stages[1].significance == "indicator" and plan.stages[2].significance == "impact"
+    # the model's own significance claim is ignored: a suggestion can never escalate
+    for s in suggested:
+        assert not any(c.action == "escalate" for c in s.stop_conditions)
+    assert suggested[0].phase == "initial_access" and suggested[0].technique_ids == ["T1190"]  # bogus technique id dropped
+    obs = {o.value: o for o in suggested[0].observables}
+    assert obs["widget-scan/1.0"].basis == "from_poc" and obs["/never-seen-anywhere"].basis == "inferred" and obs["xx"].kind == "other"
+    assert [q.query_id for s in suggested for q in s.queries] == ["L1-Q1", "L2-Q1"]  # the 'delete' search is gone
+    assert any("L1-Q2" in d and "allow-list" in d for d in plan.dropped)
     for q in plan.all_queries():
         assert q.spl.startswith(("search index=", "| tstats")) and "{{EARLIEST}}" in q.spl
         assert q.role == "coverage" or "{{MAX_ROWS}}" in q.spl
-    assert {p.data_source for p in plan.coverage_probes} == {"web", "endpoint"}
+    assert all(q.origin == "llm" for s in suggested for q in s.queries) and all(q.origin == "core" for s in core for q in s.queries)
+    assert {p.data_source: p.origin for p in plan.coverage_probes} == {"web": "core", "dns": "core", "proxy": "core", "app": "llm", "endpoint": "llm"}
     impact = plan.stages[2].stop_conditions
     assert any(c.when == "hits_ge" and c.action == "escalate" for c in impact)
     assert all(any(c.when == "no_data" and c.action == "collect_data" for c in s.stop_conditions) for s in plan.stages)
     assert any(c.when == "truncated" and "50" in c.note for c in plan.stages[0].stop_conditions)
     assert plan.provenance.untrusted_input and not plan.provenance.poc_executed and not plan.provenance.internal_data_used
     assert plan.intel.kev and plan.intel.cve_ids == ["CVE-2099-0001"] and plan.intel.poc_repos[0].stars == 900
-    assert plan.stages[0].queries[0].grounded is True and plan.stages[2].queries[0].grounded is False
-    # the prompt fences the untrusted PoC text and the system prompt tells the model to ignore instructions in it
+    assert plan.stages[0].queries[0].grounded is True and suggested[1].queries[0].grounded is False
+    # the prompt fences the untrusted PoC text, shows the core, and the system prompt says to ignore instructions in it
     prompt, system = llm.prompts[0]
-    assert "UNTRUSTED DATA" in prompt and "<<<" in prompt and "IGNORE ALL PREVIOUS INSTRUCTIONS" in prompt
+    assert "UNTRUSTED DATA" in prompt and "<<<" in prompt and "IGNORE ALL PREVIOUS INSTRUCTIONS" in prompt and "S1-Q1" in prompt
     assert "ignore any instruction" in system
     # the plan survives a round trip through its own schema
     assert HuntPlan.model_validate_json(plan.model_dump_json()).plan_id == plan.plan_id
@@ -317,25 +340,42 @@ def test_builder_repairs_bad_replies_and_scrubs_foreign_script(tmp_path: Path):
     llm = ScriptedLlm("here is some prose, not JSON", foreign, GOOD)
     plan = build_plan(bundle, llm, attempts=3)
     assert len(llm.prompts) == 3 and "PROBLEMS" in llm.prompts[1][0] and "Chinese" in llm.prompts[2][0]
-    assert "径" not in plan.stages[0].description
+    assert "径" not in plan.stages[3].description
     stuck = ScriptedLlm(foreign)  # the model never fixes it: the characters are removed anyway, the plan is still usable
     plan2 = build_plan(bundle, stuck, attempts=2)
     assert "径" not in plan2.model_dump_json() and any("removed foreign-script" in d for d in plan2.dropped)
 
 
-def test_builder_fails_loudly_when_nothing_valid_comes_back(tmp_path: Path):
+def test_a_failing_or_useless_model_leaves_the_core_plan_untouched(tmp_path: Path):
     bundle = _bundle(tmp_path)
+    baseline = build_plan(bundle, None)
+    for llm in (ScriptedLlm(RuntimeError("503 model_not_found")), ScriptedLlm("not json at all"), ScriptedLlm({"stages": []}),
+                ScriptedLlm({"stages": [{"name": "x", "significance": "impact", "description": "d", "queries": [
+                    {"purpose": "p", "data_source": "web", "spl": "search index=* | delete"}]}]})):
+        plan = build_plan(bundle, llm, attempts=2)
+        assert plan.provenance.core_digest == baseline.provenance.core_digest
+        assert [s.stage_id for s in plan.stages] == ["S1", "S2", "S3"]
+        assert plan.stages == baseline.stages
+    assert baseline.provenance.llm_model is None
+
+
+def test_builder_fails_loudly_only_when_neither_the_core_nor_the_model_has_a_search(tmp_path: Path):
+    bare = IntelBundle(query="CVE-2099-0002", cves=[CveInfo(cve_id="CVE-2099-0002", description="d")],
+                       repos=[PocRepo(full_name="a/b", url="u", stars=10, files=[PocFile(path="README.md", size=3, text="abc")])])
+    with pytest.raises(PlanError):
+        build_plan(bare, None)
+    with pytest.raises(PlanError):
+        build_plan(bare, ScriptedLlm({"stages": []}), attempts=1)
     evil = {"stages": [{"name": "x", "significance": "impact", "description": "d", "queries": [
-        {"purpose": "p", "data_source": "web", "spl": 'search index=* | delete'}]}]}
+        {"purpose": "p", "data_source": "web", "spl": "search index=* | delete"}]}]}
     with pytest.raises(PlanError):
-        build_plan(bundle, ScriptedLlm(evil), attempts=2)
-    with pytest.raises(PlanError):
-        build_plan(bundle, ScriptedLlm("not json at all"), attempts=2)
+        build_plan(bare, ScriptedLlm(evil), attempts=2)
 
 
-def test_builder_caps_the_number_of_queries(tmp_path: Path):
-    plan = build_plan(_bundle(tmp_path), ScriptedLlm(GOOD), limits=Limits(max_queries=2), attempts=1)
-    assert sum(len(s.queries) for s in plan.stages) == 2 and any("over max_queries" in d for d in plan.dropped)
+def test_the_core_is_never_trimmed_and_suggestions_are_what_gets_capped(tmp_path: Path):
+    plan = build_plan(_bundle(tmp_path), ScriptedLlm(GOOD), limits=Limits(max_queries=6), attempts=1)
+    assert sum(len(s.queries) for s in plan.stages if s.origin == "core") == 5
+    assert sum(len(s.queries) for s in plan.stages if s.origin == "llm") == 1 and any("over max_queries" in d for d in plan.dropped)
 
 
 # ----------------------------------------------------------------------------- render / bind / files
@@ -348,24 +388,30 @@ def plan(tmp_path: Path) -> HuntPlan:
 
 def test_markdown_and_files_for_the_execute_team(plan: HuntPlan, tmp_path: Path):
     md = render_plan_md(plan)
-    for needle in ("Giả sử", "CISA KEV", "alice/widget-rce", "S3 — Hậu khai thác", "Điểm dừng", "Kiểm tra độ phủ", "Phạm vi của bản kế hoạch này"):
+    for needle in ("Giả sử", "CISA KEV", "alice/widget-rce", "S3 — Dấu hiệu thành công", "Điểm dừng", "Kiểm tra độ phủ", "Phạm vi của bản kế hoạch này",
+                   "plan_digest", "RUNBOOK.md", "GỢI Ý CỦA LLM", "Việc con người phải tự làm"):
         assert needle in md
     out = write_plan(plan, tmp_path / "iter1")
     template = ResultBundle.model_validate_json((out / "result.template.json").read_text(encoding="utf-8"))
     assert {r.query_id for r in template.results} == {q.query_id for q in plan.all_queries()}
     assert all(r.status == "skipped" for r in template.results)
+    assert template.plan_digest == "" and template.approved_by == ""  # attestation is for a person to fill in
     spl = (out / "queries.spl").read_text(encoding="utf-8")
-    assert "S3-Q1" in spl and "READ-ONLY" in spl
+    assert "S3-Q1" in spl and "TEMPLATE ONLY" in spl
+    runbook = (out / "RUNBOOK.md").read_text(encoding="utf-8")
+    assert "R0" in runbook and "Quyết định của người" in runbook
 
 
 def test_bind_requires_a_safe_mapping_for_every_source_used(plan: HuntPlan):
     q = plan.stages[0].queries[0]
     bound = bind(q.spl, plan, {"web": "web_prod"})
-    assert "index=web_prod" in bound and "{{" not in bound and "earliest=-14d" in bound and "head 200" in bound
+    assert "index=web_prod" in bound and "{{" not in bound and "head 200" in bound
+    assert "earliest=-14d" not in bound and "earliest=1" in bound  # an absolute epoch, not a relative lookback
     with pytest.raises(KeyError):
         bind(q.spl, plan, {})
-    with pytest.raises(KeyError):
-        bind(q.spl, plan, {"web": "x | delete"})  # a mapping cannot smuggle commands in
+    for bad in ("x | delete", "*", "_internal", "w*", "", "web prod"):
+        with pytest.raises(BindError):
+            bind(q.spl, plan, {"web": bad})  # a mapping cannot smuggle commands in or widen the search
     assert all(p in PLACEHOLDERS for p in PLACEHOLDERS)
 
 
@@ -373,16 +419,24 @@ def test_bind_requires_a_safe_mapping_for_every_source_used(plan: HuntPlan):
 
 
 def _results(plan: HuntPlan, **by_query) -> ResultBundle:
-    """Every query ok with 0 rows and every coverage probe present, except what ``by_query`` overrides."""
+    """Attested results: every core query ok with 0 rows and every core coverage probe present, except what ``by_query``
+    overrides. Queries the LLM suggested were not accepted, so they are not run."""
     rows = []
     for q in plan.all_queries():
         if q.query_id in by_query:
             rows.append(by_query[q.query_id])
+        elif q.origin == "llm":
+            rows.append(QueryResult(query_id=q.query_id, status="skipped"))
         elif q.role == "coverage":
             rows.append(QueryResult(query_id=q.query_id, status="ok", row_count=3))
         else:
             rows.append(QueryResult(query_id=q.query_id, status="ok", row_count=0))
-    return ResultBundle(plan_id=plan.plan_id, iteration=plan.iteration, executor="test", results=rows)
+    return attest(plan, rows)
+
+
+def attest(plan: HuntPlan, rows, **extra) -> ResultBundle:
+    return ResultBundle(plan_id=plan.plan_id, iteration=plan.iteration, executor="test", results=rows,
+                        plan_digest=plan.provenance.plan_digest, approved_by="alice", approved_at="2099-03-01T08:00:00Z", **extra)
 
 
 def hit(query_id, n=2, sample=None, **kw):
@@ -393,7 +447,8 @@ def test_all_clear_is_accepted_but_never_called_clean(plan: HuntPlan):
     v, nxt = verify(plan, _results(plan))
     assert v.decision == "ACCEPT_NO_EVIDENCE" and nxt is None
     assert "KHÔNG phải kết luận 'sạch'" in " ".join(v.reasons)
-    assert all(s.status == "CLEAR" for s in v.stages) and v.human_required
+    assert all(s.status == "CLEAR" for s in v.stages if s.stage_id.startswith("S")) and v.human_required and v.attested
+    assert {s.status for s in v.stages if s.stage_id.startswith("L")} == {"SKIPPED"}
 
 
 def test_impact_hit_escalates_and_stops_widening(plan: HuntPlan):
@@ -406,7 +461,7 @@ def test_empty_result_on_a_source_without_data_is_not_a_negative(plan: HuntPlan)
     v, _ = verify(plan, _results(plan, **{"C-web": QueryResult(query_id="C-web", status="ok", row_count=0)}))
     assert v.decision == "COLLECT_DATA" and v.coverage["web"] == "empty"
     assert any("không chứng minh điều gì" in r for r in v.reasons)
-    missing, _ = verify(plan, ResultBundle(plan_id=plan.plan_id, results=[QueryResult(query_id="S1-Q1", status="ok")]))
+    missing, _ = verify(plan, attest(plan, [QueryResult(query_id="S1-Q1", status="ok")]))
     assert missing.decision != "ACCEPT_NO_EVIDENCE"  # unknown coverage never yields an acceptance
 
 
@@ -426,6 +481,8 @@ def test_indicator_hits_start_a_pivot_round_with_safe_queries(plan: HuntPlan):
     assert v.decision == "REFINE" and nxt is not None and v.next_plan_id == nxt.plan_id
     assert nxt.iteration == 2 and nxt.parent_plan_id == plan.plan_id and nxt.plan_id.endswith("-r2")
     assert nxt.limits.window == {"earliest": "2099-03-01T09:00:00Z", "latest": "2099-03-01T12:30:00Z"}  # +-1h around the activity
+    assert nxt.provenance.plan_digest and nxt.provenance.plan_digest != plan.provenance.plan_digest  # a new plan: approve again
+    assert nxt.runbook and nxt.runbook[0].step_id == "R0"
     blob = nxt.model_dump_json()
     assert "203.0.113.7" in blob and "web-01" in blob and "delete" not in blob  # hostile value never embedded
     queries = nxt.all_queries()
@@ -473,6 +530,10 @@ def test_cli_schema_and_verify_roundtrip(plan: HuntPlan, tmp_path: Path, capsys)
     out = write_plan(plan, tmp_path / "CVE" / "iter1")
     results = _results(plan, **{"S2-Q1": hit("S2-Q1", 3, [{"src": "203.0.113.7", "dest": "web-01"}])})
     (tmp_path / "res.json").write_text(results.model_dump_json(), encoding="utf-8")
+    unsigned = results.model_copy(update={"approved_by": ""})
+    (tmp_path / "unsigned.json").write_text(unsigned.model_dump_json(), encoding="utf-8")
+    assert main(["verify", "--plan", str(out / "plan.json"), "--results", str(tmp_path / "unsigned.json")]) == 0
+    assert "REJECT_RESULTS" in capsys.readouterr().out and not (tmp_path / "CVE" / "iter2").exists()
     assert main(["verify", "--plan", str(out / "plan.json"), "--results", str(tmp_path / "res.json")]) == 0
     assert "REFINE" in capsys.readouterr().out
     assert (out / "verification.md").exists() and (tmp_path / "CVE" / "iter2" / "plan.json").exists()
@@ -481,21 +542,41 @@ def test_cli_schema_and_verify_roundtrip(plan: HuntPlan, tmp_path: Path, capsys)
     assert main(["verify", "--plan", str(out / "plan.json"), "--results", str(tmp_path / "missing.json")]) == 2
 
 
-def test_cli_plan_without_llm_saves_the_intel_and_exits_cleanly(monkeypatch, tmp_path: Path, capsys):
+def test_cli_plan_without_an_llm_still_writes_the_deterministic_plan(monkeypatch, tmp_path: Path, capsys):
     from hunting import plan_cli
     from hunting.llm import LlmUnavailable
 
-    bundle = IntelBundle(query="CVE-2099-0001", cves=[CveInfo(cve_id="CVE-2099-0001", description="d")],
-                         repos=[PocRepo(full_name="a/b", url="u", stars=10, files=[PocFile(path="README.md", size=3, text="abc")])])
+    bundle = _bundle(tmp_path)
     monkeypatch.setattr(plan_cli, "gather", lambda *a, **k: bundle)
 
     def no_llm(*a, **k):
         raise LlmUnavailable("not configured")
 
     monkeypatch.setattr(plan_cli, "build_llm", no_llm)
-    code = plan_cli.main(["plan", "--cve", "CVE-2099-0001", "--out", str(tmp_path), "--cache-dir", str(tmp_path / "c")])
-    assert code == 3
-    assert (tmp_path / "CVE-2099-0001" / "intel.json").exists() and "LLM is needed" in capsys.readouterr().err
+    code = plan_cli.main(["plan", "--cve", "CVE-2099-0001", "--out", str(tmp_path / "o"), "--cache-dir", str(tmp_path / "c")])
+    assert code == 0
+    folder = tmp_path / "o" / "CVE-2099-0001"
+    assert (folder / "intel.json").exists() and (folder / "iter1" / "plan.json").exists() and (folder / "iter1" / "RUNBOOK.md").exists()
+    assert "deterministic core plan only" in capsys.readouterr().err
+    saved = HuntPlan.model_validate_json((folder / "iter1" / "plan.json").read_text(encoding="utf-8"))
+    assert saved.provenance.llm_model is None and all(s.origin == "core" for s in saved.stages)
+
+
+def test_cli_bind_refuses_unsafe_input_and_writes_a_bound_file(plan: HuntPlan, tmp_path: Path, capsys):
+    from hunting import plan_cli
+
+    out = write_plan(plan, tmp_path / "iter1")
+    maps = ["--map", "web=web_prod", "--map", "dns=dns_prod", "--map", "proxy=proxy_prod"]
+    window = ["--earliest", "2099-03-01T00:00:00Z", "--latest", "2099-03-02T00:00:00Z"]
+    assert plan_cli.main(["bind", "--plan", str(out / "plan.json"), "--map", "web=*", *maps[2:], *window]) == 5
+    assert not (out / "queries.bound.spl").exists() and "REFUSED" in capsys.readouterr().err
+    assert plan_cli.main(["bind", "--plan", str(out / "plan.json"), *maps, "--earliest", "2099-01-01T00:00:00Z", "--latest", "2099-09-01T00:00:00Z"]) == 5
+    assert plan_cli.main(["bind", "--plan", str(out / "plan.json"), *maps, *window]) == 5  # ends in the future relative to today
+    assert plan_cli.main(["bind", "--plan", str(out / "plan.json"), *maps[:2], "--earliest", "2020-01-01T00:00:00Z", "--latest", "2020-01-08T00:00:00Z"]) == 5  # proxy unmapped
+    assert plan_cli.main(["bind", "--plan", str(out / "plan.json"), *maps, "--earliest", "2020-01-01T00:00:00Z", "--latest", "2020-01-08T00:00:00Z"]) == 0
+    text = (out / "queries.bound.spl").read_text(encoding="utf-8")
+    assert "index=web_prod" in text and "earliest=1577836800 latest=1578441600" in text and "index=*" not in text
+    assert "L1-Q1" not in text and "S3-Q1" in text and plan.provenance.plan_digest in text  # LLM suggestions are left out unless accepted
 
 
 def test_cli_plan_reads_the_public_source_tokens_from_the_env_file(monkeypatch, tmp_path: Path):

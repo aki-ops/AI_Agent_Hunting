@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from hunting.plan.render import render_plan_md
+from hunting.plan.runbook import render_runbook_md
 from hunting.plan.schema import HuntPlan, QueryResult, ResultBundle
 
 
@@ -19,7 +20,7 @@ def result_template(plan: HuntPlan) -> ResultBundle:
 def queries_spl(plan: HuntPlan) -> str:
     lines = [
         f"// {plan.plan_id} (round {plan.iteration}) - READ-ONLY searches with placeholders.",
-        "// Bind {{INDEX_*}} to your indexes; {{EARLIEST}}/{{LATEST}}/{{MAX_ROWS}} come from the plan limits.",
+        "// TEMPLATE ONLY - do not paste into Splunk. Run `main.py bind` to get queries.bound.spl (real index, absolute time, row cap).",
         "// Run coverage probes (C-*) first: an empty result is only meaningful where the source has data.",
         "",
     ]
@@ -34,6 +35,7 @@ def write_plan(plan: HuntPlan, directory: str | Path) -> Path:
     (out / "plan.json").write_text(plan.model_dump_json(indent=2), encoding="utf-8")
     (out / "plan.md").write_text(render_plan_md(plan), encoding="utf-8")
     (out / "queries.spl").write_text(queries_spl(plan), encoding="utf-8")
+    (out / "RUNBOOK.md").write_text(render_runbook_md(plan), encoding="utf-8")
     (out / "result.template.json").write_text(result_template(plan).model_dump_json(indent=2), encoding="utf-8")
     if plan.peak:
         (out / "peak_able.md").write_text(plan.peak.able_markdown + "\n", encoding="utf-8")

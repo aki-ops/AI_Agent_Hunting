@@ -50,12 +50,19 @@ Vòng lặp dừng khi: chuyển IR, chấp nhận, hết `max_iterations` (mặ
 ## 3. Lệnh
 
 ```bash
-# 1) lập kế hoạch từ PoC công khai (CVE, repo, hoặc từ khoá); cần LLM trong .env
+# 1) lập kế hoạch từ PoC công khai (CVE, repo, hoặc từ khoá). LLM là tuỳ chọn: --offline hoặc không có khoá thì chỉ có phần lõi
 python main.py plan --cve CVE-2021-44228 --min-stars 500
 python main.py plan --repo fullhunt/log4j-scan
 python main.py plan --query "spring4shell poc" --min-stars 200 --no-peak   # --no-peak: bỏ PEAK cho nhanh
 
-# 2) đội Execute chạy queries.spl (đã ánh xạ index), điền result.template.json → results.json
+python main.py plan --cve CVE-2021-44228 --min-stars 500 --offline       # chỉ phần lõi tất định, không gọi LLM
+
+# 2) NGƯỜI duyệt plan.md rồi làm theo RUNBOOK.md (R0, R1, ...). Gắn chỉ mục và cửa sổ thời gian; lệnh bind từ chối truy vấn không an toàn
+python main.py bind --plan artifacts/plans/CVE-2021-44228/iter1/plan.json \
+    --map web=web_prod --map dns=dns_prod --map proxy=proxy_prod --map endpoint=edr_prod \
+    --earliest 2026-10-13T00:00:00Z --latest 2026-10-20T00:00:00Z [--accept-llm L1,L2]
+#    -> queries.bound.spl (chỉ đọc, đã gắn). Đội Execute chạy tuần tự, điền result.template.json → results.json
+#       (bắt buộc: plan_digest, approved_by, approved_at; accepted_llm_stages nếu có chạy gợi ý của LLM)
 
 # 3) xác minh; nếu cần sẽ tạo thư mục iter2/ với kế hoạch vòng sau
 python main.py verify --plan artifacts/plans/CVE-2021-44228/iter1/plan.json --results results.json
@@ -64,8 +71,9 @@ python main.py verify --plan artifacts/plans/CVE-2021-44228/iter1/plan.json --re
 python main.py schema --out schemas/
 ```
 
-Không có LLM: bước thu thập tình báo vẫn chạy và lưu `intel.json`, `intel_digest.md`, rồi dừng với mã thoát 3 (LLM cần để
-viết giai đoạn và truy vấn). `verify` và `schema` không dùng LLM.
+Không có LLM (khoá sai/hết hạn, model lỗi, hoặc `--offline`): vẫn ra kế hoạch đầy đủ phần lõi, kèm ghi chú vì sao không có gợi ý LLM. (Trước đây
+bước này dừng với mã thoát 3 vì LLM cần để
+viết giai đoạn và truy vấn.) `verify`, `bind` và `schema` không dùng LLM.
 
 Biến môi trường tuỳ chọn: `GITHUB_TOKEN` (nâng hạn mức GitHub từ 60 lên 5.000 yêu cầu/giờ; chỉ gửi tới `api.github.com`),
 `NVD_API_KEY`. Cache ở `artifacts/.cache/intel` (24 giờ).
@@ -122,9 +130,42 @@ vài dòng, không phải số sự kiện).
 9. Mọi yêu cầu HTTP ra ngoài chỉ tới 3 host cho phép; **chuyển hướng cũng bị kiểm tra lại từng bước** (https, đúng host, tối đa 3 lần),
    và khoá API chỉ đi cùng yêu cầu tới host của nó.
 
+## 5b. Ba bảo đảm (phiên bản 0.4)
+
+**A. Kết quả không phụ thuộc model.** Kế hoạch có hai phần với mức tin cậy khác nhau (trường `origin` của từng giai đoạn/truy vấn):
+
+| Phần | Ai tạo | Phụ thuộc model? | Dùng để quyết định? |
+|---|---|---|---|
+| `core` (S1 ngữ cảnh, S2 dấu hiệu nỗ lực, S3 hậu khai thác; truy vấn, điểm dừng, giới hạn, độ phủ) | **Mã** (`plan/core.py`), từ dấu vết trích trong PoC/CVE | **Không**: cùng tình báo thì cùng `core_digest` | **Có**: chỉ phần này quyết định `verify` |
+| `llm` (tối đa 2 giai đoạn × 2 truy vấn, mã `L1`, `L2`) | LLM qua PEAK, qua cùng bộ kiểm tra | Có | **Không**: người chấp nhận từng cái; kết quả chỉ để tham khảo, không leo thang/pivot |
+
+Model yếu, hỏng, hết hạn khoá hay không có model: phần lõi y hệt (đã kiểm chứng bằng `core_digest`), chỉ ít gợi ý hơn. Model mạnh hơn
+cho nhiều gợi ý hơn, nhưng không đổi, không bớt được một truy vấn lõi. Bộ kiểm tra tiến trình cha, ngoại ngữ, an toàn SPL áp như nhau cho cả hai phần.
+
+**B. Người quyết định từng bước.** Mỗi kế hoạch sinh `RUNBOOK.md` bằng mã (không bằng LLM): R0 duyệt kế hoạch → R1 gắn chỉ mục/thời gian →
+độ phủ → từng truy vấn (một bước mỗi truy vấn, kèm "ghi lại" và "dừng nếu") → **cổng người** sau mỗi giai đoạn → nộp kết quả → quyết định cuối.
+Kết quả trả về phải nhắc `plan_digest`, tên người duyệt (`approved_by`) và thời điểm (`approved_at`), nếu không `verify` trả `REJECT_RESULTS`;
+gợi ý của LLM chỉ được tính khi liệt kê trong `accepted_llm_stages`. Vòng pivot (`REFINE`) là một kế hoạch mới với `plan_digest` mới: phải duyệt lại.
+
+**C. SPL và thời gian được kiểm tra hai lần**: lúc lập kế hoạch (`check_spl`) và lúc gắn (`bind` → `lint_bound`), nên sửa tay `plan.json` cũng không lọt.
+
+| Chặn | Cách |
+|---|---|
+| `index=*`, chỉ mục thiếu/sai/nội bộ (`_internal`, `_audit`), nhiều chỉ mục | `index_name_problem`: một chỉ mục thật (hoặc tiền tố `web_*` ≥ 3 ký tự) |
+| Tìm kiếm không có bộ lọc chọn lọc (`field=*`, chuỗi < 3 ký tự) | `check_spl`: phải có literal ≥ 3 ký tự ngoài ký tự đại diện |
+| Thiếu mốc thời gian, `earliest`/`latest` do lệnh sau chèn vào | `bind` luôn chèn mốc **tuyệt đối** (epoch); `lint_bound` bắt buộc có cả hai |
+| Cửa sổ đảo ngược, rộng hơn 90 ngày, kết thúc trong tương lai | `resolve_window`; `Limits.lookback`/`window` cũng chặn lúc lập kế hoạch |
+| Kết quả không giới hạn (`head` thiếu, `limit=0`, `sort 0`) | `head N` bắt buộc, `1 ≤ N ≤ max_rows`; cấm `limit=0`, `sort 0` |
+| Lệnh giữ cả tập kết quả trong bộ nhớ (`eventstats`, `streamstats`, `mvexpand`, `makemv`) | bỏ khỏi danh sách cho phép |
+| Nhóm/liệt kê/khử trùng trên `_raw` (mỗi sự kiện một giá trị → tràn bộ nhớ) | `check_spl`, `lint_bound` |
+| Placeholder còn sót, ánh xạ thiếu nguồn | `bind` từ chối cả lô, in mọi lỗi cùng lúc, không ghi file nào |
+
 ## 6. Giới hạn đã biết
 
-- **Chất lượng truy vấn phụ thuộc vào LLM.** Mô hình miễn phí dùng để thử (Nemotron) đôi khi chọn nguồn dữ liệu chưa tối ưu hoặc lẫn
+- **Phần lõi tất định thận trọng và hẹp**: chỉ tìm đúng chuỗi có trong PoC/CVE, không suy luận biến thể; không dựng truy vấn tiến trình khi chưa suy ra được
+  tiến trình cha từ tên sản phẩm (ghi vào "Việc con người phải tự làm"). Độc lập model nghĩa là *cùng kế hoạch lõi*, không phải *cùng chất lượng gợi ý*:
+  gợi ý LLM vẫn tốt/xấu tuỳ model, nhưng không ảnh hưởng quyết định.
+- **Chất lượng gợi ý của LLM phụ thuộc vào model.** Mô hình miễn phí dùng để thử (Nemotron) đôi khi chọn nguồn dữ liệu chưa tối ưu hoặc lẫn
   từ nước ngoài trong chữ tiếng Việt (mã loại ký tự CJK/Cyrillic/Ả Rập và yêu cầu viết lại từ Latin ngoại ngữ, xem mục 5, ý 8). Bộ kiểm tra chỉ bảo đảm *an toàn và hình thức*,
   không bảo đảm truy vấn *bắt đúng* tấn công. Người săn phải đọc kế hoạch trước khi giao cho đội Execute.
 - **Chưa chạy SPL trên Splunk thật** (cũng như các lệnh `tstats` độ phủ). Tên trường theo CIM có thể khác ở mỗi nơi.

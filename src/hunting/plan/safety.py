@@ -13,11 +13,18 @@ from hunting.plan.catalog import PLACEHOLDERS
 MAX_LEN = 1500
 MAX_SEGMENTS = 10
 
+# Commands that keep the whole result set in memory (eventstats, streamstats, mvexpand, makemv) are not allowed:
+# a plan is run by another team on a production Splunk and must not be able to exhaust its search heads.
 ALLOWED_COMMANDS = {
-    "search", "where", "eval", "stats", "eventstats", "streamstats", "table", "fields", "rex", "regex", "sort",
+    "search", "where", "eval", "stats", "table", "fields", "rex", "regex", "sort",
     "dedup", "top", "rare", "head", "tail", "rename", "bin", "timechart", "chart", "fillnull", "spath",
-    "mvexpand", "makemv", "strcat", "reverse",
+    "strcat", "reverse",
 }
+MIN_LITERAL = 3  # a filter must contain at least one literal of this many non-wildcard characters
+_WILDCARD_ONLY = re.compile(r'^(?:\s*(?:[\w.]+\s*(?:=|!=)\s*)?"?\*+"?\s*)+$')
+_HIGH_CARDINALITY = re.compile(r"(?i)\bby\b[^|]*\b_raw\b|\b(?:values|list|dc|distinct_count)\s*\(\s*_raw\s*\)|^dedup\b[^|]*\b_raw\b")
+_UNLIMITED = re.compile(r"(?i)\b(?:limit|maxout|maxresults|maxtime)\s*=\s*0\b|^sort\s+0\b|^sort\s+-?\s*0\b")
+_WIDENS_SCOPE = re.compile(r"(?i)(?<![\w\"])(?:index|_index_earliest|_index_latest|earliest|latest|splunk_server|tag)\s*(?:=|::|!=)")
 _INDEX_TERM = re.compile(r"(?i)\bindex\s*=\s*(\{\{INDEX_[A-Z]+\}\})")
 _ANY_INDEX = re.compile(r"(?i)\bindex\s*(?:=|::|!=)")
 _TIME_TERM = re.compile(r"(?i)(?<![\w\"])(?:earliest|latest|_index_earliest|_index_latest)\s*=\s*[^\s|]+")
@@ -85,6 +92,34 @@ def widen_fragments(body: str) -> tuple[str, list[str]]:
     return _FRAGMENT.sub(fix, body), notes
 
 
+def _selective_literals(filters: str) -> list[str]:
+    found = re.findall(r'"((?:[^"\\]|\\.)*)"', filters)
+    found += re.findall(r'=\s*([^\s"()=|]+)', filters)
+    return [f for f in found if len(f.replace("*", "").strip()) >= MIN_LITERAL]
+
+
+def _scope_and_memory_errors(filters: str, rest: list[str]) -> list[str]:
+    """Rules that keep a search from reading a whole index or holding a huge result set in memory."""
+    errors: list[str] = []
+    if _WILDCARD_ONLY.match(filters):
+        errors.append("the filter is only wildcards (for example field=*): it would read the whole index")
+    elif not _selective_literals(filters):
+        errors.append(f"the search has no selective literal (at least {MIN_LITERAL} characters besides wildcards)")
+    return errors + _rest_errors(rest)
+
+
+def _rest_errors(rest: list[str]) -> list[str]:
+    errors: list[str] = []
+    for segment in rest:
+        if _WIDENS_SCOPE.search(segment):
+            errors.append("a later command mentions index/earliest/latest/splunk_server: scope and time are fixed by the first command")
+        if _HIGH_CARDINALITY.search(segment):
+            errors.append("grouping, listing or deduplicating on _raw has one value per event and exhausts memory")
+        if _UNLIMITED.search(segment):
+            errors.append("an unlimited result (limit=0, sort 0) is not allowed")
+    return errors
+
+
 def check_spl(spl: str) -> tuple[str | None, list[str], list[str]]:
     """Validate and normalise one detection search.
 
@@ -126,6 +161,7 @@ def check_spl(spl: str) -> tuple[str | None, list[str], list[str]]:
         command = match.group(1).lower() if match else ""
         if command not in ALLOWED_COMMANDS:
             errors.append(f"command '{command or segment[:20]}' is not in the allow-list")
+    errors += _scope_and_memory_errors(filters, segments[1:])
     if errors:
         return None, list(dict.fromkeys(errors)), notes
     rebuilt_first = "search " + _INDEX_TERM.sub(lambda m: f"index={m.group(1)} earliest={{{{EARLIEST}}}} latest={{{{LATEST}}}}", body, count=1)
@@ -160,6 +196,60 @@ def parent_process_problem(spl: str, data_source: str) -> str | None:
     if _PARENT_FILTER.search(filtering) or _FILE_FILTER.search(filtering):
         return None
     return "an endpoint (process) search has no filter on the parent process: " + PARENT_HINT
+
+
+_BOUND_INDEX = re.compile(r"(?i)\bindex\s*=\s*([^\s|)]+)")
+_BOUND_TIME = re.compile(r"(?i)\b(earliest|latest)\s*=\s*([^\s|)]+)")
+_TIME_VALUE = re.compile(r"^(?:now|-\d{1,4}[mhdw](?:@[a-z]{1,3})?|\d{9,11})$")
+_INDEX_NAME = re.compile(r"^(?:[A-Za-z][A-Za-z0-9_\-]{1,63}|[A-Za-z][A-Za-z0-9_\-]{2,63}\*)$")
+
+
+def index_name_problem(name: str) -> str | None:
+    """A real index name or a prefix pattern with at least three literal characters; never ``*`` or an internal index."""
+    if not isinstance(name, str) or not _INDEX_NAME.match(name):
+        return (f"index {name!r}: use one real index name (letters, digits, _ or -), optionally ending in one '*'; "
+                "'*', '_internal' and other patterns that read everything are refused")
+    return None
+
+
+def lint_bound(spl: str, *, max_rows: int) -> list[str]:
+    """Final gate on a search after the placeholders were replaced: exactly one real index, an explicit time range,
+    a row cap, nothing left unbound. Returns the problems (empty list = ok)."""
+    problems: list[str] = []
+    if "{{" in spl or "}}" in spl:
+        problems.append("a placeholder is still unbound")
+    segments, scan_errors = _scan(re.sub(r"^\s*\|\s*", "", spl))
+    problems += scan_errors
+    first = segments[0] if segments else ""
+    is_tstats = bool(re.match(r"(?i)\s*tstats\b", first))
+    indexes = [m.group(1) for m in _BOUND_INDEX.finditer(first)]
+    if len(indexes) != 1:
+        problems.append(f"expected exactly one index= term, found {len(indexes)}")
+    else:
+        issue = index_name_problem(indexes[0].strip('"'))
+        if issue:
+            problems.append(issue)
+    times = {m.group(1).lower(): m.group(2).strip('"') for m in _BOUND_TIME.finditer(first)}
+    for key in ("earliest", "latest"):
+        if key not in times:
+            problems.append(f"no {key}=: a search without a time range reads the whole index")
+        elif not _TIME_VALUE.match(times[key]):
+            problems.append(f"{key}={times[key]!r} is not a relative time (-14d), 'now' or an epoch")
+    for segment in segments[1:]:
+        match = re.match(r"([A-Za-z_]+)", segment)
+        command = match.group(1).lower() if match else ""
+        if command not in ALLOWED_COMMANDS:
+            problems.append(f"command '{command or segment[:20]}' is not in the allow-list")
+    problems += _rest_errors(segments[1:])
+    last = segments[-1] if segments else ""
+    head = re.match(r"(?i)head\s+(\d+)\b", last)
+    if not head:
+        problems.append("the search does not end with 'head N'")
+    elif not 1 <= int(head.group(1)) <= max_rows:
+        problems.append(f"head {head.group(1)} is outside 1..{max_rows}")
+    if not is_tstats and not re.match(r"(?i)\s*search\b", first):
+        problems.append("the search must start with 'search' (or the fixed tstats coverage probe)")
+    return problems
 
 
 def spl_literal(value: str) -> str | None:

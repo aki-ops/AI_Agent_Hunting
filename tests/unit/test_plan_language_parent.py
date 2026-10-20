@@ -12,7 +12,7 @@ from tests.unit.test_intel_plan import GOOD as _GOOD_WITH_A_BAD_SEARCH
 from tests.unit.test_intel_plan import ScriptedLlm, _bundle, _results
 
 GOOD = json.loads(json.dumps(_GOOD_WITH_A_BAD_SEARCH))
-GOOD["stages"][1]["queries"] = GOOD["stages"][1]["queries"][:1]  # drop the deliberately unsafe 'delete' search
+GOOD["stages"][0]["queries"] = GOOD["stages"][0]["queries"][:1]  # drop the deliberately unsafe 'delete' search
 
 # ----------------------------------------------------------------------------- language
 
@@ -80,7 +80,7 @@ def test_endpoint_process_searches_must_filter_on_the_parent():
 def _with(reply: dict, *, spl: str | None = None, description: str | None = None) -> dict:
     copy = json.loads(json.dumps(reply))
     if spl is not None:
-        copy["stages"][2]["queries"][0]["spl"] = spl
+        copy["stages"][1]["queries"][0]["spl"] = spl
     if description is not None:
         copy["stages"][0]["description"] = description
     return copy
@@ -97,7 +97,7 @@ def test_builder_asks_for_a_parent_filter_and_a_rewrite_of_stray_words(tmp_path:
     repair = llm.prompts[1][0]
     assert "no filter on the parent process" in repair and "language:" in repair and "przeciwko" in repair
     assert "przeciwko" not in plan.model_dump_json()
-    assert 'parent_process_name="widgetd"' in plan.stages[2].queries[0].spl
+    assert 'parent_process_name="widgetd"' in plan.stages[4].queries[0].spl
     # the first prompt states both rules to the model
     first = llm.prompts[0][0]
     assert "parent_process_name" in first and "ONLY Vietnamese and English" in first
@@ -110,10 +110,18 @@ def test_wording_problems_get_one_rewrite_not_the_whole_budget_and_the_words_are
     assert any("possible foreign-language words" in d and "przeciwko" in d for d in plan.dropped)
 
 
-def test_a_stage_that_lost_every_search_is_flagged_and_never_reads_as_clear(tmp_path: Path):
+def test_a_suggestion_that_lost_every_search_is_dropped_not_shown_as_an_empty_stage(tmp_path: Path):
     plan = build_plan(_bundle(tmp_path), ScriptedLlm(_with(GOOD, spl=BARE)), attempts=1)
-    assert plan.stages[2].queries == [] and any("parent process" in d for d in plan.dropped)
+    assert [s.stage_id for s in plan.stages] == ["S1", "S2", "S3", "L1"]  # L2 lost its only search and disappeared
+    assert any("parent process" in d for d in plan.dropped)
+    v, nxt = verify(plan, _results(plan))
+    assert v.decision == "ACCEPT_NO_EVIDENCE" and nxt is None  # the core decides; a lost suggestion changes nothing
+
+
+def test_a_stage_with_no_search_never_reads_as_clear(tmp_path: Path):
+    plan = build_plan(_bundle(tmp_path), None)
+    plan.stages[1].queries = []  # a reviewer deleted every search of S2
     assert "không còn truy vấn hợp lệ" in render_plan_md(plan)
     v, nxt = verify(plan, _results(plan))
     assert v.decision == "RERUN_INCOMPLETE" and nxt is None
-    assert v.stages[2].status == "INCOMPLETE" and "không có truy vấn" in " ".join(v.stages[2].notes)
+    assert next(s for s in v.stages if s.stage_id == "S2").status == "INCOMPLETE"

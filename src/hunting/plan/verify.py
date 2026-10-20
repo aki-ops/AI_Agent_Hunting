@@ -23,8 +23,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from hunting.plan.catalog import CATALOG
+from hunting.plan.digest import stamp
+from hunting.plan.runbook import build_runbook
 from hunting.plan.safety import check_spl, coverage_probe, spl_literal
-from hunting.plan.schema import HuntPlan, Query, QueryResult, ResultBundle, Stage
+from hunting.plan.schema import MAX_LOOKBACK_DAYS, HuntPlan, Query, QueryResult, ResultBundle, Stage
 
 Decision = Literal[
     "ESCALATE_AFFECTED", "ACCEPT_NO_EVIDENCE", "REFINE", "COLLECT_DATA", "RERUN_INCOMPLETE", "STOP_REVIEW", "REJECT_RESULTS"
@@ -38,7 +40,7 @@ _SHELLS = ("cmd.exe", "powershell.exe", "pwsh.exe", "sh", "bash", "dash", "zsh",
 class StageVerdict(BaseModel):
     stage_id: str
     name: str
-    status: Literal["HIT", "CLEAR", "NO_DATA", "INCOMPLETE"]
+    status: Literal["HIT", "CLEAR", "NO_DATA", "INCOMPLETE", "SKIPPED"]
     hits: int = 0
     truncated: bool = False
     actions: list[str] = Field(default_factory=list)
@@ -57,6 +59,7 @@ class Verification(BaseModel):
     leads: list[dict[str, Any]] = Field(default_factory=list)
     next_plan_id: str | None = None
     human_required: bool = True
+    attested: bool = False  # results quote the plan digest and name the approver
 
 
 def _query_state(q: Query, r: QueryResult | None, cap: int) -> tuple[str, int, bool]:
@@ -115,7 +118,7 @@ def extract_leads(bundle: ResultBundle, plan: HuntPlan, hit_ids: set[str]) -> tu
 
 
 def _pivot_stages(leads: list[dict[str, Any]], plan: HuntPlan) -> list[Stage]:
-    from hunting.plan.build import default_stops
+    from hunting.plan.core import default_stops
 
     limits = plan.limits
     srcs = [lead["value"] for lead in leads if lead["kind"] == "src"][:3]
@@ -197,6 +200,15 @@ def verify(plan: HuntPlan, bundle: ResultBundle) -> tuple[Verification, HuntPlan
         v = Verification(plan_id=plan.plan_id, iteration=plan.iteration, decision="REJECT_RESULTS",
                          summary="Kết quả thuộc kế hoạch khác; không dùng.", protocol_issues=[f"plan_id {bundle.plan_id!r} ≠ {plan.plan_id!r}"])
         return v, None
+    missing = [name for name, value in (("plan_digest", bundle.plan_digest), ("approved_by", bundle.approved_by),
+                                         ("approved_at", bundle.approved_at)) if not str(value).strip()]
+    if missing or bundle.plan_digest.strip() != plan.provenance.plan_digest:
+        why = (f"thiếu {', '.join(missing)}: kết quả chưa có người duyệt kế hoạch trước khi chạy" if missing else
+               "plan_digest không khớp: kết quả không thuộc đúng bản kế hoạch đã được duyệt (kế hoạch bị sửa sau khi duyệt, hoặc nhầm vòng)")
+        v = Verification(plan_id=plan.plan_id, iteration=plan.iteration, decision="REJECT_RESULTS",
+                         summary="Kết quả không có xác nhận duyệt hợp lệ; không dùng.", reasons=[why],
+                         protocol_issues=[why])
+        return v, None
     if bundle.iteration != plan.iteration:
         issues.append(f"iteration {bundle.iteration} ≠ {plan.iteration} của kế hoạch")
     planned = {q.query_id: q for q in plan.all_queries()}
@@ -212,6 +224,10 @@ def verify(plan: HuntPlan, bundle: ResultBundle) -> tuple[Verification, HuntPlan
             issues.append(f"{r.query_id}: mẫu {len(r.sample)} dòng > {MAX_SAMPLE}, cắt bớt")
             r = r.model_copy(update={"sample": r.sample[:MAX_SAMPLE]})
         by_id[r.query_id] = r
+        if r.earliest and r.latest:
+            a, b = _parse_time(r.earliest), _parse_time(r.latest)
+            if a and b and (b <= a or b - a > timedelta(days=MAX_LOOKBACK_DAYS)):
+                issues.append(f"{r.query_id}: cửa sổ đã chạy {r.earliest} → {r.latest} không hợp lệ hoặc rộng hơn {MAX_LOOKBACK_DAYS} ngày")
     cap = plan.limits.max_rows_per_query
 
     coverage: dict[str, str] = {}
@@ -224,8 +240,21 @@ def verify(plan: HuntPlan, bundle: ResultBundle) -> tuple[Verification, HuntPlan
     hit_ids: set[str] = set()
     escalate = False
     impact_incomplete = False
+    accepted = set(bundle.accepted_llm_stages)
     for stage in plan.stages:
         states = [(q, *_query_state(q, by_id.get(q.query_id), cap)) for q in stage.queries]
+        if stage.origin == "llm":
+            ran = [st for _, st, _, _ in states if st != "NOT_RUN"]
+            if stage.stage_id not in accepted or not ran:
+                verdicts.append(StageVerdict(stage_id=stage.stage_id, name=stage.name, status="SKIPPED",
+                                             notes=["gợi ý của LLM, không được chấp nhận hoặc không chạy: không ảnh hưởng quyết định"]))
+                if ran and stage.stage_id not in accepted:
+                    issues.append(f"{stage.stage_id}: có kết quả nhưng gợi ý LLM chưa được ghi là đã chấp nhận (accepted_llm_stages): bỏ qua")
+                continue
+            hits = sum(h for _, st, h, _ in states if st == "HIT")
+            verdicts.append(StageVerdict(stage_id=stage.stage_id, name=stage.name, status="HIT" if hits else "CLEAR", hits=hits,
+                                         notes=["gợi ý của LLM đã được người chấp nhận: kết quả chỉ để tham khảo, KHÔNG dùng để leo thang hay pivot"]))
+            continue
         hits = sum(h for _, st, h, _ in states if st == "HIT")
         truncated = any(t for _, st, _, t in states if st == "HIT")
         errors = [q.query_id for q, st, _, _ in states if st in ("ERROR", "NOT_RUN")]
@@ -267,7 +296,8 @@ def verify(plan: HuntPlan, bundle: ResultBundle) -> tuple[Verification, HuntPlan
                                      truncated=truncated, actions=list(dict.fromkeys(actions)), notes=notes))
 
     missing_cov = [s for s, st in coverage.items() if st != "present"]
-    any_hit = any(v.status == "HIT" for v in verdicts)
+    llm_ids = {s.stage_id for s in plan.stages if s.origin == "llm"}
+    any_hit = any(v.status == "HIT" and v.stage_id not in llm_ids for v in verdicts)
     leads, span = extract_leads(bundle, plan, hit_ids)
     reasons: list[str] = []
 
@@ -275,6 +305,7 @@ def verify(plan: HuntPlan, bundle: ResultBundle) -> tuple[Verification, HuntPlan
         return Verification(
             plan_id=plan.plan_id, iteration=plan.iteration, decision=decision, summary=summary, reasons=reasons, stages=verdicts,
             coverage=coverage, protocol_issues=issues, leads=leads, next_plan_id=next_plan.plan_id if next_plan else None,
+            attested=True,
         ), next_plan
 
     if escalate:
@@ -284,7 +315,7 @@ def verify(plan: HuntPlan, bundle: ResultBundle) -> tuple[Verification, HuntPlan
     if impact_incomplete:
         reasons.append("Truy vấn của giai đoạn 'impact' lỗi hoặc chưa chạy nên chưa thể kết luận.")
         return done("RERUN_INCOMPLETE", "Chạy lại các truy vấn lỗi/thiếu, nhất là giai đoạn impact.")
-    if any_hit or any(v.truncated for v in verdicts):
+    if any_hit or any(v.truncated for v in verdicts if v.stage_id not in llm_ids):
         if plan.iteration >= plan.limits.max_iterations:
             reasons.append(f"Đã đạt {plan.limits.max_iterations} vòng nhưng vẫn còn dấu vết: cần người đọc bằng chứng.")
             return done("STOP_REVIEW", "Hết số vòng cho phép; chuyển người săn xem xét.")
@@ -312,12 +343,17 @@ def verify(plan: HuntPlan, bundle: ResultBundle) -> tuple[Verification, HuntPlan
         nxt.stages, nxt.coverage_probes, nxt.limits, nxt.leads = stages, probes, limits, plan.leads + leads
         nxt.dropped = []
         nxt.peak = None
-        reasons += [f"{v.stage_id} có {v.hits} kết quả" + (" (bị cắt ở trần dòng)" if v.truncated else "") for v in verdicts if v.status == "HIT"]
+        nxt.manual_todo = []
+        nxt.provenance = nxt.provenance.model_copy(update={"input_digest": plan.provenance.input_digest})
+        reasons += [f"{v.stage_id} có {v.hits} kết quả" + (" (bị cắt ở trần dòng)" if v.truncated else "") for v in verdicts if v.status == "HIT" and v.stage_id not in llm_ids]
         reasons.append(f"Pivot trên {len(leads)} giá trị quan sát được: " + ", ".join(f"{lead['kind']}={lead['value']}" for lead in leads[:6]))
         if span:
             reasons.append(f"Thu hẹp cửa sổ về {limits.window['earliest']} → {limits.window['latest']} (±1 giờ quanh hoạt động thấy được).")  # type: ignore[index]
         if missing_cov:
             reasons.append("Lưu ý độ phủ: " + ", ".join(f"{s}={coverage[s]}" for s in missing_cov))
+        nxt.runbook = build_runbook(nxt)
+        stamp(nxt)
+        reasons.append("Kế hoạch vòng sau là kế hoạch MỚI với plan_digest mới: người phải duyệt lại từ bước R0 trước khi chạy.")
         return done("REFINE", f"Chạy vòng {nxt.iteration} với các truy vấn pivot.", nxt)
     if any(v.status == "INCOMPLETE" for v in verdicts):
         reasons += [f"{v.stage_id}: " + "; ".join(v.notes) for v in verdicts if v.status == "INCOMPLETE"]

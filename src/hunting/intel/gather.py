@@ -35,7 +35,8 @@ def gather(
         try:
             info = nvd_lookup(fetcher, cve_id)
         except IntelError as exc:
-            bundle.warnings.append(f"NVD lookup for {cve_id} failed: {exc}")
+            bundle.warnings.append(f"NVD lookup for {cve_id} failed ({exc}): the plan lacks the CVE facts (product, versions)")
+            bundle.cves.append(CveInfo(cve_id=cve_id))  # the requested CVE stays primary; PoC-mentioned ones never replace it
             return
         if info is None:
             bundle.warnings.append(f"{cve_id} not found in NVD (new, rejected or mistyped)")

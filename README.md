@@ -52,6 +52,8 @@ python main.py schema --out schemas/                           # JSON Schema c�
 ```
 
 Chi tiết, hợp đồng dữ liệu, mô hình an toàn và giới hạn: [`docs/PREPARE-WORKFLOW.md`](docs/PREPARE-WORKFLOW.md). Pipeline
+
+**Ba bảo đảm của hướng Prepare-only (v0.4):** (1) phần lõi của kế hoạch do mã dựng, không đổi theo model (`core_digest`); LLM chỉ thêm gợi ý có nhãn, người chấp nhận từng cái; (2) mỗi kế hoạch có `RUNBOOK.md` từng bước với cổng quyết định của người, kết quả phải mang `plan_digest` + người duyệt; (3) `main.py bind` từ chối `index=*`, thiếu mốc thời gian, cửa sổ > 90 ngày, lệnh ngốn bộ nhớ. Chi tiết: mục 5b của `docs/PREPARE-WORKFLOW.md`.
 Prepare→Execute→Act bên dưới vẫn còn, dùng làm bộ thử cục bộ trên dữ liệu BOTS v1 công khai.
 
 ## Cài đặt (Python ≥ 3.12)
