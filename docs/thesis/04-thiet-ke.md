@@ -158,11 +158,11 @@ Bảng: Các tệp đầu ra của một PoC
 
 ### 4.9.1. Tổng quan
 
-Hình 6 trình bày luồng theo năm vùng. Vùng đầu là nguồn công khai. Vùng Prepare (do dự án này làm) gồm bảy bước, trong đó hai bước dùng LLM (PEAK và bộ lập kế hoạch) còn năm bước là mã tất định. Vùng Execute do đội khác thực hiện; ranh giới dữ liệu nằm ở đây: chỉ `ResultBundle` quay về. Vùng xác minh (`verify`) không dùng LLM. Vùng cuối là các quyết định, chỉ để hỗ trợ người săn.
+Hình 6 trình bày luồng theo năm vùng. Vùng đầu là nguồn công khai. Vùng Prepare (do dự án này làm) gồm bảy bước, trong đó chỉ một bước dùng LLM (PEAK tuỳ chọn và phần gợi ý bổ sung) còn sáu bước là mã tất định, kể cả bước dựng phần lõi của kế hoạch. Giữa Prepare và Execute có hai bước của con người và công cụ: người duyệt kế hoạch (R0) và lệnh `bind`, gắn chỉ mục thật và thời gian tuyệt đối rồi từ chối truy vấn không an toàn. Vùng Execute do đội khác thực hiện; ranh giới dữ liệu nằm ở đây: chỉ `ResultBundle` (kèm `plan_digest` và người duyệt) quay về. Vùng xác minh (`verify`) không dùng LLM. Vùng cuối là các quyết định, chỉ để hỗ trợ người săn.
 
 ![Quy trình Prepare-only: từ PoC công khai đến kế hoạch săn, đội Execute chạy, xác minh và vòng pivot](assets/fig-6-prepare-only.png)
 
-Có hai quyết định thiết kế xuyên suốt. Thứ nhất, **LLM chỉ đề xuất, mã mới quyết định**: LLM nêu giai đoạn, dấu vết và truy vấn; mã kiểm tra từng thứ, và tự thêm điểm dừng, giới hạn, truy vấn độ phủ. Thứ hai, **dữ liệu đi một chiều**: văn bản công khai đi vào, kế hoạch đi ra, và chỉ kết quả đã được đội thực thi đồng ý trả mới quay lại.
+Có hai quyết định thiết kế xuyên suốt. Thứ nhất, **mã quyết định, LLM chỉ gợi ý thêm**: phần lõi (giai đoạn, truy vấn, điểm dừng, giới hạn, độ phủ) do mã dựng từ dấu vết trong PoC/CVE; LLM chỉ đề xuất truy vấn bổ sung, mã kiểm tra từng thứ và đánh nhãn. Thứ hai, **dữ liệu đi một chiều**: văn bản công khai đi vào, kế hoạch đi ra, và chỉ kết quả đã được đội thực thi đồng ý trả mới quay lại.
 
 ### 4.9.2. Mô hình dữ liệu
 
@@ -228,7 +228,9 @@ Bảng: Ai tin ai trong luồng Prepare-only
 
 ### 4.9.6. Ba bảo đảm của phiên bản 0.4
 
-**Lõi tất định và gợi ý của LLM.** Mỗi giai đoạn và truy vấn của kế hoạch mang trường `origin`. Phần `core` do mô-đun `plan/core.py` dựng từ các dấu vết đã trích trong văn bản PoC/CVE: giai đoạn S1 (ngữ cảnh: User-Agent, đường dẫn), S2 (nỗ lực khai thác: chuỗi payload, tham số, header), S3 (hậu khai thác: tên miền out-of-band, tệp do PoC tạo, tiến trình con của dịch vụ bị tấn công khi suy ra được họ tiến trình cha từ tên sản phẩm trong CVE). Điểm dừng, giới hạn và truy vấn độ phủ cũng sinh từ mẫu. LLM chỉ được đề xuất tối đa hai giai đoạn bổ sung, mỗi giai đoạn tối đa hai truy vấn, mang `origin="llm"`, đi qua cùng bộ kiểm tra, và không bao giờ có điểm dừng `escalate`. Hai bản băm tách bạch hai phần: `core_digest` chỉ phủ phần lõi (không đổi theo mô hình), `plan_digest` phủ toàn bộ nội dung người duyệt.
+![Ba bảo đảm của phiên bản 0.4: độc lập model, người quyết định từng bước, SPL kiểm tra hai lần](assets/fig-7-three-guarantees.png)
+
+**Lõi tất định và gợi ý của LLM.** Mỗi giai đoạn và truy vấn của kế hoạch mang trường `origin`. Phần `core` do mô-đun `plan/core.py` dựng từ các dấu vết đã trích trong văn bản PoC/CVE: giai đoạn S1 (ngữ cảnh: User-Agent, đường dẫn), S2 (nỗ lực khai thác: chuỗi payload, tham số, header), S3 (hậu khai thác: tên miền out-of-band, tệp do PoC tạo, tiến trình con của dịch vụ bị tấn công khi suy ra được họ tiến trình cha từ tên sản phẩm trong CVE). Điểm dừng, giới hạn và truy vấn độ phủ cũng sinh từ mẫu. LLM chỉ được đề xuất tối đa hai giai đoạn bổ sung, mỗi giai đoạn tối đa hai truy vấn, mang `origin="llm"`, đi qua cùng bộ kiểm tra, và không bao giờ có điểm dừng `escalate`. Hình 7 tóm tắt ba bảo đảm và cách thực hiện từng bảo đảm. Hai bản băm tách bạch hai phần: `core_digest` chỉ phủ phần lõi (không đổi theo mô hình), `plan_digest` phủ toàn bộ nội dung người duyệt.
 
 **Quy trình từng bước cho con người.** Từ kế hoạch, `plan/runbook.py` sinh `RUNBOOK.md` không dùng LLM: R0 duyệt kế hoạch, R1 gắn chỉ mục và thời gian, kiểm tra độ phủ, một bước cho mỗi truy vấn (kèm mục "ghi lại" và "dừng nếu"), một cổng quyết định của người sau mỗi giai đoạn, nộp kết quả, quyết định cuối. Kết quả trả về phải nhắc `plan_digest`, `approved_by`, `approved_at`; thiếu hoặc sai thì `verify` trả `REJECT_RESULTS`. Gợi ý của LLM chỉ được tính khi liệt kê trong `accepted_llm_stages`, và kể cả khi đó kết quả chỉ để tham khảo.
 

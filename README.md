@@ -31,14 +31,14 @@ Không đụng hệ thống nội bộ, không chạy PoC.
 | **Nguồn công khai** (NVD, GitHub) | Cho biết lỗ hổng là gì (CVSS, phiên bản, có bị khai thác ngoài thực tế không) và PoC làm gì. Chỉ đọc văn bản, qua 3 host cố định. | Không |
 | **1. `gather()` + `Fetcher`** | Thu thập tình báo, có cache; chọn repo theo số sao, bỏ fork, file nhị phân và file nhiễu. | Không |
 | **2. `extract_indicators()` + `digest()`** | Trích tất định các dấu vết (tham số HTTP, chuỗi payload, tên miền out-of-band, tên file...) và gói văn bản cho LLM. Danh sách này dùng để đối chiếu, nhằm không để LLM bịa. | Không |
-| **3. `run_peak_texts()`** (tuỳ chọn) | PEAK Assistant viết bảng ABLE và kế hoạch săn làm ngữ cảnh. Chỉ thấy văn bản công khai và mô tả nguồn dữ liệu chung. Tốn nhiều token. | Có |
-| **4. `build_plan()`** | LLM đề xuất giai đoạn tấn công, dấu vết và truy vấn SPL. PoC được coi là dữ liệu không tin cậy, không phải chỉ dẫn. | Có |
+| **3. `build_core()`** (`plan/core.py`) | **Dựng phần lõi của kế hoạch bằng mã**: giai đoạn S1 ngữ cảnh, S2 nỗ lực khai thác, S3 hậu khai thác; truy vấn chỉ từ chuỗi có trong PoC/CVE, bỏ regex và biến trong mã; truy vấn tiến trình chỉ khi suy ra được tiến trình cha từ tên sản phẩm. Cùng tình báo thì cùng `core_digest`, dù dùng model nào. | Không |
+| **4. Gợi ý LLM** (`run_peak_texts()` tuỳ chọn + `_suggest()`) | PEAK viết bảng ABLE/kế hoạch làm ngữ cảnh; LLM đề xuất tối đa 2 giai đoạn × 2 truy vấn **bổ sung** (nhãn `origin=llm`). PoC là dữ liệu không tin cậy. Lỗi hoặc hết khoá thì bỏ qua, lõi không đổi. | Có (tuỳ chọn) |
 | **5. `assemble()` + `check_spl()`** | Chốt chặn an toàn: chỉ cho truy vấn chỉ đọc trong danh sách lệnh cho phép, tự gắn cửa sổ thời gian và trần dòng; truy vấn process trên endpoint buộc phải lọc theo tiến trình cha (không thì `whoami` của quản trị viên cũng khớp); chữ lẫn ngôn ngữ khác bị yêu cầu viết lại; truy vấn sai bị gửi lại để sửa (tối đa 3 lượt), vẫn sai thì loại. | Không |
-| **6. Phần mã tự thêm** | Điểm dừng theo mức ý nghĩa của giai đoạn, truy vấn kiểm tra độ phủ nguồn, giới hạn, nhãn xuất xứ. LLM không quyết định các thứ này. | Không |
-| **7. `write_plan()`** | Ghi `plan.json`, `plan.md`, `queries.spl`, `result.template.json` và schema, tức là các tài liệu bàn giao. | Không |
-| **Người săn đọc `plan.md`** | Kiểm tra truy vấn có bắt đúng tấn công không trước khi giao. Bộ kiểm tra chỉ bảo đảm an toàn và hình thức, không bảo đảm đúng nội dung. | |
-| **Đội Execute** (ngoài dự án) | `bind()` ánh xạ placeholder sang index thật, chạy truy vấn trên Splunk của họ rồi trả `ResultBundle`. Dữ liệu nội bộ ở lại bên họ. | |
-| **`verify()`** | Kiểm tra giao thức, tính trạng thái từng truy vấn, độ phủ và từng giai đoạn, rồi chọn quyết định theo thứ tự ưu tiên. | Không |
+| **6. `build_plan()` + `stamp()`** | Ghép lõi và gợi ý; điểm dừng theo mức ý nghĩa của giai đoạn, truy vấn kiểm tra độ phủ nguồn, giới hạn, nhãn xuất xứ; sinh `RUNBOOK.md` từng bước; tính `core_digest` và `plan_digest`. LLM không quyết định các thứ này. | Không |
+| **7. `write_plan()`** | Ghi `plan.json`, `plan.md`, `RUNBOOK.md`, `queries.spl` (mẫu), `result.template.json` và schema, tức là các tài liệu bàn giao. | Không |
+| **R0. Người duyệt kế hoạch** | Đọc `plan.md`, chấp nhận hoặc bỏ từng gợi ý LLM, ghi tên người duyệt. Bộ kiểm tra chỉ bảo đảm an toàn và hình thức, không bảo đảm truy vấn bắt đúng tấn công. | |
+| **`bind` rồi đội Execute** (ngoài dự án) | `main.py bind` gắn chỉ mục thật và mốc thời gian tuyệt đối, từ chối truy vấn không an toàn; đội Execute chạy theo `RUNBOOK.md` trên Splunk của họ rồi trả `ResultBundle` kèm `plan_digest` và người duyệt. Dữ liệu nội bộ ở lại bên họ. | |
+| **`verify()`** | Kiểm tra chữ ký (`plan_digest`, người duyệt) và giao thức, tính trạng thái từng truy vấn, độ phủ và từng giai đoạn, rồi chọn quyết định theo thứ tự ưu tiên; chỉ phần lõi quyết định. | Không |
 | **Quyết định** | `ESCALATE_AFFECTED` (chuyển IR), `ACCEPT_NO_EVIDENCE` (không phải "sạch"), `COLLECT_DATA`/`RERUN_INCOMPLETE`, `REFINE` (vòng pivot N+1, cửa sổ ±1 giờ), `STOP_REVIEW`/`REJECT_RESULTS`. Chỉ hỗ trợ; người săn chốt. | |
 
 Vòng lặp dừng khi chuyển IR, chấp nhận, hết 3 vòng, hoặc không còn giá trị mới để pivot.
@@ -46,14 +46,14 @@ Vòng lặp dừng khi chuyển IR, chấp nhận, hết 3 vòng, hoặc không 
 ### Lệnh
 
 ```bash
-python main.py plan --cve CVE-2021-44228 --min-stars 500      # cần LLM trong .env; --no-peak để bỏ PEAK (nhanh, ít token)
+python main.py plan --cve CVE-2021-44228 --min-stars 500 --no-peak   # LLM trong .env là tuỳ chọn; --no-peak bỏ PEAK (nhanh, ít token)
+python main.py plan --cve CVE-2021-44228 --min-stars 500 --offline   # chỉ phần lõi, không gọi LLM
+python main.py bind --plan <thư mục>/iter1/plan.json --map web=<index> --map dns=<index> ... --earliest ISO --latest ISO
 python main.py verify --plan artifacts/plans/CVE-2021-44228/iter1/plan.json --results results.json
 python main.py schema --out schemas/                           # JSON Schema của HuntPlan và ResultBundle
 ```
 
 Chi tiết, hợp đồng dữ liệu, mô hình an toàn và giới hạn: [`docs/PREPARE-WORKFLOW.md`](docs/PREPARE-WORKFLOW.md). Pipeline
-
-**Ba bảo đảm của hướng Prepare-only (v0.4):** (1) phần lõi của kế hoạch do mã dựng, không đổi theo model (`core_digest`); LLM chỉ thêm gợi ý có nhãn, người chấp nhận từng cái; (2) mỗi kế hoạch có `RUNBOOK.md` từng bước với cổng quyết định của người, kết quả phải mang `plan_digest` + người duyệt; (3) `main.py bind` từ chối `index=*`, thiếu mốc thời gian, cửa sổ > 90 ngày, lệnh ngốn bộ nhớ. Chi tiết: mục 5b của `docs/PREPARE-WORKFLOW.md`.
 Prepare→Execute→Act bên dưới vẫn còn, dùng làm bộ thử cục bộ trên dữ liệu BOTS v1 công khai.
 
 ## Kết quả chạy thử v0.4 và đối chiếu 3 tiêu chí
@@ -61,6 +61,8 @@ Prepare→Execute→Act bên dưới vẫn còn, dùng làm bộ thử cục b�
 Chạy thật với Log4Shell (CVE-2021-44228), `deepseek-flash`, không PEAK (`--no-peak`): 2 lời gọi LLM, 16.839 token. Kết quả đọc ngay tại
 [`results/prepare-log4shell-v04/`](results/prepare-log4shell-v04/): [`plan.md`](results/prepare-log4shell-v04/plan.md) (kế hoạch cho người đọc),
 [`RUNBOOK.md`](results/prepare-log4shell-v04/RUNBOOK.md) (quy trình từng bước), [`plan.json`](results/prepare-log4shell-v04/plan.json) (bản máy đọc).
+
+![Ba bảo đảm của v0.4: độc lập model, người quyết định từng bước, SPL kiểm tra hai lần](docs/images/three-guarantees.png)
 
 **Kế hoạch gồm những gì**
 

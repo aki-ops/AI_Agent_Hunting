@@ -229,20 +229,21 @@ Bảng: Sự cố thường gặp và cách xử lý
 
 ## 6.10. Chạy luồng Prepare-only
 
-### 6.10.1. Lập kế hoạch từ một CVE
+### 6.10.1. Lập kế hoạch từ một CVE (và gắn truy vấn sau khi duyệt)
 
-Cần `.env` có LLM (xem 6.2). Không cần dữ liệu telemetry hay Splunk.
+`.env` có LLM (xem 6.2) là tuỳ chọn: thiếu khoá hoặc dùng `--offline` thì vẫn ra kế hoạch đầy đủ phần lõi, chỉ không có gợi ý LLM. Không cần dữ liệu telemetry hay Splunk. Nếu dùng DeepSeek trực tiếp, tên model là `deepseek-flash` (không có tiền tố) và `LLM_MAX_TOKENS` không được vượt giới hạn của API.
 
 ```bash
 python main.py plan --cve CVE-2022-22965 --min-stars 200 --out artifacts/plans
 python main.py plan --cve CVE-2022-22965 --min-stars 200 --no-peak   # nhanh, ít token hơn nhiều
+python main.py plan --cve CVE-2022-22965 --min-stars 200 --offline    # chỉ phần lõi, không gọi LLM
 python main.py plan --repo owner/name                                  # từ một kho PoC cụ thể
 python main.py plan --query "log4j poc" --min-stars 500                 # tìm theo từ khoá
 ```
 
 Chú ý hạn mức GitHub: không có `GITHUB_TOKEN` thì chỉ 60 yêu cầu mỗi giờ (một lần lập kế hoạch tốn khoảng 23 yêu cầu, có lưu đệm). Có thể đặt `GITHUB_TOKEN` và `NVD_API_KEY` trong `.env`.
 
-Thư mục kết quả `artifacts/plans/<CVE>/` có `intel.json` và `intel_digest.md` (đúng đoạn văn bản LLM đã đọc), hai schema, và `iter1/` với `plan.md` (bản cho người), `plan.json` (bản cho máy), `queries.spl`, `result.template.json`, `peak_able.md`, `peak_hunt_plan.md`.
+Thư mục kết quả `artifacts/plans/<CVE>/` có `intel.json` và `intel_digest.md` (đúng đoạn văn bản LLM đã đọc), hai schema, và `iter1/` với `plan.md` (bản cho người), `RUNBOOK.md` (quy trình từng bước cho người), `plan.json` (bản cho máy), `queries.spl` (mẫu, chưa gắn), `result.template.json`, `peak_able.md`, `peak_hunt_plan.md`.
 
 ### 6.10.2. Đọc `plan.md` trước khi giao đi
 
